@@ -93,17 +93,16 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
               <RowButton
                 key={`${event.id || event.startMs}-${i}`}
                 onClick={() => openEdit(event)}
-                className="animate-row-in gap-4"
-                style={{ animationDelay: `${Math.min(i, 8) * 40}ms` } as React.CSSProperties}
+                className="gap-4"
               >
                 <div className="w-14 shrink-0 pt-0.5 text-right">
-                  <p className="text-xs tabular-nums text-foreground">
+                  <p className="text-sm leading-5 tabular-nums text-foreground">
                     {event.allDay ? "All day" : formatClock(event.startMs)}
                   </p>
                 </div>
                 <div className="min-w-0 flex-1 border-l border-border pl-4">
-                  <p className="truncate text-[15px] text-foreground">{event.title || "Untitled"}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                  <p className="truncate text-base leading-6 text-foreground">{event.title || "Untitled"}</p>
+                  <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
                     {formatSpan(event.startMs, event.endMs, event.allDay)}
                     {event.location ? ` · ${event.location}` : ""}
                     {event.source === "local" ? " · in app" : ""}

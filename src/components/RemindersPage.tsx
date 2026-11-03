@@ -71,17 +71,12 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
           <EmptyState title="Nothing scheduled" body="Tap + for a reminder, or ask Grok to nudge you later." />
         ) : (
           <div className="divide-y divide-border border-y border-border">
-            {items.map((item, i) => (
-              <RowButton
-                key={item.id}
-                onClick={() => openEdit(item)}
-                className="animate-row-in gap-3"
-                style={{ animationDelay: `${Math.min(i, 8) * 40}ms` } as React.CSSProperties}
-              >
+            {items.map((item) => (
+              <RowButton key={item.id} onClick={() => openEdit(item)} className="gap-3">
                 <span className="mt-1 size-4 shrink-0 rounded-full border border-foreground/70" aria-hidden />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] text-foreground">{item.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="truncate text-base leading-6 text-foreground">{item.title}</p>
+                  <p className="mt-1 text-sm leading-5 text-muted-foreground">
                     <span className="uppercase tracking-wider">{item.kind}</span>
                     {" · "}
                     {formatWhen(item.atMs)}

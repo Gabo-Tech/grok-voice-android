@@ -26,34 +26,30 @@ export function MorePage({
 
   if (section === "wake") {
     return (
-      <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="flex flex-col">
         <button
           type="button"
-          className="mb-3 shrink-0 px-1 text-left text-xs leading-normal tracking-[0.16em] text-muted-foreground uppercase"
+          className="mb-3 shrink-0 px-1 text-left text-xs leading-5 tracking-[0.16em] text-muted-foreground uppercase"
           onClick={() => setSection("menu")}
         >
           ← More
         </button>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <WakeView status={wake} onStatus={onWake} />
-        </div>
+        <WakeView status={wake} onStatus={onWake} />
       </div>
     );
   }
 
   if (section === "debug") {
     return (
-      <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="flex flex-col">
         <button
           type="button"
-          className="mb-3 shrink-0 px-1 text-left text-xs leading-normal tracking-[0.16em] text-muted-foreground uppercase"
+          className="mb-3 shrink-0 px-1 text-left text-xs leading-5 tracking-[0.16em] text-muted-foreground uppercase"
           onClick={() => setSection("menu")}
         >
           ← More
         </button>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <DebugPanel voice={voice} onSignedOut={onSignedOut} onReplayTour={onReplayTour} />
-        </div>
+        <DebugPanel voice={voice} onSignedOut={onSignedOut} onReplayTour={onReplayTour} />
       </div>
     );
   }

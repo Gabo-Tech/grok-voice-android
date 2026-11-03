@@ -18,8 +18,8 @@ export function PageChrome({
   className?: string;
 }) {
   return (
-    <div className={cn("flex h-full min-h-0 flex-1 flex-col", className)}>
-      <header className="shrink-0 animate-page-in px-1 pb-4 pt-1">
+    <div className={cn("flex flex-col", className)}>
+      <header className="shrink-0 px-1 pb-4 pt-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl leading-tight font-medium tracking-tight text-foreground">{title}</h1>
@@ -32,18 +32,16 @@ export function PageChrome({
           )}
         </div>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2">{children}</div>
+      <div className="pb-2">{children}</div>
     </div>
   );
 }
 
 export function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="grid place-items-center px-6 py-16 text-center animate-fade-in">
-      <div>
-        <p className="text-sm text-foreground">{title}</p>
-        <p className="mt-2 text-xs text-muted-foreground">{body}</p>
-      </div>
+    <div className="px-1 py-8">
+      <p className="text-base leading-6 text-foreground">{title}</p>
+      <p className="mt-2 text-sm leading-5 text-muted-foreground">{body}</p>
     </div>
   );
 }

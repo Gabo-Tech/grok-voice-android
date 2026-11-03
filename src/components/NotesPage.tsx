@@ -59,19 +59,14 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
           <EmptyState title="No notes yet" body="Tap + or ask Grok to remember something." />
         ) : (
           <div className="divide-y divide-border border-y border-border">
-            {notes.map((note, i) => {
+            {notes.map((note) => {
               const [head, ...rest] = note.text.split("\n");
               const preview = rest.join(" ").trim() || head;
               return (
-                <RowButton
-                  key={note.id}
-                  onClick={() => openEdit(note)}
-                  className="animate-row-in"
-                  style={{ animationDelay: `${Math.min(i, 8) * 40}ms` } as React.CSSProperties}
-                >
+                <RowButton key={note.id} onClick={() => openEdit(note)}>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] text-foreground">{head || "Untitled"}</p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                    <p className="truncate text-base leading-6 text-foreground">{head || "Untitled"}</p>
+                    <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
                       {formatWhen(note.createdMs)}
                       {preview && preview !== head ? ` · ${preview}` : ""}
                     </p>

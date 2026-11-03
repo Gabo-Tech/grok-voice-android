@@ -67,14 +67,14 @@ export default function App() {
   }
 
   return (
-    <main className="safe-area flex h-full flex-col bg-background">
+    <main className="safe-area flex min-h-full flex-col bg-background">
       <header className="flex shrink-0 items-center justify-between px-5 pt-3 pb-1">
         <p className="text-[11px] font-medium tracking-[0.28em] text-muted-foreground">GROK</p>
         <p className="text-[10px] tracking-[0.12em] text-muted-foreground/80">{auth.keyHint}</p>
       </header>
 
-      <section className="relative min-h-0 flex-1 overflow-hidden px-4 pt-2">
-        <div key={tab} className="flex h-full min-h-0 flex-col">
+      <section className="min-h-0 flex-1 overflow-visible px-4 pt-2">
+        <div key={tab} className="flex flex-col">
           {tab === "talk" && <AssistantView voice={voice} wakeTrained={wake.trained} />}
           {tab === "notes" && <NotesPage agenda={agenda} />}
           {tab === "calendar" && <CalendarPage agenda={agenda} />}

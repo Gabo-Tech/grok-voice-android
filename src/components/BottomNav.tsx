@@ -13,7 +13,7 @@ const ITEMS: Array<{ id: AppTab; label: string; Icon: typeof Mic }> = [
 
 export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab) => void }) {
   return (
-    <nav className="bottom-nav shrink-0 border-t border-border bg-[#0e0e0e]/95 backdrop-blur-sm">
+    <nav className="bottom-nav sticky bottom-0 z-20 shrink-0 border-t border-border bg-[#0e0e0e]">
       <ul className="grid grid-cols-5">
         {ITEMS.map(({ id, label, Icon }) => {
           const active = tab === id;

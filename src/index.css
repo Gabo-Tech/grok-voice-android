@@ -126,7 +126,8 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
+  height: auto;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -201,12 +202,8 @@ body {
   background: #121212;
 }
 
-.fab-pulse {
-  transition: transform 180ms ease, background-color 180ms ease;
-}
-
 .fab-pulse:active {
-  transform: scale(0.94);
+  opacity: 0.7;
 }
 
 @keyframes fade-in {
@@ -261,21 +258,6 @@ body {
 
 .animate-sheet-in {
   animation: sheet-in 200ms ease both;
-}
-
-.sheet-panel.animate-sheet-in {
-  animation: sheet-slide 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes sheet-slide {
-  from {
-    transform: translate3d(0, 24px, 0);
-    opacity: 0;
-  }
-  to {
-    transform: translate3d(0, 0, 0);
-    opacity: 1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

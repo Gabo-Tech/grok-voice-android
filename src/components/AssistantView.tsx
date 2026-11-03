@@ -15,8 +15,8 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
   }, [voice.rows]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 animate-page-in items-center justify-between gap-3 px-1 pb-3">
+    <div className="flex flex-col">
+      <header className="flex shrink-0 items-center justify-between gap-3 px-1 pb-3">
         <div className="min-w-0">
           <h1 className="text-2xl leading-tight font-medium tracking-tight">Talk</h1>
           <p className="mt-1 text-xs leading-normal text-muted-foreground">
@@ -33,13 +33,11 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
         <p className="mb-3 shrink-0 border border-border px-3 py-2 text-xs text-foreground">{voice.lastError}</p>
       )}
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1">
+      <div ref={scroller} className="space-y-3 px-1">
         {voice.rows.length === 0 ? (
-          <div className="grid h-full min-h-[12rem] place-items-center text-center">
-            <p className="max-w-[14rem] text-xs leading-relaxed text-muted-foreground">
-              Tap the square to talk. Transcripts land here, quietly.
-            </p>
-          </div>
+          <p className="py-8 text-sm leading-6 text-muted-foreground">
+            Tap the square to talk. Transcripts land here.
+          </p>
         ) : (
           <>
             <div className="flex justify-end">
@@ -47,14 +45,13 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
                 <Trash2 /> Clear
               </Button>
             </div>
-            {voice.rows.map((r, i) => (
+            {voice.rows.map((r) => (
               <div
                 key={`${r.role}-${r.id}`}
                 className={cn(
-                  "max-w-[88%] animate-row-in px-0 py-1 text-sm leading-relaxed",
+                  "max-w-[88%] px-0 py-1 text-base leading-6",
                   r.role === "user" ? "ml-auto text-right" : "mr-auto text-left",
                 )}
-                style={{ animationDelay: `${Math.min(i, 6) * 30}ms` }}
               >
                 <p className="mb-1 text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
                   {r.role === "user" ? "you" : "grok"}
