@@ -23,6 +23,7 @@ use crate::{
 
 const CLIENT: &[u8] = b"grok-voice";
 const API_KEY: &[u8] = b"xai_api_key";
+const ACCOUNTS: &[u8] = b"voice_accounts";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +31,30 @@ pub struct AuthStatus {
     pub has_key: bool,
     pub key_hint: Option<String>,
     pub security_level: Option<String>,
+    pub accounts: Vec<VoiceAccount>,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredAccount {
+    id: String,
+    provider: String,
+    secret: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceAccount {
+    pub id: String,
+    pub provider: String,
+    pub hint: String,
+}
+
+#[derive(Clone)]
+pub struct VoiceSecret {
+    pub id: String,
+    pub provider: String,
+    pub secret: String,
 }
 
 pub struct Vault {
@@ -151,18 +176,150 @@ impl Vault {
         })
     }
 
+    pub fn accounts(&self, bridge: &NativeBridge) -> Result<Vec<VoiceSecret>> {
+        self.with_store(bridge, |_, client| {
+            let mut list = read_accounts(client)?;
+            if list.is_empty() {
+                if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
+                    let secret = String::from_utf8_lossy(&bytes).trim().to_string();
+                    if !secret.is_empty() {
+                        list.push(StoredAccount {
+                            id: "legacy-xai".into(),
+                            provider: "xai".into(),
+                            secret,
+                        });
+                    }
+                }
+            }
+            Ok(list
+                .into_iter()
+                .map(|a| VoiceSecret { id: a.id, provider: a.provider, secret: a.secret })
+                .collect())
+        })
+    }
+
+    pub fn add_account(&self, bridge: &NativeBridge, provider: &str, secret: &str) -> Result<Vec<VoiceAccount>> {
+        let provider = provider.trim().to_string();
+        let secret = secret.trim().to_string();
+        self.with_store(bridge, |sh, client| {
+            let mut list = read_accounts(client)?;
+            if list.is_empty() {
+                if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
+                    let legacy = String::from_utf8_lossy(&bytes).trim().to_string();
+                    if !legacy.is_empty() {
+                        list.push(StoredAccount {
+                            id: "legacy-xai".into(),
+                            provider: "xai".into(),
+                            secret: legacy,
+                        });
+                    }
+                }
+            }
+            list.push(StoredAccount {
+                id: format!("{provider}-{}", chrono::Utc::now().timestamp_millis()),
+                provider,
+                secret,
+            });
+            write_accounts(sh, client, &list)?;
+            Ok(public_accounts(&list))
+        })
+    }
+
+    pub fn remove_account(&self, bridge: &NativeBridge, id: &str) -> Result<Vec<VoiceAccount>> {
+        self.with_store(bridge, |sh, client| {
+            let mut list = read_accounts(client)?;
+            if list.is_empty() {
+                if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
+                    let legacy = String::from_utf8_lossy(&bytes).trim().to_string();
+                    if !legacy.is_empty() {
+                        list.push(StoredAccount { id: "legacy-xai".into(), provider: "xai".into(), secret: legacy });
+                    }
+                }
+            }
+            list.retain(|a| a.id != id);
+            write_accounts(sh, client, &list)?;
+            if list.is_empty() {
+                let _ = client.store().delete(API_KEY);
+                sh.write_client(CLIENT).map_err(verr)?;
+                sh.save().map_err(verr)?;
+            }
+            Ok(public_accounts(&list))
+        })
+    }
+
+    pub fn move_account(&self, bridge: &NativeBridge, id: &str, up: bool) -> Result<Vec<VoiceAccount>> {
+        self.with_store(bridge, |sh, client| {
+            let mut list = read_accounts(client)?;
+            if list.is_empty() {
+                if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
+                    let legacy = String::from_utf8_lossy(&bytes).trim().to_string();
+                    if !legacy.is_empty() {
+                        list.push(StoredAccount { id: "legacy-xai".into(), provider: "xai".into(), secret: legacy });
+                    }
+                }
+            }
+            if let Some(i) = list.iter().position(|a| a.id == id) {
+                let j = if up { i.saturating_sub(1) } else { (i + 1).min(list.len().saturating_sub(1)) };
+                if i != j {
+                    list.swap(i, j);
+                }
+            }
+            write_accounts(sh, client, &list)?;
+            Ok(public_accounts(&list))
+        })
+    }
+
     pub fn status(&self, bridge: &NativeBridge) -> Result<AuthStatus> {
-        let key = self.api_key(bridge)?;
+        let accounts = self.accounts(bridge)?;
+        let first = accounts.iter().find(|a| a.provider == "xai").or(accounts.first());
         Ok(AuthStatus {
-            has_key: key.is_some(),
-            key_hint: key.as_ref().map(|k| key_hint(k)),
+            has_key: !accounts.is_empty(),
+            key_hint: first.map(|a| key_hint(&a.secret)),
             security_level: self.security_level.lock().unwrap().clone(),
+            accounts: accounts
+                .iter()
+                .map(|a| VoiceAccount {
+                    id: a.id.clone(),
+                    provider: a.provider.clone(),
+                    hint: key_hint(&a.secret),
+                })
+                .collect(),
         })
     }
 
     pub fn security_level(&self) -> Option<String> {
         self.security_level.lock().unwrap().clone()
     }
+}
+
+fn read_accounts(client: &iota_stronghold::Client) -> Result<Vec<StoredAccount>> {
+    let Some(bytes) = client.store().get(ACCOUNTS).map_err(verr)? else {
+        return Ok(Vec::new());
+    };
+    Ok(serde_json::from_slice(&bytes).unwrap_or_default())
+}
+
+fn write_accounts(sh: &Stronghold, client: &iota_stronghold::Client, list: &[StoredAccount]) -> Result<()> {
+    let bytes = serde_json::to_vec(list).map_err(|e| verr(e.to_string()))?;
+    client.store().insert(ACCOUNTS.to_vec(), bytes, None).map_err(verr)?;
+    if let Some(xai) = list.iter().find(|a| a.provider == "xai") {
+        client
+            .store()
+            .insert(API_KEY.to_vec(), xai.secret.as_bytes().to_vec(), None)
+            .map_err(verr)?;
+    }
+    sh.write_client(CLIENT).map_err(verr)?;
+    sh.save().map_err(verr)
+}
+
+fn public_accounts(list: &[StoredAccount]) -> Vec<VoiceAccount> {
+    list.iter()
+        .map(|a| VoiceAccount {
+            id: a.id.clone(),
+            provider: a.provider.clone(),
+            hint: key_hint(&a.secret),
+        })
+        .collect()
 }
 
 pub fn key_hint(key: &str) -> String {

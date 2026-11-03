@@ -34,7 +34,7 @@ impl Default for Settings {
                 .into(),
             echo_guard: true,
             wake_threshold: 0.5,
-            idle_timeout_secs: 30,
+            idle_timeout_secs: 10,
             onboarded: false,
             listen_armed: false,
         }

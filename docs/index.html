@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Voice — a voice assistant that stays on your phone</title>
+    <meta
+      name="description"
+      content="Bring-your-own-key Android voice assistant. Wake word, live search, notes, calendar, and reminders. Your key never leaves the phone."
+    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="container">
+        <a class="brand" href="#top">Grok Voice</a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <ul id="site-nav">
+          <li><a href="#talk">Talk</a></li>
+          <li><a href="#phone">On the phone</a></li>
+          <li><a href="#private">Private</a></li>
+          <li><a href="#install">Install</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container">
+          <p class="eyebrow">Android · bring your own key</p>
+          <h1>Say Hey Grok. The phone answers.</h1>
+          <p class="lead">
+            A voice assistant that stays on the device. Listen for the wake word with the screen off,
+            type when you can’t talk, and keep notes, calendar, and reminders on the phone.
+          </p>
+          <div class="actions">
+            <a class="button" href="https://github.com/Gabo-Tech/grok-voice-android/releases/latest">Download the APK</a>
+            <a class="secondary" href="https://github.com/Gabo-Tech/grok-voice-android">View the source</a>
+          </div>
+          <p class="fine">Arm64 · Android 8 and newer · sideload, not the Play Store</p>
+        </div>
+      </section>
+
+      <section id="talk" class="container">
+        <h2>Talk, or type</h2>
+        <div class="grid">
+          <article>
+            <h3>Wake word</h3>
+            <p>Turn Listen on and the phone keeps waiting for “Hey Grok”, including after you leave the app. No wake word, no session.</p>
+          </article>
+          <article>
+            <h3>Quiet gap</h3>
+            <p>When the conversation goes quiet, it hangs up and listens only for the wake word again. You set the pause, from 5 to 120 seconds.</p>
+          </article>
+          <article>
+            <h3>Text</h3>
+            <p>Type on the Talk screen when it’s loud or you can’t speak. The answer lands in the same thread, and links open in the browser.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="phone" class="container">
+        <h2>It can use the phone</h2>
+        <ul class="asks">
+          <li><span>Notes</span> Save, edit, and delete notes on the device.</li>
+          <li><span>Reminders</span> One-off alerts, alarms, and timers.</li>
+          <li><span>Calendar</span> Today’s list, plus a month you can move through. If the phone calendar is unavailable, events stay in the app.</li>
+          <li><span>Search</span> Ask for today’s news, weather, or what’s on in town. The answer is spoken and written, with sources.</li>
+        </ul>
+      </section>
+
+      <section id="private" class="container">
+        <h2>The key stays here</h2>
+        <p>
+          You paste an API key during setup. The app checks it, then locks it in on-device storage.
+          Voice uses a short-lived token minted on the phone. The long-lived key is not sent on the voice connection.
+          The wake-word recordings never leave the device.
+        </p>
+        <p>
+          You can save more than one key and put them in order. If the first connection fails, the next one is tried.
+          Spoken replies run on xAI’s realtime voice. Other saved keys wait until that provider’s voice connection is ready.
+        </p>
+      </section>
+
+      <section id="install" class="container">
+        <h2>Install</h2>
+        <p>Download the latest release, then install it on the phone.</p>
+        <pre><code id="install-cmd">adb install -r GrokVoice-0.1.7.apk</code></pre>
+        <button type="button" id="copy-cmd">Copy command</button>
+        <p class="fine" id="copy-status" role="status"></p>
+      </section>
+    </main>
+
+    <footer class="container">
+      <p>Grok Voice · <a href="https://github.com/Gabo-Tech/grok-voice-android">Gabo-Tech/grok-voice-android</a></p>
+    </footer>
+    <script src="./main.js"></script>
+  </body>
+</html>

@@ -76,7 +76,7 @@ pub async fn save_user_token(app: AppHandle, hub: State<'_, Arc<Hub>>, token: St
     });
     hub.info("API key verified: xAI issued a realtime client secret");
     let status = blocking(app, move |app| {
-        app.state::<Vault>().set_api_key(&app.state::<NativeBridge>(), &token)?;
+        app.state::<Vault>().add_account(&app.state::<NativeBridge>(), "xai", &token)?;
         vault_status(&app)
     })
     .await?;
@@ -98,6 +98,41 @@ pub async fn clear_user_token(app: AppHandle, engine: State<'_, Engine>, hub: St
     .await?;
     hub.info("API key removed from device");
     Ok(status)
+}
+
+#[tauri::command]
+pub async fn add_voice_account(app: AppHandle, provider: String, secret: String) -> Result<AuthStatus> {
+    let provider = provider.trim().to_string();
+    let secret = Zeroizing::new(secret.trim().to_string());
+    if secret.len() < 12 || secret.contains(char::is_whitespace) {
+        return Err(msg("That key looks too short."));
+    }
+    if provider == "xai" {
+        mint_ephemeral(&http_client(), &secret).await?;
+    }
+    blocking(app, move |app| {
+        app.state::<Vault>().add_account(&app.state::<NativeBridge>(), &provider, &secret)?;
+        vault_status(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn remove_voice_account(app: AppHandle, id: String) -> Result<AuthStatus> {
+    blocking(app, move |app| {
+        app.state::<Vault>().remove_account(&app.state::<NativeBridge>(), &id)?;
+        vault_status(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn move_voice_account(app: AppHandle, id: String, up: bool) -> Result<AuthStatus> {
+    blocking(app, move |app| {
+        app.state::<Vault>().move_account(&app.state::<NativeBridge>(), &id, up)?;
+        vault_status(&app)
+    })
+    .await
 }
 
 #[tauri::command]

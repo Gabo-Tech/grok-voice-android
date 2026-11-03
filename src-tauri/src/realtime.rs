@@ -70,6 +70,20 @@ pub fn http_client() -> reqwest::Client {
         .expect("http client")
 }
 
+async fn connect_account(
+    http: &reqwest::Client,
+    provider: &str,
+    secret: &str,
+    _model: &str,
+) -> Result<EphemeralToken> {
+    match provider {
+        "xai" => mint_ephemeral(http, secret).await,
+        other => Err(msg(format!(
+            "{other} is saved on this phone, and its voice connection is not ready yet"
+        ))),
+    }
+}
+
 pub async fn mint_ephemeral(client: &reqwest::Client, api_key: &str) -> Result<EphemeralToken> {
     let resp = client
         .post(CLIENT_SECRETS_URL)
@@ -142,16 +156,32 @@ impl Session<'_> {
         self.hub.update(|s| s.ws_state = "minting token".into());
 
         let app = self.app.clone();
-        let api_key = tokio::task::spawn_blocking(move || {
-            app.state::<Vault>().api_key(&app.state::<NativeBridge>())
+        let accounts = tokio::task::spawn_blocking(move || {
+            app.state::<Vault>().accounts(&app.state::<NativeBridge>())
         })
         .await
-        .map_err(|e| msg(e.to_string()))??
-        .ok_or_else(|| msg("no xAI API key saved — add one on the Authorize screen"))?;
+        .map_err(|e| msg(e.to_string()))??;
+        if accounts.is_empty() {
+            return Err(msg("No voice key saved. Add one in setup."));
+        }
 
         let http = http_client();
-        let token = mint_ephemeral(&http, &api_key).await?;
-        drop(api_key);
+        let mut token = None;
+        let mut last_error = String::from("no voice provider connected");
+        for account in &accounts {
+            match connect_account(&http, &account.provider, &account.secret, &self.settings.model).await {
+                Ok(minted) => {
+                    self.hub.info(format!("using {} ({})", account.provider, crate::vault::key_hint(&account.secret)));
+                    token = Some(minted);
+                    break;
+                }
+                Err(e) => {
+                    last_error = e.to_string();
+                    self.hub.warn(format!("{} failed, trying the next key: {last_error}", account.provider));
+                }
+            }
+        }
+        let token = token.ok_or_else(|| msg(last_error))?;
         self.hub.update(|s| {
             s.token_minted_at_ms = Some(now_ms());
             s.token_expires_at = token.expires_at;

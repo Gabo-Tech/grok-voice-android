@@ -12,7 +12,7 @@ import { useAgenda } from "@/hooks/useAgenda";
 import { useVoice } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type WakewordStatus } from "@/lib/api";
 
-const PREVIEW_AUTH: AuthStatus = { hasKey: false, keyHint: null, securityLevel: null };
+const PREVIEW_AUTH: AuthStatus = { hasKey: false, keyHint: null, securityLevel: null, accounts: [] };
 const EMPTY_WAKE: WakewordStatus = { trained: false, samples: [false, false, false] };
 
 export default function App() {

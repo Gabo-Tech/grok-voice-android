@@ -9,10 +9,17 @@ export type Phase =
   | "thinking"
   | "speaking";
 
+export interface VoiceAccount {
+  id: string;
+  provider: string;
+  hint: string;
+}
+
 export interface AuthStatus {
   hasKey: boolean;
   keyHint: string | null;
   securityLevel: string | null;
+  accounts: VoiceAccount[];
 }
 
 export interface PermissionStatus {
@@ -119,6 +126,10 @@ export interface Level {
 
 export const api = {
   saveUserToken: (token: string) => invoke<AuthStatus>("save_user_token", { token }),
+  addVoiceAccount: (provider: string, secret: string) =>
+    invoke<AuthStatus>("add_voice_account", { provider, secret }),
+  removeVoiceAccount: (id: string) => invoke<AuthStatus>("remove_voice_account", { id }),
+  moveVoiceAccount: (id: string, up: boolean) => invoke<AuthStatus>("move_voice_account", { id, up }),
   clearUserToken: () => invoke<AuthStatus>("clear_user_token"),
   authStatus: () => invoke<AuthStatus>("auth_status"),
   permissionsStatus: () => invoke<PermissionStatus>("permissions_status"),

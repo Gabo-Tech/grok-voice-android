@@ -21,7 +21,12 @@ import { Label } from "@/components/ui/label";
 import { api, errorText, type AuthStatus, type PermissionStatus, type WakewordStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const CONSOLE_URL = "https://console.x.ai/team/default/api-keys";
+const PROVIDERS = [
+  { id: "xai", label: "xAI", placeholder: "xai-…", url: "https://console.x.ai/team/default/api-keys", link: "Open xAI console" },
+  { id: "openai", label: "OpenAI", placeholder: "sk-…", url: "https://platform.openai.com/api-keys", link: "Open OpenAI keys" },
+  { id: "azure", label: "Azure", placeholder: "Azure key", url: "https://portal.azure.com/", link: "Open Azure portal" },
+  { id: "elevenlabs", label: "ElevenLabs", placeholder: "xi-…", url: "https://elevenlabs.io/app/settings/api-keys", link: "Open ElevenLabs keys" },
+] as const;
 
 const STEPS = [
   { id: "hello", label: "Hello" },
@@ -47,6 +52,7 @@ export function Onboarding({
   onFinished: () => void;
 }) {
   const [step, setStep] = useState(0);
+  const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["id"]>("xai");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,10 +107,15 @@ export function Onboarding({
     setError(null);
     try {
       if (preview) {
-        onAuth({ hasKey: true, keyHint: "xai-…demo", securityLevel: "software" });
+        onAuth({
+          hasKey: true,
+          keyHint: "xai-…demo",
+          securityLevel: "software",
+          accounts: [{ id: "demo", provider, hint: "demo…key" }],
+        });
         return;
       }
-      const status = await api.saveUserToken(key);
+      const status = await api.addVoiceAccount(provider, key);
       setKey("");
       onAuth(status);
     } catch (e) {
@@ -167,17 +178,21 @@ export function Onboarding({
         {id === "key" && (
           <KeyStep
             auth={auth}
+            provider={provider}
             value={key}
             busy={busy}
+            onProvider={setProvider}
             onChange={setKey}
-            onOpen={() => {
+            onOpen={(url) => {
               if (preview) {
-                window.open(CONSOLE_URL, "_blank", "noopener");
+                window.open(url, "_blank", "noopener");
                 return;
               }
-              void openUrl(CONSOLE_URL);
+              void openUrl(url);
             }}
             onSave={() => void saveKey()}
+            onRemove={(id) => void api.removeVoiceAccount(id).then(onAuth).catch((e) => setError(errorText(e)))}
+            onMove={(id, up) => void api.moveVoiceAccount(id, up).then(onAuth).catch((e) => setError(errorText(e)))}
           />
         )}
         {id === "mic" && <MicStep perms={perms} busy={busy} onAllow={() => void allowMic()} />}
@@ -218,8 +233,8 @@ function HelloStep() {
         <p className="mt-2 text-sm text-muted-foreground">Five short steps. About two minutes.</p>
       </div>
       <ul className="space-y-3">
-        <Point n="1" title="Bring your own xAI key">
-          It is checked once, then locked in on-device storage. This app has no server.
+        <Point n="1" title="Pick a voice provider and add its key">
+          You can save more than one. They are tried in order if the first one fails.
         </Point>
         <Point n="2" title="Allow the microphone">
           Needed to hear you, including when the screen is off.
@@ -246,67 +261,100 @@ function Point({ n, title, children }: { n: string; title: string; children: str
 
 function KeyStep({
   auth,
+  provider,
   value,
   busy,
+  onProvider,
   onChange,
   onOpen,
   onSave,
+  onRemove,
+  onMove,
 }: {
   auth: AuthStatus;
+  provider: (typeof PROVIDERS)[number]["id"];
   value: string;
   busy: boolean;
+  onProvider: (id: (typeof PROVIDERS)[number]["id"]) => void;
   onChange: (v: string) => void;
-  onOpen: () => void;
+  onOpen: (url: string) => void;
   onSave: () => void;
+  onRemove: (id: string) => void;
+  onMove: (id: string, up: boolean) => void;
 }) {
+  const chosen = PROVIDERS.find((p) => p.id === provider) ?? PROVIDERS[0];
+  const accounts = auth.accounts ?? [];
   return (
     <Card className="border-primary/20">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="size-4 text-primary" /> Add your xAI API key
+          <KeyRound className="size-4 text-primary" /> Add a voice key
         </CardTitle>
-        <CardDescription>Do these three things, in order.</CardDescription>
+        <CardDescription>First in the list is tried first. The next one is the fallback.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ol className="list-decimal space-y-1 pl-4 text-sm text-muted-foreground">
-          <li>Open the xAI console and sign in.</li>
-          <li>Create an API key and copy it.</li>
-          <li>Paste it here. We verify it, then store it on this device.</li>
-        </ol>
-        <Button variant="outline" className="w-full" onClick={onOpen}>
-          <ExternalLink /> Open console.x.ai
+        <div className="grid grid-cols-2 gap-2">
+          {PROVIDERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onProvider(item.id)}
+              className={cn(
+                "border px-2 py-2 text-xs tracking-[0.12em] uppercase",
+                item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <Button variant="outline" className="w-full" onClick={() => onOpen(chosen.url)}>
+          <ExternalLink /> {chosen.link}
         </Button>
-        {auth.hasKey ? (
-          <p className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
-            <ShieldCheck className="size-4 shrink-0" />
-            Key stored{auth.keyHint ? ` (${auth.keyHint})` : ""}
-            {auth.securityLevel ? ` · ${auth.securityLevel}` : ""}. Tap Next.
-          </p>
-        ) : (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="xai-key">Paste the key</Label>
-              <Input
-                id="xai-key"
-                type="password"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                placeholder="xai-…"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && value && !busy && onSave()}
-              />
-            </div>
-            <Button className="w-full" disabled={!value || busy} onClick={onSave}>
-              {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
-              {busy ? "Verifying with xAI…" : "Verify and store"}
-            </Button>
-          </>
+        <div className="space-y-2">
+          <Label htmlFor="voice-key">Paste the {chosen.label} key</Label>
+          <Input
+            id="voice-key"
+            type="password"
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            placeholder={chosen.placeholder}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && value && !busy && onSave()}
+          />
+        </div>
+        <Button className="w-full" disabled={busy || value.trim().length < 12} onClick={onSave}>
+          {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} Save this key
+        </Button>
+        {accounts.length > 0 && (
+          <ul className="divide-y divide-border border-y border-border">
+            {accounts.map((account, index) => (
+              <li key={account.id} className="flex items-center gap-2 py-2 text-sm">
+                <span className="w-5 tabular-nums text-muted-foreground">{index + 1}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {account.provider} · {account.hint}
+                </span>
+                <button type="button" className="px-1 text-xs uppercase" onClick={() => onMove(account.id, true)}>
+                  Up
+                </button>
+                <button type="button" className="px-1 text-xs uppercase" onClick={() => onMove(account.id, false)}>
+                  Down
+                </button>
+                <button type="button" className="px-1 text-xs uppercase" onClick={() => onRemove(account.id)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {accounts.length > 0 && (
+          <p className="text-xs text-muted-foreground">Add another key if you want a fallback, then tap Next.</p>
         )}
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Voice time is billed to your xAI account. Each conversation uses a 5-minute token minted
-          on the phone. The key itself is not sent on the voice connection.
+          Each key stays on this phone. xAI is verified before it is stored. The others are kept in
+          this order and used when that voice connection is available. If the first one fails, the next is tried.
         </p>
       </CardContent>
     </Card>
