@@ -89,6 +89,13 @@ body {
   padding: clamp(4.5rem, 12vw, 8rem) 0 clamp(4rem, 10vw, 6.5rem);
 }
 
+.mark {
+  display: block;
+  width: 4.75rem;
+  height: auto;
+  margin: 0 0 1.75rem;
+}
+
 .eyebrow {
   margin: 0 0 1.25rem;
   color: var(--muted);
@@ -152,7 +159,10 @@ h1 {
   font-size: 0.85rem;
 }
 
-.band { padding: clamp(4rem, 9vw, 6.5rem) 0; }
+.band {
+  padding: clamp(4rem, 9vw, 6.5rem) 0;
+  scroll-margin-top: 4rem;
+}
 
 .band + .band { border-top: 1px solid var(--line); }
 
@@ -213,6 +223,30 @@ article p { margin: 0; color: #d0d0d0; line-height: 1.6; }
   margin: 0 0 1.25rem;
 }
 
+.faq {
+  margin: 0;
+}
+
+.faq div {
+  padding: 1.35rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.faq div:last-child { border-bottom: 1px solid var(--line); }
+
+.faq dt {
+  margin: 0 0 0.45rem;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.faq dd {
+  margin: 0;
+  color: #d0d0d0;
+  line-height: 1.65;
+}
+
 pre {
   margin: 1.5rem 0 1rem;
   padding: 1.15rem 1.2rem;
@@ -226,6 +260,15 @@ footer {
   padding: 2rem 0 3rem;
   color: var(--muted);
 }
+
+footer p { margin: 0.35rem 0; }
+
+footer a {
+  color: #d0d0d0;
+  text-decoration-color: #3a3a3a;
+}
+
+footer .also { margin-top: 0.85rem; }
 
 .reveal {
   opacity: 0;

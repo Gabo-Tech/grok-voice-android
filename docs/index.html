@@ -3,11 +3,124 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Grok Voice — a voice assistant that stays on your phone</title>
+    <title>Grok Voice: Free Open-Source "Hey Grok" Voice Assistant for Android</title>
     <meta
       name="description"
-      content="Bring-your-own-key Android voice assistant. Wake word, live search, notes, calendar, and reminders. Your key never leaves the phone."
+      content="Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone."
     />
+    <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/" />
+    <meta name="author" content="Gabriel Clemente" />
+    <meta name="theme-color" content="#0c0c0c" />
+    <link rel="icon" href="./icon.png" type="image/png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Grok Voice" />
+    <meta property="og:locale" content="en_US" />
+    <meta
+      property="og:title"
+      content="Grok Voice: Free Open-Source &quot;Hey Grok&quot; Voice Assistant for Android"
+    />
+    <meta
+      property="og:description"
+      content="Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone."
+    />
+    <meta property="og:url" content="https://gabo-tech.github.io/grok-voice-android/" />
+    <meta property="og:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
+    <meta property="og:image:secure_url" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Grok Voice, a free open-source Hey Grok voice assistant for Android"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Grok Voice: Free Open-Source &quot;Hey Grok&quot; Voice Assistant for Android"
+    />
+    <meta
+      name="twitter:description"
+      content="Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone."
+    />
+    <meta name="twitter:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Grok Voice, a free open-source Hey Grok voice assistant for Android"
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Grok Voice",
+        "description": "Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone.",
+        "url": "https://gabo-tech.github.io/grok-voice-android/",
+        "image": "https://gabo-tech.github.io/grok-voice-android/og.png",
+        "operatingSystem": "Android",
+        "applicationCategory": "UtilitiesApplication",
+        "softwareVersion": "0.1.10",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "license": "https://opensource.org/licenses/MIT",
+        "downloadUrl": "https://github.com/Gabo-Tech/grok-voice-android/releases/latest",
+        "codeRepository": "https://github.com/Gabo-Tech/grok-voice-android",
+        "author": {
+          "@type": "Person",
+          "name": "Gabriel Clemente",
+          "url": "https://gabo.is-a.dev"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Grok Voice?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. Audio, the wake word, and your API key stay on the device. The app is free and open source under the MIT license."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I install it?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Download the arm64 APK for Android 8 and newer from the GitHub releases, then open it on the phone or install it from a computer with adb. The package is signed for sideloading. It is not a Play Store upload."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Where does my API key go?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "You paste an xAI API key during setup. The app checks it, then stores it in an on-device vault. Each voice session uses a short-lived client secret minted on the phone. The long-lived key is not sent on the WebSocket."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Are wake-word recordings uploaded?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. “Hey Grok” is trained on the phone from three recordings you make. Those samples are not uploaded. Hands-free listening can stay on after you leave, including with the screen off."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What can I ask?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Notes, timers, alarms, reminders, and calendar events. The assistant acts on the phone, then tells you what happened."
+            }
+          }
+        ]
+      }
+    </script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -21,6 +134,7 @@
           <li><a href="#phone">Phone</a></li>
           <li><a href="#private">Private</a></li>
           <li><a href="#install">Install</a></li>
+          <li><a href="#faq">Questions</a></li>
         </ul>
       </nav>
     </header>
@@ -28,6 +142,13 @@
     <main id="top">
       <section class="hero">
         <div class="wrap reveal">
+          <img
+            class="mark"
+            src="./icon.png"
+            width="1024"
+            height="1024"
+            alt="Grok Voice app icon, a white square frame on black"
+          />
           <p class="eyebrow">Android · bring your own key</p>
           <h1>A voice that stays on the phone.</h1>
           <p class="lead">
@@ -104,11 +225,48 @@
           <p class="fine" id="copy-status" role="status"></p>
         </div>
       </section>
+
+      <section id="faq" class="band">
+        <div class="wrap narrow reveal">
+          <h2>Questions</h2>
+          <dl class="faq">
+            <div>
+              <dt>What is Grok Voice?</dt>
+              <dd>A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. Audio, the wake word, and your API key stay on the device. The app is free and open source under the MIT license.</dd>
+            </div>
+            <div>
+              <dt>How do I install it?</dt>
+              <dd>Download the arm64 APK for Android 8 and newer from the GitHub releases, then open it on the phone or install it from a computer with adb. The package is signed for sideloading. It is not a Play Store upload.</dd>
+            </div>
+            <div>
+              <dt>Where does my API key go?</dt>
+              <dd>You paste an xAI API key during setup. The app checks it, then stores it in an on-device vault. Each voice session uses a short-lived client secret minted on the phone. The long-lived key is not sent on the WebSocket.</dd>
+            </div>
+            <div>
+              <dt>Are wake-word recordings uploaded?</dt>
+              <dd>No. “Hey Grok” is trained on the phone from three recordings you make. Those samples are not uploaded. Hands-free listening can stay on after you leave, including with the screen off.</dd>
+            </div>
+            <div>
+              <dt>What can I ask?</dt>
+              <dd>Notes, timers, alarms, reminders, and calendar events. The assistant acts on the phone, then tells you what happened.</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
     </main>
 
     <footer>
       <div class="wrap">
         <p>Grok Voice 0.1.10 · <a href="https://github.com/Gabo-Tech/grok-voice-android">Gabo-Tech/grok-voice-android</a></p>
+        <p>Built by <a href="https://gabo.is-a.dev">Gabriel Clemente</a></p>
+        <p class="also">
+          Also:
+          <a href="https://miningcalculator.gabo.rocks/">Mining Profit Lab</a>
+          ·
+          <a href="https://financetracker.putopulse.org/">Aurelia</a>
+          ·
+          <a href="https://threadly.putopulse.org/">Threadly</a>
+        </p>
       </div>
     </footer>
     <script src="./main.js"></script>
