@@ -45,7 +45,7 @@ export function WakeView({
     setMessage(null);
     try {
       onStatus(await api.trainWakeword());
-      setMessage({ ok: true, text: "“Hey Grok” enrolled. Turn on hands-free on the Assistant tab." });
+      setMessage({ ok: true, text: "“Hey Grok” enrolled. Turn on Listen on the Talk tab." });
     } catch (e) {
       setMessage({ ok: false, text: errorText(e) });
     } finally {

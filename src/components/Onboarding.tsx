@@ -388,15 +388,15 @@ function ReadyStep({ wakeTrained }: { wakeTrained: boolean }) {
             <li>
               <span className="font-medium">Ask it to do things</span>
               <span className="block text-muted-foreground">
-                Notes, alarms, timers, reminders, and what’s on the calendar. They show up on the Plan tab.
+                Notes, alarms, timers, reminders, and calendar. Each has its own tab after setup.
               </span>
             </li>
             <li>
               <span className="font-medium">{wakeTrained ? "Or say “Hey Grok”" : "Wake word is optional"}</span>
               <span className="block text-muted-foreground">
                 {wakeTrained
-                  ? "Turn on Hands-free on the Talk tab. A notification means it is listening."
-                  : "You skipped enrollment. Train it anytime on the Wake tab, then flip Hands-free on."}
+                  ? "Turn on Listen on the Talk tab. A notification means it is listening."
+                  : "You skipped enrollment. Train it anytime under More → Wake word, then flip Listen on."}
               </span>
             </li>
           </ol>

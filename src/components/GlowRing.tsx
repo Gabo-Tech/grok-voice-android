@@ -41,7 +41,15 @@ export function GlowRing({
             : Mic;
 
   return (
-    <div className="flex shrink-0 items-center gap-4">
+    <div className="flex shrink-0 items-center justify-between gap-4 px-1">
+      <div className="min-w-0">
+        <p className="text-sm tracking-[0.16em] uppercase" style={{ color: style.color }}>
+          {style.label}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {live ? "Tap to end" : phase === "wake" ? "or tap to talk" : "Ready when you are"}
+        </p>
+      </div>
       <button
         type="button"
         onClick={onPress}
@@ -51,16 +59,8 @@ export function GlowRing({
         style={{ "--ink": style.color } as CSSProperties}
       >
         <span className="mark-fill" style={{ opacity: 0.12 + amp * 0.7 }} />
-        <Icon className="relative size-6" strokeWidth={1.25} />
+        <Icon className="relative size-5" strokeWidth={1.25} />
       </button>
-      <div>
-        <p className="text-sm tracking-[0.18em] uppercase" style={{ color: style.color }}>
-          {style.label}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {live ? "Tap to end" : phase === "wake" ? "or tap to talk" : "\u00a0"}
-        </p>
-      </div>
       <span className="sr-only" role="status">
         {style.label}
       </span>
