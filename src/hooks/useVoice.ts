@@ -19,6 +19,8 @@ export function useVoice() {
   const [rows, setRows] = useState<TranscriptRow[]>([]);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [busy, setBusy] = useState("");
   const levelRef = useRef<Level>({ mic: 0, out: 0 });
   const [level, setLevel] = useState<Level>({ mic: 0, out: 0 });
   const raf = useRef<number | null>(null);
@@ -52,6 +54,7 @@ export function useVoice() {
       });
       if (line.level === "error") setLastError(line.msg);
     });
+    void sub<string>("voice://busy", setBusy);
     void sub<TranscriptEvent>("voice://transcript", (t) => {
       setRows((prev) => {
         const idx = prev.findIndex((r) => r.id === t.id && r.role === t.role);
@@ -94,6 +97,20 @@ export function useVoice() {
     }
   }, []);
 
+  const sendText = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || sending) return;
+    setLastError(null);
+    setSending(true);
+    try {
+      await api.askText(trimmed);
+    } catch (e) {
+      setLastError(String(e));
+    } finally {
+      setSending(false);
+    }
+  }, [sending]);
+
   const toggleSession = useCallback(async () => {
     setLastError(null);
     try {
@@ -114,6 +131,9 @@ export function useVoice() {
     logs,
     level,
     lastError,
+    sending,
+    busy,
+    sendText,
     clearTranscript: () => setRows([]),
     clearLogs: () => setLogs([]),
     toggleWake,

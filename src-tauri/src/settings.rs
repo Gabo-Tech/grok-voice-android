@@ -19,6 +19,8 @@ pub struct Settings {
     pub idle_timeout_secs: u64,
     /// First-run setup tour has been finished on this device.
     pub onboarded: bool,
+    /// Hands-free wake listening should survive leaving or clearing the app.
+    pub listen_armed: bool,
 }
 
 impl Default for Settings {
@@ -34,6 +36,7 @@ impl Default for Settings {
             wake_threshold: 0.5,
             idle_timeout_secs: 30,
             onboarded: false,
+            listen_armed: false,
         }
     }
 }

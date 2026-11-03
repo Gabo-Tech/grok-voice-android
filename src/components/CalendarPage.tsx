@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { EmptyState, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
@@ -20,12 +20,47 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
     () => [...agenda.agenda.events].sort((a, b) => a.startMs - b.startMs),
     [agenda.agenda.events],
   );
+  const [cursor, setCursor] = useState(() => new Date());
+  const [selected, setSelected] = useState(() => startOfDay(new Date()));
+  const [monthEvents, setMonthEvents] = useState<CalEvent[]>([]);
+  const [monthCalendar, setMonthCalendar] = useState(agenda.agenda.calendar);
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const cells = useMemo(() => monthCells(year, month), [year, month]);
+
+  useEffect(() => {
+    if (!agenda.inApp) return;
+    const from = new Date(year, month, 1).getTime();
+    const to = new Date(year, month + 1, 1).getTime();
+    let cancel = false;
+    void api.monthEvents(from, to).then(
+      (view) => {
+        if (cancel) return;
+        setMonthEvents(view.events);
+        setMonthCalendar(view.calendar);
+      },
+      () => {
+        if (!cancel) setMonthEvents([]);
+      },
+    );
+    return () => {
+      cancel = true;
+    };
+  }, [agenda.inApp, agenda.agenda, year, month]);
+
+  const selectedEvents = useMemo(
+    () => monthEvents.filter((event) => overlapsDay(event, selected)),
+    [monthEvents, selected],
+  );
 
   const openNew = () => {
     setEditing(null);
     setTitle("");
-    setStart(toLocalInput(Date.now() + 3_600_000));
-    setEnd(toLocalInput(Date.now() + 7_200_000));
+    const base = new Date(selected);
+    base.setHours(new Date().getHours() + 1, 0, 0, 0);
+    setStart(toLocalInput(base.getTime()));
+    setEnd(toLocalInput(base.getTime() + 3_600_000));
     setLocation("");
     setOpen(true);
   };
@@ -74,7 +109,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
   return (
     <>
       <PageChrome title="Calendar" subtitle={formatDay()} onAdd={openNew} addLabel="New event">
-        {agenda.agenda.calendar !== "granted" && (
+        {monthCalendar !== "granted" && (
           <Button
             variant="outline"
             className="mb-4 w-full"
@@ -84,34 +119,85 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
             Allow calendar access
           </Button>
         )}
+        {monthCalendar !== "granted" && (
+          <p className="mb-4 px-1 text-xs leading-5 text-muted-foreground">
+            The phone calendar is not connected. Days below still show events saved in the app.
+          </p>
+        )}
         {agenda.error && <p className="mb-3 px-1 text-xs text-muted-foreground">{agenda.error}</p>}
+
+        <p className="mb-2 px-1 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Today</p>
         {events.length === 0 ? (
           <EmptyState title="Nothing today" body="Tap + to add an event, or ask Grok to schedule one." />
         ) : (
-          <div className="divide-y divide-border border-y border-border">
-            {events.map((event, i) => (
-              <RowButton
-                key={`${event.id || event.startMs}-${i}`}
-                onClick={() => openEdit(event)}
-                className="gap-4"
+          <EventList events={events} onOpen={openEdit} />
+        )}
+
+        <div className="mt-8">
+          <div className="mb-3 flex items-center justify-between px-1">
+            <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">
+              {cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const next = new Date(year, month - 1, 1);
+                  setCursor(next);
+                  setSelected(next);
+                }}
               >
-                <div className="w-14 shrink-0 pt-0.5 text-right">
-                  <p className="text-sm leading-5 tabular-nums text-foreground">
-                    {event.allDay ? "All day" : formatClock(event.startMs)}
-                  </p>
-                </div>
-                <div className="min-w-0 flex-1 border-l border-border pl-4">
-                  <p className="truncate text-base leading-6 text-foreground">{event.title || "Untitled"}</p>
-                  <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
-                    {formatSpan(event.startMs, event.endMs, event.allDay)}
-                    {event.location ? ` · ${event.location}` : ""}
-                    {event.source === "local" ? " · in app" : ""}
-                  </p>
-                </div>
-              </RowButton>
+                Prev
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const next = new Date(year, month + 1, 1);
+                  setCursor(next);
+                  setSelected(next);
+                }}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-7 gap-y-1 px-1 text-center text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+              <span key={label}>{label}</span>
             ))}
           </div>
-        )}
+          <div className="mt-1 grid grid-cols-7">
+            {cells.map((day, i) => {
+              if (!day) return <span key={`pad-${i}`} />;
+              const on = sameDay(day, selected);
+              const has = monthEvents.some((event) => overlapsDay(event, day));
+              const today = sameDay(day, new Date());
+              return (
+                <button
+                  key={day.toISOString()}
+                  type="button"
+                  onClick={() => setSelected(day)}
+                  className={`flex h-11 flex-col items-center justify-center text-sm tabular-nums ${
+                    on ? "bg-foreground text-background" : "text-foreground"
+                  } ${today && !on ? "underline" : ""}`}
+                >
+                  {day.getDate()}
+                  <span className={`mt-0.5 h-1 w-1 ${has ? (on ? "bg-background" : "bg-foreground") : "bg-transparent"}`} />
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-4 mb-2 px-1 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">
+            {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+          </p>
+          {selectedEvents.length === 0 ? (
+            <EmptyState title="Nothing this day" body="Choose another day, or tap + to add an event here." />
+          ) : (
+            <EventList events={selectedEvents} onOpen={openEdit} />
+          )}
+        </div>
       </PageChrome>
 
       <Sheet
@@ -152,6 +238,54 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
       </Sheet>
     </>
   );
+}
+
+function EventList({ events, onOpen }: { events: CalEvent[]; onOpen: (event: CalEvent) => void }) {
+  return (
+    <div className="divide-y divide-border border-y border-border">
+      {events.map((event, i) => (
+        <RowButton key={`${event.id || event.startMs}-${i}`} onClick={() => onOpen(event)} className="gap-4">
+          <div className="w-14 shrink-0 pt-0.5 text-right">
+            <p className="text-sm leading-5 tabular-nums text-foreground">
+              {event.allDay ? "All day" : formatClock(event.startMs)}
+            </p>
+          </div>
+          <div className="min-w-0 flex-1 border-l border-border pl-4">
+            <p className="truncate text-base leading-6 text-foreground">{event.title || "Untitled"}</p>
+            <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
+              {formatSpan(event.startMs, event.endMs, event.allDay)}
+              {event.location ? ` · ${event.location}` : ""}
+              {event.source === "local" ? " · in app" : ""}
+            </p>
+          </div>
+        </RowButton>
+      ))}
+    </div>
+  );
+}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function overlapsDay(event: CalEvent, day: Date): boolean {
+  const start = day.getTime();
+  const end = start + 86_400_000;
+  const eventEnd = event.endMs || event.startMs + 3_600_000;
+  return event.startMs < end && eventEnd > start;
+}
+
+function monthCells(year: number, month: number): Array<Date | null> {
+  const first = new Date(year, month, 1);
+  const pad = (first.getDay() + 6) % 7;
+  const count = new Date(year, month + 1, 0).getDate();
+  const cells: Array<Date | null> = Array.from({ length: pad }, () => null);
+  for (let day = 1; day <= count; day += 1) cells.push(new Date(year, month, day));
+  return cells;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

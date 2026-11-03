@@ -125,6 +125,7 @@ export const api = {
   requestPermissions: () => invoke<PermissionStatus>("request_permissions"),
   setWakeEnabled: (enabled: boolean) => invoke<boolean>("set_wake_enabled", { enabled }),
   startSession: () => invoke<void>("start_session"),
+  askText: (text: string) => invoke<string>("ask_text", { text }),
   endSession: () => invoke<void>("end_session"),
   recordWakeSample: (index: number, seconds?: number) =>
     invoke<SampleInfo>("record_wake_sample", { index, seconds }),
@@ -136,6 +137,8 @@ export const api = {
   debugSnapshot: () => invoke<DebugInfo>("debug_snapshot"),
   debugLogs: () => invoke<LogLine[]>("debug_logs"),
   agendaSnapshot: () => invoke<Agenda>("agenda_snapshot"),
+  monthEvents: (startMs: number, endMs: number) =>
+    invoke<{ events: CalEvent[]; calendar: string }>("month_events", { startMs, endMs }),
   saveNote: (text: string, id?: string) => invoke<Agenda>("save_note", { text, id: id ?? null }),
   deleteNote: (id: string) => invoke<Agenda>("delete_note", { id }),
   saveScheduled: (args: {

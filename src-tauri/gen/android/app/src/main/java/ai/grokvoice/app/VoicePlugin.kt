@@ -3,6 +3,9 @@ package ai.grokvoice.app
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Base64
 import org.json.JSONObject
 import androidx.core.content.ContextCompat
@@ -145,9 +148,21 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
         .putExtra(VoiceListenerService.EXTRA_TITLE, args.title)
         .putExtra(VoiceListenerService.EXTRA_TEXT, args.text)
       ContextCompat.startForegroundService(activity, intent)
+      requestUnrestrictedBattery(activity)
       invoke.resolve()
     } catch (e: Exception) {
       invoke.reject(e.message ?: "could not start foreground service", e)
+    }
+  }
+
+  private fun requestUnrestrictedBattery(activity: Activity) {
+    val pm = activity.getSystemService(PowerManager::class.java) ?: return
+    if (pm.isIgnoringBatteryOptimizations(activity.packageName)) return
+    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+      .setData(Uri.parse("package:${activity.packageName}"))
+    try {
+      activity.startActivity(intent)
+    } catch (_: Exception) {
     }
   }
 

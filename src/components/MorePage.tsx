@@ -26,7 +26,7 @@ export function MorePage({
 
   if (section === "wake") {
     return (
-      <div className="flex flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <button
           type="button"
           className="mb-3 shrink-0 px-1 text-left text-xs leading-5 tracking-[0.16em] text-muted-foreground uppercase"
@@ -41,7 +41,7 @@ export function MorePage({
 
   if (section === "debug") {
     return (
-      <div className="flex flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <button
           type="button"
           className="mb-3 shrink-0 px-1 text-left text-xs leading-5 tracking-[0.16em] text-muted-foreground uppercase"

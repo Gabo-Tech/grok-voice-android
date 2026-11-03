@@ -169,6 +169,11 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["id"]
         })),
+        fn_tool("web_search", "Search the live web and return a sourced summary. Use this for news, weather, scores, prices, and anything about today or recently. query is a specific search, such as 'most relevant news Zurich today'.", json!({
+            "type": "object",
+            "properties": { "query": { "type": "string" } },
+            "required": ["query"]
+        })),
         fn_tool("delete_calendar_event", "Delete a calendar event by id from list_calendar_events.", json!({
             "type": "object",
             "properties": { "id": { "type": "string" } },
@@ -214,6 +219,21 @@ impl Agenda {
             events,
             calendar,
         }
+    }
+
+    /// Events overlapping [start, end), from the phone calendar when it is readable
+    /// and always from events stored in the app.
+    pub fn events_between(&self, app: &AppHandle, start: i64, end: i64) -> (Vec<CalEvent>, String) {
+        let (mut events, calendar) = match read_phone_range(app, start, end) {
+            Ok((events, calendar)) => (events, calendar),
+            Err(_) => (Vec::new(), "unavailable".into()),
+        };
+        let store = self.lock();
+        for event in store.events.iter().filter(|e| e.start_ms < end && e.end_ms > start) {
+            events.push(event.clone());
+        }
+        events.sort_by_key(|e| e.start_ms);
+        (events, calendar)
     }
 
     pub fn upsert_note(&self, app: &AppHandle, id: Option<&str>, text: &str) -> Result<Note, String> {
@@ -422,6 +442,9 @@ pub fn run(app: &AppHandle, name: &str, arguments: &str) -> String {
 }
 
 fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> {
+    if name == "web_search" {
+        return crate::search::lookup(app, args["query"].as_str().unwrap_or(""));
+    }
     let agenda = app.state::<Agenda>();
     match name {
         "create_note" => {
@@ -717,6 +740,16 @@ fn finish_schedule(
         _ => format!("Set for {}.", when.format("%a %-H:%M")),
     });
     Ok(json!({ "ok": true, "id": id, "detail": spoken }))
+}
+
+fn read_phone_range(app: &AppHandle, start: i64, end: i64) -> Result<(Vec<CalEvent>, String), String> {
+    let bridge = app.state::<NativeBridge>();
+    let status = bridge.check_permissions().map_err(|e| e.to_string())?;
+    if status.calendar != "granted" {
+        return Ok((Vec::new(), status.calendar));
+    }
+    let events = read_events(&bridge, start, end)?;
+    Ok((events, "granted".into()))
 }
 
 fn calendar_range(app: &AppHandle, day: Option<&str>) -> Result<(Vec<CalEvent>, String), String> {

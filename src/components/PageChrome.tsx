@@ -18,7 +18,7 @@ export function PageChrome({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       <header className="shrink-0 px-1 pb-4 pt-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

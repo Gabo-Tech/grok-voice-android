@@ -47,6 +47,12 @@ async fn ensure_mic(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn ask_text(app: AppHandle, text: String) -> Result<String> {
+    ensure_key(&app).await?;
+    blocking(app, move |app| crate::search::ask(&app, &text).map_err(msg)).await
+}
+
 async fn ensure_key(app: &AppHandle) -> Result<()> {
     let status = blocking(app.clone(), |app| vault_status(&app)).await?;
     if !status.has_key {
@@ -115,6 +121,9 @@ pub async fn set_wake_enabled(app: AppHandle, engine: State<'_, Engine>, enabled
         ensure_key(&app).await?;
         ensure_mic(&app).await?;
     }
+    let mut settings = app.state::<SettingsStore>().get();
+    settings.listen_armed = enabled;
+    let _ = app.state::<SettingsStore>().save(settings);
     engine.send(Ctl::SetWakeEnabled(enabled));
     Ok(enabled)
 }
@@ -223,9 +232,22 @@ pub fn debug_logs(hub: State<'_, Arc<Hub>>) -> Vec<LogLine> {
     hub.logs()
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthEvents {
+    pub events: Vec<crate::actions::CalEvent>,
+    pub calendar: String,
+}
+
 #[tauri::command]
 pub fn agenda_snapshot(app: AppHandle) -> AgendaSnapshot {
     app.state::<Agenda>().snapshot(&app)
+}
+
+#[tauri::command]
+pub fn month_events(app: AppHandle, start_ms: i64, end_ms: i64) -> MonthEvents {
+    let (events, calendar) = app.state::<Agenda>().events_between(&app, start_ms, end_ms);
+    MonthEvents { events, calendar }
 }
 
 #[tauri::command]

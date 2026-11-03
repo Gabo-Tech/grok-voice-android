@@ -28,7 +28,7 @@ use tokio_tungstenite::tungstenite::{
 
 use crate::{
     audio::{
-        engine::WAKE_RATE,
+        engine::UPLINK_RATE,
         playback::Player,
         resample::{Resampler, i16_to_f32},
     },
@@ -182,7 +182,10 @@ impl Session<'_> {
         let mut speaking = false;
         let idle = Duration::from_secs(self.settings.idle_timeout_secs);
         let mut tick = tokio::time::interval(Duration::from_millis(200));
-        let mut pending_tools: Vec<(String, String)> = Vec::new();
+        let mut logged_uplink = false;
+        let mut configured = false;
+        let mut held: Vec<Vec<i16>> = Vec::new();
+        let mut pending_tools: Vec<(String, String, String)> = Vec::new();
         let mut tool_followup = false;
 
         loop {
@@ -192,14 +195,15 @@ impl Session<'_> {
                         let _ = tx.send(Message::Close(None)).await;
                         return Ok("ended by user".into());
                     };
-                    let mut bytes = Vec::with_capacity(frame.len() * 2);
-                    for s in &frame {
-                        bytes.extend_from_slice(&s.to_le_bytes());
+                    if !configured {
+                        // session.update clears the server buffer, so audio sent before
+                        // session.updated never reaches VAD.
+                        if held.len() < 200 {
+                            held.push(frame);
+                        }
+                        continue;
                     }
-                    let n = bytes.len() as u64;
-                    let ev = json!({ "type": "input_audio_buffer.append", "audio": B64.encode(&bytes) });
-                    tx.send(Message::Text(ev.to_string())).await?;
-                    self.hub.update(|s| { s.frames_sent += 1; s.bytes_sent += n; });
+                    Self::append_pcm(&self.hub, &mut tx, &frame, &mut logged_uplink).await?;
                 }
                 msg_in = rx.next() => {
                     let Some(msg_in) = msg_in else { return Ok("connection closed".into()) };
@@ -217,9 +221,24 @@ impl Session<'_> {
                                     self.hub.info("session configured");
                                     self.phase(Phase::Listening);
                                     last_activity = Instant::now();
+                                    configured = true;
+                                    if let Some(note) = crate::search::context_note() {
+                                        let item = json!({
+                                            "type": "conversation.item.create",
+                                            "item": {
+                                                "type": "message",
+                                                "role": "user",
+                                                "content": [{ "type": "input_text", "text": note }]
+                                            }
+                                        });
+                                        tx.send(Message::Text(item.to_string())).await?;
+                                    }
+                                    for frame in held.drain(..) {
+                                        Self::append_pcm(&self.hub, &mut tx, &frame, &mut logged_uplink).await?;
+                                    }
                                 }
                                 "input_audio_buffer.speech_started" => {
-                                    // Barge-in: drop whatever the assistant still had queued.
+                                    self.hub.info("speech started");
                                     self.player.clear();
                                     speaking = false;
                                     last_activity = Instant::now();
@@ -282,13 +301,21 @@ impl Session<'_> {
                                         Some(other) if !other.is_null() => other.to_string(),
                                         _ => "{}".into(),
                                     };
+                                    if name == "web_search" {
+                                        self.hub.emit("voice://busy", "Searching the web…");
+                                        self.phase(Phase::Thinking);
+                                    }
                                     let app = self.app.clone();
-                                    let output = match tokio::task::spawn_blocking(move || actions::run(&app, &name, &arguments)).await {
+                                    let tool_name = name.clone();
+                                    let output = match tokio::task::spawn_blocking(move || actions::run(&app, &tool_name, &arguments)).await {
                                         Ok(s) => s,
                                         Err(e) => json!({ "ok": false, "error": e.to_string() }).to_string(),
                                     };
+                                    if name == "web_search" {
+                                        self.hub.emit("voice://busy", "");
+                                    }
                                     if !call_id.is_empty() {
-                                        pending_tools.push((call_id, output));
+                                        pending_tools.push((call_id, name, output));
                                         if !response_active {
                                             tool_followup = true;
                                         }
@@ -333,8 +360,23 @@ impl Session<'_> {
                         last_activity = Instant::now();
                         self.phase(Phase::Listening);
                     }
+                    for note in crate::search::take_context_notes() {
+                        let item = json!({
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [{ "type": "input_text", "text": format!("Typed just now. Use this and do not answer it by itself. {note}") }]
+                            }
+                        });
+                        if tx.send(Message::Text(item.to_string())).await.is_err() {
+                            return Ok("connection closed".into());
+                        }
+                    }
                     if tool_followup && !response_active && !playing {
-                        for (call_id, output) in pending_tools.drain(..) {
+                        let mut searched = false;
+                        for (call_id, name, output) in pending_tools.drain(..) {
+                            searched |= name == "web_search";
                             let ev = json!({
                                 "type": "conversation.item.create",
                                 "item": { "type": "function_call_output", "call_id": call_id, "output": output }
@@ -343,7 +385,17 @@ impl Session<'_> {
                                 return Ok("connection closed".into());
                             }
                         }
-                        if tx.send(Message::Text(r#"{"type":"response.create"}"#.into())).await.is_err() {
+                        let follow = if searched {
+                            json!({
+                                "type": "response.create",
+                                "response": {
+                                    "instructions": "Speak the web search result now in a few sentences. If it names a place, use that place. Do not ask the user to repeat a city or fact already in the result or the typed conversation. Do not say you are still checking."
+                                }
+                            })
+                        } else {
+                            json!({ "type": "response.create" })
+                        };
+                        if tx.send(Message::Text(follow.to_string())).await.is_err() {
                             return Ok("connection closed".into());
                         }
                         tool_followup = false;
@@ -360,6 +412,33 @@ impl Session<'_> {
         }
     }
 
+    async fn append_pcm(
+        hub: &Hub,
+        tx: &mut futures_util::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+            Message,
+        >,
+        frame: &[i16],
+        logged_uplink: &mut bool,
+    ) -> Result<()> {
+        let mut bytes = Vec::with_capacity(frame.len() * 2);
+        for s in frame {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        let n = bytes.len() as u64;
+        let ev = json!({ "type": "input_audio_buffer.append", "audio": B64.encode(&bytes) });
+        tx.send(Message::Text(ev.to_string())).await?;
+        hub.update(|s| {
+            s.frames_sent += 1;
+            s.bytes_sent += n;
+        });
+        if !*logged_uplink && bytes.iter().any(|b| *b != 0) {
+            *logged_uplink = true;
+            hub.info("microphone audio is reaching the session");
+        }
+        Ok(())
+    }
+
     fn session_update(&self) -> Value {
         json!({
             "type": "session.update",
@@ -370,7 +449,7 @@ impl Session<'_> {
                 "turn_detection": { "type": "server_vad" },
                 "audio": {
                     "input": {
-                        "format": { "type": "audio/pcm", "rate": WAKE_RATE },
+                        "format": { "type": "audio/pcm", "rate": UPLINK_RATE },
                         "transcription": { "model": "grok-transcribe" }
                     },
                     "output": {
@@ -384,7 +463,7 @@ impl Session<'_> {
     fn spoken_instructions(&self) -> String {
         let mut s = self.settings.instructions.trim().to_string();
         s.push_str(
-            "\n\nYou can use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
+            "\n\nYou can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
         );
         s
     }

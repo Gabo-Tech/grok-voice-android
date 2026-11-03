@@ -1,10 +1,12 @@
 package ai.grokvoice.app
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -31,7 +33,17 @@ class VoiceListenerService : Service() {
     private const val NOTIFICATION_ID = 4242
     private const val TAG = "GrokVoice"
     private const val WAKE_LOCK_TIMEOUT_MS = 12L * 60 * 60 * 1000
+    private const val PREFS = "listen"
+    private const val KEY_ARMED = "armed"
     private val active = AtomicBoolean(false)
+
+    fun setArmed(context: Context, armed: Boolean) {
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ARMED, armed).apply()
+    }
+
+    fun isArmed(context: Context): Boolean {
+      return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ARMED, false)
+    }
 
     fun isActive(): Boolean = active.get()
   }
@@ -42,10 +54,13 @@ class VoiceListenerService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (intent?.action == ACTION_STOP) {
+      setArmed(this, false)
       RustBridge.stopListeningSafe()
       shutdown()
       return START_NOT_STICKY
     }
+
+    setArmed(this, true)
 
     ensureChannel()
     val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Hey Grok is listening"
@@ -65,13 +80,21 @@ class VoiceListenerService : Service() {
     }
     acquireWakeLock()
     active.set(true)
+    hideFromRecents()
+    // Clearing the app can kill this process. If it comes back, the activity
+    // has to start once so the wake-word engine is running, then leave again.
+    if (!RustBridge.engineAliveSafe()) {
+      val launch = Intent(this, MainActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        .putExtra(MainActivity.EXTRA_HEADLESS, true)
+      startActivity(launch)
+    }
     return START_STICKY
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    // The activity is going away because the task was swiped off. Keep the
-    // microphone service in the foreground so wake-word listening continues.
-    if (active.get()) {
+    // Swiping the card away must not end wake listening.
+    if (active.get() || isArmed(this)) {
       val restart = Intent(applicationContext, VoiceListenerService::class.java).setAction(ACTION_START)
       ContextCompat.startForegroundService(applicationContext, restart)
     }
@@ -85,9 +108,21 @@ class VoiceListenerService : Service() {
 
   private fun shutdown() {
     active.set(false)
+    setArmed(this, false)
+    showInRecents()
     releaseWakeLock()
     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     stopSelf()
+  }
+
+  private fun hideFromRecents() {
+    val am = getSystemService(ActivityManager::class.java) ?: return
+    am.appTasks.forEach { it.setExcludeFromRecents(true) }
+  }
+
+  private fun showInRecents() {
+    val am = getSystemService(ActivityManager::class.java) ?: return
+    am.appTasks.forEach { it.setExcludeFromRecents(false) }
   }
 
   private fun ensureChannel() {

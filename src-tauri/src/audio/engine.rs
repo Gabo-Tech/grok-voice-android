@@ -4,6 +4,7 @@
 //! the WebView thread.
 
 use std::{
+    collections::VecDeque,
     sync::{
         Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
@@ -34,10 +35,12 @@ use crate::{
     wakeword::WakewordFiles,
 };
 
-/// Wake-word and uplink sample rate. xAI accepts 16 kHz PCM16 input natively.
+/// Wake-word sample rate. The realtime uplink is resampled to 24 kHz.
 pub const WAKE_RATE: u32 = 16_000;
+pub const UPLINK_RATE: u32 = 24_000;
 /// 100 ms uplink frames.
-const UPLINK_CHUNK: usize = (WAKE_RATE / 10) as usize;
+const UPLINK_CHUNK: usize = (UPLINK_RATE / 10) as usize;
+const PREROLL: usize = WAKE_RATE as usize;
 const LEVEL_INTERVAL: Duration = Duration::from_millis(66);
 
 pub type RecordReply = Sender<Result<Vec<f32>, String>>;
@@ -127,9 +130,12 @@ struct EngineThread {
     output_failed: Arc<AtomicBool>,
     detector: Option<Rustpotter>,
     wake_buf: Vec<f32>,
+    preroll: VecDeque<f32>,
+    uplink: Resampler,
     session: Option<SessionLink>,
     recording: Option<Recording>,
     last_level: Instant,
+    last_chunk_at: Instant,
     scratch: Vec<f32>,
 }
 
@@ -143,8 +149,8 @@ impl EngineThread {
             hub,
             player,
             rx,
+            wake_enabled: settings.listen_armed,
             settings,
-            wake_enabled: false,
             service_running: false,
             service_warned: false,
             mic_warned: false,
@@ -155,9 +161,12 @@ impl EngineThread {
             output_failed: Arc::new(AtomicBool::new(false)),
             detector: None,
             wake_buf: Vec::with_capacity(4096),
+            preroll: VecDeque::with_capacity(PREROLL),
+            uplink: Resampler::new(WAKE_RATE, UPLINK_RATE),
             session: None,
             recording: None,
             last_level: Instant::now(),
+            last_chunk_at: Instant::now(),
             scratch: Vec::with_capacity(4096),
         }
     }
@@ -176,6 +185,14 @@ impl EngineThread {
             if self.input_failed.swap(false, Ordering::Relaxed) {
                 self.hub.warn("microphone stream interrupted, reopening");
                 self.input = None;
+            }
+            // Screen-off and leaving the app can silence capture without an error.
+            // Wait long enough that a stream which is still starting is not torn down.
+            let needs_mic = self.wake_enabled || self.session.is_some() || self.recording.is_some();
+            if needs_mic && self.input.is_some() && self.last_chunk_at.elapsed() >= Duration::from_secs(6) {
+                self.hub.warn("microphone silent, reopening");
+                self.input = None;
+                self.wake_buf.clear();
             }
             if self.output_failed.swap(false, Ordering::Relaxed) {
                 self.hub.warn("speaker stream interrupted, reopening");
@@ -217,6 +234,11 @@ impl EngineThread {
         match c {
             Ctl::SetWakeEnabled(on) => {
                 self.wake_enabled = on;
+                self.settings.listen_armed = on;
+                let store = self.app.state::<SettingsStore>();
+                if let Ok(saved) = store.save(self.settings.clone()) {
+                    self.settings = saved;
+                }
                 self.hub.update(|s| s.wake_enabled = on);
                 self.hub.emit("voice://wake_enabled", on);
                 if on && self.detector.is_none() {
@@ -300,6 +322,7 @@ impl EngineThread {
                     self.input = Some(input);
                     self.mic_warned = false;
                     self.mic_retry_at = None;
+                    self.last_chunk_at = Instant::now();
                 }
                 Err(e) => {
                     if !self.mic_warned {
@@ -357,6 +380,7 @@ impl EngineThread {
 
     fn on_chunk(&mut self, chunk: &[f32]) {
         let Some(input) = self.input.as_mut() else { return };
+        self.last_chunk_at = Instant::now();
         let mut pcm = std::mem::take(&mut self.scratch);
         pcm.clear();
         input.resampler.process(chunk, &mut pcm);
@@ -374,6 +398,15 @@ impl EngineThread {
             );
         }
 
+        if self.session.is_none() && self.recording.is_none() {
+            for &s in &pcm {
+                if self.preroll.len() == PREROLL {
+                    self.preroll.pop_front();
+                }
+                self.preroll.push_back(s);
+            }
+        }
+
         if let Some(rec) = self.recording.as_mut() {
             rec.buf.extend_from_slice(&pcm);
             if rec.buf.len() >= rec.target {
@@ -383,7 +416,9 @@ impl EngineThread {
             }
         } else if let Some(link) = self.session.as_mut() {
             let mute = self.settings.echo_guard && self.player.is_active();
-            link.pending.extend(pcm.iter().map(|&s| if mute { 0 } else { f32_to_i16(s) }));
+            let mut up = Vec::new();
+            self.uplink.process(&pcm, &mut up);
+            link.pending.extend(up.iter().map(|&s| if mute { 0 } else { f32_to_i16(s) }));
             let mut closed = false;
             while link.pending.len() >= UPLINK_CHUNK {
                 let frame: Vec<i16> = link.pending.drain(..UPLINK_CHUNK).collect();
@@ -433,9 +468,15 @@ impl EngineThread {
         }
         let (tx, rx) = tokio::sync::mpsc::channel(96);
         let active = Arc::new(AtomicBool::new(true));
+        self.uplink = Resampler::new(WAKE_RATE, UPLINK_RATE);
+        let lead: Vec<f32> = self.preroll.drain(..).collect();
+        let mut up = Vec::new();
+        self.uplink.process(&lead, &mut up);
+        let mut pending = Vec::with_capacity(UPLINK_CHUNK * 2 + up.len());
+        pending.extend(up.iter().map(|&s| f32_to_i16(s)));
         self.session = Some(SessionLink {
             tx,
-            pending: Vec::with_capacity(UPLINK_CHUNK * 2),
+            pending,
             active: active.clone(),
         });
         self.wake_buf.clear();

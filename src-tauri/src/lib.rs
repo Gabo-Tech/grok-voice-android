@@ -5,6 +5,7 @@ mod diagnostics;
 mod error;
 mod native;
 mod realtime;
+mod search;
 mod settings;
 mod vault;
 mod wakeword;
@@ -33,6 +34,16 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_stopListening(
         let _ = tx.send(audio::engine::Ctl::EndSession);
         let _ = tx.send(audio::engine::Ctl::SetWakeEnabled(false));
     }
+}
+
+/// True once the audio engine thread exists in this process.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_grokvoice_app_RustBridge_engineAlive(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) -> u8 {
+    u8::from(audio::engine::control().is_some())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -80,6 +91,7 @@ pub fn run() {
             commands::debug_snapshot,
             commands::debug_logs,
             commands::agenda_snapshot,
+            commands::month_events,
             commands::save_note,
             commands::delete_note,
             commands::save_scheduled,
@@ -87,6 +99,7 @@ pub fn run() {
             commands::save_event,
             commands::delete_event,
             commands::request_calendar,
+            commands::ask_text,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
