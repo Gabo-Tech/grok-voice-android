@@ -18,6 +18,8 @@ use crate::{diagnostics::Hub, native::NativeBridge};
 #[serde(rename_all = "camelCase")]
 pub struct Note {
     pub id: String,
+    #[serde(default)]
+    pub title: String,
     pub text: String,
     pub created_ms: i64,
 }
@@ -86,16 +88,16 @@ pub struct Agenda {
 
 pub fn tool_definitions() -> Value {
     json!([
-        fn_tool("create_note", "Save a note on this phone.", json!({
+        fn_tool("create_note", "Save a note on this phone. title is a short name. text may be markdown.", json!({
             "type": "object",
-            "properties": { "text": { "type": "string" } },
+            "properties": { "title": { "type": "string" }, "text": { "type": "string" } },
             "required": ["text"]
         })),
         fn_tool("list_notes", "Read the notes saved on this phone.", json!({ "type": "object", "properties": {} })),
-        fn_tool("update_note", "Change the text of a note. id comes from list_notes.", json!({
+        fn_tool("update_note", "Change a note. id comes from list_notes. Pass title, text, or both.", json!({
             "type": "object",
-            "properties": { "id": { "type": "string" }, "text": { "type": "string" } },
-            "required": ["id", "text"]
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "text": { "type": "string" } },
+            "required": ["id"]
         })),
         fn_tool("delete_note", "Delete one saved note by id from list_notes.", json!({
             "type": "object",
@@ -300,22 +302,33 @@ impl Agenda {
         (events, calendar)
     }
 
-    pub fn upsert_note(&self, app: &AppHandle, id: Option<&str>, text: &str) -> Result<Note, String> {
+    pub fn upsert_note(
+        &self,
+        app: &AppHandle,
+        id: Option<&str>,
+        title: &str,
+        text: &str,
+    ) -> Result<Note, String> {
         let text = text.trim();
-        if text.is_empty() {
+        if text.is_empty() && title.trim().is_empty() {
             return Err("The note was empty.".into());
         }
-        let text = text.chars().take(4000).collect::<String>();
+        let text = text.chars().take(8000).collect::<String>();
+        let title = note_title(title, &text);
         let mut store = self.lock();
         let note = if let Some(id) = id.filter(|s| !s.is_empty()) {
             let Some(existing) = store.notes.iter_mut().find(|n| n.id == id) else {
                 return Err("No note with that id.".into());
             };
-            existing.text = text;
+            if !text.is_empty() {
+                existing.text = text;
+            }
+            existing.title = if title.is_empty() { note_title("", &existing.text) } else { title };
             existing.clone()
         } else {
             let note = Note {
                 id: format!("n{}", Local::now().timestamp_millis()),
+                title,
                 text,
                 created_ms: Local::now().timestamp_millis(),
             };
@@ -589,22 +602,27 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
     let agenda = app.state::<Agenda>();
     match name {
         "create_note" => {
-            let note = agenda.upsert_note(app, None, args["text"].as_str().unwrap_or(""))?;
-            Ok(json!({ "ok": true, "id": note.id, "detail": format!("Saved a note: {}", note.text) }))
+            let note = agenda.upsert_note(app, None, args["title"].as_str().unwrap_or(""), args["text"].as_str().unwrap_or(""))?;
+            Ok(json!({ "ok": true, "id": note.id, "title": note.title, "detail": format!("Saved a note: {}", note.title) }))
         }
         "list_notes" => {
             let notes = agenda.lock().notes.clone();
             Ok(json!({
                 "ok": true,
                 "count": notes.len(),
-                "notes": notes.iter().map(|n| json!({ "id": n.id, "text": n.text })).collect::<Vec<_>>(),
+                "notes": notes.iter().map(|n| json!({ "id": n.id, "title": note_title(&n.title, &n.text), "text": n.text })).collect::<Vec<_>>(),
                 "detail": if notes.is_empty() { "There are no saved notes.".into() } else { format!("{} saved notes.", notes.len()) }
             }))
         }
         "update_note" => {
             let id = args["id"].as_str().unwrap_or("").trim();
-            let note = agenda.upsert_note(app, Some(id), args["text"].as_str().unwrap_or(""))?;
-            Ok(json!({ "ok": true, "id": note.id, "detail": format!("Updated the note: {}", note.text) }))
+            let note = agenda.upsert_note(
+                app,
+                Some(id),
+                args["title"].as_str().unwrap_or(""),
+                args["text"].as_str().unwrap_or(""),
+            )?;
+            Ok(json!({ "ok": true, "id": note.id, "detail": format!("Updated the note: {}", note.title) }))
         }
         "delete_note" => {
             let id = args["id"].as_str().unwrap_or("").trim();
@@ -938,6 +956,16 @@ fn touch(app: &AppHandle) {
     }
 }
 
+fn note_title(title: &str, text: &str) -> String {
+    let given = title.trim();
+    let raw = if given.is_empty() {
+        text.lines().find(|line| !line.trim().is_empty()).unwrap_or("Note")
+    } else {
+        given
+    };
+    raw.trim().trim_start_matches('#').trim().chars().take(80).collect()
+}
+
 fn label_or(args: &Value, key: &str, fallback: &str) -> String {
     let s = args[key].as_str().unwrap_or("").trim();
     let s = if s.is_empty() { fallback } else { s };
@@ -1040,7 +1068,7 @@ mod tests {
         let agenda = Agenda::load(path.clone());
         {
             let mut store = agenda.lock();
-            store.notes.push(Note { id: "n1".into(), text: "buy milk".into(), created_ms: 1 });
+            store.notes.push(Note { id: "n1".into(), title: "Milk".into(), text: "buy milk".into(), created_ms: 1 });
             Agenda::persist(&agenda.path, &store).unwrap();
         }
         let again = Agenda::load(path.clone());

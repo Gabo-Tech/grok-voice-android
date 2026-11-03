@@ -286,9 +286,9 @@ pub fn month_events(app: AppHandle, start_ms: i64, end_ms: i64) -> MonthEvents {
 }
 
 #[tauri::command]
-pub fn save_note(app: AppHandle, text: String, id: Option<String>) -> Result<AgendaSnapshot> {
+pub fn save_note(app: AppHandle, text: String, id: Option<String>, title: Option<String>) -> Result<AgendaSnapshot> {
     app.state::<Agenda>()
-        .upsert_note(&app, id.as_deref(), &text)
+        .upsert_note(&app, id.as_deref(), title.as_deref().unwrap_or(""), &text)
         .map_err(msg)?;
     Ok(app.state::<Agenda>().snapshot(&app))
 }

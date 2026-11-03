@@ -30,6 +30,7 @@ export interface PermissionStatus {
 
 export interface Note {
   id: string;
+  title?: string;
   text: string;
   createdMs: number;
 }
@@ -150,7 +151,8 @@ export const api = {
   agendaSnapshot: () => invoke<Agenda>("agenda_snapshot"),
   monthEvents: (startMs: number, endMs: number) =>
     invoke<{ events: CalEvent[]; calendar: string }>("month_events", { startMs, endMs }),
-  saveNote: (text: string, id?: string) => invoke<Agenda>("save_note", { text, id: id ?? null }),
+  saveNote: (text: string, id?: string, title?: string) =>
+    invoke<Agenda>("save_note", { text, id: id ?? null, title: title ?? null }),
   deleteNote: (id: string) => invoke<Agenda>("delete_note", { id }),
   saveScheduled: (args: {
     title: string;
