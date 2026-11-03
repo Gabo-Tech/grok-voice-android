@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.grok_voice" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">#0E0E0E</item>
+        <item name="android:statusBarColor">#0E0E0E</item>
+        <item name="android:navigationBarColor">#0E0E0E</item>
+    </style>
+</resources>

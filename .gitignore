@@ -1,0 +1,33 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Rust / Android build output
+src-tauri/target
+src-tauri/gen/android/.gradle
+src-tauri/gen/android/build
+src-tauri/gen/android/app/build
+src-tauri/gen/android/app/.cxx
+src-tauri/gen/android/app/src/main/jniLibs
+src-tauri/gen/android/local.properties
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

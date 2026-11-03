@@ -1,0 +1,297 @@
+//! Bridge to the Kotlin `VoicePlugin` (Android Keystore, foreground service, runtime permissions).
+//! On desktop builds the same API is backed by no-op / software implementations so the
+//! app can be developed with `tauri dev`.
+
+use serde::{Deserialize, Serialize};
+use tauri::{
+    Manager, Wry,
+    plugin::{Builder, TauriPlugin},
+};
+
+use crate::error::Result;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionStatus {
+    pub microphone: String,
+    pub notifications: String,
+    #[serde(default)]
+    pub calendar: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct WrappedKey {
+    pub blob: Vec<u8>,
+    pub security_level: String,
+}
+
+pub struct NativeBridge {
+    #[cfg(target_os = "android")]
+    handle: tauri::plugin::PluginHandle<Wry>,
+}
+
+#[cfg(target_os = "android")]
+mod imp {
+    use super::*;
+    use crate::error::msg;
+    use base64::{Engine, engine::general_purpose::STANDARD as B64};
+
+    #[derive(Serialize)]
+    struct DataArgs {
+        data: String,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct WrapResponse {
+        data: String,
+        security_level: String,
+    }
+
+    #[derive(Deserialize)]
+    struct DataResponse {
+        data: String,
+    }
+
+    #[derive(Serialize)]
+    struct PermArgs {
+        permissions: Vec<&'static str>,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ServiceArgs {
+        title: String,
+        text: String,
+    }
+
+    impl NativeBridge {
+        pub fn wrap_key(&self, raw: &[u8]) -> Result<WrappedKey> {
+            let r: WrapResponse = self
+                .handle
+                .run_mobile_plugin("wrapKey", DataArgs { data: B64.encode(raw) })
+                .map_err(|e| msg(format!("keystore wrap failed: {e}")))?;
+            Ok(WrappedKey {
+                blob: B64.decode(r.data).map_err(|e| msg(e.to_string()))?,
+                security_level: r.security_level,
+            })
+        }
+
+        pub fn unwrap_key(&self, blob: &[u8]) -> Result<Vec<u8>> {
+            let r: DataResponse = self
+                .handle
+                .run_mobile_plugin("unwrapKey", DataArgs { data: B64.encode(blob) })
+                .map_err(|e| msg(format!("keystore unwrap failed: {e}")))?;
+            B64.decode(r.data).map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn key_security_level(&self) -> Result<String> {
+            let r: serde_json::Value = self
+                .handle
+                .run_mobile_plugin("keySecurityLevel", ())
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(r["securityLevel"].as_str().unwrap_or("unknown").to_string())
+        }
+
+        pub fn start_service(&self, title: &str, text: &str) -> Result<()> {
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>(
+                    "startListeningService",
+                    ServiceArgs { title: title.into(), text: text.into() },
+                )
+                .map_err(|e| msg(format!("foreground service: {e}")))?;
+            Ok(())
+        }
+
+        pub fn stop_service(&self) -> Result<()> {
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>("stopListeningService", ())
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(())
+        }
+
+        pub fn check_permissions(&self) -> Result<PermissionStatus> {
+            self.handle
+                .run_mobile_plugin("checkPermissions", ())
+                .map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn request_permissions(&self) -> Result<PermissionStatus> {
+            self.handle
+                .run_mobile_plugin(
+                    "requestPermissions",
+                    PermArgs { permissions: vec!["microphone", "notifications"] },
+                )
+                .map_err(|e| msg(e.to_string()))
+        }
+
+        fn plugin_json(&self, cmd: &str, payload: impl Serialize) -> Result<String> {
+            #[derive(Deserialize)]
+            struct Out {
+                json: String,
+            }
+            let out: Out = self.handle.run_mobile_plugin(cmd, payload).map_err(|e| msg(e.to_string()))?;
+            Ok(out.json)
+        }
+
+        pub fn request_calendar(&self) -> Result<PermissionStatus> {
+            self.handle
+                .run_mobile_plugin("requestPermissions", PermArgs { permissions: vec!["calendar"] })
+                .map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn set_alarm(&self, hour: u32, minute: u32, label: &str, id: i32, at_ms: i64) -> Result<String> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args<'a> {
+                hour: u32,
+                minute: u32,
+                label: &'a str,
+                id: i32,
+                at_ms: i64,
+            }
+            self.plugin_json("setAlarm", Args { hour, minute, label, id, at_ms })
+        }
+
+        pub fn set_timer(&self, seconds: u32, label: &str, id: i32, at_ms: i64) -> Result<String> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args<'a> {
+                seconds: u32,
+                label: &'a str,
+                id: i32,
+                at_ms: i64,
+            }
+            self.plugin_json("setTimer", Args { seconds, label, id, at_ms })
+        }
+
+        pub fn schedule_item(&self, id: i32, kind: &str, title: &str, note: &str, at_ms: i64) -> Result<String> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args<'a> {
+                id: i32,
+                kind: &'a str,
+                title: &'a str,
+                note: &'a str,
+                at_ms: i64,
+            }
+            self.plugin_json("scheduleItem", Args { id, kind, title, note, at_ms })
+        }
+
+        pub fn cancel_item(&self, id: i32) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args {
+                id: i32,
+            }
+            self.plugin_json("cancelItem", Args { id })
+        }
+
+        pub fn list_calendar(&self, start_ms: i64, end_ms: i64) -> Result<String> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                start_ms: i64,
+                end_ms: i64,
+            }
+            self.plugin_json("listCalendarEvents", Args { start_ms, end_ms })
+        }
+
+        pub fn create_event(&self, title: &str, start_ms: i64, end_ms: i64, location: &str) -> Result<String> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args<'a> {
+                title: &'a str,
+                start_ms: i64,
+                end_ms: i64,
+                location: &'a str,
+            }
+            self.plugin_json("createCalendarEvent", Args { title, start_ms, end_ms, location })
+        }
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+mod imp {
+    use super::*;
+
+    impl NativeBridge {
+        pub fn wrap_key(&self, raw: &[u8]) -> Result<WrappedKey> {
+            Ok(WrappedKey { blob: raw.to_vec(), security_level: "software".into() })
+        }
+
+        pub fn unwrap_key(&self, blob: &[u8]) -> Result<Vec<u8>> {
+            Ok(blob.to_vec())
+        }
+
+        pub fn key_security_level(&self) -> Result<String> {
+            Ok("software".into())
+        }
+
+        pub fn start_service(&self, _title: &str, _text: &str) -> Result<()> {
+            Ok(())
+        }
+
+        pub fn stop_service(&self) -> Result<()> {
+            Ok(())
+        }
+
+        pub fn check_permissions(&self) -> Result<PermissionStatus> {
+            Ok(PermissionStatus {
+                microphone: "granted".into(),
+                notifications: "granted".into(),
+                calendar: "granted".into(),
+            })
+        }
+
+        pub fn request_permissions(&self) -> Result<PermissionStatus> {
+            self.check_permissions()
+        }
+
+        pub fn request_calendar(&self) -> Result<PermissionStatus> {
+            self.check_permissions()
+        }
+
+        pub fn set_alarm(&self, _hour: u32, minute: u32, label: &str, _id: i32, _at_ms: i64) -> Result<String> {
+            Ok(format!(
+                r#"{{"ok":true,"via":"local","detail":"Alarm \"{label}\" saved for {minute:02}. It rings on the phone."}}"#
+            ))
+        }
+
+        pub fn set_timer(&self, seconds: u32, label: &str, _id: i32, _at_ms: i64) -> Result<String> {
+            Ok(format!(
+                r#"{{"ok":true,"via":"local","detail":"Timer \"{label}\" for {seconds}s saved. It rings on the phone."}}"#
+            ))
+        }
+
+        pub fn schedule_item(&self, _id: i32, _kind: &str, title: &str, _note: &str, _at_ms: i64) -> Result<String> {
+            Ok(format!(r#"{{"ok":true,"via":"local","detail":"Saved \"{title}\". It notifies on the phone."}}"#))
+        }
+
+        pub fn cancel_item(&self, _id: i32) -> Result<String> {
+            Ok(r#"{"ok":true}"#.into())
+        }
+
+        pub fn list_calendar(&self, _start_ms: i64, _end_ms: i64) -> Result<String> {
+            Ok(r#"{"ok":true,"events":[]}"#.into())
+        }
+
+        pub fn create_event(&self, _title: &str, _start_ms: i64, _end_ms: i64, _location: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
+        }
+    }
+}
+
+pub fn init() -> TauriPlugin<Wry> {
+    Builder::<Wry>::new("voicebridge")
+        .setup(|app, _api| {
+            #[cfg(target_os = "android")]
+            let bridge = NativeBridge {
+                handle: _api.register_android_plugin("ai.grokvoice.app", "VoicePlugin")?,
+            };
+            #[cfg(not(target_os = "android"))]
+            let bridge = NativeBridge {};
+            app.manage(bridge);
+            Ok(())
+        })
+        .build()
+}

@@ -1,0 +1,268 @@
+package ai.grokvoice.app
+
+import android.app.Activity
+import android.app.AlarmManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.os.Build
+import android.provider.AlarmClock
+import android.provider.CalendarContract
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.TimeZone
+
+/** Alarms, timers, reminders, and calendar. The Rust side keeps the list; this rings. */
+object PhoneActions {
+  private const val PREFS = "grok_agenda"
+  private const val KEY = "scheduled"
+  private const val ALARM_CHANNEL = "grok_alarms"
+  private const val REMINDER_CHANNEL = "grok_reminders"
+
+  fun setAlarm(activity: Activity, hour: Int, minute: Int, label: String, id: Int, atMs: Long): String {
+    if (activity.hasWindowFocus() && openClock(activity, AlarmClock.ACTION_SET_ALARM) {
+        putExtra(AlarmClock.EXTRA_HOUR, hour)
+        putExtra(AlarmClock.EXTRA_MINUTES, minute)
+        putExtra(AlarmClock.EXTRA_MESSAGE, label)
+        putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+      }
+    ) {
+      return """{"ok":true,"via":"clock","detail":"Alarm set in the Clock app for %02d:%02d."}"""
+        .format(hour, minute)
+    }
+    schedule(activity.applicationContext, id, "alarm", label, "", atMs)
+    return """{"ok":true,"via":"local","detail":"Alarm set for %02d:%02d."}""".format(hour, minute)
+  }
+
+  fun setTimer(activity: Activity, seconds: Int, label: String, id: Int, atMs: Long): String {
+    if (activity.hasWindowFocus() && openClock(activity, AlarmClock.ACTION_SET_TIMER) {
+        putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+        putExtra(AlarmClock.EXTRA_MESSAGE, label)
+        putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+      }
+    ) {
+      val mins = seconds / 60
+      val secs = seconds % 60
+      val spoken = if (mins > 0 && secs == 0) "$mins min" else "${seconds}s"
+      return """{"ok":true,"via":"clock","detail":"Timer running in the Clock app for $spoken."}"""
+    }
+    schedule(activity.applicationContext, id, "timer", label, "", atMs)
+    return """{"ok":true,"via":"local","detail":"Timer set for ${seconds}s."}"""
+  }
+
+  fun schedule(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long): String {
+    if (atMs <= System.currentTimeMillis()) {
+      return """{"ok":false,"error":"That time is in the past."}"""
+    }
+    upsert(context, id, kind, title, note, atMs)
+    arm(context, id, kind, title, note, atMs)
+    return """{"ok":true,"via":"local"}"""
+  }
+
+  fun cancel(context: Context, id: Int) {
+    val am = context.getSystemService(AlarmManager::class.java)
+    val pi = pending(context, id, "reminder", "", "")
+    am.cancel(pi)
+    pi.cancel()
+    val arr = read(context)
+    val next = JSONArray()
+    for (i in 0 until arr.length()) {
+      val o = arr.getJSONObject(i)
+      if (o.optInt("id") != id) next.put(o)
+    }
+    write(context, next)
+  }
+
+  fun rescheduleAll(context: Context) {
+    val arr = read(context)
+    val now = System.currentTimeMillis()
+    val keep = JSONArray()
+    for (i in 0 until arr.length()) {
+      val o = arr.getJSONObject(i)
+      val at = o.optLong("atMs")
+      if (at <= now) continue
+      keep.put(o)
+      arm(context, o.optInt("id"), o.optString("kind"), o.optString("title"), o.optString("note"), at)
+    }
+    write(context, keep)
+  }
+
+  fun notify(context: Context, id: Int, kind: String, title: String, note: String) {
+    val alarm = kind == "alarm" || kind == "timer"
+    val channel = if (alarm) ALARM_CHANNEL else REMINDER_CHANNEL
+    val nm = context.getSystemService(NotificationManager::class.java)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      if (nm.getNotificationChannel(channel) == null) {
+        val importance = NotificationManager.IMPORTANCE_HIGH
+        val created = NotificationChannel(
+          channel,
+          if (alarm) "Alarms and timers" else "Reminders",
+          importance
+        )
+        if (alarm) {
+          val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+          created.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), attrs)
+          created.enableVibration(true)
+        }
+        nm.createNotificationChannel(created)
+      }
+    }
+    val open = PendingIntent.getActivity(
+      context, 0,
+      Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+    val text = if (note.isBlank()) kind.replaceFirstChar { it.uppercase() } else note
+    val n = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      Notification.Builder(context, channel)
+    } else {
+      @Suppress("DEPRECATION")
+      Notification.Builder(context)
+    }
+      .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+      .setContentTitle(title.ifBlank { "Grok" })
+      .setContentText(text)
+      .setContentIntent(open)
+      .setAutoCancel(true)
+      .setCategory(if (alarm) Notification.CATEGORY_ALARM else Notification.CATEGORY_REMINDER)
+      .build()
+    try {
+      nm.notify(if (id == 0) 1 else id, n)
+    } catch (_: SecurityException) {
+      // Notifications not allowed. The schedule itself still happened.
+    }
+  }
+
+  fun listEvents(context: Context, startMs: Long, endMs: Long): String {
+    val cr = context.contentResolver
+    val uri = CalendarContract.Events.CONTENT_URI
+    val proj = arrayOf(
+      CalendarContract.Events.TITLE,
+      CalendarContract.Events.DTSTART,
+      CalendarContract.Events.DTEND,
+      CalendarContract.Events.EVENT_LOCATION,
+      CalendarContract.Events.ALL_DAY
+    )
+    val sel = "${CalendarContract.Events.DTSTART} < ? AND ${CalendarContract.Events.DTEND} > ?"
+    val events = JSONArray()
+    cr.query(uri, proj, sel, arrayOf(endMs.toString(), startMs.toString()), "${CalendarContract.Events.DTSTART} ASC")
+      ?.use { c ->
+        var n = 0
+        while (c.moveToNext() && n < 20) {
+          n++
+          events.put(JSONObject()
+            .put("title", c.getString(0) ?: "(untitled)")
+            .put("startMs", c.getLong(1))
+            .put("endMs", c.getLong(2))
+            .put("location", c.getString(3) ?: "")
+            .put("allDay", c.getInt(4) == 1))
+        }
+      }
+    return JSONObject().put("ok", true).put("events", events).toString()
+  }
+
+  fun createEvent(context: Context, title: String, startMs: Long, endMs: Long, location: String): String {
+    val calId = writableCalendar(context)
+      ?: return """{"ok":false,"error":"No writable calendar on this phone."}"""
+    val values = android.content.ContentValues().apply {
+      put(CalendarContract.Events.CALENDAR_ID, calId)
+      put(CalendarContract.Events.TITLE, title)
+      put(CalendarContract.Events.DTSTART, startMs)
+      put(CalendarContract.Events.DTEND, endMs)
+      put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+      if (location.isNotBlank()) put(CalendarContract.Events.EVENT_LOCATION, location)
+    }
+    val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+      ?: return """{"ok":false,"error":"The calendar did not accept the event."}"""
+    return JSONObject().put("ok", true).put("uri", uri.toString()).toString()
+  }
+
+  private fun writableCalendar(context: Context): Long? {
+    val uri = CalendarContract.Calendars.CONTENT_URI
+    val proj = arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
+    context.contentResolver.query(uri, proj, null, null, null)?.use { c ->
+      while (c.moveToNext()) {
+        val level = c.getInt(1)
+        if (level >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) return c.getLong(0)
+      }
+    }
+    return null
+  }
+
+  private fun openClock(activity: Activity, action: String, fill: Intent.() -> Unit): Boolean {
+    val intent = Intent(action).apply {
+      fill()
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    return try {
+      activity.startActivity(intent)
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  private fun arm(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long) {
+    val am = context.getSystemService(AlarmManager::class.java)
+    val pi = pending(context, id, kind, title, note)
+    val show = PendingIntent.getActivity(
+      context, id + 100_000,
+      Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+    try {
+      if (kind == "alarm" || kind == "timer") {
+        am.setAlarmClock(AlarmManager.AlarmClockInfo(atMs, show), pi)
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pi)
+      } else {
+        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pi)
+      }
+    } catch (_: SecurityException) {
+      am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pi)
+    }
+  }
+
+  private fun pending(context: Context, id: Int, kind: String, title: String, note: String): PendingIntent {
+    val intent = Intent(context, ReminderReceiver::class.java)
+      .putExtra("id", id)
+      .putExtra("kind", kind)
+      .putExtra("title", title)
+      .putExtra("note", note)
+    return PendingIntent.getBroadcast(
+      context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+  }
+
+  private fun upsert(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long) {
+    val arr = read(context)
+    val next = JSONArray()
+    for (i in 0 until arr.length()) {
+      val o = arr.getJSONObject(i)
+      if (o.optInt("id") != id) next.put(o)
+    }
+    next.put(JSONObject().put("id", id).put("kind", kind).put("title", title).put("note", note).put("atMs", atMs))
+    write(context, next)
+  }
+
+  private fun read(context: Context): JSONArray {
+    val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null) ?: return JSONArray()
+    return try {
+      JSONArray(raw)
+    } catch (_: Exception) {
+      JSONArray()
+    }
+  }
+
+  private fun write(context: Context, arr: JSONArray) {
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, arr.toString()).apply()
+  }
+}
