@@ -147,6 +147,7 @@ input[type="datetime-local"] {
   width: 4.5rem;
   height: 4.5rem;
   border: 1.5px solid var(--ink);
+  border-radius: 9999px;
   background: #0e0e0e;
   color: var(--ink);
   display: grid;

@@ -69,7 +69,7 @@ export default function App() {
   return (
     <main className="safe-area flex h-full flex-col bg-background">
       <header className="flex shrink-0 items-center justify-between px-5 pt-3 pb-1">
-        <p className="text-[11px] font-medium tracking-[0.28em] text-muted-foreground">GROK</p>
+        <h1 className="text-2xl leading-tight font-medium tracking-tight text-foreground">Grok Talk</h1>
         <p className="text-[10px] tracking-[0.12em] text-muted-foreground/80">{auth.keyHint}</p>
       </header>
 

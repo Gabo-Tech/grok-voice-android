@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Trash2 } from "lucide-react";
+import { Send, Trash2 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
 import { Button } from "@/components/ui/button";
@@ -54,12 +54,9 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center justify-between gap-3 px-1 pb-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl leading-tight font-medium tracking-tight">Talk</h1>
-          <p className="mt-1 text-xs leading-normal text-muted-foreground">
-            {wakeTrained ? "Hands-free stays on after you leave" : "Enroll wake word in More"}
-          </p>
-        </div>
+        <p className="min-w-0 text-xs leading-normal text-muted-foreground">
+          {wakeTrained ? "Hands-free stays on after you leave" : "Enroll wake word in More"}
+        </p>
         <label className="flex items-center gap-2 text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
           Listen
           <Switch checked={voice.wakeEnabled} onCheckedChange={(v) => void voice.toggleWake(v)} />
@@ -73,7 +70,7 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
       <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1">
         {voice.rows.length === 0 ? (
           <p className="py-8 text-sm leading-6 text-muted-foreground">
-            Tap the square to talk, or type when you can't.
+            Say “Hey Grok”, tap the microphone, or type when you can't.
           </p>
         ) : (
           <>
@@ -119,26 +116,25 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
           void voice.sendText(text);
         }}
       >
-        <label className="min-w-0 flex-1">
-          <span className="mb-2 block text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Question</span>
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Weather in Zurich today"
-            enterKeyHint="send"
-            className="h-12 w-full border border-border bg-transparent px-3 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
-          />
-        </label>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Weather in Zurich today"
+          aria-label="Message"
+          enterKeyHint="send"
+          className="h-12 min-w-0 flex-1 rounded-[16px] border border-border bg-transparent px-4 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
+        />
         <button
           type="submit"
           disabled={voice.sending || draft.trim().length === 0}
-          className="h-12 shrink-0 self-end bg-foreground px-4 text-xs tracking-[0.14em] text-background uppercase disabled:opacity-40"
+          aria-label="Send"
+          className="grid size-12 shrink-0 place-items-center rounded-full border border-foreground text-foreground disabled:opacity-40"
         >
-          {voice.sending ? "…" : "Send"}
+          <Send className="size-5" strokeWidth={1.25} />
         </button>
       </form>
       <div className="shrink-0 pt-4">
-        <GlowRing phase={voice.phase} level={voice.level} onPress={() => void voice.toggleSession()} />
+        <GlowRing phase={voice.phase} level={voice.level} wakePhrase="Hey Grok" onPress={() => void voice.toggleSession()} />
       </div>
     </div>
   );
