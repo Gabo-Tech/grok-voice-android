@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Grok Voice — a voice assistant that stays on your phone</title>
+    <title>Grok Voice — a bring-your-own-key voice assistant</title>
     <meta
       name="description"
-      content="Bring-your-own-key Android voice assistant. Wake word, live search, notes, calendar, and reminders. Your key never leaves the phone."
+      content="Android voice assistant that uses your own xAI key. Wake word stays on the phone. Conversations and search are sent to xAI."
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
     <link rel="stylesheet" href="./styles.css" />
@@ -19,7 +19,7 @@
         <ul id="site-nav">
           <li><a href="#talk">Talk</a></li>
           <li><a href="#phone">Phone</a></li>
-          <li><a href="#private">Private</a></li>
+          <li><a href="#private">Privacy</a></li>
           <li><a href="#install">Install</a></li>
         </ul>
       </nav>
@@ -29,10 +29,10 @@
       <section class="hero">
         <div class="wrap reveal">
           <p class="eyebrow">Android · bring your own key</p>
-          <h1>A voice that stays on the phone.</h1>
+          <h1>A voice assistant on your phone.</h1>
           <p class="lead">
-            Say “Hey Grok” with the screen off. Type when you can’t talk. Notes, calendar, reminders,
-            and live search stay with you.
+            Say “Hey Grok” with the screen off. Type when you can’t talk. Notes, calendar, and reminders
+            stay on the phone. A conversation is sent to xAI.
           </p>
           <div class="actions">
             <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.10/GrokVoice-0.1.10.apk">
@@ -78,14 +78,15 @@
 
       <section id="private" class="band">
         <div class="wrap narrow reveal">
-          <h2>The key stays here</h2>
+          <h2>Privacy</h2>
           <p>
-            You paste a key during setup. The app checks it, then locks it in on-device storage.
-            Voice uses a short-lived token minted on the phone. Wake-word recordings are not uploaded.
+            This app has no server of its own and does not collect analytics. The key is stored encrypted on the phone.
+            Wake-word audio is checked on the device and is not uploaded. Notes, reminders, and in-app events stay in a local file.
           </p>
           <p>
-            You can keep more than one key, in the order you prefer. If the first connection fails, the next is tried.
-            Spoken replies use xAI realtime voice today.
+            A conversation is not private from xAI. The key is sent to api.x.ai to mint a short-lived voice token.
+            After “Hey Grok,” or when you tap the microphone, your speech and the transcript go to xAI. A typed question
+            and a live search do too. xAI sees that content under your key.
           </p>
         </div>
       </section>
