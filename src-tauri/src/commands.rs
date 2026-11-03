@@ -5,9 +5,9 @@ use tauri::{AppHandle, Manager, State};
 use zeroize::Zeroizing;
 
 use crate::{
-    actions::{Agenda, AgendaSnapshot},
+    actions::{self, Agenda, AgendaSnapshot},
     audio::engine::{Ctl, Engine},
-    diagnostics::{DebugSnapshot, Hub, LogLine, now_ms},
+    diagnostics::{self, DebugSnapshot, Hub, LogLine, now_ms},
     error::{Result, msg},
     native::{NativeBridge, PermissionStatus},
     realtime::{http_client, mint_ephemeral},
@@ -229,8 +229,38 @@ pub fn agenda_snapshot(app: AppHandle) -> AgendaSnapshot {
 }
 
 #[tauri::command]
+pub fn save_note(app: AppHandle, text: String, id: Option<String>) -> Result<AgendaSnapshot> {
+    app.state::<Agenda>()
+        .upsert_note(&app, id.as_deref(), &text)
+        .map_err(msg)?;
+    Ok(app.state::<Agenda>().snapshot(&app))
+}
+
+#[tauri::command]
 pub fn delete_note(app: AppHandle, id: String) -> Result<AgendaSnapshot> {
     app.state::<Agenda>().delete_note(&app, &id).map_err(msg)?;
+    Ok(app.state::<Agenda>().snapshot(&app))
+}
+
+#[tauri::command]
+pub fn save_scheduled(
+    app: AppHandle,
+    title: String,
+    at_ms: i64,
+    note: Option<String>,
+    kind: Option<String>,
+    id: Option<i32>,
+) -> Result<AgendaSnapshot> {
+    app.state::<Agenda>()
+        .upsert_item(
+            &app,
+            id,
+            kind.as_deref().unwrap_or("reminder"),
+            &title,
+            note.as_deref().unwrap_or(""),
+            at_ms,
+        )
+        .map_err(msg)?;
     Ok(app.state::<Agenda>().snapshot(&app))
 }
 
@@ -238,6 +268,85 @@ pub fn delete_note(app: AppHandle, id: String) -> Result<AgendaSnapshot> {
 pub fn cancel_scheduled(app: AppHandle, id: i32) -> Result<AgendaSnapshot> {
     app.state::<Agenda>().cancel(&app, id).map_err(msg)?;
     Ok(app.state::<Agenda>().snapshot(&app))
+}
+
+#[tauri::command]
+pub fn save_event(
+    app: AppHandle,
+    title: String,
+    start_ms: i64,
+    end_ms: i64,
+    location: Option<String>,
+    id: Option<String>,
+) -> Result<AgendaSnapshot> {
+    let location = location.unwrap_or_default();
+    let agenda = app.state::<Agenda>();
+    if let Some(id) = id.filter(|s| !s.is_empty()) {
+        if id.starts_with("local-") || agenda.local_event(&id).is_some() {
+            let mut event = agenda.local_event(&id).unwrap_or(actions::CalEvent {
+                id: id.clone(),
+                title: title.clone(),
+                start_ms,
+                end_ms,
+                location: location.clone(),
+                all_day: false,
+                source: "local".into(),
+            });
+            event.title = title;
+            event.start_ms = start_ms;
+            event.end_ms = end_ms.max(start_ms + 60_000);
+            event.location = location;
+            agenda.upsert_local_event(&app, event).map_err(msg)?;
+            return Ok(agenda.snapshot(&app));
+        }
+        let raw = app
+            .state::<NativeBridge>()
+            .update_event(&id, &title, start_ms, end_ms, &location)
+            .map_err(|e| msg(e.to_string()))?;
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+        if v["ok"] != true {
+            return Err(msg(v["error"].as_str().unwrap_or("Could not update the event.")));
+        }
+        return Ok(agenda.snapshot(&app));
+    }
+
+    if app.state::<NativeBridge>().check_permissions().ok().is_some_and(|p| p.calendar == "granted") {
+        let raw = app
+            .state::<NativeBridge>()
+            .create_event(&title, start_ms, end_ms, &location)
+            .map_err(|e| msg(e.to_string()))?;
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+        if v["ok"] == true {
+            return Ok(agenda.snapshot(&app));
+        }
+    }
+
+    let event = actions::CalEvent {
+        id: format!("local-{}", diagnostics::now_ms()),
+        title,
+        start_ms,
+        end_ms: end_ms.max(start_ms + 60_000),
+        location,
+        all_day: false,
+        source: "local".into(),
+    };
+    agenda.upsert_local_event(&app, event).map_err(msg)?;
+    Ok(agenda.snapshot(&app))
+}
+
+#[tauri::command]
+pub fn delete_event(app: AppHandle, id: String) -> Result<AgendaSnapshot> {
+    let agenda = app.state::<Agenda>();
+    if id.starts_with("local-") || agenda.local_event(&id).is_some() {
+        agenda.delete_local_event(&app, &id).map_err(msg)?;
+        return Ok(agenda.snapshot(&app));
+    }
+    let raw = app.state::<NativeBridge>().delete_event(&id).map_err(|e| msg(e.to_string()))?;
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+    if v["ok"] != true {
+        return Err(msg(v["error"].as_str().unwrap_or("Could not delete the event.")));
+    }
+    Ok(agenda.snapshot(&app))
 }
 
 #[tauri::command]

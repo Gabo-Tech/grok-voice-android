@@ -8,6 +8,8 @@
 -keep class ai.grokvoice.app.CancelArgs { *; }
 -keep class ai.grokvoice.app.RangeArgs { *; }
 -keep class ai.grokvoice.app.EventArgs { *; }
+-keep class ai.grokvoice.app.EventUpdateArgs { *; }
+-keep class ai.grokvoice.app.EventIdArgs { *; }
 -keep class ai.grokvoice.app.PhoneActions { *; }
 -keep class ai.grokvoice.app.ReminderReceiver { *; }
 -keep class ai.grokvoice.app.BootReceiver { *; }

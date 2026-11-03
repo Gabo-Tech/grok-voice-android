@@ -70,6 +70,20 @@ class EventArgs {
   var location: String = ""
 }
 
+@InvokeArg
+class EventUpdateArgs {
+  var id: String = ""
+  var title: String = ""
+  var startMs: Long = 0
+  var endMs: Long = 0
+  var location: String = ""
+}
+
+@InvokeArg
+class EventIdArgs {
+  var id: String = ""
+}
+
 /** Native side of the Rust `native::NativeBridge` (registered from `native::init`). */
 @TauriPlugin(
   permissions = [
@@ -189,6 +203,30 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
       resolveJson(invoke, """{"ok":false,"error":"Calendar permission is not granted."}""")
     } catch (e: Exception) {
       resolveJson(invoke, JSONObject().put("ok", false).put("error", e.message ?: "calendar write failed").toString())
+    }
+  }
+
+  @Command
+  fun updateCalendarEvent(invoke: Invoke) {
+    try {
+      val a = invoke.parseArgs(EventUpdateArgs::class.java)
+      resolveJson(invoke, PhoneActions.updateEvent(activity, a.id, a.title, a.startMs, a.endMs, a.location))
+    } catch (e: SecurityException) {
+      resolveJson(invoke, """{"ok":false,"error":"Calendar permission is not granted."}""")
+    } catch (e: Exception) {
+      resolveJson(invoke, JSONObject().put("ok", false).put("error", e.message ?: "calendar update failed").toString())
+    }
+  }
+
+  @Command
+  fun deleteCalendarEvent(invoke: Invoke) {
+    try {
+      val a = invoke.parseArgs(EventIdArgs::class.java)
+      resolveJson(invoke, PhoneActions.deleteEvent(activity, a.id))
+    } catch (e: SecurityException) {
+      resolveJson(invoke, """{"ok":false,"error":"Calendar permission is not granted."}""")
+    } catch (e: Exception) {
+      resolveJson(invoke, JSONObject().put("ok", false).put("error", e.message ?: "calendar delete failed").toString())
     }
   }
 

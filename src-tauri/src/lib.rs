@@ -80,8 +80,12 @@ pub fn run() {
             commands::debug_snapshot,
             commands::debug_logs,
             commands::agenda_snapshot,
+            commands::save_note,
             commands::delete_note,
+            commands::save_scheduled,
             commands::cancel_scheduled,
+            commands::save_event,
+            commands::delete_event,
             commands::request_calendar,
         ])
         .build(tauri::generate_context!())

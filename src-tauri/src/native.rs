@@ -207,6 +207,27 @@ mod imp {
             }
             self.plugin_json("createCalendarEvent", Args { title, start_ms, end_ms, location })
         }
+
+        pub fn update_event(&self, id: &str, title: &str, start_ms: i64, end_ms: i64, location: &str) -> Result<String> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args<'a> {
+                id: &'a str,
+                title: &'a str,
+                start_ms: i64,
+                end_ms: i64,
+                location: &'a str,
+            }
+            self.plugin_json("updateCalendarEvent", Args { id, title, start_ms, end_ms, location })
+        }
+
+        pub fn delete_event(&self, id: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                id: &'a str,
+            }
+            self.plugin_json("deleteCalendarEvent", Args { id })
+        }
     }
 }
 
@@ -276,6 +297,14 @@ mod imp {
         }
 
         pub fn create_event(&self, _title: &str, _start_ms: i64, _end_ms: i64, _location: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
+        }
+
+        pub fn update_event(&self, _id: &str, _title: &str, _start_ms: i64, _end_ms: i64, _location: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
+        }
+
+        pub fn delete_event(&self, _id: &str) -> Result<String> {
             Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
         }
     }

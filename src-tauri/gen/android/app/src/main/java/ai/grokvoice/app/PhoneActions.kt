@@ -145,33 +145,47 @@ object PhoneActions {
     val cr = context.contentResolver
     val uri = CalendarContract.Events.CONTENT_URI
     val proj = arrayOf(
+      CalendarContract.Events._ID,
       CalendarContract.Events.TITLE,
       CalendarContract.Events.DTSTART,
       CalendarContract.Events.DTEND,
       CalendarContract.Events.EVENT_LOCATION,
       CalendarContract.Events.ALL_DAY
     )
-    val sel = "${CalendarContract.Events.DTSTART} < ? AND ${CalendarContract.Events.DTEND} > ?"
+    val sel = "(${CalendarContract.Events.DTSTART} < ? AND " +
+      "(${CalendarContract.Events.DTEND} > ? OR (${CalendarContract.Events.DTEND} = 0 AND ${CalendarContract.Events.DTSTART} >= ?)))"
     val events = JSONArray()
-    cr.query(uri, proj, sel, arrayOf(endMs.toString(), startMs.toString()), "${CalendarContract.Events.DTSTART} ASC")
-      ?.use { c ->
+    try {
+      cr.query(
+        uri, proj, sel,
+        arrayOf(endMs.toString(), startMs.toString(), startMs.toString()),
+        "${CalendarContract.Events.DTSTART} ASC"
+      )?.use { c ->
         var n = 0
-        while (c.moveToNext() && n < 20) {
+        while (c.moveToNext() && n < 40) {
           n++
-          events.put(JSONObject()
-            .put("title", c.getString(0) ?: "(untitled)")
-            .put("startMs", c.getLong(1))
-            .put("endMs", c.getLong(2))
-            .put("location", c.getString(3) ?: "")
-            .put("allDay", c.getInt(4) == 1))
+          val end = c.getLong(3).let { if (it == 0L) c.getLong(2) + 3_600_000L else it }
+          events.put(
+            JSONObject()
+              .put("id", c.getLong(0).toString())
+              .put("title", c.getString(1) ?: "(untitled)")
+              .put("startMs", c.getLong(2))
+              .put("endMs", end)
+              .put("location", c.getString(4) ?: "")
+              .put("allDay", c.getInt(5) == 1)
+              .put("source", "phone")
+          )
         }
       }
+    } catch (e: SecurityException) {
+      return """{"ok":false,"error":"Calendar permission is not granted."}"""
+    }
     return JSONObject().put("ok", true).put("events", events).toString()
   }
 
   fun createEvent(context: Context, title: String, startMs: Long, endMs: Long, location: String): String {
     val calId = writableCalendar(context)
-      ?: return """{"ok":false,"error":"No writable calendar on this phone."}"""
+      ?: return """{"ok":false,"error":"No writable calendar on this phone. Add a Google account or allow calendar write."}"""
     val values = android.content.ContentValues().apply {
       put(CalendarContract.Events.CALENDAR_ID, calId)
       put(CalendarContract.Events.TITLE, title)
@@ -180,21 +194,83 @@ object PhoneActions {
       put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
       if (location.isNotBlank()) put(CalendarContract.Events.EVENT_LOCATION, location)
     }
-    val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
-      ?: return """{"ok":false,"error":"The calendar did not accept the event."}"""
-    return JSONObject().put("ok", true).put("uri", uri.toString()).toString()
+    return try {
+      val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+        ?: return """{"ok":false,"error":"The calendar did not accept the event."}"""
+      val id = uri.lastPathSegment ?: ""
+      JSONObject().put("ok", true).put("id", id).put("source", "phone").put("uri", uri.toString()).toString()
+    } catch (e: SecurityException) {
+      """{"ok":false,"error":"Calendar permission is not granted."}"""
+    } catch (e: Exception) {
+      JSONObject().put("ok", false).put("error", e.message ?: "calendar write failed").toString()
+    }
+  }
+
+  fun updateEvent(context: Context, id: String, title: String, startMs: Long, endMs: Long, location: String): String {
+    val eventId = id.toLongOrNull()
+      ?: return """{"ok":false,"error":"Bad calendar event id."}"""
+    val values = android.content.ContentValues().apply {
+      if (title.isNotBlank()) put(CalendarContract.Events.TITLE, title)
+      if (startMs > 0) put(CalendarContract.Events.DTSTART, startMs)
+      if (endMs > 0) put(CalendarContract.Events.DTEND, endMs)
+      put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+      put(CalendarContract.Events.EVENT_LOCATION, location)
+    }
+    return try {
+      val uri = android.content.ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+      val n = context.contentResolver.update(uri, values, null, null)
+      if (n <= 0) """{"ok":false,"error":"Could not update that calendar event."}"""
+      else JSONObject().put("ok", true).put("id", id).put("source", "phone").toString()
+    } catch (e: SecurityException) {
+      """{"ok":false,"error":"Calendar permission is not granted."}"""
+    } catch (e: Exception) {
+      JSONObject().put("ok", false).put("error", e.message ?: "calendar update failed").toString()
+    }
+  }
+
+  fun deleteEvent(context: Context, id: String): String {
+    val eventId = id.toLongOrNull()
+      ?: return """{"ok":false,"error":"Bad calendar event id."}"""
+    return try {
+      val uri = android.content.ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+      val n = context.contentResolver.delete(uri, null, null)
+      if (n <= 0) """{"ok":false,"error":"Could not delete that calendar event."}"""
+      else JSONObject().put("ok", true).put("id", id).toString()
+    } catch (e: SecurityException) {
+      """{"ok":false,"error":"Calendar permission is not granted."}"""
+    } catch (e: Exception) {
+      JSONObject().put("ok", false).put("error", e.message ?: "calendar delete failed").toString()
+    }
   }
 
   private fun writableCalendar(context: Context): Long? {
     val uri = CalendarContract.Calendars.CONTENT_URI
-    val proj = arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
-    context.contentResolver.query(uri, proj, null, null, null)?.use { c ->
-      while (c.moveToNext()) {
-        val level = c.getInt(1)
-        if (level >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) return c.getLong(0)
+    val proj = arrayOf(
+      CalendarContract.Calendars._ID,
+      CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+      CalendarContract.Calendars.VISIBLE,
+      CalendarContract.Calendars.IS_PRIMARY
+    )
+    var primary: Long? = null
+    var visible: Long? = null
+    var any: Long? = null
+    try {
+      context.contentResolver.query(uri, proj, null, null, null)?.use { c ->
+        while (c.moveToNext()) {
+          val id = c.getLong(0)
+          val level = if (c.isNull(1)) CalendarContract.Calendars.CAL_ACCESS_OWNER else c.getInt(1)
+          if (level < CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) continue
+          val isVisible = c.isNull(2) || c.getInt(2) == 1
+          val isPrimary = !c.isNull(3) && c.getInt(3) == 1
+          if (any == null) any = id
+          if (isVisible && visible == null) visible = id
+          if (isPrimary && isVisible) primary = id
+        }
       }
+    } catch (_: SecurityException) {
+      return null
     }
-    return null
+    return primary ?: visible ?: any
   }
 
   private fun openClock(activity: Activity, action: String, fill: Intent.() -> Unit): Boolean {

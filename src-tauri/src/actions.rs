@@ -1,5 +1,5 @@
 //! Phone actions the voice session can call: notes, reminders, alarms, timers, calendar.
-//! Notes and the schedule live in `agenda.json`. Ringing is done by the Android side.
+//! Notes, reminders, and local calendar events live in `agenda.json`. Ringing is Android.
 
 use std::{
     fs,
@@ -35,6 +35,8 @@ pub struct Item {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalEvent {
+    #[serde(default)]
+    pub id: String,
     pub title: String,
     #[serde(default)]
     pub start_ms: i64,
@@ -44,6 +46,12 @@ pub struct CalEvent {
     pub location: String,
     #[serde(default)]
     pub all_day: bool,
+    #[serde(default = "phone_source")]
+    pub source: String,
+}
+
+fn phone_source() -> String {
+    "phone".into()
 }
 
 #[derive(Serialize)]
@@ -60,12 +68,14 @@ pub struct AgendaSnapshot {
 struct Store {
     notes: Vec<Note>,
     items: Vec<Item>,
+    /// Events kept in the app when the phone calendar is missing or denied write.
+    events: Vec<CalEvent>,
     next_id: i32,
 }
 
 impl Default for Store {
     fn default() -> Self {
-        Self { notes: Vec::new(), items: Vec::new(), next_id: 1 }
+        Self { notes: Vec::new(), items: Vec::new(), events: Vec::new(), next_id: 1 }
     }
 }
 
@@ -78,10 +88,15 @@ pub fn tool_definitions() -> Value {
     json!([
         fn_tool("create_note", "Save a note on this phone.", json!({
             "type": "object",
-            "properties": { "text": { "type": "string", "description": "The note, in the user's words." } },
+            "properties": { "text": { "type": "string" } },
             "required": ["text"]
         })),
         fn_tool("list_notes", "Read the notes saved on this phone.", json!({ "type": "object", "properties": {} })),
+        fn_tool("update_note", "Change the text of a note. id comes from list_notes.", json!({
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "text": { "type": "string" } },
+            "required": ["id", "text"]
+        })),
         fn_tool("delete_note", "Delete one saved note by id from list_notes.", json!({
             "type": "object",
             "properties": { "id": { "type": "string" } },
@@ -104,26 +119,36 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["seconds"]
         })),
-        fn_tool("set_reminder", "Schedule a one-off notification at a local date and time, such as tomorrow at 3pm. at is YYYY-MM-DDTHH:MM.", json!({
+        fn_tool("set_reminder", "Schedule a one-off notification at a local date and time. at is YYYY-MM-DDTHH:MM.", json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string" },
-                "at": { "type": "string", "description": "Local time, YYYY-MM-DDTHH:MM" },
+                "at": { "type": "string" },
                 "note": { "type": "string" }
             },
             "required": ["title", "at"]
         })),
         fn_tool("list_reminders", "List upcoming reminders, alarms, and timers this app scheduled.", json!({ "type": "object", "properties": {} })),
+        fn_tool("update_reminder", "Change a reminder's title, note, or time. id from list_reminders. at is YYYY-MM-DDTHH:MM.", json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "integer" },
+                "title": { "type": "string" },
+                "at": { "type": "string" },
+                "note": { "type": "string" }
+            },
+            "required": ["id"]
+        })),
         fn_tool("cancel_reminder", "Cancel one scheduled reminder, alarm, or timer by id from list_reminders.", json!({
             "type": "object",
             "properties": { "id": { "type": "integer" } },
             "required": ["id"]
         })),
-        fn_tool("list_calendar_events", "Read events on the phone calendar. day is YYYY-MM-DD; omit it for today.", json!({
+        fn_tool("list_calendar_events", "Read events for a day. day is YYYY-MM-DD; omit it for today. Each event has an id for updates or deletes.", json!({
             "type": "object",
             "properties": { "day": { "type": "string" } }
         })),
-        fn_tool("create_calendar_event", "Add an event to the phone calendar. start and end are local YYYY-MM-DDTHH:MM. end may be omitted for a one hour event.", json!({
+        fn_tool("create_calendar_event", "Add a calendar event. start and end are local YYYY-MM-DDTHH:MM. end may be omitted for one hour.", json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string" },
@@ -132,6 +157,22 @@ pub fn tool_definitions() -> Value {
                 "location": { "type": "string" }
             },
             "required": ["title", "start"]
+        })),
+        fn_tool("update_calendar_event", "Change a calendar event. id comes from list_calendar_events. Pass only fields that change; start/end are YYYY-MM-DDTHH:MM.", json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "start": { "type": "string" },
+                "end": { "type": "string" },
+                "location": { "type": "string" }
+            },
+            "required": ["id"]
+        })),
+        fn_tool("delete_calendar_event", "Delete a calendar event by id from list_calendar_events.", json!({
+            "type": "object",
+            "properties": { "id": { "type": "string" } },
+            "required": ["id"]
         }))
     ])
 }
@@ -158,16 +199,53 @@ impl Agenda {
     pub fn snapshot(&self, app: &AppHandle) -> AgendaSnapshot {
         self.sweep(app);
         let store = self.lock();
-        let (events, calendar) = match calendar_today(app) {
+        let (mut events, calendar) = match calendar_range(app, None) {
             Ok((events, calendar)) => (events, calendar),
             Err(_) => (Vec::new(), "denied".into()),
         };
+        let (start, end, _) = day_bounds(None).unwrap_or((0, 0, String::new()));
+        for e in store.events.iter().filter(|e| e.start_ms < end && e.end_ms > start) {
+            events.push(e.clone());
+        }
+        events.sort_by_key(|e| e.start_ms);
         AgendaSnapshot {
             notes: store.notes.clone(),
             reminders: store.items.clone(),
             events,
             calendar,
         }
+    }
+
+    pub fn upsert_note(&self, app: &AppHandle, id: Option<&str>, text: &str) -> Result<Note, String> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("The note was empty.".into());
+        }
+        let text = text.chars().take(4000).collect::<String>();
+        let mut store = self.lock();
+        let note = if let Some(id) = id.filter(|s| !s.is_empty()) {
+            let Some(existing) = store.notes.iter_mut().find(|n| n.id == id) else {
+                return Err("No note with that id.".into());
+            };
+            existing.text = text;
+            existing.clone()
+        } else {
+            let note = Note {
+                id: format!("n{}", Local::now().timestamp_millis()),
+                text,
+                created_ms: Local::now().timestamp_millis(),
+            };
+            store.notes.push(note.clone());
+            if store.notes.len() > 200 {
+                let drop_n = store.notes.len() - 200;
+                store.notes.drain(0..drop_n);
+            }
+            note
+        };
+        Self::persist(&self.path, &store)?;
+        drop(store);
+        touch(app);
+        Ok(note)
     }
 
     pub fn delete_note(&self, app: &AppHandle, id: &str) -> Result<(), String> {
@@ -183,6 +261,58 @@ impl Agenda {
         Ok(())
     }
 
+    pub fn upsert_item(
+        &self,
+        app: &AppHandle,
+        id: Option<i32>,
+        kind: &str,
+        title: &str,
+        note: &str,
+        at_ms: i64,
+    ) -> Result<Item, String> {
+        if title.trim().is_empty() {
+            return Err("A title is required.".into());
+        }
+        if at_ms <= Local::now().timestamp_millis() + 5_000 {
+            return Err("That time is in the past.".into());
+        }
+        let kind = if kind.is_empty() { "reminder" } else { kind };
+        let mut store = self.lock();
+        let item = if let Some(id) = id {
+            let Some(existing) = store.items.iter_mut().find(|i| i.id == id) else {
+                return Err("Nothing scheduled with that id.".into());
+            };
+            existing.title = title.chars().take(120).collect();
+            existing.note = note.chars().take(500).collect();
+            existing.at_ms = at_ms;
+            existing.kind = kind.into();
+            existing.clone()
+        } else {
+            let id = Self::alloc_id(&mut store);
+            let item = Item {
+                id,
+                kind: kind.into(),
+                title: title.chars().take(120).collect(),
+                note: note.chars().take(500).collect(),
+                at_ms,
+            };
+            store.items.push(item.clone());
+            item
+        };
+        store.items.sort_by_key(|i| i.at_ms);
+        Self::persist(&self.path, &store)?;
+        drop(store);
+        let _ = app.state::<NativeBridge>().schedule_item(
+            item.id,
+            &item.kind,
+            &item.title,
+            &item.note,
+            item.at_ms,
+        );
+        touch(app);
+        Ok(item)
+    }
+
     pub fn cancel(&self, app: &AppHandle, id: i32) -> Result<(), String> {
         app.state::<NativeBridge>().cancel_item(id).map_err(|e| e.to_string())?;
         let mut store = self.lock();
@@ -195,6 +325,41 @@ impl Agenda {
         drop(store);
         touch(app);
         Ok(())
+    }
+
+    pub fn upsert_local_event(&self, app: &AppHandle, event: CalEvent) -> Result<CalEvent, String> {
+        let mut store = self.lock();
+        if let Some(existing) = store.events.iter_mut().find(|e| e.id == event.id) {
+            *existing = event.clone();
+        } else {
+            store.events.push(event.clone());
+        }
+        store.events.sort_by_key(|e| e.start_ms);
+        Self::persist(&self.path, &store)?;
+        drop(store);
+        touch(app);
+        Ok(event)
+    }
+
+    pub fn delete_local_event(&self, app: &AppHandle, id: &str) -> Result<(), String> {
+        let mut store = self.lock();
+        let before = store.events.len();
+        store.events.retain(|e| e.id != id);
+        if store.events.len() == before {
+            return Err("No local event with that id.".into());
+        }
+        Self::persist(&self.path, &store)?;
+        drop(store);
+        touch(app);
+        Ok(())
+    }
+
+    pub fn local_event(&self, id: &str) -> Option<CalEvent> {
+        self.lock().events.iter().find(|e| e.id == id).cloned()
+    }
+
+    pub fn item(&self, id: i32) -> Option<Item> {
+        self.lock().items.iter().find(|i| i.id == id).cloned()
     }
 
     fn sweep(&self, app: &AppHandle) {
@@ -260,23 +425,8 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
     let agenda = app.state::<Agenda>();
     match name {
         "create_note" => {
-            let text = args["text"].as_str().unwrap_or("").trim();
-            if text.is_empty() {
-                return Err("The note was empty.".into());
-            }
-            let text = text.chars().take(4000).collect::<String>();
-            let mut store = agenda.lock();
-            let id = format!("n{}", Local::now().timestamp_millis());
-            let note = Note { id, text: text.clone(), created_ms: Local::now().timestamp_millis() };
-            store.notes.push(note.clone());
-            if store.notes.len() > 200 {
-                let drop_n = store.notes.len() - 200;
-                store.notes.drain(0..drop_n);
-            }
-            Agenda::persist(&agenda.path, &store)?;
-            drop(store);
-            touch(app);
-            Ok(json!({ "ok": true, "id": note.id, "detail": format!("Saved a note: {text}") }))
+            let note = agenda.upsert_note(app, None, args["text"].as_str().unwrap_or(""))?;
+            Ok(json!({ "ok": true, "id": note.id, "detail": format!("Saved a note: {}", note.text) }))
         }
         "list_notes" => {
             let notes = agenda.lock().notes.clone();
@@ -286,6 +436,11 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                 "notes": notes.iter().map(|n| json!({ "id": n.id, "text": n.text })).collect::<Vec<_>>(),
                 "detail": if notes.is_empty() { "There are no saved notes.".into() } else { format!("{} saved notes.", notes.len()) }
             }))
+        }
+        "update_note" => {
+            let id = args["id"].as_str().unwrap_or("").trim();
+            let note = agenda.upsert_note(app, Some(id), args["text"].as_str().unwrap_or(""))?;
+            Ok(json!({ "ok": true, "id": note.id, "detail": format!("Updated the note: {}", note.text) }))
         }
         "delete_note" => {
             let id = args["id"].as_str().unwrap_or("").trim();
@@ -329,27 +484,14 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             if title.is_empty() {
                 return Err("A reminder needs a title.".into());
             }
-            let at = args["at"].as_str().unwrap_or("").trim();
-            let when = parse_local_when(at)?;
-            if when <= Local::now() + Duration::seconds(5) {
-                return Err("That time is in the past. Give a future local time as YYYY-MM-DDTHH:MM.".into());
-            }
-            let note = args["note"].as_str().unwrap_or("").trim().chars().take(500).collect::<String>();
-            let id = agenda.take_id()?;
-            let raw = app
-                .state::<NativeBridge>()
-                .schedule_item(id, "reminder", &title, &note, when.timestamp_millis())
-                .map_err(|e| e.to_string())?;
-            let saved = finish_schedule(app, &agenda, id, "reminder", &title, &note, when, &raw)?;
-            if saved["ok"] == true {
-                Ok(json!({
-                    "ok": true,
-                    "id": id,
-                    "detail": format!("Reminder set for {}: {title}", when.format("%a %-d %b %-H:%M"))
-                }))
-            } else {
-                Ok(saved)
-            }
+            let when = parse_local_when(args["at"].as_str().unwrap_or(""))?;
+            let note = args["note"].as_str().unwrap_or("").trim();
+            let item = agenda.upsert_item(app, None, "reminder", &title, note, when.timestamp_millis())?;
+            Ok(json!({
+                "ok": true,
+                "id": item.id,
+                "detail": format!("Reminder set for {}: {title}", when.format("%a %-d %b %-H:%M"))
+            }))
         }
         "list_reminders" => {
             agenda.sweep(app);
@@ -361,10 +503,26 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                     "id": i.id,
                     "kind": i.kind,
                     "title": i.title,
+                    "note": i.note,
                     "at": DateTime::from_timestamp_millis(i.at_ms).map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string()).unwrap_or_default()
                 })).collect::<Vec<_>>(),
                 "detail": if items.is_empty() { "Nothing is scheduled.".into() } else { format!("{} things scheduled.", items.len()) }
             }))
+        }
+        "update_reminder" => {
+            let id = args["id"].as_i64().ok_or("id from list_reminders is required")? as i32;
+            let existing = agenda.item(id).ok_or("Nothing scheduled with that id.")?;
+            let title = args["title"].as_str().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&existing.title);
+            let note = args["note"].as_str().map(str::trim).unwrap_or(&existing.note);
+            let at_ms = match args["at"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                Some(s) => parse_local_when(s)?.timestamp_millis(),
+                None => existing.at_ms,
+            };
+            let item = agenda.upsert_item(app, Some(id), &existing.kind, title, note, at_ms)?;
+            let when = DateTime::from_timestamp_millis(item.at_ms)
+                .map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string())
+                .unwrap_or_default();
+            Ok(json!({ "ok": true, "id": item.id, "detail": format!("Updated: {} at {when}", item.title) }))
         }
         "cancel_reminder" => {
             let id = args["id"].as_i64().ok_or("id from list_reminders is required")? as i32;
@@ -373,50 +531,154 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
         }
         "list_calendar_events" => {
             let (start, end, day) = day_bounds(args["day"].as_str())?;
-            let events = ensure_calendar(app, start, end)?;
+            let mut events = match ensure_calendar(app, start, end) {
+                Ok(e) => e,
+                Err(err) if err.contains("denied") || err.contains("permission") => Vec::new(),
+                Err(err) => return Err(err),
+            };
+            for e in agenda.lock().events.iter().filter(|e| e.start_ms < end && e.end_ms > start) {
+                events.push(e.clone());
+            }
+            events.sort_by_key(|e| e.start_ms);
             Ok(json!({
                 "ok": true,
                 "day": day,
                 "count": events.len(),
                 "events": events.iter().map(|e| json!({
+                    "id": e.id,
                     "title": e.title,
+                    "source": e.source,
                     "when": if e.all_day { "all day".to_string() } else { format_span(e.start_ms, e.end_ms) },
                     "location": e.location
                 })).collect::<Vec<_>>(),
                 "detail": if events.is_empty() { format!("Nothing on the calendar for {day}.") } else { format!("{} events on {day}.", events.len()) }
             }))
         }
-        "create_calendar_event" => {
-            let title = label_or(args, "title", "");
-            if title.is_empty() {
-                return Err("The event needs a title.".into());
-            }
-            let start = parse_local_when(args["start"].as_str().unwrap_or(""))?;
-            let end = match args["end"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
-                Some(s) => parse_local_when(s)?,
-                None => start + Duration::hours(1),
-            };
-            if end <= start {
-                return Err("The event ends before it starts.".into());
-            }
-            let location = args["location"].as_str().unwrap_or("").trim();
-            ensure_calendar_permission(app)?;
-            let raw = app
-                .state::<NativeBridge>()
-                .create_event(&title, start.timestamp_millis(), end.timestamp_millis(), location)
-                .map_err(|e| e.to_string())?;
-            let v: Value = serde_json::from_str(&raw).unwrap_or(json!({ "ok": false, "error": "bad calendar response" }));
-            if v["ok"] == true {
-                touch(app);
-                Ok(json!({
-                    "ok": true,
-                    "detail": format!("Added \"{title}\" on {}.", start.format("%a %-d %b %-H:%M"))
-                }))
-            } else {
-                Ok(v)
-            }
-        }
+        "create_calendar_event" => create_or_local(app, &agenda, args),
+        "update_calendar_event" => update_event(app, &agenda, args),
+        "delete_calendar_event" => delete_event(app, &agenda, args),
         _ => Err(format!("Unknown tool {name}")),
+    }
+}
+
+fn create_or_local(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value, String> {
+    let title = label_or(args, "title", "");
+    if title.is_empty() {
+        return Err("The event needs a title.".into());
+    }
+    let start = parse_local_when(args["start"].as_str().unwrap_or(""))?;
+    let end = match args["end"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => parse_local_when(s)?,
+        None => start + Duration::hours(1),
+    };
+    if end <= start {
+        return Err("The event ends before it starts.".into());
+    }
+    let location = args["location"].as_str().unwrap_or("").trim().chars().take(200).collect::<String>();
+
+    if ensure_calendar_permission(app).is_ok() {
+        let raw = app
+            .state::<NativeBridge>()
+            .create_event(&title, start.timestamp_millis(), end.timestamp_millis(), &location)
+            .map_err(|e| e.to_string())?;
+        let v: Value = serde_json::from_str(&raw).unwrap_or(json!({ "ok": false }));
+        if v["ok"] == true {
+            touch(app);
+            let id = v["id"].as_str().unwrap_or("").to_string();
+            return Ok(json!({
+                "ok": true,
+                "id": id,
+                "source": "phone",
+                "detail": format!("Added \"{title}\" on {}.", start.format("%a %-d %b %-H:%M"))
+            }));
+        }
+    }
+
+    let event = CalEvent {
+        id: format!("local-{}", Local::now().timestamp_millis()),
+        title: title.clone(),
+        start_ms: start.timestamp_millis(),
+        end_ms: end.timestamp_millis(),
+        location,
+        all_day: false,
+        source: "local".into(),
+    };
+    agenda.upsert_local_event(app, event.clone())?;
+    Ok(json!({
+        "ok": true,
+        "id": event.id,
+        "source": "local",
+        "detail": format!("Saved \"{title}\" on {} in the Plan tab.", start.format("%a %-d %b %-H:%M"))
+    }))
+}
+
+fn update_event(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value, String> {
+    let id = args["id"].as_str().unwrap_or("").trim();
+    if id.is_empty() {
+        return Err("Which event? Call list_calendar_events and use an id.".into());
+    }
+
+    if id.starts_with("local-") || agenda.local_event(id).is_some() {
+        let mut event = agenda.local_event(id).ok_or("No local event with that id.")?;
+        if let Some(title) = args["title"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+            event.title = title.chars().take(120).collect();
+        }
+        if let Some(loc) = args["location"].as_str() {
+            event.location = loc.trim().chars().take(200).collect();
+        }
+        if let Some(s) = args["start"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+            event.start_ms = parse_local_when(s)?.timestamp_millis();
+        }
+        if let Some(s) = args["end"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+            event.end_ms = parse_local_when(s)?.timestamp_millis();
+        } else if event.end_ms <= event.start_ms {
+            event.end_ms = event.start_ms + 3_600_000;
+        }
+        agenda.upsert_local_event(app, event.clone())?;
+        return Ok(json!({ "ok": true, "id": event.id, "detail": format!("Updated \"{}\".", event.title) }));
+    }
+
+    ensure_calendar_permission(app)?;
+    let title = args["title"].as_str().unwrap_or("").trim();
+    let location = args["location"].as_str().unwrap_or("").trim();
+    let start_ms = match args["start"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => parse_local_when(s)?.timestamp_millis(),
+        None => 0,
+    };
+    let end_ms = match args["end"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => parse_local_when(s)?.timestamp_millis(),
+        None => 0,
+    };
+    let raw = app
+        .state::<NativeBridge>()
+        .update_event(id, title, start_ms, end_ms, location)
+        .map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_str(&raw).unwrap_or(json!({ "ok": false, "error": "bad calendar response" }));
+    if v["ok"] == true {
+        touch(app);
+        Ok(json!({ "ok": true, "id": id, "detail": "Updated that calendar event." }))
+    } else {
+        Ok(v)
+    }
+}
+
+fn delete_event(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value, String> {
+    let id = args["id"].as_str().unwrap_or("").trim();
+    if id.is_empty() {
+        return Err("Which event? Call list_calendar_events and use an id.".into());
+    }
+    if id.starts_with("local-") || agenda.local_event(id).is_some() {
+        agenda.delete_local_event(app, id)?;
+        return Ok(json!({ "ok": true, "detail": "Deleted that event." }));
+    }
+    ensure_calendar_permission(app)?;
+    let raw = app.state::<NativeBridge>().delete_event(id).map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_str(&raw).unwrap_or(json!({ "ok": false, "error": "bad calendar response" }));
+    if v["ok"] == true {
+        touch(app);
+        Ok(json!({ "ok": true, "detail": "Deleted that calendar event." }))
+    } else {
+        Ok(v)
     }
 }
 
@@ -436,6 +698,7 @@ fn finish_schedule(
     }
     if v["via"] == "local" {
         let mut store = agenda.lock();
+        store.items.retain(|i| i.id != id);
         store.items.push(Item {
             id,
             kind: kind.into(),
@@ -456,13 +719,13 @@ fn finish_schedule(
     Ok(json!({ "ok": true, "id": id, "detail": spoken }))
 }
 
-fn calendar_today(app: &AppHandle) -> Result<(Vec<CalEvent>, String), String> {
+fn calendar_range(app: &AppHandle, day: Option<&str>) -> Result<(Vec<CalEvent>, String), String> {
     let bridge = app.state::<NativeBridge>();
     let status = bridge.check_permissions().map_err(|e| e.to_string())?;
     if status.calendar != "granted" {
         return Ok((Vec::new(), status.calendar));
     }
-    let (start, end, _) = day_bounds(None)?;
+    let (start, end, _) = day_bounds(day)?;
     let events = read_events(&bridge, start, end)?;
     Ok((events, "granted".into()))
 }

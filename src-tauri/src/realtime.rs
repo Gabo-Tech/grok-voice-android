@@ -384,7 +384,7 @@ impl Session<'_> {
     fn spoken_instructions(&self) -> String {
         let mut s = self.settings.instructions.trim().to_string();
         s.push_str(
-            "\n\nYou can use these phone tools: create_note, list_notes, delete_note, set_alarm, set_timer, set_reminder, list_reminders, cancel_reminder, list_calendar_events, create_calendar_event. Call the tool before saying it is done. Then confirm in one short sentence. Times are local. Pass reminder and calendar times as YYYY-MM-DDTHH:MM. Pass alarms as hour 0-23 and minute. Pass timers as a length in seconds. Use set_reminder for a one-off like tomorrow at 3, and set_alarm for a clock alarm.",
+            "\n\nYou can use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
         );
         s
     }

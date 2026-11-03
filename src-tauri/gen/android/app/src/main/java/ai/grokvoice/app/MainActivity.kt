@@ -10,6 +10,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,9 +47,13 @@ class MainActivity : TauriActivity() {
 
   override fun onPause() {
     super.onPause()
-    // Wry pauses the WebView here, which blanks a still-visible page (the mic
-    // session and the foreground service both pass through onPause).
-    if (!isFinishing) resumeWebViews()
+    // Only keep the WebView painting while the activity is still the thing on
+    // screen. Forcing it awake after Home/recent-apps stops the page from blanking
+    // during a mic session, but also keeps the process from settling into the
+    // microphone foreground service — and that was killing wake-word capture.
+    if (!isFinishing && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && hasWindowFocus()) {
+      resumeWebViews()
+    }
   }
 
   override fun onResume() {

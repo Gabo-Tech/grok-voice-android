@@ -130,6 +130,7 @@ struct EngineThread {
     session: Option<SessionLink>,
     recording: Option<Recording>,
     last_level: Instant,
+    last_chunk_at: Instant,
     scratch: Vec<f32>,
 }
 
@@ -158,6 +159,7 @@ impl EngineThread {
             session: None,
             recording: None,
             last_level: Instant::now(),
+            last_chunk_at: Instant::now(),
             scratch: Vec::with_capacity(4096),
         }
     }
@@ -176,6 +178,14 @@ impl EngineThread {
             if self.input_failed.swap(false, Ordering::Relaxed) {
                 self.hub.warn("microphone stream interrupted, reopening");
                 self.input = None;
+            }
+            // Android often silences AudioRecord once the activity is stopped, without an
+            // error callback. Reopen when the wake listener is armed but no frames arrive.
+            let needs_mic = self.wake_enabled || self.session.is_some() || self.recording.is_some();
+            if needs_mic && self.input.is_some() && self.last_chunk_at.elapsed() >= Duration::from_millis(1500) {
+                self.hub.warn("microphone went silent, reopening for wake listening");
+                self.input = None;
+                self.wake_buf.clear();
             }
             if self.output_failed.swap(false, Ordering::Relaxed) {
                 self.hub.warn("speaker stream interrupted, reopening");
@@ -300,6 +310,7 @@ impl EngineThread {
                     self.input = Some(input);
                     self.mic_warned = false;
                     self.mic_retry_at = None;
+                    self.last_chunk_at = Instant::now();
                 }
                 Err(e) => {
                     if !self.mic_warned {
@@ -357,6 +368,7 @@ impl EngineThread {
 
     fn on_chunk(&mut self, chunk: &[f32]) {
         let Some(input) = self.input.as_mut() else { return };
+        self.last_chunk_at = Instant::now();
         let mut pcm = std::mem::take(&mut self.scratch);
         pcm.clear();
         input.resampler.process(chunk, &mut pcm);

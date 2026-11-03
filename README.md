@@ -2,14 +2,14 @@
 
 A bring-your-own-key voice assistant for Android. The phone talks to the [xAI Realtime API](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) directly. Audio, the wake word, and your API key stay on the device.
 
-The current sideload build is [Grok Voice 0.1.0](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
+The current sideload build is [Grok Voice 0.1.1](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
 
 ## Install
 
-Download `GrokVoice-0.1.0.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
+Download `GrokVoice-0.1.1.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
 
 ```bash
-adb install -r GrokVoice-0.1.0.apk
+adb install -r GrokVoice-0.1.1.apk
 ```
 
 Allow installs from unknown sources if Android asks. This package is signed with a debug key so it can be installed by hand. It is not a Play Store upload.
@@ -47,7 +47,7 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 | “What’s on my calendar today?” | Reads the phone calendar. Android asks for calendar access the first time. |
 | “Add lunch with Ana tomorrow at 1” | Writes an event. If you omit the end time, it lasts one hour. |
 
-**Plan** lists today’s events, scheduled reminders, alarms, and timers, and your notes. You can delete them there. **Allow calendar** on that tab requests calendar access if a voice request has not already done it.
+**Plan** lists today’s events, scheduled reminders, alarms, and timers, and your notes. You can create, edit, and delete them there by hand, or by voice (“change that note”, “delete the lunch event”, “move my reminder to 5”). **Allow calendar** on that tab requests calendar access if a voice request has not already done it. If the phone has no writable calendar account, events are saved in the app instead and still show on Plan.
 
 Times you say are local. “Remind me tomorrow at 3” is a one-off reminder. “Set an alarm for 7:30” is a clock alarm for the next time that hour and minute occurs.
 

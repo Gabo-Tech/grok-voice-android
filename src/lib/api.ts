@@ -36,11 +36,13 @@ export interface ScheduledItem {
 }
 
 export interface CalEvent {
+  id: string;
   title: string;
   startMs: number;
   endMs: number;
   location: string;
   allDay: boolean;
+  source?: string;
 }
 
 export interface Agenda {
@@ -134,8 +136,38 @@ export const api = {
   debugSnapshot: () => invoke<DebugInfo>("debug_snapshot"),
   debugLogs: () => invoke<LogLine[]>("debug_logs"),
   agendaSnapshot: () => invoke<Agenda>("agenda_snapshot"),
+  saveNote: (text: string, id?: string) => invoke<Agenda>("save_note", { text, id: id ?? null }),
   deleteNote: (id: string) => invoke<Agenda>("delete_note", { id }),
+  saveScheduled: (args: {
+    title: string;
+    atMs: number;
+    note?: string;
+    kind?: string;
+    id?: number;
+  }) =>
+    invoke<Agenda>("save_scheduled", {
+      title: args.title,
+      atMs: args.atMs,
+      note: args.note ?? null,
+      kind: args.kind ?? null,
+      id: args.id ?? null,
+    }),
   cancelScheduled: (id: number) => invoke<Agenda>("cancel_scheduled", { id }),
+  saveEvent: (args: {
+    title: string;
+    startMs: number;
+    endMs: number;
+    location?: string;
+    id?: string;
+  }) =>
+    invoke<Agenda>("save_event", {
+      title: args.title,
+      startMs: args.startMs,
+      endMs: args.endMs,
+      location: args.location ?? null,
+      id: args.id ?? null,
+    }),
+  deleteEvent: (id: string) => invoke<Agenda>("delete_event", { id }),
   requestCalendar: () => invoke<PermissionStatus>("request_calendar"),
 };
 
