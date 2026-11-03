@@ -119,17 +119,20 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
           void voice.sendText(text);
         }}
       >
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Type a question"
-          enterKeyHint="send"
-          className="min-w-0 flex-1 border border-border bg-transparent px-3 py-2 text-base text-foreground outline-none placeholder:text-muted-foreground"
-        />
+        <label className="min-w-0 flex-1">
+          <span className="mb-2 block text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Question</span>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Weather in Zurich today"
+            enterKeyHint="send"
+            className="h-12 w-full border border-border bg-transparent px-3 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
+          />
+        </label>
         <button
           type="submit"
           disabled={voice.sending || draft.trim().length === 0}
-          className="shrink-0 border border-border px-3 py-2 text-xs tracking-[0.14em] text-foreground uppercase disabled:opacity-40"
+          className="h-12 shrink-0 self-end bg-foreground px-4 text-xs tracking-[0.14em] text-background uppercase disabled:opacity-40"
         >
           {voice.sending ? "…" : "Send"}
         </button>

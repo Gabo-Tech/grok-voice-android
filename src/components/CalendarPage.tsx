@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { EmptyState, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
+import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AgendaState } from "@/hooks/useAgenda";
@@ -222,8 +223,14 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
         }
       >
         <div className="space-y-4">
-          <Field label="Title">
-            <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Event" />
+          <Field label="Title" error={open ? agenda.error : null}>
+            <Input
+              autoFocus
+              value={title}
+              aria-invalid={Boolean(agenda.error) || undefined}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Zurich meetup"
+            />
           </Field>
           <Field label="Starts">
             <Input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
@@ -232,7 +239,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
             <Input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
           </Field>
           <Field label="Location">
-            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Optional" />
+            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Cafe, or leave blank" />
           </Field>
         </div>
       </Sheet>
@@ -288,11 +295,3 @@ function monthCells(year: number, month: number): Array<Date | null> {
   return cells;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block space-y-1.5">
-      <span className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{label}</span>
-      {children}
-    </label>
-  );
-}

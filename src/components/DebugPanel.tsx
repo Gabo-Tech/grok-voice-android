@@ -219,7 +219,7 @@ export function DebugPanel({
               <textarea
                 id="instructions"
                 rows={4}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                className="min-h-32 w-full border border-input bg-transparent px-3 py-3 text-base leading-relaxed outline-none focus-visible:border-foreground"
                 value={settings.instructions}
                 onChange={(e) => setSettings({ ...settings, instructions: e.target.value })}
               />

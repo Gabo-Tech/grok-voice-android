@@ -137,6 +137,10 @@ body {
   font-family: "IBM Plex Mono", "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
 .mark {
   --ink: #f2f2f2;
   position: relative;

@@ -3,8 +3,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Trash2 } from "lucide-react";
 import { EmptyState, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
+import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { formatWhen } from "@/hooks/useAgenda";
 import { api, type Note } from "@/lib/api";
@@ -69,12 +71,28 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
   return (
     <>
       <PageChrome title="Notes" subtitle={`${agenda.agenda.notes.length} saved`} onAdd={openNew} addLabel="New note">
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search notes"
-          className="mb-4"
-        />
+        <div className="mb-6">
+          <Field label="Search">
+            <div className="relative">
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="A word from a note"
+                aria-label="Search notes"
+                className="pr-16"
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="absolute top-0 right-0 h-12 px-3 text-xs tracking-[0.12em] text-foreground uppercase"
+                  onClick={() => setQuery("")}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </Field>
+        </div>
         {agenda.error && <p className="mb-3 px-1 text-xs text-muted-foreground">{agenda.error}</p>}
         {notes.length === 0 ? (
           <EmptyState
@@ -114,9 +132,6 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
               </Button>
             )}
             <div className="flex-1" />
-            <Button variant="ghost" onClick={() => setPreview((on) => !on)}>
-              {preview ? "Edit" : "Preview"}
-            </Button>
             <Button variant="ghost" onClick={close}>
               Cancel
             </Button>
@@ -126,18 +141,43 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
           </div>
         }
       >
-        <div className="space-y-3">
-          <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
-          {preview ? (
-            <NoteMarkdown text={text || "Nothing written yet."} />
-          ) : (
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Write in Markdown…"
-              className="min-h-[40vh] w-full resize-none bg-transparent font-mono text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
-            />
-          )}
+        <div className="border border-border">
+          <div className="px-3 pt-3">
+            <Field label="Title" error={open ? agenda.error : null}>
+              <Input
+                autoFocus
+                value={title}
+                aria-invalid={Boolean(agenda.error) || undefined}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Grocery list"
+                className="border-0 px-0 focus-visible:border-transparent"
+              />
+            </Field>
+          </div>
+          <div className="border-t border-border px-3 py-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Note</span>
+              <button
+                type="button"
+                className="text-xs tracking-[0.12em] text-foreground uppercase"
+                onClick={() => setPreview((on) => !on)}
+              >
+                {preview ? "Edit" : "Preview"}
+              </button>
+            </div>
+            {preview ? (
+              <div className="min-h-[40vh] py-1">
+                <NoteMarkdown text={text || "Nothing written yet."} />
+              </div>
+            ) : (
+              <Textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={"- milk\n- **bread**"}
+                className="min-h-[40vh] border-0 px-0 font-mono focus-visible:border-transparent"
+              />
+            )}
+          </div>
         </div>
       </Sheet>
     </>
