@@ -146,11 +146,11 @@ body {
   color: var(--ink);
   display: grid;
   place-items: center;
-  transition: transform 160ms ease, border-color 160ms ease;
+  transition: opacity 160ms ease, border-color 160ms ease;
 }
 
 .mark:active {
-  transform: scale(0.96);
+  opacity: 0.75;
 }
 
 .mark-fill {
@@ -218,36 +218,32 @@ body {
   }
 }
 
+/* Opacity-only motion. Translate/scale on a flex-1 page root is painted
+   vertically compressed by Android WebView (worse with software layers). */
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 @keyframes row-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 @keyframes sheet-in {
   from {
-    opacity: 0.4;
-    transform: translateY(18%);
+    opacity: 0;
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -256,15 +252,30 @@ body {
 }
 
 .animate-page-in {
-  animation: page-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: page-in 220ms ease both;
 }
 
 .animate-row-in {
-  animation: row-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: row-in 240ms ease both;
 }
 
 .animate-sheet-in {
-  animation: sheet-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: sheet-in 200ms ease both;
+}
+
+.sheet-panel.animate-sheet-in {
+  animation: sheet-slide 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes sheet-slide {
+  from {
+    transform: translate3d(0, 24px, 0);
+    opacity: 0;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

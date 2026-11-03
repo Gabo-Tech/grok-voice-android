@@ -41,8 +41,9 @@ class MainActivity : TauriActivity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
     }
-    // Hardware layers on this WebView drop the page once audio starts.
-    webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+    // SOFTWARE was used to dodge a blank-screen bug, but it vertically
+    // compresses flex layouts and text on this WebView. Stay on hardware.
+    webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
   }
 
   override fun onPause() {

@@ -27,7 +27,7 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
-                <Icon className={cn("size-5 transition-transform duration-200", active && "scale-110")} strokeWidth={active ? 2 : 1.5} />
+                <Icon className="size-5" strokeWidth={active ? 2 : 1.5} />
                 <span>{label}</span>
                 <span
                   className={cn(

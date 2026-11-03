@@ -15,11 +15,11 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
   }, [voice.rows]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col animate-page-in">
-      <header className="flex shrink-0 items-center justify-between gap-3 px-1 pb-3">
-        <div>
-          <h1 className="text-2xl font-medium tracking-tight">Talk</h1>
-          <p className="mt-1 text-xs text-muted-foreground">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 animate-page-in items-center justify-between gap-3 px-1 pb-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl leading-tight font-medium tracking-tight">Talk</h1>
+          <p className="mt-1 text-xs leading-normal text-muted-foreground">
             {wakeTrained ? "Hands-free stays on after you leave" : "Enroll wake word in More"}
           </p>
         </div>

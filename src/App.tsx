@@ -73,23 +73,25 @@ export default function App() {
         <p className="text-[10px] tracking-[0.12em] text-muted-foreground/80">{auth.keyHint}</p>
       </header>
 
-      <section className="flex min-h-0 flex-1 flex-col px-4 pt-2">
-        {tab === "talk" && <AssistantView voice={voice} wakeTrained={wake.trained} />}
-        {tab === "notes" && <NotesPage agenda={agenda} />}
-        {tab === "calendar" && <CalendarPage agenda={agenda} />}
-        {tab === "reminders" && <RemindersPage agenda={agenda} />}
-        {tab === "more" && (
-          <MorePage
-            voice={voice}
-            wake={wake}
-            onWake={setWake}
-            onSignedOut={() => {
-              setOnboarded(false);
-              void api.authStatus().then(setAuth);
-            }}
-            onReplayTour={() => setOnboarded(false)}
-          />
-        )}
+      <section className="relative min-h-0 flex-1 overflow-hidden px-4 pt-2">
+        <div key={tab} className="flex h-full min-h-0 flex-col">
+          {tab === "talk" && <AssistantView voice={voice} wakeTrained={wake.trained} />}
+          {tab === "notes" && <NotesPage agenda={agenda} />}
+          {tab === "calendar" && <CalendarPage agenda={agenda} />}
+          {tab === "reminders" && <RemindersPage agenda={agenda} />}
+          {tab === "more" && (
+            <MorePage
+              voice={voice}
+              wake={wake}
+              onWake={setWake}
+              onSignedOut={() => {
+                setOnboarded(false);
+                void api.authStatus().then(setAuth);
+              }}
+              onReplayTour={() => setOnboarded(false)}
+            />
+          )}
+        </div>
       </section>
 
       <BottomNav tab={tab} onChange={setTab} />
