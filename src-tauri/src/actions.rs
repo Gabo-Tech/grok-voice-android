@@ -169,6 +169,70 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["id"]
         })),
+        fn_tool("media_control", "Control whatever is already playing: play, pause, stop, next, or previous. Call immediately. No confirmation.", json!({
+            "type": "object",
+            "properties": { "action": { "type": "string", "enum": ["play", "pause", "stop", "next", "previous"] } },
+            "required": ["action"]
+        })),
+        fn_tool("set_volume", "Raise or lower the music volume. direction is up or down. steps is 1 to 5. Call immediately.", json!({
+            "type": "object",
+            "properties": {
+                "direction": { "type": "string", "enum": ["up", "down"] },
+                "steps": { "type": "integer" }
+            },
+            "required": ["direction"]
+        })),
+        fn_tool("find_contact", "Look up a person in the phone contacts by name. Returns phone and email. Call this before asking the user to spell a number. Then speak the match and wait for yes before opening WhatsApp, Signal, or email.", json!({
+            "type": "object",
+            "properties": { "name": { "type": "string" } },
+            "required": ["name"]
+        })),
+        fn_tool("open_browser", "Open the phone browser on a website or a web search. Speak the site or search and wait for a clear yes, then call with confirmed true.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "url": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["confirmed"]
+        })),
+        fn_tool("open_youtube", "Open YouTube on a search or a link. Speak the query and wait for a clear yes, then call with confirmed true. Does not send anything.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "url": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["confirmed"]
+        })),
+        fn_tool("open_whatsapp", "Open a WhatsApp draft. phone is digits with country code. text is the message. Speak the number and the message, wait for a clear yes, then call with confirmed true. The user taps Send in WhatsApp.", json!({
+            "type": "object",
+            "properties": {
+                "phone": { "type": "string" },
+                "text": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["phone", "text", "confirmed"]
+        })),
+        fn_tool("open_signal", "Open a Signal chat for a phone number with country code. text is the message to tell the user. Speak the number and the message, wait for a clear yes, then call with confirmed true. The user sends it in Signal.", json!({
+            "type": "object",
+            "properties": {
+                "phone": { "type": "string" },
+                "text": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["phone", "confirmed"]
+        })),
+        fn_tool("open_email", "Open an email draft. Speak the address, subject, and body, wait for a clear yes, then call with confirmed true. The user taps Send in their mail app.", json!({
+            "type": "object",
+            "properties": {
+                "to": { "type": "string" },
+                "subject": { "type": "string" },
+                "body": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["to", "confirmed"]
+        })),
         fn_tool("web_search", "Search the live web and return a sourced summary. Use this for news, weather, scores, prices, and anything about today or recently. query is a specific search, such as 'most relevant news Zurich today'.", json!({
             "type": "object",
             "properties": { "query": { "type": "string" } },
@@ -441,9 +505,86 @@ pub fn run(app: &AppHandle, name: &str, arguments: &str) -> String {
     out
 }
 
+fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
+    let bridge = app.state::<NativeBridge>();
+    let raw = match name {
+        "media_control" => bridge
+            .media_control(args["action"].as_str().unwrap_or(""))
+            .map_err(|e| e.to_string())?,
+        "set_volume" => {
+            let steps = args["steps"].as_i64().unwrap_or(1).clamp(1, 5) as i32;
+            bridge
+                .adjust_volume(args["direction"].as_str().unwrap_or(""), steps)
+                .map_err(|e| e.to_string())?
+        }
+        "find_contact" => {
+            let name = args["name"].as_str().unwrap_or("").trim().to_string();
+            let mut raw = bridge.lookup_contacts(&name).map_err(|e| e.to_string())?;
+            if raw.contains("not granted") {
+                let _ = bridge.request_contacts();
+                raw = bridge.lookup_contacts(&name).map_err(|e| e.to_string())?;
+            }
+            return serde_json::from_str(&raw).map(Some).map_err(|e| e.to_string());
+        }
+        "open_youtube" | "open_whatsapp" | "open_signal" | "open_email" | "open_browser" => {
+            if args["confirmed"] != true {
+                let plan = match name {
+                    "open_browser" => format!(
+                        "Open the browser for {}?",
+                        args["query"].as_str().filter(|s| !s.is_empty()).unwrap_or(args["url"].as_str().unwrap_or("that page"))
+                    ),
+                    "open_youtube" => format!(
+                        "Open YouTube for {}?",
+                        args["query"].as_str().filter(|s| !s.is_empty()).unwrap_or(args["url"].as_str().unwrap_or("that video"))
+                    ),
+                    "open_whatsapp" => format!(
+                        "Open WhatsApp to {} with: {}?",
+                        args["phone"].as_str().unwrap_or(""),
+                        args["text"].as_str().unwrap_or("")
+                    ),
+                    "open_signal" => format!(
+                        "Open Signal for {}? Message: {}",
+                        args["phone"].as_str().unwrap_or(""),
+                        args["text"].as_str().unwrap_or("")
+                    ),
+                    _ => format!(
+                        "Open an email to {} about {}? {}",
+                        args["to"].as_str().unwrap_or(""),
+                        args["subject"].as_str().unwrap_or(""),
+                        args["body"].as_str().unwrap_or("")
+                    ),
+                };
+                return Ok(Some(json!({
+                    "ok": true,
+                    "opened": false,
+                    "detail": format!("{plan} Nothing was opened. Wait for a clear yes, then call this again with confirmed true.")
+                })));
+            }
+            let kind = name.trim_start_matches("open_");
+            bridge
+                .open_hand_off(
+                    kind,
+                    args["query"].as_str().unwrap_or(""),
+                    args["url"].as_str().unwrap_or(""),
+                    args["phone"].as_str().unwrap_or(""),
+                    args["text"].as_str().unwrap_or(""),
+                    args["to"].as_str().unwrap_or(""),
+                    args["subject"].as_str().unwrap_or(""),
+                    args["body"].as_str().unwrap_or(""),
+                )
+                .map_err(|e| e.to_string())?
+        }
+        _ => return Ok(None),
+    };
+    serde_json::from_str(&raw).map(Some).map_err(|e| e.to_string())
+}
+
 fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> {
     if name == "web_search" {
         return crate::search::lookup(app, args["query"].as_str().unwrap_or(""));
+    }
+    if let Some(value) = phone_tool(app, name, args)? {
+        return Ok(value);
     }
     let agenda = app.state::<Agenda>();
     match name {

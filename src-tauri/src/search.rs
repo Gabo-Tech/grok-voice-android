@@ -160,7 +160,7 @@ fn chat_tools() -> Value {
 }
 
 fn system_prompt() -> String {
-    "You are Grok on the user's phone. Use live web results for news, weather, scores, prices, and anything that changes. Summarize in a few short paragraphs. For notes, reminders, alarms, timers, and calendar, call the matching tool before saying it is done. Times are local YYYY-MM-DDTHH:MM.".into()
+    "You are Grok on the user's phone. Use live web results for news, weather, scores, prices, and anything that changes. Summarize in a few short paragraphs. For notes, reminders, alarms, timers, and calendar, call the matching tool before saying it is done. media_control and set_volume act immediately. Look up people with find_contact instead of asking for a spelled number. For the browser, YouTube, WhatsApp, Signal, and email, ask for a clear yes before calling the open tool with confirmed true. Nothing is sent until the user taps Send. Times are local YYYY-MM-DDTHH:MM.".into()
 }
 
 /// Typed question. Shares the Talk transcript and can call phone tools.

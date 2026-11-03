@@ -95,7 +95,8 @@ class EventIdArgs {
     Permission(
       strings = [Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR],
       alias = "calendar"
-    )
+    ),
+    Permission(strings = [Manifest.permission.READ_CONTACTS], alias = "contacts")
   ]
 )
 class VoicePlugin(private val activity: Activity) : Plugin(activity) {
@@ -231,6 +232,61 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
     } catch (e: Exception) {
       resolveJson(invoke, JSONObject().put("ok", false).put("error", e.message ?: "calendar update failed").toString())
     }
+  }
+
+  @InvokeArg
+  class MediaArgs {
+    var action: String = ""
+  }
+
+  @InvokeArg
+  class VolumeArgs {
+    var direction: String = ""
+    var steps: Int = 1
+  }
+
+  @InvokeArg
+  class HandOffArgs {
+    var kind: String = ""
+    var query: String = ""
+    var url: String = ""
+    var phone: String = ""
+    var text: String = ""
+    var to: String = ""
+    var subject: String = ""
+    var body: String = ""
+  }
+
+  @Command
+  fun mediaControl(invoke: Invoke) {
+    val a = invoke.parseArgs(MediaArgs::class.java)
+    resolveJson(invoke, HandOff.media(activity.applicationContext, a.action))
+  }
+
+  @Command
+  fun adjustVolume(invoke: Invoke) {
+    val a = invoke.parseArgs(VolumeArgs::class.java)
+    resolveJson(invoke, HandOff.volume(activity.applicationContext, a.direction, a.steps))
+  }
+
+  @InvokeArg
+  class ContactArgs {
+    var name: String = ""
+  }
+
+  @Command
+  fun lookupContacts(invoke: Invoke) {
+    val a = invoke.parseArgs(ContactArgs::class.java)
+    resolveJson(invoke, HandOff.contacts(activity.applicationContext, a.name))
+  }
+
+  @Command
+  fun openHandOff(invoke: Invoke) {
+    val a = invoke.parseArgs(HandOffArgs::class.java)
+    resolveJson(
+      invoke,
+      HandOff.open(activity.applicationContext, a.kind, a.query, a.url, a.phone, a.text, a.to, a.subject, a.body)
+    )
   }
 
   @Command

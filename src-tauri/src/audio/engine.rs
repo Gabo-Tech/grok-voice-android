@@ -132,6 +132,7 @@ struct EngineThread {
     wake_buf: Vec<f32>,
     preroll: VecDeque<f32>,
     uplink: Resampler,
+    uplink_gain: f32,
     session: Option<SessionLink>,
     recording: Option<Recording>,
     last_level: Instant,
@@ -163,6 +164,7 @@ impl EngineThread {
             wake_buf: Vec::with_capacity(4096),
             preroll: VecDeque::with_capacity(PREROLL),
             uplink: Resampler::new(WAKE_RATE, UPLINK_RATE),
+            uplink_gain: 1.0,
             session: None,
             recording: None,
             last_level: Instant::now(),
@@ -418,7 +420,8 @@ impl EngineThread {
             let mute = self.settings.echo_guard && self.player.is_active();
             let mut up = Vec::new();
             self.uplink.process(&pcm, &mut up);
-            link.pending.extend(up.iter().map(|&s| if mute { 0 } else { f32_to_i16(s) }));
+            let gain = self.uplink_gain;
+            link.pending.extend(up.iter().map(|&s| if mute { 0 } else { f32_to_i16((s * gain).clamp(-1.0, 1.0)) }));
             let mut closed = false;
             while link.pending.len() >= UPLINK_CHUNK {
                 let frame: Vec<i16> = link.pending.drain(..UPLINK_CHUNK).collect();
@@ -470,10 +473,16 @@ impl EngineThread {
         let active = Arc::new(AtomicBool::new(true));
         self.uplink = Resampler::new(WAKE_RATE, UPLINK_RATE);
         let lead: Vec<f32> = self.preroll.drain(..).collect();
+        let peak = lead.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        // Phone float audio is often far below full scale. Server VAD ignores it,
+        // while the wake-word model still matches. Lift speech toward half scale.
+        self.uplink_gain = if peak < 0.0008 { 1.0 } else { (0.45 / peak).clamp(1.0, 16.0) };
+        self.hub.info(format!("uplink gain {:.1} (mic peak {:.4})", self.uplink_gain, peak));
         let mut up = Vec::new();
         self.uplink.process(&lead, &mut up);
+        let gain = self.uplink_gain;
         let mut pending = Vec::with_capacity(UPLINK_CHUNK * 2 + up.len());
-        pending.extend(up.iter().map(|&s| f32_to_i16(s)));
+        pending.extend(up.iter().map(|&s| f32_to_i16((s * gain).clamp(-1.0, 1.0))));
         self.session = Some(SessionLink {
             tx,
             pending,

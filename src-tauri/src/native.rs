@@ -140,6 +140,20 @@ mod imp {
                 .map_err(|e| msg(e.to_string()))
         }
 
+        pub fn request_contacts(&self) -> Result<PermissionStatus> {
+            self.handle
+                .run_mobile_plugin("requestPermissions", PermArgs { permissions: vec!["contacts"] })
+                .map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn lookup_contacts(&self, name: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                name: &'a str,
+            }
+            self.plugin_json("lookupContacts", Args { name })
+        }
+
         pub fn set_alarm(&self, hour: u32, minute: u32, label: &str, id: i32, at_ms: i64) -> Result<String> {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
@@ -228,6 +242,51 @@ mod imp {
             }
             self.plugin_json("deleteCalendarEvent", Args { id })
         }
+
+        pub fn media_control(&self, action: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                action: &'a str,
+            }
+            self.plugin_json("mediaControl", Args { action })
+        }
+
+        pub fn adjust_volume(&self, direction: &str, steps: i32) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                direction: &'a str,
+                steps: i32,
+            }
+            self.plugin_json("adjustVolume", Args { direction, steps })
+        }
+
+        pub fn open_hand_off(
+            &self,
+            kind: &str,
+            query: &str,
+            url: &str,
+            phone: &str,
+            text: &str,
+            to: &str,
+            subject: &str,
+            body: &str,
+        ) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                kind: &'a str,
+                query: &'a str,
+                url: &'a str,
+                phone: &'a str,
+                text: &'a str,
+                to: &'a str,
+                subject: &'a str,
+                body: &'a str,
+            }
+            self.plugin_json(
+                "openHandOff",
+                Args { kind, query, url, phone, text, to, subject, body },
+            )
+        }
     }
 }
 
@@ -268,6 +327,14 @@ mod imp {
             self.check_permissions()
         }
 
+        pub fn request_contacts(&self) -> Result<PermissionStatus> {
+            self.check_permissions()
+        }
+
+        pub fn lookup_contacts(&self, name: &str) -> Result<String> {
+            Ok(format!(r#"{{"ok":false,"error":"Contacts for {name} are only on the Android phone."}}"#))
+        }
+
         pub fn request_calendar(&self) -> Result<PermissionStatus> {
             self.check_permissions()
         }
@@ -290,6 +357,28 @@ mod imp {
 
         pub fn cancel_item(&self, _id: i32) -> Result<String> {
             Ok(r#"{"ok":true}"#.into())
+        }
+
+        pub fn media_control(&self, action: &str) -> Result<String> {
+            Ok(format!(r#"{{"ok":true,"detail":"Would send media {action} on the phone."}}"#))
+        }
+
+        pub fn adjust_volume(&self, direction: &str, _steps: i32) -> Result<String> {
+            Ok(format!(r#"{{"ok":true,"detail":"Would turn volume {direction} on the phone."}}"#))
+        }
+
+        pub fn open_hand_off(
+            &self,
+            kind: &str,
+            _query: &str,
+            _url: &str,
+            _phone: &str,
+            _text: &str,
+            _to: &str,
+            _subject: &str,
+            _body: &str,
+        ) -> Result<String> {
+            Ok(format!(r#"{{"ok":true,"detail":"Would open {kind} on the phone."}}"#))
         }
 
         pub fn list_calendar(&self, _start_ms: i64, _end_ms: i64) -> Result<String> {

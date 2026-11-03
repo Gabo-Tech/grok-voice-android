@@ -446,7 +446,12 @@ impl Session<'_> {
                 "voice": self.settings.voice,
                 "instructions": self.spoken_instructions(),
                 "tools": actions::tool_definitions(),
-                "turn_detection": { "type": "server_vad" },
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.2,
+                    "prefix_padding_ms": 400,
+                    "silence_duration_ms": 700
+                },
                 "audio": {
                     "input": {
                         "format": { "type": "audio/pcm", "rate": UPLINK_RATE },
@@ -463,7 +468,7 @@ impl Session<'_> {
     fn spoken_instructions(&self) -> String {
         let mut s = self.settings.instructions.trim().to_string();
         s.push_str(
-            "\n\nYou can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
+            "\n\nYou can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. media_control and set_volume act immediately on whatever is playing. For a person, call find_contact first and use that phone or email instead of asking them to spell it. For open_browser, open_youtube, open_whatsapp, open_signal, and open_email, say exactly what will open and wait for a clear yes before calling with confirmed true. Nothing is sent until the user taps Send in that app. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
         );
         s
     }
