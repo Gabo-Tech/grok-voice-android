@@ -41,9 +41,10 @@ class MainActivity : TauriActivity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
     }
-    // SOFTWARE was used to dodge a blank-screen bug, but it vertically
-    // compresses flex layouts and text on this WebView. Stay on hardware.
-    webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+    // Hardware layers blank this WebView as soon as mic/playback audio
+    // starts (in-app talk and wake listening both die). Software paint is
+    // required for voice; keep page motion opacity-only so lists do not squash.
+    webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
   }
 
   override fun onPause() {
