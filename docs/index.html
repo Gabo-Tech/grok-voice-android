@@ -6,7 +6,7 @@
     <title>Grok Voice: Free Open-Source "Hey Grok" Voice Assistant for Android</title>
     <meta
       name="description"
-      content="Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone."
+      content="Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI."
     />
     <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/" />
     <meta name="author" content="Gabriel Clemente" />
@@ -21,7 +21,7 @@
     />
     <meta
       property="og:description"
-      content="Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone."
+      content="Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI."
     />
     <meta property="og:url" content="https://gabo-tech.github.io/grok-voice-android/" />
     <meta property="og:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
@@ -40,7 +40,7 @@
     />
     <meta
       name="twitter:description"
-      content="Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone."
+      content="Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI."
     />
     <meta name="twitter:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
     <meta
@@ -52,7 +52,7 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Grok Voice",
-        "description": "Free, open-source “Hey Grok” voice assistant for Android. Wake word, notes, calendar, reminders, and live search. Your xAI API key stays on the phone.",
+        "description": "Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI.",
         "url": "https://gabo-tech.github.io/grok-voice-android/",
         "image": "https://gabo-tech.github.io/grok-voice-android/og.png",
         "operatingSystem": "Android",
@@ -83,7 +83,7 @@
             "name": "What is Grok Voice?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. Audio, the wake word, and your API key stay on the device. The app is free and open source under the MIT license."
+              "text": "A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. The wake word stays on the device. Speech, transcripts, and search are sent to xAI under your key. The app is free and open source under the MIT license."
             }
           },
           {
@@ -99,7 +99,7 @@
             "name": "Where does my API key go?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "You paste an xAI API key during setup. The app checks it, then stores it in an on-device vault. Each voice session uses a short-lived client secret minted on the phone. The long-lived key is not sent on the WebSocket."
+              "text": "You paste an xAI API key during setup. It is stored encrypted on the phone, and sent to api.x.ai to mint a short-lived voice token. Speech, the transcript, and live search then go to xAI under that key."
             }
           },
           {
@@ -107,7 +107,7 @@
             "name": "Are wake-word recordings uploaded?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. “Hey Grok” is trained on the phone from three recordings you make. Those samples are not uploaded. Hands-free listening can stay on after you leave, including with the screen off."
+              "text": "No. Wake-word audio is checked on the device and is not uploaded. “Hey Grok” is trained on the phone from three recordings you make, and those samples are not uploaded."
             }
           },
           {
@@ -132,7 +132,7 @@
         <ul id="site-nav">
           <li><a href="#talk">Talk</a></li>
           <li><a href="#phone">Phone</a></li>
-          <li><a href="#private">Private</a></li>
+          <li><a href="#private">Privacy</a></li>
           <li><a href="#install">Install</a></li>
           <li><a href="#faq">Questions</a></li>
         </ul>
@@ -150,10 +150,10 @@
             alt="Grok Voice app icon, a white square frame on black"
           />
           <p class="eyebrow">Android · bring your own key</p>
-          <h1>A voice that stays on the phone.</h1>
+          <h1>A voice assistant on your phone.</h1>
           <p class="lead">
-            Say “Hey Grok” with the screen off. Type when you can’t talk. Notes, calendar, reminders,
-            and live search stay with you.
+            Say “Hey Grok” with the screen off. Type when you can’t talk. Notes, calendar, and reminders
+            stay on the phone. A conversation is sent to xAI.
           </p>
           <div class="actions">
             <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.10/GrokVoice-0.1.10.apk">
@@ -199,14 +199,15 @@
 
       <section id="private" class="band">
         <div class="wrap narrow reveal">
-          <h2>The key stays here</h2>
+          <h2>Privacy</h2>
           <p>
-            You paste a key during setup. The app checks it, then locks it in on-device storage.
-            Voice uses a short-lived token minted on the phone. Wake-word recordings are not uploaded.
+            This app has no server of its own and does not collect analytics. The key is stored encrypted on the phone.
+            Wake-word audio is checked on the device and is not uploaded. Notes, reminders, and in-app events stay in a local file.
           </p>
           <p>
-            You can keep more than one key, in the order you prefer. If the first connection fails, the next is tried.
-            Spoken replies use xAI realtime voice today.
+            A conversation is not private from xAI. The key is sent to api.x.ai to mint a short-lived voice token.
+            After “Hey Grok,” or when you tap the microphone, your speech and the transcript go to xAI. A typed question
+            and a live search do too. xAI sees that content under your key.
           </p>
         </div>
       </section>
@@ -232,7 +233,7 @@
           <dl class="faq">
             <div>
               <dt>What is Grok Voice?</dt>
-              <dd>A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. Audio, the wake word, and your API key stay on the device. The app is free and open source under the MIT license.</dd>
+              <dd>A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. The wake word stays on the device. Speech, transcripts, and search are sent to xAI under your key. The app is free and open source under the MIT license.</dd>
             </div>
             <div>
               <dt>How do I install it?</dt>
@@ -240,11 +241,11 @@
             </div>
             <div>
               <dt>Where does my API key go?</dt>
-              <dd>You paste an xAI API key during setup. The app checks it, then stores it in an on-device vault. Each voice session uses a short-lived client secret minted on the phone. The long-lived key is not sent on the WebSocket.</dd>
+              <dd>You paste an xAI API key during setup. It is stored encrypted on the phone, and sent to api.x.ai to mint a short-lived voice token. Speech, the transcript, and live search then go to xAI under that key.</dd>
             </div>
             <div>
               <dt>Are wake-word recordings uploaded?</dt>
-              <dd>No. “Hey Grok” is trained on the phone from three recordings you make. Those samples are not uploaded. Hands-free listening can stay on after you leave, including with the screen off.</dd>
+              <dd>No. Wake-word audio is checked on the device and is not uploaded. “Hey Grok” is trained on the phone from three recordings you make, and those samples are not uploaded.</dd>
             </div>
             <div>
               <dt>What can I ask?</dt>
