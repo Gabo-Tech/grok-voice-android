@@ -270,6 +270,35 @@ footer a {
 
 footer .also { margin-top: 0.85rem; }
 
+footer .featured { margin-top: 1.35rem; }
+
+footer .featured p { margin-bottom: 0.75rem; }
+
+footer .featured-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem 1.1rem;
+}
+
+footer .featured-badges a {
+  display: inline-flex;
+  line-height: 0;
+  max-width: 100%;
+  min-width: 0;
+  text-decoration: none;
+}
+
+footer .featured-badges a:first-child { width: min(202px, 100%); }
+
+footer .featured-badges a:nth-child(2) { width: min(120px, 100%); }
+
+footer .featured-badges img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .reveal {
   opacity: 0;
   transform: translateY(16px);
