@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gabo-tech.github.io/grok-voice-android/sitemap.xml
