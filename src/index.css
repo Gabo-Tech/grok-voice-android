@@ -207,11 +207,13 @@ input[type="datetime-local"] {
   position: relative;
   z-index: 1;
   display: flex;
-  max-height: min(88vh, 720px);
-  width: 100%;
+  max-height: min(92dvh, 720px);
+  width: min(100%, 640px);
   flex-direction: column;
+  overflow: hidden;
   border-top: 1px solid #2c2c2c;
   background: #121212;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .fab-pulse:active {

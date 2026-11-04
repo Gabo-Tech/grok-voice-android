@@ -46,8 +46,8 @@ export function GlowRing({
   const right = live ? "Tap to end" : "or tap to talk";
 
   return (
-    <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-1">
-      <p className="text-right text-[11px] leading-4 tracking-[0.14em] uppercase" style={{ color: style.color }}>
+    <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-1">
+      <p className="text-right text-[10px] leading-4 tracking-[0.08em] uppercase" style={{ color: style.color }}>
         {left}
       </p>
       <button
@@ -61,7 +61,7 @@ export function GlowRing({
         <span className="mark-fill rounded-full" style={{ opacity: 0.12 + amp * 0.7 }} />
         <Icon className="relative size-5" strokeWidth={1.25} />
       </button>
-      <p className="text-left text-[11px] leading-4 tracking-[0.14em] text-muted-foreground uppercase">{right}</p>
+      <p className="text-left text-[10px] leading-4 tracking-[0.08em] text-muted-foreground uppercase">{right}</p>
       <span className="sr-only" role="status">
         {style.label}
       </span>

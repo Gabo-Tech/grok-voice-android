@@ -154,7 +154,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
         title={editing ? `Edit ${kind}` : `New ${kind}`}
         onClose={close}
         footer={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {editing && (
               <Button variant="ghost" disabled={agenda.busy} onClick={() => remove(editing.id)}>
                 <Trash2 /> Delete

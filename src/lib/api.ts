@@ -185,6 +185,8 @@ export const api = {
     }),
   deleteEvent: (id: string) => invoke<Agenda>("delete_event", { id }),
   requestCalendar: () => invoke<PermissionStatus>("request_calendar"),
+  recentMemory: () => invoke<Array<{ atMs: number; role: "user" | "assistant"; text: string }>>("recent_memory"),
+  clearMemory: () => invoke<void>("clear_memory"),
 };
 
 export function errorText(e: unknown): string {

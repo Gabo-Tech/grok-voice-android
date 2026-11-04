@@ -26,6 +26,7 @@ const PROVIDERS = [
   { id: "openai", label: "OpenAI", placeholder: "sk-…", url: "https://platform.openai.com/api-keys", link: "Open OpenAI keys" },
   { id: "azure", label: "Azure", placeholder: "Azure key", url: "https://portal.azure.com/", link: "Open Azure portal" },
   { id: "elevenlabs", label: "ElevenLabs", placeholder: "xi-…", url: "https://elevenlabs.io/app/settings/api-keys", link: "Open ElevenLabs keys" },
+  { id: "local", label: "On device", placeholder: "", url: "", link: "" },
 ] as const;
 
 const STEPS = [
@@ -115,7 +116,7 @@ export function Onboarding({
         });
         return;
       }
-      const status = await api.addVoiceAccount(provider, key);
+      const status = await api.addVoiceAccount(provider, provider === "local" ? "on-device" : key);
       setKey("");
       onAuth(status);
     } catch (e) {
@@ -299,34 +300,42 @@ function KeyStep({
               key={item.id}
               type="button"
               onClick={() => onProvider(item.id)}
-              className={cn(
-                "border px-2 py-2 text-xs tracking-[0.12em] uppercase",
-                item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-              )}
+                className={cn(
+                  "flex h-12 items-center justify-center border px-2 text-center text-[11px] leading-tight tracking-[0.08em] uppercase",
+                  item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                )}
             >
               {item.label}
             </button>
           ))}
         </div>
-        <Button variant="outline" className="w-full" onClick={() => onOpen(chosen.url)}>
-          <ExternalLink /> {chosen.link}
-        </Button>
-        <div className="space-y-2">
-          <Label htmlFor="voice-key">Paste the {chosen.label} key</Label>
-          <Input
-            id="voice-key"
-            type="password"
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            placeholder={chosen.placeholder}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && value && !busy && onSave()}
-          />
-        </div>
-        <Button className="w-full" disabled={busy || value.trim().length < 12} onClick={onSave}>
-          {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} Save this key
+        {chosen.id === "local" ? (
+          <p className="text-sm leading-6 text-muted-foreground">
+            Speech and replies stay on the phone. No key. This voice is saved and used when the on-device connection is ready. Live search still needs a cloud key.
+          </p>
+        ) : (
+          <>
+            <Button variant="outline" className="w-full" onClick={() => onOpen(chosen.url)}>
+              <ExternalLink /> {chosen.link}
+            </Button>
+            <div className="space-y-2">
+              <Label htmlFor="voice-key">Paste the {chosen.label} key</Label>
+              <Input
+                id="voice-key"
+                type="password"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                placeholder={chosen.placeholder}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && value && !busy && onSave()}
+              />
+            </div>
+          </>
+        )}
+        <Button className="w-full" disabled={busy || (chosen.id !== "local" && value.trim().length < 12)} onClick={onSave}>
+          {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} {chosen.id === "local" ? "Use on device" : "Save this key"}
         </Button>
         {accounts.length > 0 && (
           <ul className="divide-y divide-border border-y border-border">
@@ -353,7 +362,7 @@ function KeyStep({
           <p className="text-xs text-muted-foreground">Add another key if you want a fallback, then tap Next.</p>
         )}
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Each key stays on this phone. xAI is verified before it is stored. The others are kept in
+          Each key stays on this phone. xAI is verified before it is stored. On device needs no key. The others are kept in
           this order and used when that voice connection is available. If the first one fails, the next is tried.
         </p>
       </CardContent>

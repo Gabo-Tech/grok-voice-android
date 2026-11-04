@@ -35,6 +35,19 @@ export function useVoice() {
       else unsubs.push(un);
     };
 
+    void api.recentMemory().then((turns) => {
+      if (disposed) return;
+      setRows((current) => {
+        if (current.length > 0) return current;
+        return turns.slice(-MAX_ROWS).map((turn) => ({
+          id: `mem-${turn.atMs}`,
+          role: turn.role === "assistant" ? "assistant" : "user",
+          text: turn.text,
+          isFinal: true,
+        }));
+      });
+    });
+
     void sub<Phase>("voice://phase", setPhase);
     void sub<boolean>("voice://wake_enabled", setWakeEnabled);
     void sub<Level>("voice://level", (l) => {
@@ -134,7 +147,10 @@ export function useVoice() {
     sending,
     busy,
     sendText,
-    clearTranscript: () => setRows([]),
+    clearTranscript: () => {
+      setRows([]);
+      if (isTauri()) void api.clearMemory();
+    },
     clearLogs: () => setLogs([]),
     toggleWake,
     toggleSession,

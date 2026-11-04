@@ -125,7 +125,7 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
         title={editing ? "Edit note" : "New note"}
         onClose={close}
         footer={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {editing && (
               <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
                 <Trash2 /> Delete

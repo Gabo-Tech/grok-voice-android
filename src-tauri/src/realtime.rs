@@ -78,6 +78,9 @@ async fn connect_account(
 ) -> Result<EphemeralToken> {
     match provider {
         "xai" => mint_ephemeral(http, secret).await,
+        "local" => Err(msg(
+            "on device is saved on this phone, and its voice connection is not ready yet",
+        )),
         other => Err(msg(format!(
             "{other} is saved on this phone, and its voice connection is not ready yet"
         ))),
@@ -252,17 +255,6 @@ impl Session<'_> {
                                     self.phase(Phase::Listening);
                                     last_activity = Instant::now();
                                     configured = true;
-                                    if let Some(note) = crate::search::context_note() {
-                                        let item = json!({
-                                            "type": "conversation.item.create",
-                                            "item": {
-                                                "type": "message",
-                                                "role": "user",
-                                                "content": [{ "type": "input_text", "text": note }]
-                                            }
-                                        });
-                                        tx.send(Message::Text(item.to_string())).await?;
-                                    }
                                     for frame in held.drain(..) {
                                         Self::append_pcm(&self.hub, &mut tx, &frame, &mut logged_uplink).await?;
                                     }
@@ -500,10 +492,16 @@ impl Session<'_> {
         s.push_str(
             "\n\nYou can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. media_control and set_volume act immediately on whatever is playing. For a person, call find_contact first and use that phone or email instead of asking them to spell it. For open_browser, open_youtube, open_whatsapp, open_signal, and open_email, say exactly what will open and wait for a clear yes before calling with confirmed true. Nothing is sent until the user taps Send in that app. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
         );
+        s.push_str(&self.app.state::<crate::memory::Memory>().prompt());
         s
     }
 
     fn transcript(&self, id: &str, role: &'static str, text: Option<&str>, delta: Option<&str>, is_final: bool) {
+        if is_final {
+            if let Some(text) = text.filter(|text| !text.trim().is_empty()) {
+                self.app.state::<crate::memory::Memory>().remember(role, text);
+            }
+        }
         self.hub.emit("voice://transcript", TranscriptEvent { id, role, text, delta, is_final });
     }
 }

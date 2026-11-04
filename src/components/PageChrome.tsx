@@ -32,7 +32,7 @@ export function PageChrome({
           )}
         </div>
       </header>
-      <div className="pb-2">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-2">{children}</div>
     </div>
   );
 }

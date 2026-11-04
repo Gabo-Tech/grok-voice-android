@@ -2,6 +2,7 @@ mod actions;
 mod audio;
 mod commands;
 mod diagnostics;
+mod memory;
 mod error;
 mod native;
 mod realtime;
@@ -68,6 +69,7 @@ pub fn run() {
             app.manage(Vault::new(dir.join("vault")));
             app.manage(WakewordFiles::new(dir.join("wakeword")));
             app.manage(actions::Agenda::load(dir.join("agenda.json")));
+            app.manage(memory::Memory::load(dir.join("memory.json")));
             let handle = app.handle().clone();
             std::thread::spawn(move || actions::reschedule(&handle));
             app.manage(Engine::spawn(app.handle().clone()));
@@ -103,6 +105,8 @@ pub fn run() {
             commands::delete_event,
             commands::request_calendar,
             commands::ask_text,
+            commands::recent_memory,
+            commands::clear_memory,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

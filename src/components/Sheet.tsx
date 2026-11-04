@@ -36,7 +36,7 @@ export function Sheet({
             <X />
           </Button>
         </header>
-        <div className="px-4 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
         {footer && <footer className="shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
       </div>
     </div>

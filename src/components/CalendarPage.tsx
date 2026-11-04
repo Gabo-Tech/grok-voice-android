@@ -164,9 +164,9 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-7 gap-y-1 px-1 text-center text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
-              <span key={label}>{label}</span>
+          <div className="grid grid-cols-7 px-1 text-center text-[10px] tracking-normal text-muted-foreground uppercase">
+            {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
+              <span key={`${label}-${index}`}>{label}</span>
             ))}
           </div>
           <div className="mt-1 grid grid-cols-7">
@@ -206,7 +206,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
         title={editing ? "Edit event" : "New event"}
         onClose={close}
         footer={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {editing?.id && (
               <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
                 <Trash2 /> Delete

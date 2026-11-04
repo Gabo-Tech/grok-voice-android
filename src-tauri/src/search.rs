@@ -12,30 +12,7 @@ use crate::{actions, diagnostics::Hub, native::NativeBridge, vault::Vault};
 const RESPONSES_URL: &str = "https://api.x.ai/v1/responses";
 const MODEL: &str = "grok-4.7";
 
-struct Turn {
-    role: &'static str,
-    content: String,
-}
-
-static HISTORY: Mutex<Vec<Turn>> = Mutex::new(Vec::new());
 static CONTEXT_NOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
-
-/// Recent typed turns, so a voice session does not ask for a city the user already typed.
-pub fn context_note() -> Option<String> {
-    let history = HISTORY.lock().unwrap_or_else(|e| e.into_inner());
-    if history.is_empty() {
-        return None;
-    }
-    let mut note = String::from("Recent typed conversation. Use it. Do not ask the user to repeat a place or fact already here, and do not answer this note by itself:\n");
-    for turn in history.iter().rev().take(6).collect::<Vec<_>>().into_iter().rev() {
-        note.push_str(turn.role);
-        note.push_str(": ");
-        let clip: String = turn.content.chars().take(500).collect();
-        note.push_str(&clip);
-        note.push('\n');
-    }
-    Some(note)
-}
 
 pub fn take_context_notes() -> Vec<String> {
     let mut notes = CONTEXT_NOTES.lock().unwrap_or_else(|e| e.into_inner());
@@ -160,7 +137,7 @@ fn chat_tools() -> Value {
 }
 
 fn system_prompt() -> String {
-    "You are Grok on the user's phone. Use live web results for news, weather, scores, prices, and anything that changes. Summarize in a few short paragraphs. For notes, reminders, alarms, timers, and calendar, call the matching tool before saying it is done. media_control and set_volume act immediately. Look up people with find_contact instead of asking for a spelled number. For the browser, YouTube, WhatsApp, Signal, and email, ask for a clear yes before calling the open tool with confirmed true. Nothing is sent until the user taps Send. Times are local YYYY-MM-DDTHH:MM.".into()
+    "You are Grok on the user's phone. The messages below are the shared memory of spoken and typed talk from the last 12 hours. Use them when the user refers to something already said. Use live web results for news, weather, scores, prices, and anything that changes. Summarize in a few short paragraphs. For notes, reminders, alarms, timers, and calendar, call the matching tool before saying it is done. media_control and set_volume act immediately. Look up people with find_contact instead of asking for a spelled number. For the browser, YouTube, WhatsApp, Signal, and email, ask for a clear yes before calling the open tool with confirmed true. Nothing is sent until the user taps Send. Times are local YYYY-MM-DDTHH:MM.".into()
 }
 
 /// Typed question. Shares the Talk transcript and can call phone tools.
@@ -177,18 +154,13 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
         json!({ "id": user_id, "role": "user", "text": text, "delta": null, "isFinal": true }),
     );
     remember_for_voice(format!("user: {text}"));
-
-    let mut history = HISTORY.lock().unwrap_or_else(|e| e.into_inner());
-    history.push(Turn { role: "user", content: text.to_string() });
-    if history.len() > 12 {
-        let drop_n = history.len() - 12;
-        history.drain(..drop_n);
-    }
+    let memory = app.state::<crate::memory::Memory>();
+    memory.remember("user", text);
     let mut messages = vec![json!({ "role": "system", "content": system_prompt() })];
-    for turn in history.iter() {
-        messages.push(json!({ "role": turn.role, "content": turn.content }));
+    for turn in memory.recent() {
+        let role = if turn.role == "assistant" { "assistant" } else { "user" };
+        messages.push(json!({ "role": role, "content": turn.text }));
     }
-    drop(history);
 
     let tools = chat_tools();
     let mut input = messages;
@@ -244,11 +216,8 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
         hub.emit("voice://busy", "");
         return Err("No answer came back.".into());
     }
-    let mut history = HISTORY.lock().unwrap_or_else(|e| e.into_inner());
-    history.push(Turn { role: "assistant", content: answer.clone() });
-    drop(history);
-
     remember_for_voice(format!("assistant: {}", answer.chars().take(500).collect::<String>()));
+    app.state::<crate::memory::Memory>().remember("assistant", &answer);
     hub.emit("voice://busy", "");
     let id = format!("text-a-{}", crate::diagnostics::now_ms());
     hub.emit(

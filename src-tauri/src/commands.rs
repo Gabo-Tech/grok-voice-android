@@ -6,6 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     actions::{self, Agenda, AgendaSnapshot},
+    memory::{Memory, Turn},
     audio::engine::{Ctl, Engine},
     diagnostics::{self, DebugSnapshot, Hub, LogLine, now_ms},
     error::{Result, msg},
@@ -104,6 +105,14 @@ pub async fn clear_user_token(app: AppHandle, engine: State<'_, Engine>, hub: St
 pub async fn add_voice_account(app: AppHandle, provider: String, secret: String) -> Result<AuthStatus> {
     let provider = provider.trim().to_string();
     let secret = Zeroizing::new(secret.trim().to_string());
+    if provider == "local" {
+        let secret = Zeroizing::new("on-device".to_string());
+        return blocking(app, move |app| {
+            app.state::<Vault>().add_account(&app.state::<NativeBridge>(), "local", &secret)?;
+            vault_status(&app)
+        })
+        .await;
+    }
     if secret.len() < 12 || secret.contains(char::is_whitespace) {
         return Err(msg("That key looks too short."));
     }
@@ -409,4 +418,14 @@ pub fn delete_event(app: AppHandle, id: String) -> Result<AgendaSnapshot> {
 #[tauri::command]
 pub async fn request_calendar(app: AppHandle) -> Result<PermissionStatus> {
     blocking(app, |app| app.state::<NativeBridge>().request_calendar()).await
+}
+
+#[tauri::command]
+pub fn recent_memory(memory: State<'_, Memory>) -> Vec<Turn> {
+    memory.recent()
+}
+
+#[tauri::command]
+pub fn clear_memory(memory: State<'_, Memory>) {
+    memory.clear();
 }
