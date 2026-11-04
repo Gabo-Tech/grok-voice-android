@@ -1,20 +1,21 @@
+import { AlarmClock, CalendarDays, Mic, NotebookPen, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type AppTab = "talk" | "notes" | "calendar" | "reminders" | "more";
 
-const ITEMS: Array<{ id: AppTab; label: string }> = [
-  { id: "talk", label: "Talk" },
-  { id: "notes", label: "Notes" },
-  { id: "calendar", label: "Calendar" },
-  { id: "reminders", label: "Remind" },
-  { id: "more", label: "More" },
+const ITEMS: Array<{ id: AppTab; label: string; icon: typeof Mic }> = [
+  { id: "talk", label: "Talk", icon: Mic },
+  { id: "notes", label: "Notes", icon: NotebookPen },
+  { id: "calendar", label: "Calendar", icon: CalendarDays },
+  { id: "reminders", label: "Time", icon: AlarmClock },
+  { id: "more", label: "Settings", icon: Settings },
 ];
 
 export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab) => void }) {
   return (
     <nav className="bottom-nav">
       <ul className="grid grid-cols-5">
-        {ITEMS.map(({ id, label }) => {
+        {ITEMS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
             <li key={id}>
@@ -22,12 +23,12 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                 type="button"
                 onClick={() => onChange(id)}
                 className={cn(
-                  "flex w-full flex-col items-center px-1 py-3 text-[11px] leading-4 tracking-[0.14em] uppercase",
+                  "flex w-full flex-col items-center px-1 py-2 text-[10px] leading-4 tracking-[0.04em]",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
-                {label}
-                <span className={cn("mt-1 h-px w-5", active ? "bg-foreground" : "bg-transparent")} />
+                <Icon className="size-5" strokeWidth={1.5} />
+                <span className="mt-1">{label}</span>
               </button>
             </li>
           );

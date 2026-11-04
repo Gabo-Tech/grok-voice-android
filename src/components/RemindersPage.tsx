@@ -20,16 +20,17 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
   const [minutes, setMinutes] = useState(10);
   const [note, setNote] = useState("");
   const [kind, setKind] = useState<(typeof KINDS)[number]>("reminder");
+  const [kindFilter, setKindFilter] = useState<"all" | (typeof KINDS)[number]>("all");
   const [query, setQuery] = useState("");
 
   const items = agenda.agenda.reminders;
 
-  const openNew = () => {
+  const openNew = (next: (typeof KINDS)[number] = "reminder") => {
     setEditing(null);
     setTitle("");
-    setKind("reminder");
+    setKind(next);
     setAt(toLocalInput(Date.now() + 3_600_000));
-    setMinutes(10);
+    setMinutes(next === "timer" ? 10 : 60);
     setNote("");
     setOpen(true);
   };
@@ -75,12 +76,39 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
     });
   };
 
-  const grouped = useMemo(() => groupItems(items, query), [items, query]);
+  const grouped = useMemo(
+    () => groupItems(items.filter((item) => kindFilter === "all" || item.kind === kindFilter), query),
+    [items, query, kindFilter],
+  );
   const subtitle = waitingLine(grouped);
 
   return (
     <>
-      <PageChrome title="Reminders" subtitle={subtitle} onAdd={openNew} addLabel="New reminder">
+      <PageChrome title="Time" subtitle={subtitle} onAdd={() => openNew("reminder")} addLabel="New reminder">
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <button type="button" className="h-12 border border-border text-sm" onClick={() => openNew("alarm")}>
+            New alarm
+          </button>
+          <button type="button" className="h-12 border border-border text-sm" onClick={() => openNew("timer")}>
+            New countdown
+          </button>
+        </div>
+        <div className="mb-4 flex gap-2 overflow-x-auto">
+          {(["all", ...KINDS] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setKindFilter(item)}
+              className={
+                kindFilter === item
+                  ? "h-10 shrink-0 border border-foreground px-3 text-xs tracking-[0.08em] text-foreground uppercase"
+                  : "h-10 shrink-0 border border-border px-3 text-xs tracking-[0.08em] text-muted-foreground uppercase"
+              }
+            >
+              {item === "timer" ? "countdown" : item}
+            </button>
+          ))}
+        </div>
         <div className="mb-6">
           <Field label="Search">
             <div className="relative">
@@ -107,7 +135,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
         {grouped.total === 0 ? (
           <EmptyState
             title={query ? "No matches" : "Nothing scheduled"}
-            body={query ? "Try another word." : "Tap + for a reminder, or ask Grok to nudge you later."}
+            body={query ? "Try another word." : "Add an alarm, a countdown, or a reminder."}
           />
         ) : (
           <div className="space-y-6">

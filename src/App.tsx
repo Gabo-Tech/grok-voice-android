@@ -83,6 +83,8 @@ export default function App() {
             <MorePage
               voice={voice}
               wake={wake}
+              auth={auth}
+              onAuth={setAuth}
               onWake={setWake}
               onSignedOut={() => {
                 setOnboarded(false);
