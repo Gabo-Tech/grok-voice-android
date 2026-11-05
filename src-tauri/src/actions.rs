@@ -954,6 +954,9 @@ fn touch(app: &AppHandle) {
     if let Some(hub) = app.try_state::<Arc<Hub>>() {
         hub.emit("voice://agenda", json!({}));
     }
+    if let Some(bridge) = app.try_state::<NativeBridge>() {
+        bridge.refresh_widgets();
+    }
 }
 
 fn note_title(title: &str, text: &str) -> String {

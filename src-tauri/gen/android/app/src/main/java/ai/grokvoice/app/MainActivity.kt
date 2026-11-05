@@ -1,5 +1,6 @@
 package ai.grokvoice.app
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -7,6 +8,7 @@ import android.os.PowerManager
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
+import org.json.JSONObject
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
@@ -15,14 +17,12 @@ import androidx.core.view.WindowInsetsCompat
 class MainActivity : TauriActivity() {
   companion object {
     const val EXTRA_HEADLESS = "headless"
+    const val EXTRA_WIDGET = "widget"
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
-    if (intent?.getBooleanExtra(EXTRA_HEADLESS, false) == true) {
-      window?.decorView?.post { moveTaskToBack(true) }
-    }
     val content = findViewById<View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
       val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
@@ -41,6 +41,57 @@ class MainActivity : TauriActivity() {
         }
       }
     })
+    applyWidget(intent)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    applyWidget(intent)
+  }
+
+  private fun applyWidget(intent: Intent?) {
+    val widget = intent?.getStringExtra(EXTRA_WIDGET)
+    val headless = intent?.getBooleanExtra(EXTRA_HEADLESS, false) == true
+    if (widget == "arm") {
+      val start = Intent(this, VoiceListenerService::class.java).setAction(VoiceListenerService.ACTION_START)
+      androidx.core.content.ContextCompat.startForegroundService(this, start)
+      window?.decorView?.postDelayed({ moveTaskToBack(true) }, 700)
+    } else if (widget == "disarm") {
+      stopService(Intent(this, VoiceListenerService::class.java))
+      window?.decorView?.post { moveTaskToBack(true) }
+    } else if (headless) {
+      window?.decorView?.post { moveTaskToBack(true) }
+    }
+    if (widget != null) deliverWidget(widget)
+  }
+
+  private fun deliverWidget(action: String) {
+    val js = "window.dispatchEvent(new CustomEvent('grok-widget',{detail:${JSONObject.quote(action)}}))"
+    val root = window?.decorView ?: return
+    val attempts = intArrayOf(0)
+    val tick = object : Runnable {
+      override fun run() {
+        val hit = dispatchJs(root, js)
+        attempts[0]++
+        if (!hit && attempts[0] < 24) root.postDelayed(this, 400)
+      }
+    }
+    root.postDelayed(tick, 250)
+  }
+
+  private fun dispatchJs(view: View, js: String): Boolean {
+    var hit = false
+    if (view is WebView) {
+      view.evaluateJavascript(js, null)
+      hit = true
+    }
+    if (view is ViewGroup) {
+      for (i in 0 until view.childCount) {
+        if (dispatchJs(view.getChildAt(i), js)) hit = true
+      }
+    }
+    return hit
   }
 
   override fun onWebViewCreate(webView: WebView) {

@@ -174,6 +174,12 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   @Command
+  fun refreshWidgets(invoke: Invoke) {
+    HomeWidgets.updateAll(activity.applicationContext)
+    invoke.resolve()
+  }
+
+  @Command
   fun setAlarm(invoke: Invoke) {
     val a = invoke.parseArgs(AlarmArgs::class.java)
     resolveJson(invoke, PhoneActions.setAlarm(activity, a.hour, a.minute, a.label, a.id, a.atMs))

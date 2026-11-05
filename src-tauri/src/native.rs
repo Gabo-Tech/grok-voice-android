@@ -110,6 +110,10 @@ mod imp {
             Ok(())
         }
 
+        pub fn refresh_widgets(&self) {
+            let _ = self.handle.run_mobile_plugin::<serde_json::Value>("refreshWidgets", ());
+        }
+
         pub fn check_permissions(&self) -> Result<PermissionStatus> {
             self.handle
                 .run_mobile_plugin("checkPermissions", ())
@@ -314,6 +318,8 @@ mod imp {
         pub fn stop_service(&self) -> Result<()> {
             Ok(())
         }
+
+        pub fn refresh_widgets(&self) {}
 
         pub fn check_permissions(&self) -> Result<PermissionStatus> {
             Ok(PermissionStatus {

@@ -27,6 +27,25 @@ export default function App() {
 
   useEffect(() => {
     if (!inApp) return;
+    const onWidget = (ev: Event) => {
+      const action = (ev as CustomEvent<string>).detail;
+      if (action === "reminders") setTab("reminders");
+      else if (action === "events") setTab("calendar");
+      else if (action === "talk") {
+        setTab("talk");
+        void api.startSession().catch(() => {});
+      } else if (action === "arm") {
+        void api.setWakeEnabled(true).catch(() => {});
+      } else if (action === "disarm") {
+        void api.setWakeEnabled(false).catch(() => {});
+      }
+    };
+    window.addEventListener("grok-widget", onWidget);
+    return () => window.removeEventListener("grok-widget", onWidget);
+  }, [inApp]);
+
+  useEffect(() => {
+    if (!inApp) return;
     api.authStatus().then(setAuth).catch((e) => setBootError(errorText(e)));
     void api.wakewordStatus().then(setWake);
     api

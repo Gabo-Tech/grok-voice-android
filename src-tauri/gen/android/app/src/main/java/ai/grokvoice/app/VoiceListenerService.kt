@@ -81,6 +81,7 @@ class VoiceListenerService : Service() {
     acquireWakeLock()
     active.set(true)
     hideFromRecents()
+    HomeWidgets.updateAll(this)
     // Clearing the app can kill this process. If it comes back, the activity
     // has to start once so the wake-word engine is running, then leave again.
     if (!RustBridge.engineAliveSafe()) {
@@ -109,6 +110,7 @@ class VoiceListenerService : Service() {
   private fun shutdown() {
     active.set(false)
     setArmed(this, false)
+    HomeWidgets.updateAll(this)
     showInRecents()
     releaseWakeLock()
     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)

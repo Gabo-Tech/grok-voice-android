@@ -64,6 +64,16 @@ object PhoneActions {
     return """{"ok":true,"via":"local"}"""
   }
 
+  fun storedItems(context: Context): List<HomeWidgets.Item> {
+    val arr = read(context)
+    val out = ArrayList<HomeWidgets.Item>()
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      out.add(HomeWidgets.Item(o.optString("kind"), o.optString("title"), o.optLong("atMs")))
+    }
+    return out
+  }
+
   fun cancel(context: Context, id: Int) {
     val am = context.getSystemService(AlarmManager::class.java)
     val pi = pending(context, id, "reminder", "", "")
@@ -340,5 +350,6 @@ object PhoneActions {
 
   private fun write(context: Context, arr: JSONArray) {
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, arr.toString()).apply()
+    HomeWidgets.updateAll(context)
   }
 }

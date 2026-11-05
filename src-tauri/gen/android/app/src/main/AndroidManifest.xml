@@ -73,6 +73,43 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".HomeWidgetReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".ListenWidget"
+            android:exported="true"
+            android:label="Grok listening">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/listen_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".RemindersWidget"
+            android:exported="true"
+            android:label="Grok reminders">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/reminders_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".ScheduleWidget"
+            android:exported="true"
+            android:label="Grok schedule">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/schedule_widget_info" />
+        </receiver>
+
         <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"
