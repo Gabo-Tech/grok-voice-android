@@ -293,6 +293,8 @@ footer .featured-badges a:first-child { width: min(202px, 100%); }
 
 footer .featured-badges a:nth-child(2) { width: min(120px, 100%); }
 
+footer .featured-badges a:nth-child(3) { width: min(156px, 100%); }
+
 footer .featured-badges img {
   display: block;
   width: 100%;
