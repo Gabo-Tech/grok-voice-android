@@ -115,7 +115,9 @@ class EventIdArgs {
       strings = [Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR],
       alias = "calendar"
     ),
-    Permission(strings = [Manifest.permission.READ_CONTACTS], alias = "contacts")
+    Permission(strings = [Manifest.permission.READ_CONTACTS], alias = "contacts"),
+    Permission(strings = [Manifest.permission.READ_CALL_LOG], alias = "callLog"),
+    Permission(strings = [Manifest.permission.READ_SMS], alias = "sms")
   ]
 )
 class VoicePlugin(private val activity: Activity) : Plugin(activity) {
@@ -380,6 +382,67 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   @InvokeArg
   class SpeakArgs {
     var text: String = ""
+  }
+
+  @Command
+  fun readNotifications(invoke: Invoke) {
+    resolveJson(invoke, DeviceExtras.notifications(activity.applicationContext))
+  }
+
+  @Command
+  fun setDnd(invoke: Invoke) {
+    val mode = invoke.parseArgs(ModeArgs::class.java).mode
+    resolveJson(invoke, DeviceExtras.dnd(activity.applicationContext, mode))
+  }
+
+  @Command
+  fun goHome(invoke: Invoke) {
+    resolveJson(invoke, DeviceExtras.home(activity.applicationContext))
+  }
+
+  @Command
+  fun phoneStatus(invoke: Invoke) {
+    resolveJson(invoke, DeviceExtras.status(activity.applicationContext))
+  }
+
+  @Command
+  fun accessStatus(invoke: Invoke) {
+    resolveJson(invoke, DeviceExtras.access(activity.applicationContext))
+  }
+
+  @Command
+  fun openAccessSettings(invoke: Invoke) {
+    val kind = invoke.parseArgs(KindArgs::class.java).kind
+    resolveJson(invoke, DeviceExtras.openAccess(activity, kind))
+  }
+
+  @Command
+  fun contactBirthday(invoke: Invoke) {
+    val id = invoke.parseArgs(ContactIdArgs::class.java).id
+    resolveJson(invoke, DeviceExtras.birthday(activity.applicationContext, id))
+  }
+
+  @Command
+  fun lastContact(invoke: Invoke) {
+    val args = invoke.parseArgs(LastContactArgs::class.java)
+    resolveJson(invoke, DeviceExtras.lastContact(activity.applicationContext, args.phone, args.name))
+  }
+
+  @InvokeArg
+  class ModeArgs {
+    var mode: String = ""
+  }
+
+  @InvokeArg
+  class KindArgs {
+    var kind: String = ""
+  }
+
+  @InvokeArg
+  class LastContactArgs {
+    var id: String = ""
+    var phone: String = ""
+    var name: String = ""
   }
 
   @Command

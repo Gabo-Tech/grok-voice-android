@@ -4,6 +4,8 @@ mod backup;
 mod commands;
 mod local;
 mod diagnostics;
+mod i18n;
+mod local_memory;
 mod memory;
 mod people;
 mod error;
@@ -76,6 +78,8 @@ pub fn run() {
             app.manage(actions::Agenda::load(dir.join("agenda.json")));
             app.manage(people::People::load(dir.join("people.json")));
             app.manage(memory::Memory::load(dir.join("memory.json")));
+            app.manage(local_memory::LocalMemory::load(dir.join("local-memory.json")));
+            app.manage(actions::Handoffs::default());
             app.manage(usage::UsageStore::load(dir.join("usage.json")));
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -130,6 +134,17 @@ pub fn run() {
             commands::restore_backup,
             commands::recent_memory,
             commands::clear_memory,
+            commands::local_memory,
+            commands::pin_local_fact,
+            commands::forget_local_fact,
+            commands::wipe_local_memory,
+            commands::confirm_handoff,
+            commands::dismiss_handoff,
+            commands::access_status,
+            commands::open_access_settings,
+            commands::request_history_access,
+            commands::refresh_last_contact,
+            commands::import_contact_birthday,
             commands::local_pack_status,
             commands::download_local_pack,
             commands::delete_local_pack,

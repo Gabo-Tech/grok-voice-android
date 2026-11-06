@@ -5,6 +5,7 @@ import { GlowRing } from "@/components/GlowRing";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { VoiceState } from "@/hooks/useVoice";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 function RichText({ text }: { text: string }) {
@@ -42,9 +43,18 @@ function inline(block: string): ReactNode[] {
   });
 }
 
+function sessionClock(openSinceMs: number | null | undefined) {
+  if (!openSinceMs) return "";
+  const seconds = Math.max(0, Math.floor((Date.now() - openSinceMs) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeTrained: boolean }) {
+  const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
+  const clock = sessionClock(voice.usage?.openSinceMs);
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -55,10 +65,11 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center justify-between gap-3 px-1 pb-3">
         <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
-          {wakeTrained ? "Hands-free stays on after you leave" : "Enroll wake word in More"}
+          {wakeTrained ? t("Hands-free stays on after you leave") : t("Enroll wake word in More")}
+          {clock ? ` · ${clock}` : ""}
         </p>
         <label className="flex items-center gap-2 text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
-          Listen
+          {t("Listen")}
           <Switch checked={voice.wakeEnabled} onCheckedChange={(v) => void voice.toggleWake(v)} />
         </label>
       </header>
@@ -70,13 +81,13 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
       <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1">
         {voice.rows.length === 0 ? (
           <p className="py-8 text-sm leading-6 text-muted-foreground">
-            Say “Hey Grok”, tap the microphone, or type when you can't.
+            {t("Say “Hey Grok”, tap the microphone, or type when you can't.")}
           </p>
         ) : (
           <>
             <div className="flex justify-end">
               <Button size="sm" variant="ghost" onClick={voice.clearTranscript}>
-                <Trash2 /> Clear
+                <Trash2 /> {t("Clear")}
               </Button>
             </div>
             {voice.rows.map((r) => (
@@ -88,7 +99,7 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
                 )}
               >
                 <p className="mb-1 text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-                  {r.role === "user" ? "you" : "grok"}
+                  {r.role === "user" ? t("you") : t("grok")}
                 </p>
                 {r.role === "user" || !r.text ? (
                   <p className="whitespace-pre-wrap text-foreground">{r.text || "…"}</p>
@@ -101,11 +112,26 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
         )}
         {(voice.sending || voice.busy) && (
           <div className="mr-auto py-1 text-base leading-6">
-            <p className="mb-1 text-[10px] tracking-[0.18em] text-muted-foreground uppercase">grok</p>
-            <p className="text-muted-foreground">{voice.busy || "Searching the web…"}</p>
+            <p className="mb-1 text-[10px] tracking-[0.18em] text-muted-foreground uppercase">{t("grok")}</p>
+            <p className="text-muted-foreground">{voice.busy || t("Searching the web…")}</p>
           </div>
         )}
       </div>
+
+      {voice.handoff && (
+        <div className="mb-3 border border-border px-3 py-3">
+          <p className="text-sm leading-6 text-foreground">{voice.handoff.summary}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("Nothing is sent until you confirm in the other app.")}</p>
+          <div className="mt-3 flex gap-2">
+            <Button type="button" onClick={voice.confirmHandoff}>
+              {t("Send the draft")}
+            </Button>
+            <Button type="button" variant="outline" onClick={voice.dismissHandoff}>
+              {t("Not now")}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <form
         className="mt-auto flex shrink-0 items-center gap-2 border-t border-border pt-3"

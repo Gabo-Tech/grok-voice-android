@@ -59,6 +59,12 @@ pub struct Person {
     pub note: String,
     #[serde(default)]
     pub reminders: Vec<PersonReminder>,
+    /// 0 is off. Otherwise nudge to reach out after this many days.
+    #[serde(default)]
+    pub reach_out_days: u32,
+    /// Latest call or text the user allowed this phone to read. Not a message body.
+    #[serde(default)]
+    pub last_contacted_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -119,6 +125,10 @@ pub struct PersonDraft {
     pub note: String,
     #[serde(default)]
     pub reminders: Vec<PersonReminder>,
+    #[serde(default)]
+    pub reach_out_days: u32,
+    #[serde(default)]
+    pub last_contacted_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -192,6 +202,8 @@ impl People {
             favorite: draft.favorite,
             note: clamp(&draft.note, 4000),
             reminders: clean_reminders(&draft.reminders)?,
+            reach_out_days: draft.reach_out_days.min(365),
+            last_contacted_ms: draft.last_contacted_ms.filter(|ms| *ms > 0),
         };
         if let Some(existing) = store.people.iter_mut().find(|p| p.id == person.id) {
             *existing = person.clone();
@@ -203,6 +215,46 @@ impl People {
         }
         Self::persist(&self.path, &store)?;
         Ok(person)
+    }
+
+    pub fn set_last_contacted(&self, id: &str, at_ms: i64) -> Result<Person, String> {
+        let mut store = self.lock();
+        let Some(person) = store.people.iter_mut().find(|person| person.id == id) else {
+            return Err("No person with that id.".into());
+        };
+        person.last_contacted_ms = Some(at_ms);
+        let saved = person.clone();
+        Self::persist(&self.path, &store)?;
+        Ok(saved)
+    }
+
+    pub fn add_birthday_if_missing(&self, id: &str, date: &str) -> Result<Person, String> {
+        let date = date.trim();
+        if date.len() < 5 {
+            return Err("That contact has no birthday on this phone.".into());
+        }
+        let mut store = self.lock();
+        let Some(person) = store.people.iter_mut().find(|person| person.id == id) else {
+            return Err("No person with that id.".into());
+        };
+        if person.reminders.iter().any(|reminder| reminder.label == "birthday") {
+            return Err("A birthday is already saved for this person.".into());
+        }
+        let mut reminders = person.reminders.clone();
+        reminders.push(PersonReminder {
+            id: format!("b{}", chrono::Local::now().timestamp_millis()),
+            label: "birthday".into(),
+            title: String::new(),
+            date: date.to_string(),
+            recurrence: "yearly".into(),
+            lead_days: 0,
+            time: "09:00".into(),
+            enabled: true,
+        });
+        person.reminders = clean_reminders(&reminders)?;
+        let saved = person.clone();
+        Self::persist(&self.path, &store)?;
+        Ok(saved)
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
@@ -228,6 +280,7 @@ impl People {
             person.handles = clean_handles(&person.handles);
             person.note = clamp(&person.note, 4000);
             person.reminders = clean_reminders(&person.reminders)?;
+            person.reach_out_days = person.reach_out_days.min(365);
             cleaned.push(person);
             if cleaned.len() == 200 {
                 break;
@@ -886,6 +939,8 @@ mod tests {
             favorite: favorite,
             note: String::new(),
             reminders: Vec::new(),
+            reach_out_days: 0,
+            last_contacted_ms: None,
         }
     }
 
@@ -1017,6 +1072,8 @@ mod tests {
                 handles: Handles { phone: " +1 ".into(), email: String::new(), whatsapp: String::new(), signal: String::new() },
                 favorite: true,
                 note: "call after 5".into(),
+                reach_out_days: 14,
+                last_contacted_ms: None,
                 reminders: vec![PersonReminder {
                     id: String::new(),
                     label: "Birthday".into(),

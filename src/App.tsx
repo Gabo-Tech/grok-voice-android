@@ -11,6 +11,7 @@ import { RemindersPage } from "@/components/RemindersPage";
 import { useAgenda } from "@/hooks/useAgenda";
 import { useVoice } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type WakewordStatus } from "@/lib/api";
+import { setAppLocale, useT } from "@/lib/i18n";
 
 const PREVIEW_AUTH: AuthStatus = { hasKey: false, keyHint: null, securityLevel: null, accounts: [] };
 const EMPTY_WAKE: WakewordStatus = { trained: false, samples: [false, false, false] };
@@ -24,6 +25,7 @@ export default function App() {
   const [tab, setTab] = useState<AppTab>("talk");
   const voice = useVoice();
   const agenda = useAgenda();
+  const t = useT();
 
   useEffect(() => {
     if (!inApp) return;
@@ -50,14 +52,17 @@ export default function App() {
     void api.wakewordStatus().then(setWake);
     api
       .getSettings()
-      .then((s) => setOnboarded(s.onboarded))
+      .then((s) => {
+        setAppLocale(s.locale || "");
+        setOnboarded(s.onboarded);
+      })
       .catch(() => setOnboarded(false));
   }, [inApp]);
 
   if (bootError) {
     return (
       <main className="grid h-full place-items-center p-6 text-center text-sm text-destructive">
-        Secure storage failed to open: {bootError}
+        {t("Secure storage failed to open")}: {bootError}
       </main>
     );
   }
@@ -96,7 +101,7 @@ export default function App() {
         <div className="mx-4 mb-2 flex items-start justify-between gap-3 border border-border px-3 py-2">
           <p className="text-xs leading-5 text-foreground">{voice.spend}</p>
           <button type="button" className="shrink-0 text-[10px] tracking-[0.12em] text-muted-foreground uppercase" onClick={voice.dismissSpend}>
-            Hide
+            {t("Hide")}
           </button>
         </div>
       )}

@@ -68,6 +68,7 @@ object HandOff {
         "email" -> email(to, subject, body)
         "call" -> dial(phone)
         "sms" -> sms(phone, text)
+        "share" -> share(text.ifBlank { body })
         else -> return fail("Unknown app.")
       }
     } catch (e: IllegalArgumentException) {
@@ -93,6 +94,7 @@ object HandOff {
   private fun openedDetail(kind: String) = when (kind) {
     "call" -> "Opened the dialer. The user places the call there."
     "sms" -> "Opened the text. The user still taps Send."
+    "share" -> "Opened the share sheet. Nothing is sent until the user sends it there."
     else -> "Opened $kind. The user still confirms send there."
   }
 
@@ -257,6 +259,15 @@ object HandOff {
 
   private fun dial(phone: String): Intent {
     return Intent(Intent.ACTION_DIAL, Uri.parse("tel:${phoneNumber(phone)}"))
+  }
+
+  private fun share(text: String): Intent {
+    val body = text.trim()
+    if (body.isEmpty()) throw IllegalArgumentException("There is nothing to share.")
+    return Intent.createChooser(
+      Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, body),
+      "Share"
+    )
   }
 
   private fun sms(phone: String, text: String): Intent {

@@ -16,6 +16,10 @@ pub const LLM_URL: &str =
     "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
 pub const TTS_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2";
+pub const STT_DE_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8.tar.bz2";
+pub const TTS_DE_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten-low.tar.bz2";
 
 struct Spec {
     id: &'static str,
@@ -24,6 +28,8 @@ struct Spec {
     url: &'static str,
     download_bytes: u64,
     archive: bool,
+    /// English speech plus the language model. German packs are optional.
+    required: bool,
 }
 
 const PACKS: &[Spec] = &[
@@ -34,6 +40,7 @@ const PACKS: &[Spec] = &[
         url: STT_URL,
         download_bytes: 107_600_538,
         archive: true,
+        required: true,
     },
     Spec {
         id: "llm",
@@ -42,6 +49,7 @@ const PACKS: &[Spec] = &[
         url: LLM_URL,
         download_bytes: 491_400_032,
         archive: false,
+        required: true,
     },
     Spec {
         id: "tts",
@@ -50,6 +58,25 @@ const PACKS: &[Spec] = &[
         url: TTS_URL,
         download_bytes: 67_097_098,
         archive: true,
+        required: true,
+    },
+    Spec {
+        id: "stt-de",
+        label: "German speech to text",
+        detail: "NeMo FastConformer German, int8",
+        url: STT_DE_URL,
+        download_bytes: 108_124_747,
+        archive: true,
+        required: false,
+    },
+    Spec {
+        id: "tts-de",
+        label: "German voice",
+        detail: "Piper de_DE thorsten, low",
+        url: TTS_DE_URL,
+        download_bytes: 67_101_576,
+        archive: true,
+        required: false,
     },
 ];
 
@@ -74,10 +101,14 @@ pub struct PackProgress {
 
 #[derive(Clone)]
 pub struct ModelPaths {
+    /// `moonshine` or `transducer`. Read by the Android speech loader.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub asr: &'static str,
     pub preprocess: PathBuf,
     pub encoder: PathBuf,
     pub uncached: PathBuf,
     pub cached: PathBuf,
+    pub joiner: PathBuf,
     pub stt_tokens: PathBuf,
     pub llm: PathBuf,
     pub tts_model: PathBuf,
@@ -92,15 +123,39 @@ pub fn model_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn model_paths(root: &Path) -> ModelPaths {
+    model_paths_for(root, "en")
+}
+
+pub fn model_paths_for(root: &Path, lang: &str) -> ModelPaths {
+    let llm = root.join("llm/qwen2.5-0.5b-instruct-q4_k_m.gguf");
+    if lang == "de" {
+        let stt = root.join("stt-de/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8");
+        let tts = root.join("tts-de/vits-piper-de_DE-thorsten-low");
+        return ModelPaths {
+            asr: "transducer",
+            preprocess: stt.join("unused"),
+            encoder: stt.join("encoder.int8.onnx"),
+            uncached: stt.join("decoder.int8.onnx"),
+            cached: stt.join("unused"),
+            joiner: stt.join("joiner.int8.onnx"),
+            stt_tokens: stt.join("tokens.txt"),
+            llm,
+            tts_model: tts.join("de_DE-thorsten-low.onnx"),
+            tts_tokens: tts.join("tokens.txt"),
+            tts_data: tts.join("espeak-ng-data"),
+        };
+    }
     let stt = root.join("stt/sherpa-onnx-moonshine-tiny-en-int8");
     let tts = root.join("tts/vits-piper-en_US-lessac-low");
     ModelPaths {
+        asr: "moonshine",
         preprocess: stt.join("preprocess.onnx"),
         encoder: stt.join("encode.int8.onnx"),
         uncached: stt.join("uncached_decode.int8.onnx"),
         cached: stt.join("cached_decode.int8.onnx"),
+        joiner: stt.join("unused"),
         stt_tokens: stt.join("tokens.txt"),
-        llm: root.join("llm/qwen2.5-0.5b-instruct-q4_k_m.gguf"),
+        llm,
         tts_model: tts.join("en_US-lessac-low.onnx"),
         tts_tokens: tts.join("tokens.txt"),
         tts_data: tts.join("espeak-ng-data"),
@@ -122,19 +177,32 @@ pub fn pack_status(root: &Path) -> Vec<PackInfo> {
 }
 
 pub fn packs_ready(root: &Path) -> bool {
-    PACKS.iter().all(|spec| pack_ready(root, spec.id))
+    packs_ready_for(root, "en")
+}
+
+pub fn packs_ready_for(root: &Path, lang: &str) -> bool {
+    if !PACKS.iter().filter(|spec| spec.required).all(|spec| pack_ready(root, spec.id)) {
+        return false;
+    }
+    if lang == "de" {
+        return pack_ready(root, "stt-de") && pack_ready(root, "tts-de");
+    }
+    true
 }
 
 fn pack_ready(root: &Path, id: &str) -> bool {
-    let paths = model_paths(root);
+    let english = model_paths_for(root, "en");
+    let german = model_paths_for(root, "de");
     match id {
-        "stt" => file_ok(&paths.preprocess)
-            && file_ok(&paths.encoder)
-            && file_ok(&paths.uncached)
-            && file_ok(&paths.cached)
-            && file_ok(&paths.stt_tokens),
-        "llm" => file_ok(&paths.llm),
-        "tts" => file_ok(&paths.tts_model) && file_ok(&paths.tts_tokens) && dir_ok(&paths.tts_data),
+        "stt" => file_ok(&english.preprocess)
+            && file_ok(&english.encoder)
+            && file_ok(&english.uncached)
+            && file_ok(&english.cached)
+            && file_ok(&english.stt_tokens),
+        "llm" => file_ok(&english.llm),
+        "tts" => file_ok(&english.tts_model) && file_ok(&english.tts_tokens) && dir_ok(&english.tts_data),
+        "stt-de" => file_ok(&german.encoder) && file_ok(&german.uncached) && file_ok(&german.joiner) && file_ok(&german.stt_tokens),
+        "tts-de" => file_ok(&german.tts_model) && file_ok(&german.tts_tokens) && dir_ok(&german.tts_data),
         _ => false,
     }
 }
@@ -277,10 +345,14 @@ mod tests {
         }
         fs::create_dir_all(&paths.tts_data).unwrap();
         let status = pack_status(&root);
-        assert!(status.iter().all(|pack| pack.ready));
+        assert!(status.iter().filter(|pack| pack.id != "stt-de" && pack.id != "tts-de").all(|pack| pack.ready));
+        assert!(status.iter().any(|pack| pack.id == "stt-de" && !pack.ready));
         assert!(packs_ready(&root));
+        assert!(!packs_ready_for(&root, "de"));
+        assert_eq!(status.iter().find(|pack| pack.id == "stt-de").unwrap().download_bytes, 108_124_747);
+        assert_eq!(status.iter().find(|pack| pack.id == "tts-de").unwrap().download_bytes, 67_101_576);
         assert_eq!(status[1].download_bytes, 491_400_032);
-        assert!(status.iter().all(|pack| pack.installed_bytes > 0));
+        assert!(status.iter().filter(|pack| pack.ready).all(|pack| pack.installed_bytes > 0));
         delete_pack(&root, "llm").unwrap();
         assert!(!packs_ready(&root));
         let _ = fs::remove_dir_all(&root);

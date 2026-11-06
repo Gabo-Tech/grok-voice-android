@@ -341,6 +341,24 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["phone", "confirmed"]
         })),
+        fn_tool("share_item", "Share a note, reminder, or calendar event as text. kind is note, reminder, or event. id comes from list_notes, list_reminders, or list_calendar_events. phone is optional. Speak the text and wait for a clear yes, then call with confirmed true. Nothing is sent until the user confirms in the other app.", json!({
+            "type": "object",
+            "properties": {
+                "kind": { "type": "string" },
+                "id": { "type": "string" },
+                "phone": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["kind", "id", "confirmed"]
+        })),
+        fn_tool("read_notifications", "Read the titles of notifications currently posted on this phone. Does not open them. If access is off, say so.", json!({ "type": "object", "properties": {} })),
+        fn_tool("set_dnd", "Set Do Not Disturb. mode is off, priority, alarms, or none. Call immediately. If access is off, say so.", json!({
+            "type": "object",
+            "properties": { "mode": { "type": "string" } },
+            "required": ["mode"]
+        })),
+        fn_tool("go_home", "Leave this app and show the phone's home screen. Call immediately.", json!({ "type": "object", "properties": {} })),
+        fn_tool("phone_status", "Say the battery level and the next alarm from the phone clock. Call this instead of guessing.", json!({ "type": "object", "properties": {} })),
         fn_tool("web_search", "Search the live web and return a sourced summary. Use this for news, weather, scores, prices, and anything about today or recently. query is a specific search, such as 'most relevant news Zurich today'.", json!({
             "type": "object",
             "properties": { "query": { "type": "string" } },
@@ -822,8 +840,92 @@ fn unconfirmed_handoff(name: &str, args: &Value) -> Option<Value> {
     Some(json!({
         "ok": true,
         "opened": false,
-        "detail": format!("{plan} Nothing was opened. Wait for a clear yes, then call this again with confirmed true.")
+        "needsConfirm": true,
+        "detail": format!("{plan} {}", crate::i18n::line("en", "handoff-wait"))
     }))
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffDraft {
+    pub id: String,
+    pub summary: String,
+    pub kind: String,
+    pub query: String,
+    pub url: String,
+    pub phone: String,
+    pub text: String,
+    pub to: String,
+    pub subject: String,
+    pub body: String,
+}
+
+#[derive(Default)]
+pub struct Handoffs {
+    inner: Mutex<Option<HandoffDraft>>,
+}
+
+impl Handoffs {
+    pub fn stage(&self, draft: HandoffDraft) {
+        *self.inner.lock().unwrap_or_else(|err| err.into_inner()) = Some(draft);
+    }
+
+    pub fn take(&self) -> Option<HandoffDraft> {
+        self.inner.lock().unwrap_or_else(|err| err.into_inner()).take()
+    }
+
+    pub fn clear(&self) {
+        *self.inner.lock().unwrap_or_else(|err| err.into_inner()) = None;
+    }
+}
+
+fn stage_handoff(app: &AppHandle, kind: &str, summary: &str, args: &Value) {
+    let draft = HandoffDraft {
+        id: format!("h{}", crate::diagnostics::now_ms()),
+        summary: summary.to_string(),
+        kind: kind.to_string(),
+        query: args["query"].as_str().unwrap_or("").to_string(),
+        url: args["url"].as_str().unwrap_or("").to_string(),
+        phone: args["phone"].as_str().unwrap_or("").to_string(),
+        text: args["text"].as_str().unwrap_or("").to_string(),
+        to: args["to"].as_str().unwrap_or("").to_string(),
+        subject: args["subject"].as_str().unwrap_or("").to_string(),
+        body: args["body"].as_str().unwrap_or("").to_string(),
+    };
+    if let Some(handoffs) = app.try_state::<Handoffs>() {
+        handoffs.stage(draft.clone());
+    }
+    if let Some(hub) = app.try_state::<Arc<Hub>>() {
+        hub.emit("voice://handoff", &draft);
+    }
+}
+
+fn clear_handoff(app: &AppHandle) {
+    if let Some(handoffs) = app.try_state::<Handoffs>() {
+        handoffs.clear();
+    }
+    if let Some(hub) = app.try_state::<Arc<Hub>>() {
+        hub.emit("voice://handoff", Value::Null);
+    }
+}
+
+pub fn confirm_pending(app: &AppHandle) -> Result<Value, String> {
+    let Some(handoffs) = app.try_state::<Handoffs>() else {
+        return Err("Nothing is waiting to send.".into());
+    };
+    let Some(draft) = handoffs.take() else {
+        return Err("Nothing is waiting to send.".into());
+    };
+    let raw = app
+        .state::<NativeBridge>()
+        .open_hand_off(&draft.kind, &draft.query, &draft.url, &draft.phone, &draft.text, &draft.to, &draft.subject, &draft.body)
+        .map_err(|err| err.to_string())?;
+    clear_handoff(app);
+    serde_json::from_str(&raw).map_err(|err| err.to_string())
+}
+
+fn locale_of(app: &AppHandle) -> String {
+    app.try_state::<crate::settings::SettingsStore>().map(|store| store.get().locale).unwrap_or_default()
 }
 
 fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
@@ -840,10 +942,16 @@ fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>
         }
         "find_contact" => return crate::people::find_contact(app, args["name"].as_str().unwrap_or("")).map(Some),
         "get_person" => return crate::people::describe_person(app, args["name"].as_str().unwrap_or("")).map(Some),
+        "read_notifications" => bridge.read_notifications().map_err(|e| e.to_string())?,
+        "set_dnd" => bridge.set_dnd(args["mode"].as_str().unwrap_or("")).map_err(|e| e.to_string())?,
+        "go_home" => bridge.go_home().map_err(|e| e.to_string())?,
+        "phone_status" => bridge.phone_status().map_err(|e| e.to_string())?,
         "open_youtube" | "open_whatsapp" | "open_signal" | "open_email" | "open_browser" | "open_call" | "open_sms" => {
             if let Some(wait) = unconfirmed_handoff(name, args) {
+                stage_handoff(app, name.trim_start_matches("open_"), wait["detail"].as_str().unwrap_or(""), args);
                 return Ok(Some(wait));
             }
+            clear_handoff(app);
             let kind = name.trim_start_matches("open_");
             bridge
                 .open_hand_off(
@@ -877,6 +985,9 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
     }
     if let Some(value) = phone_tool(app, name, args)? {
         return Ok(value);
+    }
+    if name == "share_item" {
+        return share_item(app, args);
     }
     let agenda = app.state::<Agenda>();
     match name {
@@ -1642,6 +1753,18 @@ pub fn project_people(existing: &[Item], people: &[Person], now: DateTime<Local>
             }
             kept.push(draft);
         }
+        if person.reach_out_days > 0 {
+            if let Some(mut nudge) = reach_item(person, existing, now) {
+                if nudge.id == 0 {
+                    let id = next_id.max(1);
+                    next_id = id.saturating_add(1);
+                    nudge.id = id;
+                } else {
+                    used.push(nudge.id);
+                }
+                kept.push(nudge);
+            }
+        }
     }
     for item in existing {
         if !item.person_id.is_empty() && !used.contains(&item.id) && !cancel.contains(&item.id) {
@@ -1650,6 +1773,84 @@ pub fn project_people(existing: &[Item], people: &[Person], now: DateTime<Local>
     }
     kept.sort_by_key(|i| i.at_ms);
     (kept, next_id, cancel)
+}
+
+fn share_item(app: &AppHandle, args: &Value) -> Result<Value, String> {
+    let kind = args["kind"].as_str().unwrap_or("").trim();
+    let id = args["id"].as_str().unwrap_or("").trim();
+    if id.is_empty() {
+        return Err("Which one? List them first and use an id.".into());
+    }
+    let (title, body) = share_text(app, kind, id)?;
+    let phone = args["phone"].as_str().unwrap_or("").trim().to_string();
+    let handoff_kind = if phone.is_empty() { "share" } else { "sms" };
+    let summary = format!("{title}. {body}");
+    let staged = json!({
+        "phone": phone,
+        "text": body,
+        "subject": title,
+        "body": body,
+    });
+    if args["confirmed"] != true {
+        stage_handoff(app, handoff_kind, &summary, &staged);
+        let locale = locale_of(app);
+        return Ok(json!({
+            "ok": true,
+            "opened": false,
+            "needsConfirm": true,
+            "detail": format!("{summary} {}", crate::i18n::line(&locale, "handoff-wait"))
+        }));
+    }
+    clear_handoff(app);
+    let raw = app
+        .state::<NativeBridge>()
+        .open_hand_off(handoff_kind, "", "", &phone, &body, "", &title, &body)
+        .map_err(|err| err.to_string())?;
+    serde_json::from_str(&raw).map_err(|err| err.to_string())
+}
+
+fn share_text(app: &AppHandle, kind: &str, id: &str) -> Result<(String, String), String> {
+    let agenda = app.state::<Agenda>();
+    match kind {
+        "note" => {
+            let note = agenda.notes().into_iter().find(|note| note.id == id).ok_or_else(|| "That note is not on this phone.".to_string())?;
+            let title = if note.title.trim().is_empty() { crate::i18n::line(&locale_of(app), "share-note") } else { note.title };
+            Ok((title, note.text))
+        }
+        "reminder" => {
+            let id_num: i32 = id.parse().map_err(|_| "That reminder id is not a number.".to_string())?;
+            let item = agenda.lock().items.iter().find(|item| item.id == id_num).cloned().ok_or_else(|| "That reminder is not on this phone.".to_string())?;
+            let body = if item.note.trim().is_empty() { item.title.clone() } else { format!("{} {}", item.title, item.note) };
+            Ok((item.title, body))
+        }
+        "event" => {
+            let snap = agenda.snapshot(app);
+            let event = snap.events.into_iter().find(|event| event.id == id).ok_or_else(|| "That event is not on this phone.".to_string())?;
+            let body = if event.location.trim().is_empty() { event.title.clone() } else { format!("{} {}", event.title, event.location) };
+            Ok((event.title, body))
+        }
+        _ => Err("kind is note, reminder, or event.".into()),
+    }
+}
+
+fn reach_item(person: &Person, existing: &[Item], now: DateTime<Local>) -> Option<Item> {
+    let days = person.reach_out_days.clamp(1, 365) as i64;
+    let interval = days * 86_400_000;
+    let existing_item = existing.iter().find(|item| item.person_id == person.id && item.person_reminder_id == "reach");
+    let at_ms = if let Some(item) = existing_item {
+        if item.at_ms > now.timestamp_millis() {
+            item.at_ms
+        } else {
+            now.timestamp_millis() + interval
+        }
+    } else {
+        now.timestamp_millis() + 60_000
+    };
+    let mut item = Item::basic(existing_item.map(|item| item.id).unwrap_or(0), "reminder", &format!("Reach out to {}", person.display_name), "", at_ms);
+    item.person_id = person.id.clone();
+    item.person_reminder_id = "reach".into();
+    item.recurrence = "none".into();
+    Some(item)
 }
 
 fn item_from_reminder(person: &Person, reminder: &PersonReminder, id: i32, now: DateTime<Local>) -> Option<Item> {
@@ -1764,6 +1965,8 @@ mod tests {
             handles: crate::people::Handles::default(),
             favorite: true,
             note: "call after 5".into(),
+            reach_out_days: 0,
+            last_contacted_ms: None,
             reminders: vec![crate::people::PersonReminder {
                 id: "bday".into(),
                 label: "birthday".into(),

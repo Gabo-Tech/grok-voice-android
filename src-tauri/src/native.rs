@@ -336,6 +336,62 @@ mod imp {
             )
         }
 
+        pub fn read_notifications(&self) -> Result<String> {
+            self.plugin_json("readNotifications", ())
+        }
+
+        pub fn set_dnd(&self, mode: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                mode: &'a str,
+            }
+            self.plugin_json("setDnd", Args { mode })
+        }
+
+        pub fn go_home(&self) -> Result<String> {
+            self.plugin_json("goHome", ())
+        }
+
+        pub fn phone_status(&self) -> Result<String> {
+            self.plugin_json("phoneStatus", ())
+        }
+
+        pub fn access_status(&self) -> Result<String> {
+            self.plugin_json("accessStatus", ())
+        }
+
+        pub fn open_access_settings(&self, kind: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                kind: &'a str,
+            }
+            self.plugin_json("openAccessSettings", Args { kind })
+        }
+
+        pub fn request_history_access(&self) -> Result<PermissionStatus> {
+            self.handle
+                .run_mobile_plugin("requestPermissions", PermArgs { permissions: vec!["callLog", "sms"] })
+                .map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn contact_birthday(&self, id: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                id: &'a str,
+            }
+            self.plugin_json("contactBirthday", Args { id })
+        }
+
+        pub fn last_contact(&self, id: &str, phone: &str, name: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                id: &'a str,
+                phone: &'a str,
+                name: &'a str,
+            }
+            self.plugin_json("lastContact", Args { id, phone, name })
+        }
+
         pub fn device_facts(&self) -> Result<DeviceFacts> {
             self.handle.run_mobile_plugin("deviceFacts", ()).map_err(|e| msg(e.to_string()))
         }
@@ -477,6 +533,42 @@ mod imp {
 
         pub fn delete_event(&self, _id: &str) -> Result<String> {
             Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
+        }
+
+        pub fn read_notifications(&self) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Notifications are read on the Android phone."}"#.into())
+        }
+
+        pub fn set_dnd(&self, _mode: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Do Not Disturb is changed on the Android phone."}"#.into())
+        }
+
+        pub fn go_home(&self) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"The home screen is only on the Android phone."}"#.into())
+        }
+
+        pub fn phone_status(&self) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Battery and the next alarm are read on the Android phone."}"#.into())
+        }
+
+        pub fn access_status(&self) -> Result<String> {
+            Ok(r#"{"notificationListener":"unknown","dnd":"unknown","callLog":"unknown","sms":"unknown"}"#.into())
+        }
+
+        pub fn open_access_settings(&self, _kind: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"System settings open on the Android phone."}"#.into())
+        }
+
+        pub fn request_history_access(&self) -> Result<PermissionStatus> {
+            self.check_permissions()
+        }
+
+        pub fn contact_birthday(&self, _id: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Contact birthdays are read on the Android phone."}"#.into())
+        }
+
+        pub fn last_contact(&self, _id: &str, _phone: &str, _name: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Call and text history are read on the Android phone."}"#.into())
         }
 
         pub fn device_facts(&self) -> Result<DeviceFacts> {

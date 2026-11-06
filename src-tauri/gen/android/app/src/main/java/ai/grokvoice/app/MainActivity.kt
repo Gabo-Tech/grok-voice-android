@@ -53,6 +53,11 @@ class MainActivity : TauriActivity() {
   private fun applyWidget(intent: Intent?) {
     val widget = intent?.getStringExtra(EXTRA_WIDGET)
     val headless = intent?.getBooleanExtra(EXTRA_HEADLESS, false) == true
+    val overLock = widget == "lock"
+    if (Build.VERSION.SDK_INT >= 27) {
+      setShowWhenLocked(overLock)
+      setTurnScreenOn(overLock)
+    }
     if (widget == "arm") {
       val start = Intent(this, VoiceListenerService::class.java).setAction(VoiceListenerService.ACTION_START)
       androidx.core.content.ContextCompat.startForegroundService(this, start)
@@ -63,7 +68,8 @@ class MainActivity : TauriActivity() {
     } else if (headless) {
       window?.decorView?.post { moveTaskToBack(true) }
     }
-    if (widget != null) deliverWidget(widget)
+    if (widget == "lock") deliverWidget("talk")
+    else if (widget != null) deliverWidget(widget)
   }
 
   private fun deliverWidget(action: String) {

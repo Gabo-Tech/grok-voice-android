@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { formatClock, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
 import { api, type ScheduledItem } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 const KINDS = ["reminder", "alarm", "timer"] as const;
 const WEEKDAYS = [
@@ -24,6 +25,7 @@ const WEEKDAYS = [
 type Repeat = "none" | "daily" | "weekly" | "yearly" | "once";
 
 export function RemindersPage({ agenda }: { agenda: AgendaState }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduledItem | null>(null);
   const [title, setTitle] = useState("");
@@ -125,13 +127,13 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
 
   return (
     <>
-      <PageChrome title="Time" subtitle={subtitle} onAdd={() => openNew("reminder")} addLabel="New reminder">
+      <PageChrome title={t("Time")} subtitle={subtitle} onAdd={() => openNew("reminder")} addLabel={t("New reminder")}>
         <div className="mb-4 grid grid-cols-2 gap-2">
           <button type="button" className="h-12 border border-border text-sm" onClick={() => openNew("alarm")}>
-            New alarm
+            {t("New alarm")}
           </button>
           <button type="button" className="h-12 border border-border text-sm" onClick={() => openNew("timer")}>
-            New countdown
+            {t("New countdown")}
           </button>
         </div>
         <div className="mb-4 flex gap-2 overflow-x-auto">

@@ -98,6 +98,52 @@ GvAsr *gv_asr_load(
     return asr;
 }
 
+GvAsr *gv_asr_load_transducer(
+    const char *encoder,
+    const char *decoder,
+    const char *joiner,
+    const char *tokens,
+    int threads,
+    char *err,
+    int err_len) {
+    GvAsr *asr = (GvAsr *)calloc(1, sizeof(GvAsr));
+    if (!asr) {
+        gv_set_err(err, err_len, "out of memory");
+        return NULL;
+    }
+    asr->encoder = gv_dup(encoder);
+    asr->uncached = gv_dup(decoder);
+    asr->cached = gv_dup(joiner);
+    asr->tokens = gv_dup(tokens);
+    asr->preprocess = gv_dup("");
+    if (!asr->encoder || !asr->uncached || !asr->cached || !asr->tokens || !asr->preprocess) {
+        gv_asr_free(asr);
+        gv_set_err(err, err_len, "out of memory");
+        return NULL;
+    }
+
+    SherpaOnnxOfflineRecognizerConfig config;
+    memset(&config, 0, sizeof(config));
+    config.feat_config.sample_rate = 16000;
+    config.feat_config.feature_dim = 80;
+    config.model_config.transducer.encoder = asr->encoder;
+    config.model_config.transducer.decoder = asr->uncached;
+    config.model_config.transducer.joiner = asr->cached;
+    config.model_config.tokens = asr->tokens;
+    config.model_config.provider = "cpu";
+    config.model_config.model_type = "nemo_transducer";
+    config.model_config.num_threads = threads > 0 ? threads : 2;
+    config.decoding_method = "greedy_search";
+
+    asr->recognizer = SherpaOnnxCreateOfflineRecognizer(&config);
+    if (!asr->recognizer) {
+        gv_asr_free(asr);
+        gv_set_err(err, err_len, "could not load the German speech model");
+        return NULL;
+    }
+    return asr;
+}
+
 void gv_asr_free(GvAsr *asr) {
     if (!asr) {
         return;

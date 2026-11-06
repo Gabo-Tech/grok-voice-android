@@ -19,24 +19,31 @@ pub struct Decision {
 }
 
 pub fn tool_names() -> Vec<String> {
-    actions::tool_definitions()
+    let mut names: Vec<String> = actions::tool_definitions()
         .as_array()
         .map(|list| list.iter().filter_map(|tool| tool["name"].as_str().map(str::to_owned)).collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    names.extend(crate::local_memory::tool_names());
+    names
 }
 
-pub fn system_prompt(custom: &str, memory: &str) -> String {
+pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &str) -> String {
     let custom: String = custom.trim().chars().take(500).collect();
     let mut tools = String::new();
-    if let Some(list) = actions::tool_definitions().as_array() {
-        for tool in list {
-            let name = tool["name"].as_str().unwrap_or("");
-            let desc: String = tool["description"].as_str().unwrap_or("").chars().take(180).collect();
-            tools.push_str(&format!("- {name}: {desc}\n"));
-        }
+    let mut listed = actions::tool_definitions().as_array().cloned().unwrap_or_default();
+    listed.extend(crate::local_memory::tool_definitions());
+    for tool in &listed {
+        let name = tool["name"].as_str().unwrap_or("");
+        let desc: String = tool["description"].as_str().unwrap_or("").chars().take(180).collect();
+        tools.push_str(&format!("- {name}: {desc}\n"));
     }
+    let speech_line = if speech == "de" {
+        "The user is speaking German. Put the spoken reply in the say field in German. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
+    } else {
+        "This session uses the English Moonshine speech model. It does not understand German.\n"
+    };
     format!(
-        "{custom}\n\nYou are running on this phone. Reply with one JSON object and nothing else, shaped as {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. say is what you speak. tool is null or one name from the list. args is that tool's arguments. Call the tool before saying a note, reminder, alarm, timer, or calendar change is done. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, and open_sms, say what will open and pass confirmed false until the user clearly agrees, then call the same tool with confirmed true. Nothing is sent, and a call is not placed, until they confirm. Times are local YYYY-MM-DDTHH:MM. If web_search returns an error, speak that error.\n\nTools:\n{tools}\n{memory}"
+        "{custom}\n\nYou are running on this phone. Reply with one JSON object and nothing else, shaped as {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. say is what you speak. tool is null or one name from the list. args is that tool's arguments. Call the tool before saying a note, reminder, alarm, timer, calendar change, or pinned fact is done. remember_fact and forget_fact change on-device memory only. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item, say what will open and pass confirmed false until the user clearly agrees, then call the same tool with confirmed true. Nothing is sent, and a call is not placed, until they confirm in the other app. media_control, set_volume, set_dnd, go_home, read_notifications, and phone_status act on this phone. Times are local YYYY-MM-DDTHH:MM. If web_search returns an error, speak that error.\n{speech_line}\nTools:\n{tools}\n{memory}{local_memory}"
     )
 }
 
@@ -228,6 +235,23 @@ mod tests {
         assert!(grammar.contains(r#""\"set_reminder\"""#));
         assert!(grammar.contains(r#""\"web_search\"""#));
         assert!(grammar.contains(r#""\"open_call\"""#));
+        assert!(grammar.contains(r#""\"remember_fact\"""#));
+        assert!(grammar.contains(r#""\"phone_status\"""#));
+    }
+
+    #[test]
+    fn local_prompt_includes_memory_and_cloud_tools_do_not() {
+        let prompt = system_prompt("be brief", "", "\nPinned facts:\n- f1: I live in Zurich\n", "en");
+        assert!(prompt.contains("I live in Zurich"));
+        assert!(prompt.contains("remember_fact"));
+        assert!(prompt.contains("Moonshine"));
+        let german = system_prompt("be brief", "", "", "de");
+        assert!(german.contains("German"));
+        assert!(!german.contains("I live in Zurich"));
+        let cloud = crate::actions::tool_definitions().to_string();
+        assert!(!cloud.contains("remember_fact"));
+        assert!(!cloud.contains("forget_fact"));
+        assert!(cloud.contains("share_item"));
     }
 
     #[test]

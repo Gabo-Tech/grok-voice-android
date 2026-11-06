@@ -73,6 +73,15 @@ mod ffi {
     use std::os::raw::{c_char, c_int};
 
     unsafe extern "C" {
+        pub fn gv_asr_load_transducer(
+            encoder: *const c_char,
+            decoder: *const c_char,
+            joiner: *const c_char,
+            tokens: *const c_char,
+            threads: c_int,
+            err: *mut c_char,
+            err_len: c_int,
+        ) -> *mut ();
         pub fn gv_asr_load(
             preprocess: *const c_char,
             encoder: *const c_char,
@@ -140,23 +149,39 @@ impl Native {
         use ffi::*;
         use std::os::raw::c_int;
 
-        let preprocess = c_path(&paths.preprocess)?;
         let encoder = c_path(&paths.encoder)?;
-        let uncached = c_path(&paths.uncached)?;
-        let cached = c_path(&paths.cached)?;
         let tokens = c_path(&paths.stt_tokens)?;
         let mut err = err_buf();
-        let asr = unsafe {
-            gv_asr_load(
-                preprocess.as_ptr(),
-                encoder.as_ptr(),
-                uncached.as_ptr(),
-                cached.as_ptr(),
-                tokens.as_ptr(),
-                threads,
-                err.as_mut_ptr(),
-                err.len() as c_int,
-            )
+        let asr = if paths.asr == "transducer" {
+            let decoder = c_path(&paths.uncached)?;
+            let joiner = c_path(&paths.joiner)?;
+            unsafe {
+                gv_asr_load_transducer(
+                    encoder.as_ptr(),
+                    decoder.as_ptr(),
+                    joiner.as_ptr(),
+                    tokens.as_ptr(),
+                    threads,
+                    err.as_mut_ptr(),
+                    err.len() as c_int,
+                )
+            }
+        } else {
+            let preprocess = c_path(&paths.preprocess)?;
+            let uncached = c_path(&paths.uncached)?;
+            let cached = c_path(&paths.cached)?;
+            unsafe {
+                gv_asr_load(
+                    preprocess.as_ptr(),
+                    encoder.as_ptr(),
+                    uncached.as_ptr(),
+                    cached.as_ptr(),
+                    tokens.as_ptr(),
+                    threads,
+                    err.as_mut_ptr(),
+                    err.len() as c_int,
+                )
+            }
         };
         if asr.is_null() {
             return Err(read_buf(&err).unwrap_or_else(|| "could not load speech recognition".into()));

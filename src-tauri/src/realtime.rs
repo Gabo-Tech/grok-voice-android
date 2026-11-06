@@ -210,10 +210,7 @@ impl Session<'_> {
     async fn run(&self, mic: &mut mpsc::Receiver<Vec<i16>>) -> Result<String> {
         self.phase(Phase::Connecting);
         self.hub.update(|s| s.ws_state = "minting token".into());
-        if let Some(guard) = self.app.state::<crate::usage::UsageStore>().blocked(
-            self.settings.daily_budget_minutes,
-            self.settings.daily_budget_hard_stop,
-        ) {
+        if let Some(guard) = self.app.state::<crate::usage::UsageStore>().blocked(caps_of(self.settings), &self.settings.locale) {
             let message = guard.message.clone().unwrap_or_else(|| {
                 format!("Today's voice limit of {} minutes is used up.", guard.budget_minutes)
             });
@@ -248,6 +245,7 @@ impl Session<'_> {
             match crate::local::route(&account.provider, ready) {
                 crate::local::Route::Local => {
                     tried.push(label.into());
+                    self.app.state::<crate::usage::UsageStore>().note_provider(&account.provider);
                     self.announce(label);
                     self.hub.info("using on-device voice");
                     match crate::local::run_session(self.app, mic, self.player, self.active, self.settings, self.hub).await {
@@ -261,6 +259,7 @@ impl Session<'_> {
                 crate::local::Route::Xai | crate::local::Route::OpenAi => {
                     let cloud = if account.provider == "openai" { Cloud::OpenAi } else { Cloud::Xai };
                     tried.push(cloud.label().into());
+                    self.app.state::<crate::usage::UsageStore>().note_provider(&account.provider);
                     self.announce(cloud.label());
                     let minted = match cloud {
                         Cloud::Xai => mint_ephemeral(&http, &account.secret).await,
@@ -534,10 +533,7 @@ impl Session<'_> {
                     if spend_check.elapsed() >= Duration::from_secs(20) {
                         spend_check = Instant::now();
                         let live = self.app.state::<crate::settings::SettingsStore>().get();
-                        let guard = self.app.state::<crate::usage::UsageStore>().poll(
-                            live.daily_budget_minutes,
-                            live.daily_budget_hard_stop,
-                        );
+                        let guard = self.app.state::<crate::usage::UsageStore>().poll(caps_of(&live), &live.locale);
                         if let Some(message) = guard.message.clone() {
                             self.emit_spend(&message, guard.minutes, guard.budget_minutes, guard.block);
                             if !guard.block && configured && !response_active && !self.player.is_active() {
@@ -677,6 +673,7 @@ impl Session<'_> {
         s.push_str(
             "\n\nIf a tool returns an error, speak that error in one short sentence. You can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. media_control and set_volume act immediately on whatever is playing. For a question about a person, call get_person and speak the answer. That includes preferred channel, birthday, anniversary, note, nickname, and favorite. get_person does not open any app. Do not call find_contact or any open_ tool for those questions. Call find_contact only when they want to reach someone. It resolves People nicknames, aliases, and favorites along with phone contacts. If preferredChannel is set, use it even when they said call, text, or email: call is open_call, sms is open_sms, whatsapp is open_whatsapp, signal is open_signal, email is open_email. Pass channelHandle as phone or to. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, and open_sms, say exactly what will open and wait for a clear yes before calling with confirmed true. Nothing is sent, and a call is not placed, until the user confirms in that app. Save a birthday or anniversary with set_person_reminder. A repeating reminder uses set_reminder with recurrence daily or weekly, time HH:MM, and weekdays such as mon,wed,fri. Leave recurrence off for a one-off. snooze_reminder delays the reminder that just rang, or an id they name. If it says to ask which one, ask. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, snooze_reminder, get_person, set_person_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
         );
+        s.push_str(" share_item sends a note, reminder, or event as a draft after a clear yes. read_notifications, set_dnd, go_home, and phone_status run on this phone. Do not guess the battery or the next alarm.");
         s.push_str(&self.app.state::<crate::memory::Memory>().prompt());
         s
     }
@@ -700,6 +697,15 @@ impl Session<'_> {
             }
         }
         self.hub.emit("voice://transcript", TranscriptEvent { id, role, text, delta, is_final });
+    }
+}
+
+fn caps_of(settings: &crate::settings::Settings) -> crate::usage::Caps {
+    crate::usage::Caps {
+        daily_minutes: settings.daily_budget_minutes,
+        daily_hard_stop: settings.daily_budget_hard_stop,
+        monthly_minutes: settings.monthly_budget_minutes,
+        monthly_hard_stop: settings.monthly_budget_hard_stop,
     }
 }
 
@@ -791,5 +797,8 @@ mod tests {
         assert_eq!(session["session"]["audio"]["input"]["format"]["rate"], 24_000);
         assert_eq!(session["session"]["audio"]["output"]["format"]["rate"], 24_000);
         assert_eq!(session["session"]["turn_detection"]["type"], "server_vad");
+        assert_eq!(session["session"]["instructions"], "Be brief.");
+        assert!(!session.to_string().contains("remember_fact"));
+        assert!(!session.to_string().contains("Pinned facts"));
     }
 }

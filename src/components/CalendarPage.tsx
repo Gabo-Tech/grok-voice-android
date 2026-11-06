@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { formatClock, formatDay, formatSpan, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
 import { api, type CalEvent } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 export function CalendarPage({ agenda }: { agenda: AgendaState }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
   const [title, setTitle] = useState("");
@@ -109,7 +111,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
 
   return (
     <>
-      <PageChrome title="Calendar" subtitle={formatDay()} onAdd={openNew} addLabel="New event">
+      <PageChrome title={t("Calendar")} subtitle={formatDay()} onAdd={openNew} addLabel={t("New event")}>
         {monthCalendar !== "granted" && (
           <Button
             variant="outline"
@@ -129,7 +131,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
 
         <p className="mb-2 px-1 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Today</p>
         {events.length === 0 ? (
-          <EmptyState title="Nothing today" body="Tap + to add an event, or ask Grok to schedule one." />
+          <EmptyState title={t("Nothing today")} body={t("Tap + to add an event, or ask Grok to schedule one.")} />
         ) : (
           <EventList events={events} onOpen={openEdit} />
         )}
@@ -194,7 +196,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
             {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </p>
           {selectedEvents.length === 0 ? (
-            <EmptyState title="Nothing this day" body="Choose another day, or tap + to add an event here." />
+            <EmptyState title={t("Nothing this day")} body={t("Choose another day, or tap + to add an event here.")} />
           ) : (
             <EventList events={selectedEvents} onOpen={openEdit} />
           )}

@@ -20,6 +20,14 @@ GvAsr *gv_asr_load(
     int threads,
     char *err,
     int err_len);
+GvAsr *gv_asr_load_transducer(
+    const char *encoder,
+    const char *decoder,
+    const char *joiner,
+    const char *tokens,
+    int threads,
+    char *err,
+    int err_len);
 void gv_asr_free(GvAsr *asr);
 int gv_asr_transcribe(
     GvAsr *asr,
