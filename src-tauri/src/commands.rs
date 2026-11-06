@@ -177,6 +177,17 @@ pub async fn remove_voice_account(app: AppHandle, id: String) -> Result<AuthStat
 }
 
 #[tauri::command]
+pub async fn reorder_voice_accounts(app: AppHandle, ids: Vec<String>) -> Result<AuthStatus> {
+    blocking(app, move |app| {
+        if !ids.is_empty() {
+            app.state::<Vault>().reorder_accounts(&app.state::<NativeBridge>(), &ids)?;
+        }
+        vault_status(&app)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn move_voice_account(app: AppHandle, id: String, up: bool) -> Result<AuthStatus> {
     blocking(app, move |app| {
         app.state::<Vault>().move_account(&app.state::<NativeBridge>(), &id, up)?;

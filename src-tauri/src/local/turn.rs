@@ -1,4 +1,6 @@
-//! Grammar-constrained tool turns. The model must emit one JSON object.
+//! On-device turns. The model speaks freely. A JSON object in the reply can
+//! still call a phone tool. Constrained grammars are not applied: Qwen's
+//! combined `{"` piece made llama.cpp throw and abort the process.
 //! Phone actions are executed by the caller, which uses `actions::run`.
 
 use serde_json::{Value, json};
@@ -44,32 +46,6 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
     };
     format!(
         "{custom}\n\nYou are running on this phone. Reply with one JSON object and nothing else, shaped as {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. say is what you speak. tool is null or one name from the list. args is that tool's arguments. Call the tool before saying a note, reminder, alarm, timer, calendar change, or pinned fact is done. remember_fact and forget_fact change on-device memory only. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item, say what will open and pass confirmed false until the user clearly agrees, then call the same tool with confirmed true. Nothing is sent, and a call is not placed, until they confirm in the other app. media_control, set_volume, set_dnd, go_home, read_notifications, and phone_status act on this phone. Times are local YYYY-MM-DDTHH:MM. If web_search returns an error, speak that error.\n{speech_line}\nTools:\n{tools}\n{memory}{local_memory}"
-    )
-}
-
-pub fn grammar(names: &[String]) -> String {
-    let mut alts = vec!["\"null\"".to_string()];
-    for name in names {
-        alts.push(format!("\"\\\"{name}\\\"\""));
-    }
-    format!(
-        r#"root ::= "{{" ws "\"say\"" ws ":" ws string "," ws "\"tool\"" ws ":" ws tool "," ws "\"args\"" ws ":" ws object "}}" ws
-tool ::= {tools}
-object ::= "{{" ws "}}" | "{{" ws members ws "}}"
-members ::= pair | pair "," ws members
-pair ::= string ws ":" ws value
-array ::= "[" ws "]" | "[" ws elements ws "]"
-elements ::= value | value "," ws elements
-value ::= string | number | object | array | "true" | "false" | "null"
-string ::= "\"" chars "\""
-chars ::= "" | char chars
-char ::= [^"\\] | "\\" escape
-escape ::= ["\\/bfnrt] | "u" hex hex hex hex
-number ::= "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [-+]? [0-9]+)?
-ws ::= [ \t\n]*
-hex ::= [0-9a-fA-F]
-"#,
-        tools = alts.join(" | "),
     )
 }
 
@@ -138,7 +114,36 @@ pub fn trim_history(history: &mut Vec<ChatTurn>) {
     }
 }
 
-/// One user turn. `complete` sees the Qwen chat prompt. `call_tool` runs the phone action.
+const SPOKEN_FALLBACK: &str = "Please say that again.";
+
+/// A llama.cpp grammar or sampler failure. Rust `catch_unwind` does not see it;
+/// the native boundary turns it into this kind of error so the turn can continue.
+pub fn is_grammar_engine_failure(err: &str) -> bool {
+    let err = err.to_ascii_lowercase();
+    err.contains("grammar stack") || err.contains("grammar failed") || err.contains("grammar rejected")
+}
+
+fn finish_say(history: &mut Vec<ChatTurn>, last_say: &str) -> Result<String, String> {
+    let say = if last_say.trim().is_empty() { SPOKEN_FALLBACK.to_string() } else { last_say.to_string() };
+    history.push(ChatTurn { role: "assistant", text: say.clone() });
+    Ok(say)
+}
+
+fn speakable(raw: &str, last_say: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return if last_say.trim().is_empty() { SPOKEN_FALLBACK.to_string() } else { last_say.to_string() };
+    }
+    trimmed.chars().take(280).collect()
+}
+
+fn looks_like_broken_json(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    trimmed.starts_with('{') || trimmed.starts_with('[') || trimmed.starts_with("```")
+}
+
+/// One user turn. `complete` sees the chat prompt and an empty grammar.
+/// `call_tool` runs the phone action.
 pub fn run_turns(
     system: &str,
     history: &mut Vec<ChatTurn>,
@@ -147,16 +152,38 @@ pub fn run_turns(
     mut call_tool: impl FnMut(&str, &Value) -> String,
 ) -> Result<String, String> {
     let names = tool_names();
-    let grammar = grammar(&names);
     history.push(ChatTurn { role: "user", text: user_text.trim().to_string() });
     let mut repaired = false;
+    let mut retried_engine = false;
     let mut last_say = String::new();
     for _ in 0..4 {
         trim_history(history);
         let prompt = prompt(system, history);
-        let raw = complete(&prompt, &grammar)?;
+        let raw = match complete(&prompt, "") {
+            Ok(raw) => raw,
+            Err(err) if is_grammar_engine_failure(&err) => {
+                log::warn!("on-device grammar failed ({err}); continuing this turn without a grammar");
+                if retried_engine {
+                    return finish_say(history, &last_say);
+                }
+                retried_engine = true;
+                match complete(&prompt, "") {
+                    Ok(raw) => raw,
+                    Err(retry) => {
+                        log::warn!("on-device reply failed after dropping the grammar: {retry}");
+                        return finish_say(history, &last_say);
+                    }
+                }
+            }
+            Err(err) => return Err(err),
+        };
         let decision = match parse_decision(&raw, &names) {
             Ok(decision) => decision,
+            Err(_) if !looks_like_broken_json(&raw) => {
+                let say = speakable(&raw, &last_say);
+                history.push(ChatTurn { role: "assistant", text: say.clone() });
+                return Ok(say);
+            }
             Err(err) if !repaired => {
                 repaired = true;
                 history.push(ChatTurn { role: "assistant", text: raw });
@@ -166,7 +193,11 @@ pub fn run_turns(
                 });
                 continue;
             }
-            Err(err) => return Err(err),
+            Err(_) => {
+                let say = speakable("", &last_say);
+                history.push(ChatTurn { role: "assistant", text: say.clone() });
+                return Ok(say);
+            }
         };
         if let Some(name) = decision.tool.clone() {
             let output = call_tool(&name, &decision.args);
@@ -227,16 +258,27 @@ mod tests {
     }
 
     #[test]
-    fn grammar_lists_the_phone_tools() {
-        let names = tool_names();
-        let grammar = grammar(&names);
-        assert!(grammar.contains("root ::="));
-        assert!(grammar.contains(r#""\"create_note\"""#));
-        assert!(grammar.contains(r#""\"set_reminder\"""#));
-        assert!(grammar.contains(r#""\"web_search\"""#));
-        assert!(grammar.contains(r#""\"open_call\"""#));
-        assert!(grammar.contains(r#""\"remember_fact\"""#));
-        assert!(grammar.contains(r#""\"phone_status\"""#));
+    fn a_turn_does_not_apply_a_grammar() {
+        let mut saw = String::new();
+        let spoken = run_turns(
+            "be brief",
+            &mut Vec::new(),
+            "hello",
+            |_prompt, grammar| {
+                saw = grammar.to_string();
+                Ok(r#"{"say":"Hello.","tool":null,"args":{}}"#.into())
+            },
+            |_name, _args| "{}".into(),
+        )
+        .unwrap();
+        assert!(saw.is_empty());
+        assert_eq!(spoken, "Hello.");
+        let err = r#"Unexpected empty grammar stack after accepting piece: {" (4913)"#;
+        assert!(is_grammar_engine_failure(err));
+        assert!(is_grammar_engine_failure("grammar failed: the reply stopped"));
+        assert!(is_grammar_engine_failure("grammar rejected"));
+        assert!(!is_grammar_engine_failure("out of memory"));
+        assert!(!is_grammar_engine_failure("could not tokenize the prompt"));
     }
 
     #[test]
@@ -292,7 +334,7 @@ mod tests {
             &mut Vec::new(),
             "what's the weather",
             |_prompt, grammar| {
-                assert!(grammar.contains("web_search"));
+                assert!(grammar.is_empty());
                 Ok(replies.remove(0))
             },
             |name, _args| {
@@ -304,5 +346,115 @@ mod tests {
         .unwrap();
         assert!(saw.contains("offline"));
         assert!(spoken.contains("offline"));
+    }
+
+    #[test]
+    fn a_grammar_engine_failure_is_retried_and_still_runs_the_tool() {
+        let mut calls = 0;
+        let mut replies = vec![
+            r#"{"say":"Making that note.","tool":"create_note","args":{"text":"buy milk","title":"milk"}}"#.to_string(),
+            r#"{"say":"Saved a note about milk.","tool":null,"args":{}}"#.to_string(),
+        ];
+        let mut tools = Vec::new();
+        let spoken = run_turns(
+            "be brief",
+            &mut Vec::new(),
+            "make a note to buy milk",
+            |_prompt, grammar| {
+                assert!(grammar.is_empty());
+                calls += 1;
+                if calls == 1 {
+                    Err(r#"grammar failed: Unexpected empty grammar stack after accepting piece: {" (4913)"#.into())
+                } else {
+                    Ok(replies.remove(0))
+                }
+            },
+            |name, args| {
+                tools.push((name.to_string(), args.clone()));
+                r#"{"ok":true}"#.into()
+            },
+        )
+        .unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].0, "create_note");
+        assert_eq!(spoken, "Saved a note about milk.");
+        assert!(calls >= 3);
+    }
+
+    #[test]
+    fn a_grammar_engine_failure_speaks_plain_text_when_the_retry_is_not_json() {
+        let mut calls = 0;
+        let spoken = run_turns(
+            "be brief",
+            &mut Vec::new(),
+            "give me a tiny little time to sit",
+            |_prompt, _grammar| {
+                calls += 1;
+                if calls == 1 {
+                    Err("grammar failed: Unexpected empty grammar stack".into())
+                } else {
+                    Ok("Take your time.".into())
+                }
+            },
+            |_name, _args| "{}".into(),
+        )
+        .unwrap();
+        assert_eq!(spoken, "Take your time.");
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn a_grammar_engine_failure_that_keeps_failing_speaks_a_short_line() {
+        let mut calls = 0;
+        let spoken = run_turns(
+            "be brief",
+            &mut Vec::new(),
+            "hello",
+            |_prompt, _grammar| {
+                calls += 1;
+                Err("grammar rejected".into())
+            },
+            |_name, _args| "{}".into(),
+        )
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert_eq!(spoken, "Please say that again.");
+    }
+
+    #[test]
+    fn other_model_errors_are_not_retried() {
+        let mut calls = 0;
+        let err = run_turns(
+            "be brief",
+            &mut Vec::new(),
+            "hello",
+            |_prompt, _grammar| {
+                calls += 1;
+                Err("out of memory".into())
+            },
+            |_name, _args| "{}".into(),
+        )
+        .unwrap_err();
+        assert_eq!(calls, 1);
+        assert!(err.contains("out of memory"));
+    }
+
+    #[test]
+    fn plain_speech_is_spoken_without_another_generation() {
+        let mut calls = 0;
+        let spoken = run_turns(
+            "be brief",
+            &mut Vec::new(),
+            "hello",
+            |_prompt, grammar| {
+                calls += 1;
+                assert!(grammar.is_empty());
+                Ok("Hello. Take your time.".into())
+            },
+            |_name, _args| panic!("a spoken reply should not call a tool"),
+        )
+        .unwrap();
+        assert_eq!(spoken, "Hello. Take your time.");
+        assert_eq!(calls, 1);
     }
 }

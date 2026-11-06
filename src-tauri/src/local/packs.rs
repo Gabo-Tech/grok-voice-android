@@ -14,7 +14,7 @@ use tauri::{AppHandle, Manager};
 pub const STT_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2";
 pub const LLM_URL: &str =
-    "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+    "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf";
 pub const TTS_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2";
 pub const STT_DE_URL: &str =
@@ -48,10 +48,10 @@ const PACKS: &[Spec] = &[
     Spec {
         id: "llm",
         label: "Language model",
-        detail: "Qwen2.5 0.5B Instruct, Q4_K_M",
+        detail: "SmolLM2 360M Instruct, Q8_0",
         url: LLM_URL,
-        download_bytes: 491_400_032,
-        sha256: "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+        download_bytes: 386_404_992,
+        sha256: "48ab3034d0dd401fbc721eb1df3217902fee7dab9078992d66431f09b7750201",
         archive: false,
         required: true,
     },
@@ -134,7 +134,7 @@ pub fn model_paths(root: &Path) -> ModelPaths {
 }
 
 pub fn model_paths_for(root: &Path, lang: &str) -> ModelPaths {
-    let llm = root.join("llm/qwen2.5-0.5b-instruct-q4_k_m.gguf");
+    let llm = root.join("llm/smollm2-360m-instruct-q8_0.gguf");
     if lang == "de" {
         let stt = root.join("stt-de/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8");
         let tts = root.join("tts-de/vits-piper-de_DE-thorsten-low");
@@ -301,6 +301,14 @@ fn download_locked(root: &Path, spec: &Spec, progress: &mut impl FnMut(PackProgr
             fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
         fs::rename(&partial, &final_path).map_err(|err| err.to_string())?;
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path != final_path && path.extension().and_then(|ext| ext.to_str()) == Some("gguf") {
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
     }
     if !pack_ready(root, spec.id) {
         return Err(format!("{} downloaded, but the expected files were not in the archive", spec.label));
@@ -417,7 +425,7 @@ mod tests {
         assert!(!packs_ready_for(&root, "de"));
         assert_eq!(status.iter().find(|pack| pack.id == "stt-de").unwrap().download_bytes, 108_124_747);
         assert_eq!(status.iter().find(|pack| pack.id == "tts-de").unwrap().download_bytes, 67_101_576);
-        assert_eq!(status[1].download_bytes, 491_400_032);
+        assert_eq!(status[1].download_bytes, 386_404_992);
         assert!(status.iter().filter(|pack| pack.ready).all(|pack| pack.installed_bytes > 0));
         delete_pack(&root, "llm").unwrap();
         assert!(!packs_ready(&root));

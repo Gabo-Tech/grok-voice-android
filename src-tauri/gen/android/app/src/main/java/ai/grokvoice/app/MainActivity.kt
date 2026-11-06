@@ -154,6 +154,11 @@ class MainActivity : TauriActivity() {
   override fun onResume() {
     super.onResume()
     resumeWebViews()
+    // A living process can outlast the activity. If the window was destroyed
+    // with the task, open it again without restarting wake enrollment.
+    if (RustBridge.engineAliveSafe()) {
+      window?.decorView?.post { RustBridge.ensureUiSafe() }
+    }
   }
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {

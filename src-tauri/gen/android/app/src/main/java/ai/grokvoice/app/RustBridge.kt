@@ -10,6 +10,9 @@ object RustBridge {
   @JvmStatic
   external fun engineAlive(): Boolean
 
+  @JvmStatic
+  external fun ensureUi()
+
   fun stopListeningSafe() {
     try {
       stopListening()
@@ -25,6 +28,15 @@ object RustBridge {
     } catch (e: UnsatisfiedLinkError) {
       Log.w("GrokVoice", "Rust core not loaded", e)
       false
+    }
+  }
+
+  fun ensureUiSafe() {
+    try {
+      System.loadLibrary("grok_voice_lib")
+      ensureUi()
+    } catch (e: UnsatisfiedLinkError) {
+      Log.w("GrokVoice", "Rust core not loaded; window stays with the activity", e)
     }
   }
 }

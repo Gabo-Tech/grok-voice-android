@@ -190,7 +190,13 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun stopListeningService(invoke: Invoke) {
-    activity.stopService(Intent(activity, VoiceListenerService::class.java))
+    VoiceListenerService.setArmed(activity, false)
+    val stop = Intent(activity, VoiceListenerService::class.java).setAction(VoiceListenerService.ACTION_STOP)
+    try {
+      activity.startService(stop)
+    } catch (_: Exception) {
+      activity.stopService(Intent(activity, VoiceListenerService::class.java))
+    }
     invoke.resolve()
   }
 

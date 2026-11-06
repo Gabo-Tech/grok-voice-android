@@ -81,10 +81,7 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
         &system,
         &mut history,
         text,
-        |prompt, grammar| match engines.complete(prompt, grammar) {
-            Err(err) if err.contains("grammar") => engines.complete(prompt, ""),
-            other => other,
-        },
+        |prompt, grammar| engines.complete(prompt, grammar),
         |name, args| call_tool(app, name, args),
     )?;
     record_exchange(app, &history);
@@ -104,7 +101,7 @@ pub async fn run_session(
     set_public_search(true);
     hub.update(|state| {
         state.ws_state = "on device".into();
-        state.model = Some("qwen2.5-0.5b-instruct-q4_k_m".into());
+        state.model = Some("smollm2-360m-instruct-q8_0".into());
         state.token_minted_at_ms = None;
         state.token_expires_at = None;
     });
@@ -272,7 +269,10 @@ async fn handle_text(
             &system,
             &mut history_owned,
             &text,
-            |prompt, grammar| complete_with_fallback(&engines_bg, prompt, grammar),
+            |prompt, grammar| {
+                let mut engine = engines_bg.lock().unwrap_or_else(|err| err.into_inner());
+                engine.complete(prompt, grammar)
+            },
             |name, args| call_tool(&app_bg, name, args),
         );
         (result, history_owned)
@@ -285,14 +285,6 @@ async fn handle_text(
     remember(app, hub, "assistant", &spoken);
     speak_line(app, hub, player, active, engines, &spoken).await;
     Ok(())
-}
-
-fn complete_with_fallback(engines: &Mutex<Engines>, prompt: &str, grammar: &str) -> Result<String, String> {
-    let mut engine = engines.lock().unwrap_or_else(|err| err.into_inner());
-    match engine.complete(prompt, grammar) {
-        Err(err) if err.contains("grammar") => engine.complete(prompt, ""),
-        other => other,
-    }
 }
 
 fn call_tool(app: &AppHandle, name: &str, args: &serde_json::Value) -> String {

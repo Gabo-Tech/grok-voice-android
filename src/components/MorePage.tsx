@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type LocalMemoryBundle, type Settings, type UsageStatus, type WakewordStatus } from "@/lib/api";
-import { chainPlace, providerLabel } from "@/lib/flow";
+import { providerLabel } from "@/lib/flow";
+import { VoiceOrder } from "@/components/VoiceOrder";
 import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -798,8 +799,8 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
     }
   };
 
-  const move = async (id: string, up: boolean) => {
-    onAuth(await api.moveVoiceAccount(id, up));
+  const reorder = async (ids: string[]) => {
+    onAuth(await api.reorderVoiceAccounts(ids));
   };
 
   const remove = async (id: string) => {
@@ -831,9 +832,9 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
 
   return (
     <div className="space-y-4 pb-6">
-      <h2 className="text-2xl font-medium tracking-tight">Voice keys</h2>
+      <h2 className="text-2xl font-medium tracking-tight">{t("Voice keys")}</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        First is tried first. If that key fails to sign in, reach the network, hits a rate limit, or the model is unavailable, the next one is used. On device can sit anywhere in the list.
+        {t("If a voice cannot sign in, reach the network, or load on this phone, the next one is used.")}
       </p>
       <div className="grid grid-cols-3 gap-2">
         {PROVIDERS.map((item) => (
@@ -899,31 +900,19 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
       </p>
       {error && <p className="text-sm text-foreground">{error}</p>}
       <LocalPacks />
-      <ul className="divide-y divide-border border-y border-border">
-        {accounts.map((account, index) => (
-          <li key={account.id} className="py-3">
-            <p className="text-sm text-muted-foreground">{t(chainPlace(index, accounts.length))}</p>
-            <p className="mt-1 text-base text-foreground">
-              {providerLabel(account.provider)}
-              <span className="text-muted-foreground"> · {account.hint}</span>
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button type="button" variant="outline" onClick={() => edit(account.id, account.provider)}>
-                {t("Edit")}
-              </Button>
-              <Button type="button" variant="outline" disabled={index === 0} onClick={() => void move(account.id, true)}>
-                {t("Move up")}
-              </Button>
-              <Button type="button" variant="outline" disabled={index === accounts.length - 1} onClick={() => void move(account.id, false)}>
-                {t("Move down")}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void remove(account.id)}>
-                {t("Remove")}
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <VoiceOrder
+        accounts={accounts}
+        onReorder={async (ids) => {
+          try {
+            await reorder(ids);
+          } catch (err) {
+            setError(errorText(err));
+            throw err;
+          }
+        }}
+        onEdit={edit}
+        onRemove={(id) => void remove(id)}
+      />
     </div>
   );
 }

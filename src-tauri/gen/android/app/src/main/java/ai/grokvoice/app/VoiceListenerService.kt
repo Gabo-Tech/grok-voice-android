@@ -1,6 +1,5 @@
 package ai.grokvoice.app
 
-import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -49,17 +48,20 @@ class VoiceListenerService : Service() {
   }
 
   private var wakeLock: PowerManager.WakeLock? = null
+  private var explicitStop = false
 
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == ACTION_STOP) {
+    if (intent?.action == ACTION_STOP || (intent == null && !isArmed(this))) {
+      explicitStop = true
       setArmed(this, false)
       RustBridge.stopListeningSafe()
       shutdown()
       return START_NOT_STICKY
     }
 
+    explicitStop = false
     setArmed(this, true)
 
     ensureChannel()
@@ -73,59 +75,70 @@ class VoiceListenerService : Service() {
     try {
       ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(title, text), type)
     } catch (e: Exception) {
-      // Android 14+ throws if RECORD_AUDIO isn't granted or the app is not in the foreground.
+      // Android 14+ throws if RECORD_AUDIO isn't granted. Leave the saved
+      // Listen setting alone so the next open can try again.
       Log.e(TAG, "startForeground failed", e)
+      explicitStop = true
+      active.set(false)
       stopSelf()
       return START_NOT_STICKY
     }
     acquireWakeLock()
     active.set(true)
-    hideFromRecents()
     HomeWidgets.updateAll(this)
-    // Clearing the app can kill this process. If it comes back, the activity
-    // has to start once so the wake-word engine is running, then leave again.
+    // A process restart has the service but not the wake engine. Opening the
+    // activity loads it. Android may block that start; the notification still
+    // opens the app, which reads the saved Listen setting and arms again.
     if (!RustBridge.engineAliveSafe()) {
-      WidgetGate.allow(this, "headless")
-      val launch = Intent(this, MainActivity::class.java)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        .putExtra(MainActivity.EXTRA_HEADLESS, true)
-      startActivity(launch)
+      try {
+        WidgetGate.allow(this, "headless")
+        val launch = Intent(this, MainActivity::class.java)
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          .putExtra(MainActivity.EXTRA_HEADLESS, true)
+        startActivity(launch)
+      } catch (e: Exception) {
+        Log.w(TAG, "wake engine will start when the app is opened", e)
+      }
     }
     return START_STICKY
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    // Swiping the card away must not end wake listening.
-    if (active.get() || isArmed(this)) {
+    // Swiping the card away destroys the activity, not this microphone service.
+    if (!explicitStop && isArmed(this)) {
       val restart = Intent(applicationContext, VoiceListenerService::class.java).setAction(ACTION_START)
-      ContextCompat.startForegroundService(applicationContext, restart)
+      try {
+        ContextCompat.startForegroundService(applicationContext, restart)
+      } catch (e: Exception) {
+        Log.w(TAG, "could not keep the listener after the task was cleared", e)
+      }
     }
     super.onTaskRemoved(rootIntent)
   }
 
   override fun onDestroy() {
+    val restart = !explicitStop && isArmed(this)
     releaseWakeLock()
+    active.set(false)
     super.onDestroy()
+    if (restart) {
+      val again = Intent(applicationContext, VoiceListenerService::class.java).setAction(ACTION_START)
+      try {
+        ContextCompat.startForegroundService(applicationContext, again)
+      } catch (e: Exception) {
+        Log.w(TAG, "could not restore the listener", e)
+      }
+    }
   }
 
   private fun shutdown() {
+    explicitStop = true
     active.set(false)
     setArmed(this, false)
     HomeWidgets.updateAll(this)
-    showInRecents()
     releaseWakeLock()
     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     stopSelf()
-  }
-
-  private fun hideFromRecents() {
-    val am = getSystemService(ActivityManager::class.java) ?: return
-    am.appTasks.forEach { it.setExcludeFromRecents(true) }
-  }
-
-  private fun showInRecents() {
-    val am = getSystemService(ActivityManager::class.java) ?: return
-    am.appTasks.forEach { it.setExcludeFromRecents(false) }
   }
 
   private fun ensureChannel() {

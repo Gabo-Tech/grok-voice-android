@@ -121,7 +121,7 @@ pub fn exhausted_message(labels: &[String], last: &str) -> String {
     }
 }
 
-/// About 1.4 GB free keeps Moonshine, Qwen2.5-0.5B Q4, and Piper from getting the process killed.
+/// About 1.4 GB free keeps Moonshine, SmolLM2 360M, and Piper from getting the process killed.
 pub const MIN_FREE_MB: u64 = 1400;
 
 pub fn memory_enough(avail_mb: u64, low_memory: bool) -> bool {

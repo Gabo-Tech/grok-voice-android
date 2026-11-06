@@ -20,7 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorText, type AuthStatus, type PermissionStatus, type WakewordStatus } from "@/lib/api";
-import { chainPlace, providerLabel } from "@/lib/flow";
+import { VoiceOrder } from "@/components/VoiceOrder";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -130,11 +130,22 @@ export function Onboarding({
     setError(null);
     try {
       if (preview) {
+        if (provider === "local" && auth.accounts.some((account) => account.provider === "local")) {
+          setError("On device is already in the list.");
+          return;
+        }
         onAuth({
           hasKey: true,
           keyHint: "xai-…demo",
           securityLevel: "software",
-          accounts: [{ id: "demo", provider, hint: "demo…key" }],
+          accounts: [
+            ...auth.accounts,
+            {
+              id: `demo-${provider}-${auth.accounts.length}`,
+              provider,
+              hint: provider === "local" ? "on this phone" : "demo…key",
+            },
+          ],
         });
         return;
       }
@@ -214,8 +225,31 @@ export function Onboarding({
               void openUrl(url);
             }}
             onSave={() => void saveKey()}
-            onRemove={(id) => void api.removeVoiceAccount(id).then(onAuth).catch((e) => setError(errorText(e)))}
-            onMove={(id, up) => void api.moveVoiceAccount(id, up).then(onAuth).catch((e) => setError(errorText(e)))}
+            onRemove={(id) => {
+              if (preview) {
+                const accounts = auth.accounts.filter((account) => account.id !== id);
+                onAuth({ ...auth, hasKey: accounts.length > 0, accounts });
+                return;
+              }
+              void api.removeVoiceAccount(id).then(onAuth).catch((e) => setError(errorText(e)));
+            }}
+            onReorder={async (ids) => {
+              if (preview) {
+                const byId = new Map(auth.accounts.map((account) => [account.id, account]));
+                const accounts = ids.flatMap((id) => {
+                  const account = byId.get(id);
+                  return account ? [account] : [];
+                });
+                onAuth({ ...auth, accounts });
+                return;
+              }
+              try {
+                onAuth(await api.reorderVoiceAccounts(ids));
+              } catch (err) {
+                setError(errorText(err));
+                throw err;
+              }
+            }}
           />
         )}
         {id === "mic" && <MicStep perms={perms} busy={busy} onAllow={() => void allowMic()} />}
@@ -300,7 +334,7 @@ function KeyStep({
   onOpen,
   onSave,
   onRemove,
-  onMove,
+  onReorder,
 }: {
   auth: AuthStatus;
   provider: (typeof PROVIDERS)[number]["id"];
@@ -311,7 +345,7 @@ function KeyStep({
   onOpen: (url: string) => void;
   onSave: () => void;
   onRemove: (id: string) => void;
-  onMove: (id: string, up: boolean) => void;
+  onReorder: (ids: string[]) => Promise<void>;
 }) {
   const t = useT();
   const chosen = PROVIDERS.find((p) => p.id === provider) ?? PROVIDERS[0];
@@ -322,7 +356,7 @@ function KeyStep({
         <CardTitle className="flex items-center gap-2 text-base">
           <KeyRound className="size-4 text-primary" /> Add a voice key
         </CardTitle>
-        <CardDescription>First in the list is tried first. The next one is the fallback.</CardDescription>
+        <CardDescription>{t("Add xAI, OpenAI, or On device.")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-2">
@@ -373,30 +407,7 @@ function KeyStep({
         <Button className="w-full" disabled={busy || (chosen.id !== "local" && value.trim().length < 12)} onClick={onSave}>
           {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} {chosen.id === "local" ? "Use on device" : "Save this key"}
         </Button>
-        {accounts.length > 0 && (
-          <ul className="divide-y divide-border border-y border-border">
-            {accounts.map((account, index) => (
-              <li key={account.id} className="py-3 text-sm">
-                <p className="text-muted-foreground">{t(chainPlace(index, accounts.length))}</p>
-                <p className="mt-1 text-base text-foreground">
-                  {providerLabel(account.provider)}
-                  <span className="text-muted-foreground"> · {account.hint}</span>
-                </p>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  <Button type="button" variant="outline" disabled={index === 0} onClick={() => onMove(account.id, true)}>
-                    {t("Move up")}
-                  </Button>
-                  <Button type="button" variant="outline" disabled={index === accounts.length - 1} onClick={() => onMove(account.id, false)}>
-                    {t("Move down")}
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => onRemove(account.id)}>
-                    {t("Remove")}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        {accounts.length > 0 && <VoiceOrder accounts={accounts} onReorder={onReorder} onRemove={onRemove} />}
         {accounts.length > 0 && (
           <p className="text-sm leading-6 text-muted-foreground">Add another voice if you want a fallback, then tap Next.</p>
         )}

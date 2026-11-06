@@ -303,6 +303,7 @@ export const api = {
   updateVoiceAccount: (id: string, provider: string, secret: string) =>
     invoke<AuthStatus>("update_voice_account", { id, provider, secret }),
   removeVoiceAccount: (id: string) => invoke<AuthStatus>("remove_voice_account", { id }),
+  reorderVoiceAccounts: (ids: string[]) => invoke<AuthStatus>("reorder_voice_accounts", { ids }),
   moveVoiceAccount: (id: string, up: boolean) => invoke<AuthStatus>("move_voice_account", { id, up }),
   clearUserToken: () => invoke<AuthStatus>("clear_user_token"),
   authStatus: () => invoke<AuthStatus>("auth_status"),

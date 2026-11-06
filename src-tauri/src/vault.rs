@@ -286,6 +286,18 @@ impl Vault {
         })
     }
 
+    pub fn reorder_accounts(&self, bridge: &NativeBridge, ids: &[String]) -> Result<Vec<VoiceAccount>> {
+        if ids.is_empty() {
+            return Ok(public_accounts(&self.with_store(bridge, |_sh, client| read_accounts(client))?));
+        }
+        self.with_store(bridge, |sh, client| {
+            let list = read_accounts(client)?;
+            let next = order_accounts(&list, ids);
+            write_accounts(sh, client, &next)?;
+            Ok(public_accounts(&next))
+        })
+    }
+
     pub fn move_account(&self, bridge: &NativeBridge, id: &str, up: bool) -> Result<Vec<VoiceAccount>> {
         self.with_store(bridge, |sh, client| {
             let mut list = read_accounts(client)?;
@@ -383,9 +395,48 @@ fn public_accounts(list: &[StoredAccount]) -> Vec<VoiceAccount> {
         .collect()
 }
 
+fn order_accounts(list: &[StoredAccount], ids: &[String]) -> Vec<StoredAccount> {
+    let mut out = Vec::with_capacity(list.len());
+    let mut used = vec![false; list.len()];
+    for id in ids {
+        if let Some(index) = list.iter().position(|account| account.id == *id) {
+            if !used[index] {
+                used[index] = true;
+                out.push(list[index].clone());
+            }
+        }
+    }
+    for (index, account) in list.iter().enumerate() {
+        if !used[index] {
+            out.push(account.clone());
+        }
+    }
+    out
+}
+
 pub fn key_hint(key: &str) -> String {
     let tail: String = key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
     let head: String = key.chars().take(4).collect();
     format!("{head}…{tail}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: &str, provider: &str) -> StoredAccount {
+        StoredAccount { id: id.into(), provider: provider.into(), secret: "secret-value".into() }
+    }
+
+    #[test]
+    fn order_accounts_follows_the_saved_ids_and_keeps_the_rest() {
+        let list = vec![row("a", "xai"), row("b", "openai"), row("c", "local")];
+        let ordered = order_accounts(&list, &["c".into(), "a".into()]);
+        assert_eq!(ordered.iter().map(|account| account.id.as_str()).collect::<Vec<_>>(), vec!["c", "a", "b"]);
+        let same = order_accounts(&list, &[]);
+        assert_eq!(same.len(), 3);
+        let unknown = order_accounts(&list, &["missing".into(), "b".into(), "b".into()]);
+        assert_eq!(unknown.iter().map(|account| account.id.as_str()).collect::<Vec<_>>(), vec!["b", "a", "c"]);
+    }
 }
 

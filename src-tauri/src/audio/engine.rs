@@ -73,6 +73,12 @@ pub fn keep_alive() -> bool {
     KEEP_ALIVE.load(Ordering::Acquire)
 }
 
+/// The process must stay up when the user armed hands-free, or while the microphone
+/// service is already running. Turning Listen off clears both.
+pub fn hold_listener_process(listen_armed: bool, service_running: bool) -> bool {
+    listen_armed || service_running
+}
+
 impl Engine {
     pub fn spawn(app: AppHandle) -> Self {
         let (tx, rx) = mpsc::channel();
@@ -236,6 +242,7 @@ impl EngineThread {
         match c {
             Ctl::SetWakeEnabled(on) => {
                 self.wake_enabled = on;
+                KEEP_ALIVE.store(on || self.service_running, Ordering::Release);
                 self.settings.listen_armed = on;
                 let store = self.app.state::<SettingsStore>();
                 if let Ok(saved) = store.save(self.settings.clone()) {
@@ -362,7 +369,7 @@ impl EngineThread {
             self.service_warned = false;
             self.mic_retry_at = None;
         }
-        KEEP_ALIVE.store(self.service_running, Ordering::Release);
+        KEEP_ALIVE.store(hold_listener_process(self.wake_enabled, self.service_running), Ordering::Release);
         self.update_idle_phase();
     }
 
@@ -631,4 +638,16 @@ where
             None,
         )
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hold_listener_process;
+
+    #[test]
+    fn armed_listening_holds_the_process_after_the_window_closes() {
+        assert!(hold_listener_process(true, false));
+        assert!(hold_listener_process(false, true));
+        assert!(!hold_listener_process(false, false));
+    }
 }

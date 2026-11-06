@@ -92,7 +92,7 @@ export function AssistantView({
             <span className="block text-base text-foreground">{t("Listen")}</span>
             <span className="block text-sm leading-5 text-muted-foreground">
               {voice.wakeEnabled ? t("On") : t("Off")}
-              {wakeTrained ? `. ${t("Hands-free stays on after you leave")}` : `. ${t("Hey Grok is not enrolled yet.")}`}
+              {wakeTrained ? `. ${t("Stays on after you leave, lock the screen, or clear the app. Turn this off to stop.")}` : `. ${t("Hey Grok is not enrolled yet.")}`}
               {clock ? ` · ${clock}` : ""}
             </span>
           </span>
