@@ -139,6 +139,14 @@ pub async fn run_session(
     // Dropping `mic` closes the channel; the engine notices and returns to wake listening.
 }
 
+struct UsageEnd<'a>(&'a AppHandle);
+
+impl Drop for UsageEnd<'_> {
+    fn drop(&mut self) {
+        self.0.state::<crate::usage::UsageStore>().end();
+    }
+}
+
 struct Session<'a> {
     app: &'a AppHandle,
     hub: &'a Hub,
@@ -157,6 +165,18 @@ impl Session<'_> {
     async fn run(&self, mic: &mut mpsc::Receiver<Vec<i16>>) -> Result<String> {
         self.phase(Phase::Connecting);
         self.hub.update(|s| s.ws_state = "minting token".into());
+        if let Some(guard) = self.app.state::<crate::usage::UsageStore>().blocked(
+            self.settings.daily_budget_minutes,
+            self.settings.daily_budget_hard_stop,
+        ) {
+            let message = guard.message.clone().unwrap_or_else(|| {
+                format!("Today's voice limit of {} minutes is used up.", guard.budget_minutes)
+            });
+            self.emit_spend(&message, guard.minutes, guard.budget_minutes, true);
+            return Ok(message);
+        }
+        self.app.state::<crate::usage::UsageStore>().begin();
+        let _usage_end = UsageEnd(self.app);
 
         let app = self.app.clone();
         let accounts = tokio::task::spawn_blocking(move || {
@@ -215,6 +235,7 @@ impl Session<'_> {
         let mut speaking = false;
         let idle = Duration::from_secs(self.settings.idle_timeout_secs);
         let mut tick = tokio::time::interval(Duration::from_millis(200));
+        let mut spend_check = Instant::now();
         let mut logged_uplink = false;
         let mut configured = false;
         let mut held: Vec<Vec<i16>> = Vec::new();
@@ -376,6 +397,33 @@ impl Session<'_> {
                         let _ = tx.send(Message::Close(None)).await;
                         return Ok("ended by user".into());
                     }
+                    if spend_check.elapsed() >= Duration::from_secs(20) {
+                        spend_check = Instant::now();
+                        let live = self.app.state::<crate::settings::SettingsStore>().get();
+                        let guard = self.app.state::<crate::usage::UsageStore>().poll(
+                            live.daily_budget_minutes,
+                            live.daily_budget_hard_stop,
+                        );
+                        if let Some(message) = guard.message.clone() {
+                            self.emit_spend(&message, guard.minutes, guard.budget_minutes, guard.block);
+                            if !guard.block && configured && !response_active && !self.player.is_active() {
+                                let say = json!({
+                                    "type": "response.create",
+                                    "response": { "instructions": format!("Say only this, then wait: {message}") }
+                                });
+                                if tx.send(Message::Text(say.to_string())).await.is_err() {
+                                    return Ok("connection closed".into());
+                                }
+                                response_active = true;
+                                last_activity = Instant::now();
+                                self.phase(Phase::Thinking);
+                            }
+                        }
+                        if guard.block {
+                            let _ = tx.send(Message::Close(None)).await;
+                            return Ok("daily voice limit".into());
+                        }
+                    }
                     let playing = self.player.is_active();
                     if speaking && !playing && !response_active {
                         speaking = false;
@@ -490,10 +538,22 @@ impl Session<'_> {
     fn spoken_instructions(&self) -> String {
         let mut s = self.settings.instructions.trim().to_string();
         s.push_str(
-            "\n\nYou can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. media_control and set_volume act immediately on whatever is playing. For a person, call find_contact first. It resolves People nicknames, aliases, and favorites along with phone contacts. If preferredChannel is set, use it even when they said call, text, or email: call is open_call, sms is open_sms, whatsapp is open_whatsapp, signal is open_signal, email is open_email. Pass channelHandle as phone or to. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, and open_sms, say exactly what will open and wait for a clear yes before calling with confirmed true. Nothing is sent, and a call is not placed, until the user confirms in that app. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
+            "\n\nYou can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. media_control and set_volume act immediately on whatever is playing. For a question about a person, call get_person and speak the answer. That includes preferred channel, birthday, anniversary, note, nickname, and favorite. get_person does not open any app. Do not call find_contact or any open_ tool for those questions. Call find_contact only when they want to reach someone. It resolves People nicknames, aliases, and favorites along with phone contacts. If preferredChannel is set, use it even when they said call, text, or email: call is open_call, sms is open_sms, whatsapp is open_whatsapp, signal is open_signal, email is open_email. Pass channelHandle as phone or to. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, and open_sms, say exactly what will open and wait for a clear yes before calling with confirmed true. Nothing is sent, and a call is not placed, until the user confirms in that app. Save a birthday or anniversary with set_person_reminder. A repeating reminder uses set_reminder with recurrence daily or weekly, time HH:MM, and weekdays such as mon,wed,fri. Leave recurrence off for a one-off. snooze_reminder delays the reminder that just rang, or an id they name. If it says to ask which one, ask. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, snooze_reminder, get_person, set_person_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
         );
         s.push_str(&self.app.state::<crate::memory::Memory>().prompt());
         s
+    }
+
+    fn emit_spend(&self, message: &str, minutes: u32, budget_minutes: u32, blocked: bool) {
+        self.hub.emit(
+            "voice://spend",
+            json!({
+                "message": message,
+                "minutes": minutes,
+                "budgetMinutes": budget_minutes,
+                "blocked": blocked,
+            }),
+        );
     }
 
     fn transcript(&self, id: &str, role: &'static str, text: Option<&str>, delta: Option<&str>, is_final: bool) {

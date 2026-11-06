@@ -11,6 +11,17 @@ import { formatClock, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
 import { api, type ScheduledItem } from "@/lib/api";
 
 const KINDS = ["reminder", "alarm", "timer"] as const;
+const WEEKDAYS = [
+  { id: 1, label: "Mon" },
+  { id: 2, label: "Tue" },
+  { id: 3, label: "Wed" },
+  { id: 4, label: "Thu" },
+  { id: 5, label: "Fri" },
+  { id: 6, label: "Sat" },
+  { id: 7, label: "Sun" },
+] as const;
+
+type Repeat = "none" | "daily" | "weekly" | "yearly" | "once";
 
 export function RemindersPage({ agenda }: { agenda: AgendaState }) {
   const [open, setOpen] = useState(false);
@@ -22,6 +33,12 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
   const [kind, setKind] = useState<(typeof KINDS)[number]>("reminder");
   const [kindFilter, setKindFilter] = useState<"all" | (typeof KINDS)[number]>("all");
   const [query, setQuery] = useState("");
+  const [repeat, setRepeat] = useState<Repeat>("none");
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [clock, setClock] = useState("09:00");
+  const [date, setDate] = useState("");
+  const [leadDays, setLeadDays] = useState(0);
+  const [personId, setPersonId] = useState("");
 
   const items = agenda.agenda.reminders;
 
@@ -32,6 +49,12 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
     setAt(toLocalInput(Date.now() + 3_600_000));
     setMinutes(next === "timer" ? 10 : 60);
     setNote("");
+    setRepeat("none");
+    setWeekdays([]);
+    setClock("09:00");
+    setDate("");
+    setLeadDays(0);
+    setPersonId("");
     setOpen(true);
   };
 
@@ -42,6 +65,13 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
     setAt(toLocalInput(item.atMs));
     setMinutes(Math.max(1, Math.round((item.atMs - Date.now()) / 60_000)));
     setNote(item.note || "");
+    const nextRepeat = (item.recurrence || "none") as Repeat;
+    setRepeat(nextRepeat === "none" || nextRepeat === "daily" || nextRepeat === "weekly" || nextRepeat === "yearly" || nextRepeat === "once" ? nextRepeat : "none");
+    setWeekdays(item.weekdays ?? []);
+    setClock(item.time || clockFrom(item.atMs));
+    setDate(item.date || "");
+    setLeadDays(item.leadDays ?? 0);
+    setPersonId(item.personId || "");
     setOpen(true);
   };
 
@@ -51,6 +81,8 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
   };
 
   const whenMs = () => (kind === "timer" ? Date.now() + Math.max(1, minutes) * 60_000 : fromLocalInput(at));
+  const linked = Boolean(personId);
+  const repeating = kind === "reminder" && (repeat === "daily" || repeat === "weekly" || repeat === "yearly" || linked);
 
   const save = () => {
     const next = title.trim();
@@ -58,10 +90,15 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
     void agenda.run(async () => {
       const snap = await api.saveScheduled({
         title: next,
-        atMs: whenMs(),
+        atMs: repeating ? Date.now() + 120_000 : whenMs(),
         note: note.trim(),
         kind,
         id: editing?.id,
+        recurrence: kind === "reminder" ? (repeat === "none" ? "none" : repeat) : "",
+        weekdays: repeat === "weekly" ? weekdays : [],
+        time: repeating ? clock : "",
+        date: linked || repeat === "yearly" || repeat === "once" ? date : "",
+        leadDays: linked || repeat === "yearly" ? leadDays : 0,
       });
       close();
       return snap;
@@ -74,6 +111,10 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
       if (editing?.id === id) close();
       return snap;
     });
+  };
+
+  const finish = (id: number) => {
+    void agenda.run(async () => api.completeScheduled(id));
   };
 
   const grouped = useMemo(
@@ -149,7 +190,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
                         type="button"
                         aria-label={`Mark ${item.title} done`}
                         className="mt-1 size-5 shrink-0 rounded-full border border-foreground/70"
-                        onClick={() => remove(item.id)}
+                        onClick={() => finish(item.id)}
                       />
                       <button type="button" className="flex min-w-0 flex-1 items-start gap-4 text-left" onClick={() => openEdit(item)}>
                         <div className="w-16 shrink-0 pt-0.5 text-right">
@@ -161,7 +202,9 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
                           )}
                         </div>
                         <div className="min-w-0 flex-1 border-l border-border pl-4">
-                          <p className="text-[10px] tracking-[0.16em] text-muted-foreground uppercase">{item.kind}</p>
+                          <p className="text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                            {[item.kind, patternLabel(item)].filter(Boolean).join(" · ")}
+                          </p>
                           <p className="truncate text-base leading-6 text-foreground">{item.title}</p>
                           {item.note ? (
                             <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">{item.note}</p>
@@ -224,6 +267,55 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
               placeholder="Call the clinic"
             />
           </Field>
+          {kind === "reminder" && (
+            <div>
+              <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Repeats</p>
+              <div className="grid grid-cols-3 gap-2">
+                {(linked ? (["yearly", "once"] as Repeat[]) : (["none", "daily", "weekly"] as Repeat[])).map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => {
+                      setRepeat(item);
+                      if (item === "weekly" && weekdays.length === 0) {
+                        const day = new Date().getDay();
+                        setWeekdays([day === 0 ? 7 : day]);
+                      }
+                    }}
+                    className={
+                      repeat === item
+                        ? "h-12 border border-foreground text-xs tracking-[0.12em] text-foreground uppercase"
+                        : "h-12 border border-border text-xs tracking-[0.12em] text-muted-foreground uppercase"
+                    }
+                  >
+                    {item === "none" ? "Once" : item}
+                  </button>
+                ))}
+              </div>
+              {repeat === "weekly" && !linked && (
+                <div className="mt-2 grid grid-cols-7 gap-1">
+                  {WEEKDAYS.map((day) => {
+                    const on = weekdays.includes(day.id);
+                    return (
+                      <button
+                        key={day.id}
+                        type="button"
+                        onClick={() => setWeekdays(on ? weekdays.filter((value) => value !== day.id) : [...weekdays, day.id].sort())}
+                        className={
+                          on
+                            ? "h-10 border border-foreground text-[10px] text-foreground uppercase"
+                            : "h-10 border border-border text-[10px] text-muted-foreground uppercase"
+                        }
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {linked && <p className="mt-2 text-xs leading-5 text-muted-foreground">This date belongs to someone in People.</p>}
+            </div>
+          )}
           {kind === "timer" ? (
             <Field label="Length" hint="Counts from the moment you save.">
               <div className="mb-3 flex gap-2">
@@ -250,6 +342,37 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
                 onChange={(e) => setMinutes(Math.max(1, Number(e.target.value) || 1))}
               />
             </Field>
+          ) : repeating ? (
+            <div className="space-y-4">
+              {(linked || repeat === "yearly" || repeat === "once") && (
+                <Field label="Date" hint="Month and day, like 03-03. Add a year only for a one-time date.">
+                  <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="03-03" />
+                </Field>
+              )}
+              <Field label="Time" hint="Next notification uses this clock.">
+                <Input type="time" value={clock} onChange={(e) => setClock(e.target.value)} />
+              </Field>
+              {(linked || repeat === "yearly") && (
+                <Field label="Early">
+                  <div className="flex gap-2">
+                    {[0, 1, 3, 7].map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => setLeadDays(days)}
+                        className={
+                          leadDays === days
+                            ? "h-12 flex-1 border border-foreground text-sm text-foreground"
+                            : "h-12 flex-1 border border-border text-sm text-muted-foreground"
+                        }
+                      >
+                        {days === 0 ? "Day of" : `${days}d`}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              )}
+            </div>
           ) : (
             <Field label="When">
               <div className="mb-3 flex flex-col gap-2">
@@ -310,6 +433,21 @@ function groupItems(items: ScheduledItem[], query: string) {
     { name: "Later", items: later },
   ].filter((section) => section.items.length > 0);
   return { sections, overdue: overdue.length, today: today.length, later: later.length, total: filtered.length };
+}
+
+function clockFrom(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function patternLabel(item: ScheduledItem): string {
+  const days = (item.weekdays ?? []).map((day) => WEEKDAYS.find((item) => item.id === day)?.label).filter(Boolean).join(" ");
+  if (item.recurrence === "daily") return "Daily";
+  if (item.recurrence === "weekly") return days ? `Weekly ${days}` : "Weekly";
+  if (item.recurrence === "yearly") return item.date ? `Yearly ${item.date}` : "Yearly";
+  if (item.recurrence === "once" && item.date) return `Once ${item.date}`;
+  return "";
 }
 
 function waitingLine(grouped: ReturnType<typeof groupItems>): string {

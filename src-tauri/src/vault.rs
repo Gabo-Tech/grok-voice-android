@@ -269,6 +269,28 @@ impl Vault {
         })
     }
 
+    /// Replaces the vault account list. Used only when a backup restore explicitly opts in.
+    pub fn replace_secrets(&self, bridge: &NativeBridge, rows: &[(String, String, String)]) -> Result<()> {
+        let list: Vec<StoredAccount> = rows
+            .iter()
+            .filter(|(_, _, secret)| !secret.trim().is_empty())
+            .map(|(id, provider, secret)| StoredAccount {
+                id: id.clone(),
+                provider: provider.trim().to_string(),
+                secret: secret.trim().to_string(),
+            })
+            .collect();
+        self.with_store(bridge, |sh, client| {
+            write_accounts(sh, client, &list)?;
+            if list.is_empty() {
+                let _ = client.store().delete(API_KEY);
+                sh.write_client(CLIENT).map_err(verr)?;
+                sh.save().map_err(verr)?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn status(&self, bridge: &NativeBridge) -> Result<AuthStatus> {
         let accounts = self.accounts(bridge)?;
         let first = accounts.iter().find(|a| a.provider == "xai").or(accounts.first());

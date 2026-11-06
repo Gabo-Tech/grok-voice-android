@@ -2,20 +2,30 @@ package ai.grokvoice.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Base64
+import androidx.core.content.FileProvider
 import org.json.JSONObject
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
+import java.io.File
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.Permission
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+
+@InvokeArg
+class ShareArgs {
+  var path: String = ""
+  var mime: String = "application/octet-stream"
+  var title: String = "Grok Voice backup"
+}
 
 @InvokeArg
 class KeyDataArgs {
@@ -189,6 +199,29 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   fun setTimer(invoke: Invoke) {
     val a = invoke.parseArgs(TimerArgs::class.java)
     resolveJson(invoke, PhoneActions.setTimer(activity, a.seconds, a.label, a.id, a.atMs))
+  }
+
+  @Command
+  fun shareFile(invoke: Invoke) {
+    try {
+      val args = invoke.parseArgs(ShareArgs::class.java)
+      val file = File(args.path)
+      if (!file.exists()) {
+        invoke.reject("Backup file is missing")
+        return
+      }
+      val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+      val send = Intent(Intent.ACTION_SEND)
+        .setType(args.mime.ifBlank { "application/octet-stream" })
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .putExtra(Intent.EXTRA_TITLE, args.title)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      send.clipData = ClipData.newRawUri("", uri)
+      activity.startActivity(Intent.createChooser(send, args.title))
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "could not share the backup", e)
+    }
   }
 
   @Command
