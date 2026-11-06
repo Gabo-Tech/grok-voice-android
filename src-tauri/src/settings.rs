@@ -21,6 +21,10 @@ pub struct Settings {
     pub onboarded: bool,
     /// Hands-free wake listening should survive leaving or clearing the app.
     pub listen_armed: bool,
+    /// Soft daily voice budget in minutes. 0 is off.
+    pub daily_budget_minutes: u32,
+    /// End the live session when the soft budget is reached. Off unless the user opts in.
+    pub daily_budget_hard_stop: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +41,8 @@ impl Default for Settings {
             idle_timeout_secs: 10,
             onboarded: false,
             listen_armed: false,
+            daily_budget_minutes: 0,
+            daily_budget_hard_stop: false,
         }
     }
 }
@@ -62,6 +68,7 @@ impl SettingsStore {
     pub fn save(&self, mut s: Settings) -> Result<Settings> {
         s.wake_threshold = s.wake_threshold.clamp(0.2, 0.95);
         s.idle_timeout_secs = s.idle_timeout_secs.clamp(5, 600);
+        s.daily_budget_minutes = s.daily_budget_minutes.min(24 * 60);
         if s.model.trim().is_empty() {
             s.model = Settings::default().model;
         }

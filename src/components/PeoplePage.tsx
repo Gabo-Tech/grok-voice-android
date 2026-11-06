@@ -11,6 +11,7 @@ import {
   errorText,
   type Person,
   type PersonDraft,
+  type PersonReminder,
   type PhoneContact,
   type PreferredChannel,
 } from "@/lib/api";
@@ -38,7 +39,18 @@ type Draft = {
   signal: string;
   favorite: boolean;
   note: string;
+  reminders: PersonReminder[];
 };
+
+const LABELS = [
+  { id: "birthday", label: "Birthday" },
+  { id: "anniversary", label: "Anniversary" },
+  { id: "custom", label: "Custom" },
+] as const;
+
+function blankReminder(): PersonReminder {
+  return { id: "", label: "birthday", title: "", date: "", recurrence: "yearly", leadDays: 0, time: "09:00", enabled: true };
+}
 
 function emptyDraft(): Draft {
   return {
@@ -53,6 +65,7 @@ function emptyDraft(): Draft {
     signal: "",
     favorite: false,
     note: "",
+    reminders: [],
   };
 }
 
@@ -70,6 +83,7 @@ function draftFrom(person: Person): Draft {
     signal: person.handles.signal,
     favorite: person.favorite,
     note: person.note,
+    reminders: person.reminders ?? [],
   };
 }
 
@@ -228,6 +242,10 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
       setError("A person needs a name.");
       return;
     }
+    if (draft.reminders.some((reminder) => !reminder.date.trim())) {
+      setError("Each date needs a month and day, like 03-03.");
+      return;
+    }
     const payload: PersonDraft = {
       id: draft.id,
       androidContactId: draft.androidContactId,
@@ -246,6 +264,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
       },
       favorite: draft.favorite,
       note: draft.note.trim(),
+      reminders: draft.reminders.filter((reminder) => reminder.date.trim()),
     };
     setBusy(true);
     try {
@@ -395,6 +414,35 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
             <Field label="Note">
               <Textarea value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder="Call after 5" className="min-h-28" />
             </Field>
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Dates</p>
+                <button
+                  type="button"
+                  className="h-10 border border-border px-3 text-xs tracking-[0.12em] uppercase"
+                  onClick={() => setDraft({ ...draft, reminders: [...draft.reminders, blankReminder()] })}
+                >
+                  Add
+                </button>
+              </div>
+              <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                Birthdays and anniversaries notify on this phone and show on Time. Nothing is opened.
+              </p>
+              <div className="space-y-3">
+                {draft.reminders.map((reminder, index) => (
+                  <ReminderEditor
+                    key={`${reminder.id}-${index}`}
+                    reminder={reminder}
+                    onChange={(next) => {
+                      const reminders = draft.reminders.slice();
+                      reminders[index] = next;
+                      setDraft({ ...draft, reminders });
+                    }}
+                    onRemove={() => setDraft({ ...draft, reminders: draft.reminders.filter((_, i) => i !== index) })}
+                  />
+                ))}
+              </div>
+            </div>
             <div className="border border-border px-3 py-3">
               <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Phone contact</p>
               {draft.androidContactId ? (
@@ -542,7 +590,8 @@ function PersonGroup({ title, people, onOpen }: { title: string; people: Person[
         {people.map((person) => {
           const aka = person.nickname || person.aliases[0] || "";
           const channel = channelLabel(person.preferredChannel);
-          const detail = [aka, channel && channel !== "None" ? channel : ""].filter(Boolean).join(" · ");
+          const dated = person.reminders?.find((reminder) => reminder.enabled)?.label ?? "";
+          const detail = [aka, channel && channel !== "None" ? channel : "", dated].filter(Boolean).join(" · ");
           return (
             <RowButton key={person.id} onClick={() => onOpen(person)}>
               <div className="min-w-0 flex-1">
@@ -556,6 +605,83 @@ function PersonGroup({ title, people, onOpen }: { title: string; people: Person[
         })}
       </div>
     </section>
+  );
+}
+
+function ReminderEditor({
+  reminder,
+  onChange,
+  onRemove,
+}: {
+  reminder: PersonReminder;
+  onChange: (reminder: PersonReminder) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="space-y-3 border border-border p-3">
+      <div className="grid grid-cols-3 gap-2">
+        {LABELS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onChange({ ...reminder, label: item.id })}
+            className={cn(
+              "h-10 border text-[11px] tracking-[0.08em] uppercase",
+              reminder.label === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {reminder.label === "custom" && (
+        <Input value={reminder.title} onChange={(e) => onChange({ ...reminder, title: e.target.value })} placeholder="Title" />
+      )}
+      <Input value={reminder.date} onChange={(e) => onChange({ ...reminder, date: e.target.value })} placeholder="03-03" aria-label="Month and day" />
+      <div className="grid grid-cols-2 gap-2">
+        {(["yearly", "once"] as const).map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => onChange({ ...reminder, recurrence: item })}
+            className={cn(
+              "h-10 border text-[11px] tracking-[0.08em] uppercase",
+              reminder.recurrence === item ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+            )}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+      <Input type="time" value={reminder.time || "09:00"} onChange={(e) => onChange({ ...reminder, time: e.target.value })} aria-label="Time" />
+      <div className="flex gap-2">
+        {[0, 1, 3, 7].map((days) => (
+          <button
+            key={days}
+            type="button"
+            onClick={() => onChange({ ...reminder, leadDays: days })}
+            className={cn(
+              "h-10 flex-1 border text-xs",
+              reminder.leadDays === days ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+            )}
+          >
+            {days === 0 ? "Day of" : `${days}d early`}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          className="text-xs tracking-[0.12em] text-muted-foreground uppercase"
+          onClick={() => onChange({ ...reminder, enabled: !reminder.enabled })}
+        >
+          {reminder.enabled ? "On" : "Off"}
+        </button>
+        <button type="button" className="text-xs tracking-[0.12em] uppercase" onClick={onRemove}>
+          Remove
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -92,6 +92,15 @@ export default function App() {
         <p className="max-w-[40%] shrink-0 truncate pt-1 text-[10px] tracking-[0.12em] text-muted-foreground/80">{auth.keyHint}</p>
       </header>
 
+      {voice.spend && (
+        <div className="mx-4 mb-2 flex items-start justify-between gap-3 border border-border px-3 py-2">
+          <p className="text-xs leading-5 text-foreground">{voice.spend}</p>
+          <button type="button" className="shrink-0 text-[10px] tracking-[0.12em] text-muted-foreground uppercase" onClick={voice.dismissSpend}>
+            Hide
+          </button>
+        </div>
+      )}
+
       <section className="flex min-h-0 flex-1 flex-col px-4 pt-2">
         <div key={tab} className="flex min-h-0 flex-1 flex-col">
           {tab === "talk" && <AssistantView voice={voice} wakeTrained={wake.trained} />}

@@ -1,9 +1,9 @@
 //! On-device People overlay. Android ContactsContract stays the source of truth
 //! for phone numbers and email. Nicknames, aliases, a preferred channel, handle
-//! overrides, favorites, and notes live in `people.json`, same as notes.
+//! overrides, favorites, notes, and dated reminders live in `people.json`.
 //!
-//! `reminders` is reserved for a later yearly birthday/anniversary engine. P0
-//! always stores an empty array and does not schedule anything.
+//! Person reminders are birthdays, anniversaries, and custom dates. Scheduling
+//! them onto the Time list happens in `actions`, which reads this store.
 
 use std::{
     collections::HashMap,
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
-use crate::native::NativeBridge;
+use crate::{native::NativeBridge, recurrence};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -57,9 +57,45 @@ pub struct Person {
     pub favorite: bool,
     #[serde(default)]
     pub note: String,
-    /// Reserved. Always empty until person reminders exist.
     #[serde(default)]
-    pub reminders: Vec<Value>,
+    pub reminders: Vec<PersonReminder>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonReminder {
+    pub id: String,
+    /// `birthday`, `anniversary`, or `custom`.
+    #[serde(default = "custom_label")]
+    pub label: String,
+    #[serde(default)]
+    pub title: String,
+    /// `MM-DD`, or `YYYY-MM-DD` when it happens once in a known year.
+    #[serde(default)]
+    pub date: String,
+    /// `yearly` (default) or `once`.
+    #[serde(default = "yearly_recurrence")]
+    pub recurrence: String,
+    #[serde(default)]
+    pub lead_days: u32,
+    /// Local `HH:MM`. Empty becomes 09:00.
+    #[serde(default = "morning")]
+    pub time: String,
+    #[serde(default = "enabled_default")]
+    pub enabled: bool,
+}
+
+fn custom_label() -> String {
+    "custom".into()
+}
+fn yearly_recurrence() -> String {
+    "yearly".into()
+}
+fn morning() -> String {
+    "09:00".into()
+}
+fn enabled_default() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +117,8 @@ pub struct PersonDraft {
     pub favorite: bool,
     #[serde(default)]
     pub note: String,
+    #[serde(default)]
+    pub reminders: Vec<PersonReminder>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -126,11 +164,7 @@ impl People {
     }
 
     pub fn list(&self) -> Vec<Person> {
-        let mut people = self.lock().people.clone();
-        for person in &mut people {
-            person.reminders.clear();
-        }
-        people
+        self.lock().people.clone()
     }
 
     pub fn save(&self, draft: PersonDraft) -> Result<Person, String> {
@@ -157,7 +191,7 @@ impl People {
             handles: clean_handles(&draft.handles),
             favorite: draft.favorite,
             note: clamp(&draft.note, 4000),
-            reminders: Vec::new(),
+            reminders: clean_reminders(&draft.reminders)?,
         };
         if let Some(existing) = store.people.iter_mut().find(|p| p.id == person.id) {
             *existing = person.clone();
@@ -179,6 +213,41 @@ impl People {
             return Err("No person with that id.".into());
         }
         Self::persist(&self.path, &store)
+    }
+
+    pub fn replace_all(&self, people: Vec<Person>) -> Result<(), String> {
+        let mut cleaned = Vec::new();
+        for mut person in people {
+            person.display_name = clamp(&person.display_name, 120);
+            if person.display_name.is_empty() {
+                continue;
+            }
+            person.nickname = clamp(&person.nickname, 80);
+            person.aliases = clean_aliases(&person.aliases);
+            person.preferred_channel = normalize_channel(&person.preferred_channel);
+            person.handles = clean_handles(&person.handles);
+            person.note = clamp(&person.note, 4000);
+            person.reminders = clean_reminders(&person.reminders)?;
+            cleaned.push(person);
+            if cleaned.len() == 200 {
+                break;
+            }
+        }
+        let mut store = self.lock();
+        store.people = cleaned;
+        Self::persist(&self.path, &store)
+    }
+
+    pub fn set_reminders(&self, id: &str, reminders: Vec<PersonReminder>) -> Result<Person, String> {
+        let reminders = clean_reminders(&reminders)?;
+        let mut store = self.lock();
+        let Some(person) = store.people.iter_mut().find(|p| p.id == id) else {
+            return Err("No person with that id.".into());
+        };
+        person.reminders = reminders;
+        let person = person.clone();
+        Self::persist(&self.path, &store)?;
+        Ok(person)
     }
 }
 
@@ -316,6 +385,8 @@ fn person_match(person: &Person, system: Option<&PhoneContact>) -> Value {
         "openTool": open_tool,
         "channelHandle": channel_handle,
         "note": clamp(&person.note, 280),
+        "linkedName": system.map(|s| s.name.clone()).unwrap_or_default(),
+        "reminders": person.reminders.iter().map(reminder_value).collect::<Vec<_>>(),
     })
 }
 
@@ -336,6 +407,8 @@ fn system_match(hit: &PhoneContact) -> Value {
         "openTool": "",
         "channelHandle": if !hit.phone.is_empty() { hit.phone.clone() } else { hit.email.clone() },
         "note": "",
+        "linkedName": hit.name,
+        "reminders": [],
     })
 }
 
@@ -386,6 +459,231 @@ fn describe_one(match_: &Value) -> String {
     format!(
         "Found {who}. Phone {phone}. Email {email}. No preferred channel. Speak the match and wait for a clear yes before open_call, open_sms, open_whatsapp, open_signal, or open_email. Nothing is sent, and a call is not placed, until they confirm in that app."
     )
+}
+
+/// Facts only. The caller speaks this and must not open a handoff.
+pub fn describe_person(app: &AppHandle, name: &str) -> Result<Value, String> {
+    let people = app.state::<People>().list();
+    let hits = query_reminders(&people, name);
+    let mut found = find_contact(app, name)?;
+    let mut matches = found.get("matches").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    if matches.is_empty() {
+        let shorter = name_part(name);
+        if shorter.chars().count() >= 2 && shorter != normalize(name) {
+            found = find_contact(app, &shorter)?;
+            matches = found.get("matches").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        }
+    }
+    let detail = if matches.is_empty() && !hits.is_empty() {
+        let lines = hits.iter().take(4).map(|hit| speak_reminder(&hit.person_name, &hit.reminder)).collect::<Vec<_>>().join(" ");
+        format!("{lines} Answer in this conversation. Do not open any app.")
+    } else {
+        facts_detail(&matches)
+    };
+    found["detail"] = json!(detail);
+    found["handoff"] = json!(false);
+    Ok(found)
+}
+
+pub fn facts_detail(matches: &[Value]) -> String {
+    if matches.is_empty() {
+        return "No person matched. Do not open any app.".into();
+    }
+    if matches.len() > 1 {
+        let names = matches
+            .iter()
+            .map(|m| {
+                let name = m["name"].as_str().unwrap_or("someone");
+                let channel = channel_label(m["preferredChannel"].as_str().unwrap_or(""));
+                if channel.is_empty() { name.to_string() } else { format!("{name}, prefers {channel}") }
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        return format!("Several people match. Ask which one. Do not open any app. {names}");
+    }
+    format!(
+        "{} Answer in this conversation. Do not open WhatsApp, Signal, email, the dialer, or a text.",
+        speak_one(&matches[0])
+    )
+}
+
+fn speak_one(match_: &Value) -> String {
+    let name = match_["name"].as_str().unwrap_or("that person");
+    let nick = match_["nickname"].as_str().unwrap_or("");
+    let mut parts = Vec::new();
+    if nick.is_empty() {
+        parts.push(name.to_string());
+    } else {
+        parts.push(format!("{name}, nickname {nick}"));
+    }
+    let aliases = match_["aliases"]
+        .as_array()
+        .map(|rows| rows.iter().filter_map(|v| v.as_str()).filter(|s| !s.is_empty()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if !aliases.is_empty() {
+        parts.push(format!("Also called {}.", aliases.join(", ")));
+    }
+    let channel = channel_label(match_["preferredChannel"].as_str().unwrap_or(""));
+    if channel.is_empty() {
+        parts.push("No preferred channel.".into());
+    } else {
+        parts.push(format!("Preferred channel is {channel}."));
+    }
+    if match_["favorite"] == true {
+        parts.push("Favorite.".into());
+    }
+    let note = match_["note"].as_str().unwrap_or("").trim();
+    if note.is_empty() {
+        parts.push("No note.".into());
+    } else {
+        parts.push(format!("Note: {note}."));
+    }
+    let linked = match_["linkedName"].as_str().unwrap_or("").trim();
+    if !linked.is_empty() {
+        parts.push(format!("Linked contact {linked}."));
+    }
+    match match_["reminders"].as_array() {
+        Some(rows) if rows.is_empty() => parts.push("No birthday or other dated reminder.".into()),
+        Some(rows) => {
+            for reminder in rows {
+                parts.push(speak_reminder_value(reminder));
+            }
+        }
+        None => {}
+    }
+    parts.join(" ")
+}
+
+fn reminder_value(reminder: &PersonReminder) -> Value {
+    json!({
+        "id": reminder.id,
+        "label": reminder.label,
+        "title": reminder.title,
+        "date": reminder.date,
+        "recurrence": reminder.recurrence,
+        "leadDays": reminder.lead_days,
+        "time": reminder.time,
+        "enabled": reminder.enabled,
+        "speak": speak_reminder("", reminder),
+    })
+}
+
+pub fn speak_reminder(person_name: &str, reminder: &PersonReminder) -> String {
+    let when = recurrence::parse_month_day(&reminder.date)
+        .map(|(_, month, day)| recurrence::speak_date(month, day))
+        .unwrap_or_else(|| reminder.date.clone());
+    let label = if reminder.title.trim().is_empty() { reminder.label.as_str() } else { reminder.title.trim() };
+    let every = if reminder.recurrence == "once" { "once" } else { "every year" };
+    let lead = match reminder.lead_days {
+        0 => String::new(),
+        1 => ", one day before".into(),
+        n => format!(", {n} days before"),
+    };
+    let who = if person_name.is_empty() { String::new() } else { format!("{person_name}: ") };
+    format!("{who}{label} on {when}, {every}, at {}{lead}.", reminder.time)
+}
+
+fn speak_reminder_value(reminder: &Value) -> String {
+    let stored = PersonReminder {
+        id: reminder["id"].as_str().unwrap_or("").into(),
+        label: reminder["label"].as_str().unwrap_or("custom").into(),
+        title: reminder["title"].as_str().unwrap_or("").into(),
+        date: reminder["date"].as_str().unwrap_or("").into(),
+        recurrence: reminder["recurrence"].as_str().unwrap_or("yearly").into(),
+        lead_days: reminder["leadDays"].as_u64().unwrap_or(0) as u32,
+        time: reminder["time"].as_str().unwrap_or("09:00").into(),
+        enabled: reminder["enabled"].as_bool().unwrap_or(true),
+    };
+    speak_reminder("", &stored)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReminderHit {
+    pub person_id: String,
+    pub person_name: String,
+    pub nickname: String,
+    pub reminder: PersonReminder,
+}
+
+/// Rank people the same way as contact lookup, then keep reminders that match
+/// words such as "birthday" or "anniversary".
+pub fn query_reminders(people: &[Person], query: &str) -> Vec<ReminderHit> {
+    let q = normalize(query);
+    let want_birthday = q.contains("birthday") || q.contains("born");
+    let want_anniversary = q.contains("anniversary");
+    let name_query = name_part(&q);
+    let ranked = if name_query.chars().count() >= 2 {
+        let hits = rank_people(people, &name_query);
+        if !hits.is_empty() {
+            hits
+        } else if want_birthday || want_anniversary {
+            people.to_vec()
+        } else {
+            hits
+        }
+    } else if want_birthday || want_anniversary {
+        people.to_vec()
+    } else {
+        rank_people(people, &q)
+    };
+    let mut hits = Vec::new();
+    for person in ranked {
+        for reminder in &person.reminders {
+            if !reminder.enabled {
+                continue;
+            }
+            if want_birthday && !want_anniversary && reminder.label != "birthday" {
+                continue;
+            }
+            if want_anniversary && !want_birthday && reminder.label != "anniversary" {
+                continue;
+            }
+            hits.push(ReminderHit {
+                person_id: person.id.clone(),
+                person_name: person.display_name.clone(),
+                nickname: person.nickname.clone(),
+                reminder: reminder.clone(),
+            });
+        }
+    }
+    hits
+}
+
+pub fn add_person_reminder(app: &AppHandle, name: &str, reminder: PersonReminder) -> Result<Value, String> {
+    let found = find_contact(app, name)?;
+    let matches = found["matches"].as_array().cloned().unwrap_or_default();
+    let people_hits: Vec<Value> = matches.iter().filter(|m| m["source"] == "people" && m["personId"].is_string()).cloned().collect();
+    let pool = if people_hits.is_empty() { matches } else { people_hits };
+    if pool.len() != 1 {
+        let detail = if pool.is_empty() {
+            format!("No person matched {}. Add them in People first. Nothing was opened.", name.trim())
+        } else {
+            format!("{} Nothing was saved or opened.", facts_detail(&pool))
+        };
+        return Ok(json!({ "ok": true, "saved": false, "detail": detail }));
+    }
+    let Some(id) = pool[0]["personId"].as_str() else {
+        return Ok(json!({
+            "ok": true,
+            "saved": false,
+            "detail": "That match is only in phone contacts. Add them in People, then the date can be saved. Nothing was opened."
+        }));
+    };
+    let people = app.state::<People>();
+    let Some(mut person) = people.list().into_iter().find(|p| p.id == id) else {
+        return Err("No person with that id.".into());
+    };
+    person.reminders.push(reminder);
+    let saved = people.set_reminders(&person.id, person.reminders)?;
+    let last = saved.reminders.last();
+    let spoken = last.map(|r| speak_reminder(&saved.display_name, r)).unwrap_or_else(|| "Saved.".into());
+    Ok(json!({
+        "ok": true,
+        "saved": true,
+        "personId": saved.id,
+        "reminderId": last.map(|r| r.id.clone()).unwrap_or_default(),
+        "detail": format!("{spoken} Nothing was opened.")
+    }))
 }
 
 pub fn channel_tool(channel: &str) -> &'static str {
@@ -476,6 +774,52 @@ pub fn normalize_channel(value: &str) -> String {
     }
 }
 
+pub fn normalize_reminder(reminder: &PersonReminder, index: usize) -> Result<PersonReminder, String> {
+    let date_raw = reminder.date.trim();
+    if date_raw.is_empty() {
+        return Err("A reminder needs a date as MM-DD.".into());
+    }
+    let (year, month, day) = recurrence::parse_month_day(date_raw).ok_or_else(|| format!("Could not read the date '{date_raw}'. Use MM-DD."))?;
+    let label = match reminder.label.trim().to_ascii_lowercase().as_str() {
+        "birthday" | "bday" | "born" => "birthday",
+        "anniversary" => "anniversary",
+        _ => "custom",
+    };
+    let recurrence = if recurrence::normalize_kind(&reminder.recurrence) == "once" { "once" } else { "yearly" };
+    let clock = if reminder.time.trim().is_empty() { "09:00" } else { reminder.time.trim() };
+    let (hour, minute) = recurrence::parse_clock(clock).ok_or_else(|| "Time should look like 09:00.".to_string())?;
+    let date = if recurrence == "once" {
+        recurrence::format_month_day(year, month, day)
+    } else {
+        recurrence::format_month_day(None, month, day)
+    };
+    let id = reminder.id.trim();
+    Ok(PersonReminder {
+        id: if id.is_empty() { format!("r{}{index}", chrono::Local::now().timestamp_millis()) } else { id.to_string() },
+        label: label.into(),
+        title: clamp(&reminder.title, 80),
+        date,
+        recurrence: recurrence.into(),
+        lead_days: reminder.lead_days.min(30),
+        time: format!("{hour:02}:{minute:02}"),
+        enabled: reminder.enabled,
+    })
+}
+
+fn clean_reminders(reminders: &[PersonReminder]) -> Result<Vec<PersonReminder>, String> {
+    let mut out = Vec::new();
+    for reminder in reminders {
+        if reminder.date.trim().is_empty() && reminder.title.trim().is_empty() && reminder.label.trim().is_empty() {
+            continue;
+        }
+        out.push(normalize_reminder(reminder, out.len())?);
+        if out.len() == 12 {
+            break;
+        }
+    }
+    Ok(out)
+}
+
 fn clean_aliases(aliases: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for alias in aliases {
@@ -510,6 +854,22 @@ fn normalize(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
 
+fn name_part(query: &str) -> String {
+    const DROP: &[&str] = &[
+        "when", "whats", "what", "is", "the", "my", "a", "for", "on", "of", "me", "her", "his", "their", "reminder",
+        "reminders", "birthday", "anniversary", "born", "note", "channel", "preferred",
+    ];
+    query
+        .split_whitespace()
+        .filter_map(|word| {
+            let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '\'');
+            let word = word.strip_suffix("'s").unwrap_or(word);
+            if DROP.contains(&word) || word.chars().count() < 2 { None } else { Some(word) }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,8 +885,21 @@ mod tests {
             handles: Handles { phone: String::new(), email: String::new(), whatsapp: "+1999".into(), signal: String::new() },
             favorite: favorite,
             note: String::new(),
-            reminders: vec![json!({"kind": "birthday"})],
+            reminders: Vec::new(),
         }
+    }
+
+    fn birthday(person: &mut Person, date: &str) {
+        person.reminders.push(PersonReminder {
+            id: format!("r-{}", person.id),
+            label: "birthday".into(),
+            title: String::new(),
+            date: date.into(),
+            recurrence: "yearly".into(),
+            lead_days: 0,
+            time: "09:00".into(),
+            enabled: true,
+        });
     }
 
     #[test]
@@ -590,7 +963,46 @@ mod tests {
     }
 
     #[test]
-    fn save_strips_reminders_and_round_trips() {
+    fn birthday_query_picks_the_person_and_facts_do_not_open_apps() {
+        let mut sam = person("Sam Rivera", "Mom", &["mummy"], "whatsapp", true);
+        sam.note = "call after 5".into();
+        birthday(&mut sam, "03-03");
+        let mut ana = person("Ana Lopez", "", &[], "sms", false);
+        ana.reminders.push(PersonReminder {
+            id: "r-ana".into(),
+            label: "anniversary".into(),
+            title: String::new(),
+            date: "06-01".into(),
+            recurrence: "yearly".into(),
+            lead_days: 0,
+            time: "09:00".into(),
+            enabled: true,
+        });
+        let hits = query_reminders(&[ana.clone(), sam.clone()], "when's Sam's birthday");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].person_name, "Sam Rivera");
+        assert_eq!(hits[0].reminder.date, "03-03");
+        let all = query_reminders(&[ana.clone(), sam.clone()], "birthday");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].person_name, "Sam Rivera");
+        let anniversaries = query_reminders(&[ana, sam.clone()], "anniversary");
+        assert_eq!(anniversaries.len(), 1);
+        assert_eq!(anniversaries[0].person_name, "Ana Lopez");
+
+        let system = PhoneContact { id: "42".into(), name: "Samantha Rivera".into(), phone: "+1555".into(), email: String::new() };
+        let value = assemble(std::slice::from_ref(&sam), std::slice::from_ref(&system), &HashMap::new());
+        let detail = facts_detail(value["matches"].as_array().unwrap());
+        assert!(detail.contains("Preferred channel is WhatsApp"));
+        assert!(detail.contains("birthday on March 3"));
+        assert!(detail.contains("Note: call after 5"));
+        assert!(detail.contains("Linked contact Samantha Rivera"));
+        assert!(detail.contains("Do not open"));
+        assert!(!detail.contains("open_whatsapp"));
+        assert!(!detail.contains("confirmed"));
+    }
+
+    #[test]
+    fn save_keeps_reminders_and_round_trips() {
         let path = std::env::temp_dir().join(format!("grok-people-test-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         let people = People::load(path.clone());
@@ -605,18 +1017,32 @@ mod tests {
                 handles: Handles { phone: " +1 ".into(), email: String::new(), whatsapp: String::new(), signal: String::new() },
                 favorite: true,
                 note: "call after 5".into(),
+                reminders: vec![PersonReminder {
+                    id: String::new(),
+                    label: "Birthday".into(),
+                    title: String::new(),
+                    date: "3-3".into(),
+                    recurrence: "every year".into(),
+                    lead_days: 40,
+                    time: "9:00".into(),
+                    enabled: true,
+                }],
             })
             .unwrap();
         assert_eq!(saved.preferred_channel, "sms");
         assert_eq!(saved.aliases, vec!["mummy".to_string(), "ma".to_string()]);
-        assert!(saved.reminders.is_empty());
+        assert_eq!(saved.reminders.len(), 1);
+        assert_eq!(saved.reminders[0].label, "birthday");
+        assert_eq!(saved.reminders[0].date, "03-03");
+        assert_eq!(saved.reminders[0].time, "09:00");
+        assert_eq!(saved.reminders[0].lead_days, 30);
         assert_eq!(saved.android_contact_id.as_deref(), Some("15"));
         let again = People::load(path.clone());
         let loaded = &again.list()[0];
         assert_eq!(loaded.nickname, "Mom");
-        assert!(loaded.reminders.is_empty());
+        assert_eq!(loaded.reminders[0].recurrence, "yearly");
         let raw = fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("\"reminders\": []"));
+        assert!(raw.contains("\"date\": \"03-03\""));
         let _ = fs::remove_file(&path);
     }
 }

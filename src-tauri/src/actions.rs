@@ -7,12 +7,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, Timelike};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
-use crate::{diagnostics::Hub, native::NativeBridge};
+use crate::{diagnostics::Hub, native::NativeBridge, people::{Person, PersonReminder}, recurrence};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +32,64 @@ pub struct Item {
     pub title: String,
     pub note: String,
     pub at_ms: i64,
+    /// `none`, `once`, `daily`, `weekly`, or `yearly`. Empty means one-off.
+    #[serde(default)]
+    pub recurrence: String,
+    /// ISO weekdays, 1 = Monday … 7 = Sunday. Used when recurrence is weekly.
+    #[serde(default)]
+    pub weekdays: Vec<u8>,
+    /// Local HH:MM for a repeating reminder.
+    #[serde(default)]
+    pub time: String,
+    /// MM-DD or YYYY-MM-DD for a yearly or one-shot date.
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub lead_days: u32,
+    #[serde(default)]
+    pub person_id: String,
+    #[serde(default)]
+    pub person_reminder_id: String,
+}
+
+impl Item {
+    fn basic(id: i32, kind: &str, title: &str, note: &str, at_ms: i64) -> Self {
+        Self {
+            id,
+            kind: kind.into(),
+            title: title.into(),
+            note: note.into(),
+            at_ms,
+            recurrence: String::new(),
+            weekdays: Vec::new(),
+            time: String::new(),
+            date: String::new(),
+            lead_days: 0,
+            person_id: String::new(),
+            person_reminder_id: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ScheduleMeta {
+    pub recurrence: String,
+    pub weekdays: Vec<u8>,
+    pub time: String,
+    pub date: String,
+    pub lead_days: u32,
+    pub person_id: String,
+    pub person_reminder_id: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct RecentFire {
+    id: i32,
+    title: String,
+    at_ms: i64,
+    recorded_ms: i64,
+    recurrence: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -73,11 +131,13 @@ struct Store {
     /// Events kept in the app when the phone calendar is missing or denied write.
     events: Vec<CalEvent>,
     next_id: i32,
+    #[serde(default)]
+    recent: Option<RecentFire>,
 }
 
 impl Default for Store {
     fn default() -> Self {
-        Self { notes: Vec::new(), items: Vec::new(), events: Vec::new(), next_id: 1 }
+        Self { notes: Vec::new(), items: Vec::new(), events: Vec::new(), next_id: 1, recent: None }
     }
 }
 
@@ -121,14 +181,25 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["seconds"]
         })),
-        fn_tool("set_reminder", "Schedule a one-off notification at a local date and time. at is YYYY-MM-DDTHH:MM.", json!({
+        fn_tool("set_reminder", "Schedule a notification. For a one-off, at is YYYY-MM-DDTHH:MM. For a repeating reminder, recurrence is daily or weekly, time is HH:MM, and weekdays is mon,wed,fri for a custom weekly pattern. Omit recurrence for a one-off.", json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string" },
                 "at": { "type": "string" },
-                "note": { "type": "string" }
+                "note": { "type": "string" },
+                "recurrence": { "type": "string" },
+                "time": { "type": "string" },
+                "weekdays": { "type": "array", "items": { "type": "string" } }
             },
-            "required": ["title", "at"]
+            "required": ["title"]
+        })),
+        fn_tool("snooze_reminder", "Snooze a reminder. minutes is a delay such as 10. until is a clock time such as 17:00 or 5. id is optional. With no id, snooze the reminder that is ringing or just rang. If the result says to ask, ask which reminder. Do not open another app.", json!({
+            "type": "object",
+            "properties": {
+                "minutes": { "type": "integer" },
+                "until": { "type": "string" },
+                "id": { "type": "integer" }
+            }
         })),
         fn_tool("list_reminders", "List upcoming reminders, alarms, and timers this app scheduled.", json!({ "type": "object", "properties": {} })),
         fn_tool("update_reminder", "Change a reminder's title, note, or time. id from list_reminders. at is YYYY-MM-DDTHH:MM.", json!({
@@ -184,10 +255,28 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["direction"]
         })),
-        fn_tool("find_contact", "Look up a person by name, nickname, or alias. Checks People saved in this app first, including favorites, then the phone contacts. Returns phone, email, preferredChannel, openTool, and channelHandle. If preferredChannel is set, use that channel even if the user said call, text, or email: call opens open_call, sms opens open_sms, whatsapp opens open_whatsapp, signal opens open_signal, email opens open_email. Speak the match and wait for a clear yes before opening. Never send or place the call yourself.", json!({
+        fn_tool("find_contact", "Look up a person when the user wants to call, text, or open WhatsApp, Signal, or email. Checks People nicknames, aliases, and favorites, then phone contacts. Returns phone, email, preferredChannel, openTool, and channelHandle. If preferredChannel is set, use that channel. Speak the match and wait for a clear yes before opening. Never send or place the call yourself. Do not use this to answer a question about a birthday, note, nickname, or preferred channel; use get_person for that.", json!({
             "type": "object",
             "properties": { "name": { "type": "string" } },
             "required": ["name"]
+        })),
+        fn_tool("get_person", "Answer a question about a person without opening any app. Use this for preferred channel, birthday, anniversary, note, nickname, aliases, favorite, or the linked contact name. Resolves nicknames the same way as find_contact. Speak the detail. Never call open_call, open_sms, open_whatsapp, open_signal, open_email, or open_browser after this.", json!({
+            "type": "object",
+            "properties": { "name": { "type": "string" } },
+            "required": ["name"]
+        })),
+        fn_tool("set_person_reminder", "Save a birthday, anniversary, or other dated reminder on a person. name is who. label is birthday, anniversary, or custom. date is MM-DD or YYYY-MM-DD. recurrence is yearly or once. time is HH:MM, default 09:00. leadDays is how many days early to notify. Does not open any app.", json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "label": { "type": "string" },
+                "title": { "type": "string" },
+                "date": { "type": "string" },
+                "recurrence": { "type": "string" },
+                "time": { "type": "string" },
+                "leadDays": { "type": "integer" }
+            },
+            "required": ["name", "date"]
         })),
         fn_tool("open_browser", "Open the phone browser on a website or a web search. Speak the site or search and wait for a clear yes, then call with confirmed true.", json!({
             "type": "object",
@@ -383,51 +472,123 @@ impl Agenda {
         title: &str,
         note: &str,
         at_ms: i64,
+        schedule: Option<ScheduleMeta>,
     ) -> Result<Item, String> {
         if title.trim().is_empty() {
             return Err("A title is required.".into());
         }
-        if at_ms <= Local::now().timestamp_millis() + 5_000 {
-            return Err("That time is in the past.".into());
-        }
         let kind = if kind.is_empty() { "reminder" } else { kind };
+        if let Some(id) = id {
+            if let Some(existing) = self.item(id) {
+                if !existing.person_id.is_empty() {
+                    return self.update_person_item(app, &existing, title, note, at_ms, schedule);
+                }
+            }
+        }
         let mut store = self.lock();
-        let item = if let Some(id) = id {
-            let Some(existing) = store.items.iter_mut().find(|i| i.id == id) else {
+        let mut item = if let Some(id) = id {
+            let Some(existing) = store.items.iter().find(|i| i.id == id).cloned() else {
                 return Err("Nothing scheduled with that id.".into());
             };
-            existing.title = title.chars().take(120).collect();
-            existing.note = note.chars().take(500).collect();
-            existing.at_ms = at_ms;
-            existing.kind = kind.into();
-            existing.clone()
+            existing
         } else {
             let id = Self::alloc_id(&mut store);
-            let item = Item {
-                id,
-                kind: kind.into(),
-                title: title.chars().take(120).collect(),
-                note: note.chars().take(500).collect(),
-                at_ms,
-            };
-            store.items.push(item.clone());
-            item
+            Item::basic(id, kind, "", "", at_ms)
         };
+        item.kind = kind.into();
+        item.title = title.chars().take(120).collect();
+        item.note = note.chars().take(500).collect();
+        if let Some(schedule) = schedule {
+            apply_schedule(&mut item, &schedule, at_ms)?;
+        } else if item.recurrence.is_empty() {
+            item.at_ms = at_ms;
+        } else {
+            let kept = ScheduleMeta {
+                recurrence: item.recurrence.clone(),
+                weekdays: item.weekdays.clone(),
+                time: item.time.clone(),
+                date: item.date.clone(),
+                lead_days: item.lead_days,
+                ..ScheduleMeta::default()
+            };
+            apply_schedule(&mut item, &kept, at_ms)?;
+        }
+        if item.at_ms <= Local::now().timestamp_millis() + 5_000 {
+            if id.is_none() {
+                store.next_id = store.next_id.saturating_sub(1).max(1);
+            }
+            return Err("That time is in the past.".into());
+        }
+        if let Some(existing) = store.items.iter_mut().find(|i| i.id == item.id) {
+            *existing = item.clone();
+        } else {
+            store.items.push(item.clone());
+        }
         store.items.sort_by_key(|i| i.at_ms);
         Self::persist(&self.path, &store)?;
         drop(store);
-        let _ = app.state::<NativeBridge>().schedule_item(
-            item.id,
-            &item.kind,
-            &item.title,
-            &item.note,
-            item.at_ms,
-        );
+        let _ = app.state::<NativeBridge>().schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
         touch(app);
         Ok(item)
     }
 
+    fn update_person_item(
+        &self,
+        app: &AppHandle,
+        existing: &Item,
+        title: &str,
+        note: &str,
+        at_ms: i64,
+        schedule: Option<ScheduleMeta>,
+    ) -> Result<Item, String> {
+        let people = app.state::<crate::people::People>();
+        let Some(mut person) = people.list().into_iter().find(|p| p.id == existing.person_id) else {
+            return Err("That person is no longer saved.".into());
+        };
+        let Some(reminder) = person.reminders.iter_mut().find(|r| r.id == existing.person_reminder_id) else {
+            return Err("That person reminder is gone.".into());
+        };
+        if let Some(schedule) = &schedule {
+            let kind = recurrence::normalize_kind(&schedule.recurrence);
+            if matches!(kind.as_str(), "daily" | "weekly") {
+                return Err("This date stays on the person. Daily and weekly reminders are separate.".into());
+            }
+            if kind == "once" || kind == "yearly" {
+                reminder.recurrence = kind;
+            }
+            if !schedule.date.is_empty() {
+                reminder.date = schedule.date.clone();
+            }
+            if !schedule.time.is_empty() {
+                reminder.time = schedule.time.clone();
+            }
+            reminder.lead_days = schedule.lead_days;
+        } else if let Some(at) = DateTime::from_timestamp_millis(at_ms) {
+            let at = at.with_timezone(&Local);
+            reminder.time = format!("{:02}:{:02}", at.hour(), at.minute());
+        }
+        if !title.trim().is_empty() {
+            reminder.title = title.trim().chars().take(80).collect();
+        }
+        let _ = note;
+        let person_id = person.id.clone();
+        let reminders = person.reminders.clone();
+        people.set_reminders(&person_id, reminders)?;
+        sync_person_reminders(app)?;
+        self.item(existing.id).ok_or_else(|| "The reminder was removed.".into())
+    }
+
     pub fn cancel(&self, app: &AppHandle, id: i32) -> Result<(), String> {
+        let linked = self.item(id).filter(|item| !item.person_id.is_empty());
+        if let Some(item) = linked {
+            let people = app.state::<crate::people::People>();
+            if let Some(mut person) = people.list().into_iter().find(|p| p.id == item.person_id) {
+                person.reminders.retain(|r| r.id != item.person_reminder_id);
+                people.set_reminders(&person.id, person.reminders)?;
+            }
+            sync_person_reminders(app)?;
+            return Ok(());
+        }
         app.state::<NativeBridge>().cancel_item(id).map_err(|e| e.to_string())?;
         let mut store = self.lock();
         let before = store.items.len();
@@ -437,6 +598,41 @@ impl Agenda {
         }
         Self::persist(&self.path, &store)?;
         drop(store);
+        touch(app);
+        Ok(())
+    }
+
+    pub fn complete(&self, app: &AppHandle, id: i32) -> Result<String, String> {
+        let Some(item) = self.item(id) else {
+            return Err("Nothing scheduled with that id.".into());
+        };
+        if !recurrence::is_repeating(&item.recurrence) {
+            self.cancel(app, id)?;
+            return Ok(format!("Done with {}.", item.title));
+        }
+        let spec = spec_from_item(&item)?;
+        let after = DateTime::from_timestamp_millis(item.at_ms)
+            .map(|t| t.with_timezone(&Local))
+            .unwrap_or_else(Local::now);
+        let Some(next) = recurrence::next_after(&spec, after) else {
+            self.cancel(app, id)?;
+            return Ok("That was the last one.".into());
+        };
+        self.retarget(app, id, next.timestamp_millis())?;
+        Ok(format!("Next {} is {}.", item.title, next.format("%a %-d %b %-H:%M")))
+    }
+
+    fn retarget(&self, app: &AppHandle, id: i32, at_ms: i64) -> Result<(), String> {
+        let mut store = self.lock();
+        let Some(item) = store.items.iter_mut().find(|i| i.id == id) else {
+            return Err("Nothing scheduled with that id.".into());
+        };
+        item.at_ms = at_ms;
+        let item = item.clone();
+        store.items.sort_by_key(|i| i.at_ms);
+        Self::persist(&self.path, &store)?;
+        drop(store);
+        let _ = app.state::<NativeBridge>().schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
         touch(app);
         Ok(())
     }
@@ -476,19 +672,60 @@ impl Agenda {
         self.lock().items.iter().find(|i| i.id == id).cloned()
     }
 
+    pub fn notes(&self) -> Vec<Note> {
+        self.lock().notes.clone()
+    }
+
     fn sweep(&self, app: &AppHandle) {
-        let now = Local::now().timestamp_millis();
+        let now = Local::now();
+        let now_ms = now.timestamp_millis();
         let mut store = self.lock();
-        let stale: Vec<i32> = store.items.iter().filter(|i| i.at_ms + 60_000 < now).map(|i| i.id).collect();
-        if stale.is_empty() {
+        let mut cancel = Vec::new();
+        let mut arm = Vec::new();
+        let mut kept = Vec::new();
+        let mut recent: Option<RecentFire> = None;
+        for mut item in store.items.drain(..) {
+            if item.at_ms + 60_000 >= now_ms {
+                kept.push(item);
+                continue;
+            }
+            let fire = RecentFire {
+                id: item.id,
+                title: item.title.clone(),
+                at_ms: item.at_ms,
+                recorded_ms: now_ms,
+                recurrence: item.recurrence.clone(),
+            };
+            if recent.as_ref().map(|r| fire.at_ms >= r.at_ms).unwrap_or(true) {
+                recent = Some(fire);
+            }
+            if recurrence::is_repeating(&item.recurrence) {
+                if let Some(next) = spec_from_item(&item).ok().and_then(|spec| recurrence::next_after(&spec, now)) {
+                    item.at_ms = next.timestamp_millis();
+                    arm.push(item.clone());
+                    kept.push(item);
+                    continue;
+                }
+            }
+            cancel.push(item.id);
+        }
+        if let Some(recent) = recent {
+            store.recent = Some(recent);
+        }
+        if cancel.is_empty() && arm.is_empty() {
+            store.items = kept;
             return;
         }
-        store.items.retain(|i| i.at_ms + 60_000 >= now);
+        store.items = kept;
+        store.items.sort_by_key(|i| i.at_ms);
         let _ = Self::persist(&self.path, &store);
         drop(store);
         let bridge = app.state::<NativeBridge>();
-        for id in stale {
+        for id in cancel {
             let _ = bridge.cancel_item(id);
+        }
+        for item in arm {
+            let _ = bridge.schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
         }
     }
 
@@ -599,6 +836,7 @@ fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>
                 .map_err(|e| e.to_string())?
         }
         "find_contact" => return crate::people::find_contact(app, args["name"].as_str().unwrap_or("")).map(Some),
+        "get_person" => return crate::people::describe_person(app, args["name"].as_str().unwrap_or("")).map(Some),
         "open_youtube" | "open_whatsapp" | "open_signal" | "open_email" | "open_browser" | "open_call" | "open_sms" => {
             if let Some(wait) = unconfirmed_handoff(name, args) {
                 return Ok(Some(wait));
@@ -696,14 +934,38 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             if title.is_empty() {
                 return Err("A reminder needs a title.".into());
             }
-            let when = parse_local_when(args["at"].as_str().unwrap_or(""))?;
             let note = args["note"].as_str().unwrap_or("").trim();
-            let item = agenda.upsert_item(app, None, "reminder", &title, note, when.timestamp_millis())?;
+            let schedule = schedule_from_args(args)?;
+            let at_ms = reminder_anchor_ms(args, &schedule)?;
+            let item = agenda.upsert_item(app, None, "reminder", &title, note, at_ms, Some(schedule))?;
+            let when = DateTime::from_timestamp_millis(item.at_ms)
+                .map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string())
+                .unwrap_or_default();
+            let pattern = recurrence_phrase(&item);
             Ok(json!({
                 "ok": true,
                 "id": item.id,
-                "detail": format!("Reminder set for {}: {title}", when.format("%a %-d %b %-H:%M"))
+                "detail": format!("Reminder set for {when}: {title}.{pattern}")
             }))
+        }
+        "snooze_reminder" => snooze_reminder(app, &agenda, args),
+        "get_person" => crate::people::describe_person(app, args["name"].as_str().unwrap_or("")),
+        "set_person_reminder" => {
+            let reminder = PersonReminder {
+                id: String::new(),
+                label: args["label"].as_str().unwrap_or("custom").into(),
+                title: args["title"].as_str().unwrap_or("").into(),
+                date: args["date"].as_str().unwrap_or("").into(),
+                recurrence: args["recurrence"].as_str().unwrap_or("yearly").into(),
+                lead_days: args["leadDays"].as_u64().unwrap_or(0) as u32,
+                time: args["time"].as_str().unwrap_or("").into(),
+                enabled: true,
+            };
+            let value = crate::people::add_person_reminder(app, args["name"].as_str().unwrap_or(""), reminder)?;
+            if value["saved"] == true {
+                sync_person_reminders(app)?;
+            }
+            Ok(value)
         }
         "list_reminders" => {
             agenda.sweep(app);
@@ -716,7 +978,11 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                     "kind": i.kind,
                     "title": i.title,
                     "note": i.note,
-                    "at": DateTime::from_timestamp_millis(i.at_ms).map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string()).unwrap_or_default()
+                    "at": DateTime::from_timestamp_millis(i.at_ms).map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string()).unwrap_or_default(),
+                    "recurrence": i.recurrence,
+                    "weekdays": i.weekdays,
+                    "time": i.time,
+                    "personId": i.person_id,
                 })).collect::<Vec<_>>(),
                 "detail": if items.is_empty() { "Nothing is scheduled.".into() } else { format!("{} things scheduled.", items.len()) }
             }))
@@ -730,7 +996,12 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                 Some(s) => parse_local_when(s)?.timestamp_millis(),
                 None => existing.at_ms,
             };
-            let item = agenda.upsert_item(app, Some(id), &existing.kind, title, note, at_ms)?;
+            let schedule = if args.get("recurrence").is_some() || args.get("weekdays").is_some() || args.get("time").is_some() {
+                Some(schedule_from_args(args)?)
+            } else {
+                None
+            };
+            let item = agenda.upsert_item(app, Some(id), &existing.kind, title, note, at_ms, schedule)?;
             let when = DateTime::from_timestamp_millis(item.at_ms)
                 .map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string())
                 .unwrap_or_default();
@@ -908,16 +1179,10 @@ fn finish_schedule(
     if v["ok"] != true {
         return Ok(v);
     }
-    if v["via"] == "local" {
+        if v["via"] == "local" {
         let mut store = agenda.lock();
         store.items.retain(|i| i.id != id);
-        store.items.push(Item {
-            id,
-            kind: kind.into(),
-            title: title.into(),
-            note: note.into(),
-            at_ms: when.timestamp_millis(),
-        });
+        store.items.push(Item::basic(id, kind, title, note, when.timestamp_millis()));
         store.items.sort_by_key(|i| i.at_ms);
         Agenda::persist(&agenda.path, &store)?;
         drop(store);
@@ -1067,6 +1332,371 @@ fn day_bounds(day: Option<&str>) -> Result<(i64, i64, String), String> {
     Ok((start.timestamp_millis(), end.timestamp_millis(), date.format("%Y-%m-%d").to_string()))
 }
 
+fn apply_schedule(item: &mut Item, meta: &ScheduleMeta, requested_at: i64) -> Result<(), String> {
+    if !meta.recurrence.is_empty() {
+        let kind = recurrence::normalize_kind(&meta.recurrence);
+        item.recurrence = if kind == "none" { String::new() } else { kind };
+    }
+    if !meta.weekdays.is_empty() {
+        item.weekdays = meta.weekdays.clone();
+    }
+    if !meta.time.is_empty() {
+        item.time = meta.time.clone();
+    }
+    if !meta.date.is_empty() {
+        item.date = meta.date.clone();
+    }
+    if !meta.person_id.is_empty() {
+        item.person_id = meta.person_id.clone();
+        item.person_reminder_id = meta.person_reminder_id.clone();
+    }
+    if meta.lead_days > 0 || !meta.date.is_empty() {
+        item.lead_days = meta.lead_days.min(30);
+    }
+    if item.kind == "alarm" || item.kind == "timer" {
+        item.recurrence.clear();
+        item.at_ms = requested_at;
+        return Ok(());
+    }
+    let kind = recurrence::normalize_kind(&item.recurrence);
+    if recurrence::is_repeating(&kind) || kind == "once" {
+        item.recurrence = kind;
+        let spec = spec_from_item(item)?;
+        let next = recurrence::next_after(&spec, Local::now()).ok_or_else(|| "That date has no upcoming time.".to_string())?;
+        item.at_ms = next.timestamp_millis();
+        if item.time.is_empty() {
+            item.time = format!("{:02}:{:02}", spec.hour, spec.minute);
+        }
+        return Ok(());
+    }
+    item.recurrence.clear();
+    item.at_ms = requested_at;
+    Ok(())
+}
+
+fn spec_from_item(item: &Item) -> Result<recurrence::Spec, String> {
+    let fallback = DateTime::from_timestamp_millis(item.at_ms).map(|t| t.with_timezone(&Local));
+    let (hour, minute) = recurrence::parse_clock(&item.time)
+        .or_else(|| fallback.map(|t| (t.hour(), t.minute())))
+        .unwrap_or((9, 0));
+    let (year, month, day) = if let Some(parsed) = recurrence::parse_month_day(&item.date) {
+        parsed
+    } else if let Some(at) = fallback {
+        (Some(at.year()), at.month(), at.day())
+    } else {
+        (None, 0, 0)
+    };
+    let kind = if item.recurrence.is_empty() { "none".into() } else { item.recurrence.clone() };
+    Ok(recurrence::Spec { kind, weekdays: item.weekdays.clone(), hour, minute, month, day, year, lead_days: item.lead_days })
+}
+
+fn schedule_from_args(args: &Value) -> Result<ScheduleMeta, String> {
+    let raw = args["recurrence"].as_str().unwrap_or("").trim();
+    let mut recurrence = if raw.is_empty() { String::new() } else { recurrence::normalize_kind(raw) };
+    let weekdays = weekday_args(args);
+    if recurrence.is_empty() && !weekdays.is_empty() {
+        recurrence = "weekly".into();
+    }
+    Ok(ScheduleMeta {
+        recurrence,
+        weekdays,
+        time: args["time"].as_str().unwrap_or("").trim().to_string(),
+        date: args["date"].as_str().unwrap_or("").trim().to_string(),
+        lead_days: args["leadDays"].as_u64().unwrap_or(0) as u32,
+        ..ScheduleMeta::default()
+    })
+}
+
+fn weekday_args(args: &Value) -> Vec<u8> {
+    let mut raw = Vec::new();
+    match &args["weekdays"] {
+        Value::Array(rows) => {
+            for row in rows {
+                if let Some(text) = row.as_str() {
+                    raw.push(text.to_string());
+                } else if let Some(n) = row.as_u64() {
+                    raw.push(n.to_string());
+                }
+            }
+        }
+        Value::String(text) => raw.push(text.clone()),
+        _ => {}
+    }
+    recurrence::parse_weekdays(&raw)
+}
+
+fn reminder_anchor_ms(args: &Value, schedule: &ScheduleMeta) -> Result<i64, String> {
+    let at = args["at"].as_str().unwrap_or("").trim();
+    if !at.is_empty() {
+        return Ok(parse_local_when(at)?.timestamp_millis());
+    }
+    let kind = recurrence::normalize_kind(&schedule.recurrence);
+    if recurrence::is_repeating(&kind) || kind == "once" || !schedule.time.is_empty() {
+        if schedule.time.is_empty() && kind != "once" {
+            return Err("A repeating reminder needs a time like 08:00.".into());
+        }
+        return Ok(Local::now().timestamp_millis() + 120_000);
+    }
+    Err("A one-off reminder needs a time as YYYY-MM-DDTHH:MM.".into())
+}
+
+fn recurrence_phrase(item: &Item) -> String {
+    match recurrence::normalize_kind(&item.recurrence).as_str() {
+        "daily" => format!(" Repeats daily at {}.", display_clock(&item.time)),
+        "weekly" => {
+            let days = item.weekdays.iter().map(|d| recurrence::weekday_label(*d)).filter(|s| !s.is_empty()).collect::<Vec<_>>();
+            if days.is_empty() {
+                format!(" Repeats weekly at {}.", display_clock(&item.time))
+            } else {
+                format!(" Repeats {} at {}.", days.join(" "), display_clock(&item.time))
+            }
+        }
+        "yearly" => " Repeats every year.".into(),
+        _ => String::new(),
+    }
+}
+
+fn display_clock(time: &str) -> String {
+    if time.is_empty() { "that time".into() } else { time.into() }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FireRef {
+    id: i32,
+    title: String,
+    at_ms: i64,
+    recurrence: String,
+}
+
+#[derive(Debug)]
+enum SnoozeChoice {
+    One(FireRef),
+    Ask(Vec<FireRef>),
+    None,
+}
+
+fn fire_from(item: &Item) -> FireRef {
+    FireRef { id: item.id, title: item.title.clone(), at_ms: item.at_ms, recurrence: item.recurrence.clone() }
+}
+
+fn choose_snooze(items: &[Item], recent: Option<&FireRef>, now_ms: i64, explicit: Option<i32>) -> SnoozeChoice {
+    if let Some(id) = explicit {
+        if let Some(item) = items.iter().find(|i| i.id == id) {
+            return SnoozeChoice::One(fire_from(item));
+        }
+        if let Some(recent) = recent.filter(|r| r.id == id) {
+            return SnoozeChoice::One(recent.clone());
+        }
+        return SnoozeChoice::None;
+    }
+    let start = now_ms - 2 * 60 * 60 * 1000;
+    let end = now_ms + 90_000;
+    let mut due: Vec<&Item> = items.iter().filter(|i| i.kind != "alarm" && i.at_ms >= start && i.at_ms <= end).collect();
+    due.sort_by(|a, b| b.at_ms.cmp(&a.at_ms));
+    if due.len() == 1 {
+        return SnoozeChoice::One(fire_from(due[0]));
+    }
+    if due.len() > 1 {
+        if due[0].at_ms - due[1].at_ms > 30 * 60 * 1000 {
+            return SnoozeChoice::One(fire_from(due[0]));
+        }
+        return SnoozeChoice::Ask(due.into_iter().take(6).map(fire_from).collect());
+    }
+    if let Some(recent) = recent {
+        if now_ms >= recent.at_ms && now_ms - recent.at_ms <= 2 * 60 * 60 * 1000 {
+            return SnoozeChoice::One(recent.clone());
+        }
+    }
+    let upcoming: Vec<FireRef> = items.iter().filter(|i| i.at_ms > now_ms).take(6).map(fire_from).collect();
+    if upcoming.is_empty() { SnoozeChoice::None } else { SnoozeChoice::Ask(upcoming) }
+}
+
+fn snooze_reminder(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value, String> {
+    let minutes = args["minutes"].as_u64().map(|n| n as u32);
+    let until = args["until"].as_str().unwrap_or("");
+    let explicit = args["id"].as_i64().map(|n| n as i32);
+    let now = Local::now();
+    let target = recurrence::snooze_when(minutes, until, now)?;
+    let (items, recent) = {
+        let store = agenda.lock();
+        let recent = store.recent.clone().map(|r| FireRef { id: r.id, title: r.title, at_ms: r.at_ms, recurrence: r.recurrence });
+        (store.items.clone(), recent)
+    };
+    let choice = choose_snooze(&items, recent.as_ref(), now.timestamp_millis(), explicit);
+    let fire = match choice {
+        SnoozeChoice::One(fire) => fire,
+        SnoozeChoice::Ask(list) => {
+            let names = list.iter().map(|r| format!("{} (id {})", r.title, r.id)).collect::<Vec<_>>().join("; ");
+            return Ok(json!({
+                "ok": true,
+                "snoozed": false,
+                "detail": format!("Which reminder should I snooze? {names}")
+            }));
+        }
+        SnoozeChoice::None => return Err("Nothing is ringing. Say which reminder to snooze.".into()),
+    };
+    let when = target.format("%-H:%M").to_string();
+    if let Some(item) = items.iter().find(|i| i.id == fire.id).cloned() {
+        let repeating = recurrence::is_repeating(&item.recurrence) || !item.person_id.is_empty();
+        if repeating {
+            if item.at_ms <= now.timestamp_millis() + 60_000 {
+                if let Some(next) = spec_from_item(&item).ok().and_then(|spec| recurrence::next_after(&spec, now)) {
+                    agenda.retarget(app, item.id, next.timestamp_millis())?;
+                }
+            }
+            let snoozed = agenda.upsert_item(
+                app,
+                None,
+                "reminder",
+                &format!("Snoozed: {}", item.title),
+                "",
+                target.timestamp_millis(),
+                Some(ScheduleMeta::default()),
+            )?;
+            return Ok(json!({
+                "ok": true,
+                "snoozed": true,
+                "id": snoozed.id,
+                "detail": format!("Snoozed {} until {when}. The usual time stays.", item.title)
+            }));
+        }
+        let updated = agenda.upsert_item(
+            app,
+            Some(item.id),
+            &item.kind,
+            &item.title,
+            &item.note,
+            target.timestamp_millis(),
+            Some(ScheduleMeta { recurrence: "none".into(), ..ScheduleMeta::default() }),
+        )?;
+        return Ok(json!({
+            "ok": true,
+            "snoozed": true,
+            "id": updated.id,
+            "detail": format!("Snoozed {} until {when}.", item.title)
+        }));
+    }
+    let snoozed = agenda.upsert_item(
+        app,
+        None,
+        "reminder",
+        &format!("Snoozed: {}", fire.title),
+        "",
+        target.timestamp_millis(),
+        Some(ScheduleMeta::default()),
+    )?;
+    Ok(json!({
+        "ok": true,
+        "snoozed": true,
+        "id": snoozed.id,
+        "detail": format!("Snoozed {} until {when}.", fire.title)
+    }))
+}
+
+pub fn project_people(existing: &[Item], people: &[Person], now: DateTime<Local>, mut next_id: i32) -> (Vec<Item>, i32, Vec<i32>) {
+    let mut cancel = Vec::new();
+    let mut kept: Vec<Item> = existing.iter().filter(|i| i.person_id.is_empty()).cloned().collect();
+    let mut used = Vec::new();
+    for person in people {
+        for reminder in &person.reminders {
+            let existing_item = existing.iter().find(|i| i.person_id == person.id && i.person_reminder_id == reminder.id);
+            if !reminder.enabled {
+                if let Some(item) = existing_item {
+                    cancel.push(item.id);
+                }
+                continue;
+            }
+            let draft = item_from_reminder(person, reminder, existing_item.map(|i| i.id).unwrap_or(0), now);
+            let Some(mut draft) = draft else {
+                if let Some(item) = existing_item {
+                    cancel.push(item.id);
+                }
+                continue;
+            };
+            if draft.id == 0 {
+                let id = next_id.max(1);
+                next_id = id.saturating_add(1);
+                draft.id = id;
+            } else {
+                used.push(draft.id);
+                if let Some(existing_item) = existing_item {
+                    let same = existing_item.time == reminder.time
+                        && existing_item.date == draft.date
+                        && existing_item.lead_days == reminder.lead_days
+                        && recurrence::normalize_kind(&existing_item.recurrence) == draft.recurrence;
+                    if same && existing_item.at_ms > draft.at_ms {
+                        draft.at_ms = existing_item.at_ms;
+                    }
+                }
+            }
+            kept.push(draft);
+        }
+    }
+    for item in existing {
+        if !item.person_id.is_empty() && !used.contains(&item.id) && !cancel.contains(&item.id) {
+            cancel.push(item.id);
+        }
+    }
+    kept.sort_by_key(|i| i.at_ms);
+    (kept, next_id, cancel)
+}
+
+fn item_from_reminder(person: &Person, reminder: &PersonReminder, id: i32, now: DateTime<Local>) -> Option<Item> {
+    let mut item = Item::basic(id, "reminder", &reminder_title(&person.display_name, reminder), &person.note.chars().take(140).collect::<String>(), now.timestamp_millis());
+    item.recurrence = if reminder.recurrence == "once" { "once".into() } else { "yearly".into() };
+    item.time = reminder.time.clone();
+    item.date = reminder.date.clone();
+    item.lead_days = reminder.lead_days;
+    item.person_id = person.id.clone();
+    item.person_reminder_id = reminder.id.clone();
+    let spec = spec_from_item(&item).ok()?;
+    item.at_ms = recurrence::next_after(&spec, now)?.timestamp_millis();
+    Some(item)
+}
+
+fn reminder_title(name: &str, reminder: &PersonReminder) -> String {
+    if !reminder.title.trim().is_empty() {
+        return reminder.title.trim().chars().take(120).collect();
+    }
+    let label = match reminder.label.as_str() {
+        "birthday" => "birthday",
+        "anniversary" => "anniversary",
+        _ => "reminder",
+    };
+    format!("{name}'s {label}")
+}
+
+pub fn sync_person_reminders(app: &AppHandle) -> Result<(), String> {
+    let people = app.state::<crate::people::People>().list();
+    let agenda = app.state::<Agenda>();
+    let mut store = agenda.lock();
+    let (items, next_id, cancel) = project_people(&store.items, &people, Local::now(), store.next_id);
+    store.items = items;
+    store.next_id = next_id.max(store.next_id);
+    Agenda::persist(&agenda.path, &store)?;
+    let arm: Vec<Item> = store.items.iter().filter(|i| !i.person_id.is_empty()).cloned().collect();
+    drop(store);
+    let bridge = app.state::<NativeBridge>();
+    for id in cancel {
+        let _ = bridge.cancel_item(id);
+    }
+    for item in arm {
+        let _ = bridge.schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
+    }
+    touch(app);
+    Ok(())
+}
+
+pub fn replace_notes(app: &AppHandle, notes: Vec<Note>) -> Result<(), String> {
+    let agenda = app.state::<Agenda>();
+    let mut store = agenda.lock();
+    store.notes = notes.into_iter().take(200).collect();
+    Agenda::persist(&agenda.path, &store)?;
+    drop(store);
+    touch(app);
+    Ok(())
+}
+
 fn format_span(start_ms: i64, end_ms: i64) -> String {
     let Some(start) = DateTime::from_timestamp_millis(start_ms) else {
         return String::new();
@@ -1103,6 +1733,76 @@ mod tests {
         assert!(sms["detail"].as_str().unwrap().contains("Nothing is sent"));
         assert!(unconfirmed_handoff("open_call", &json!({"phone": "+1555", "confirmed": true})).is_none());
         assert!(unconfirmed_handoff("set_alarm", &json!({})).is_none());
+    }
+
+    #[test]
+    fn weekly_projection_and_person_birthday_share_the_list() {
+        let now = recurrence::local_on(2026, 3, 3, 10, 0);
+        let meds = Item {
+            recurrence: "daily".into(),
+            time: "08:00".into(),
+            ..Item::basic(1, "reminder", "Meds", "", now.timestamp_millis())
+        };
+        let mut person = crate::people::Person {
+            id: "p1".into(),
+            android_contact_id: None,
+            display_name: "Sam Rivera".into(),
+            nickname: "Mom".into(),
+            aliases: vec![],
+            preferred_channel: "whatsapp".into(),
+            handles: crate::people::Handles::default(),
+            favorite: true,
+            note: "call after 5".into(),
+            reminders: vec![crate::people::PersonReminder {
+                id: "bday".into(),
+                label: "birthday".into(),
+                title: String::new(),
+                date: "03-03".into(),
+                recurrence: "yearly".into(),
+                lead_days: 0,
+                time: "09:00".into(),
+                enabled: true,
+            }],
+        };
+        let (items, next, cancel) = project_people(std::slice::from_ref(&meds), std::slice::from_ref(&person), now, 2);
+        assert!(cancel.is_empty());
+        assert_eq!(next, 3);
+        let birthday = items.iter().find(|i| i.person_reminder_id == "bday").unwrap();
+        assert_eq!(birthday.title, "Sam Rivera's birthday");
+        assert_eq!(
+            DateTime::from_timestamp_millis(birthday.at_ms).unwrap().with_timezone(&Local).format("%Y-%m-%d").to_string(),
+            "2027-03-03"
+        );
+        assert!(items.iter().any(|i| i.title == "Meds"));
+
+        person.reminders[0].enabled = false;
+        let (_items, _, cancel) = project_people(&items, std::slice::from_ref(&person), now, next);
+        assert_eq!(cancel, vec![birthday.id]);
+    }
+
+    #[test]
+    fn snooze_picks_the_firing_reminder_or_asks() {
+        let now = recurrence::local_on(2026, 3, 3, 15, 0).timestamp_millis();
+        let ringing = Item::basic(4, "reminder", "Standup", "", now - 60_000);
+        let later = Item::basic(5, "reminder", "Meds", "", now + 3_600_000);
+        match choose_snooze(&[ringing.clone(), later.clone()], None, now, None) {
+            SnoozeChoice::One(fire) => assert_eq!(fire.title, "Standup"),
+            other => panic!("expected the ringing reminder, got {other:?}"),
+        }
+        let recent = FireRef { id: 4, title: "Standup".into(), at_ms: now - 5 * 60_000, recurrence: "daily".into() };
+        match choose_snooze(std::slice::from_ref(&later), Some(&recent), now, None) {
+            SnoozeChoice::One(fire) => assert_eq!(fire.id, 4),
+            other => panic!("expected the recent fire, got {other:?}"),
+        }
+        let other = Item::basic(6, "reminder", "Stretch", "", now - 2 * 60_000);
+        match choose_snooze(&[ringing, other, later.clone()], None, now, None) {
+            SnoozeChoice::Ask(list) => assert_eq!(list.len(), 2),
+            other => panic!("expected a question, got {other:?}"),
+        }
+        match choose_snooze(std::slice::from_ref(&later), None, now, None) {
+            SnoozeChoice::Ask(list) => assert_eq!(list[0].title, "Meds"),
+            other => panic!("expected upcoming choices, got {other:?}"),
+        }
     }
 
     #[test]

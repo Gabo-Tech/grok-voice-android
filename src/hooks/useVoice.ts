@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { api, type Level, type LogLine, type Phase, type TranscriptEvent } from "@/lib/api";
+import { api, type Level, type LogLine, type Phase, type SpendCue, type TranscriptEvent } from "@/lib/api";
 
 export interface TranscriptRow {
   id: string;
@@ -21,6 +21,7 @@ export function useVoice() {
   const [lastError, setLastError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState("");
+  const [spend, setSpend] = useState<string | null>(null);
   const levelRef = useRef<Level>({ mic: 0, out: 0 });
   const [level, setLevel] = useState<Level>({ mic: 0, out: 0 });
   const raf = useRef<number | null>(null);
@@ -68,6 +69,7 @@ export function useVoice() {
       if (line.level === "error") setLastError(line.msg);
     });
     void sub<string>("voice://busy", setBusy);
+    void sub<SpendCue>("voice://spend", (cue) => setSpend(cue.message));
     void sub<TranscriptEvent>("voice://transcript", (t) => {
       setRows((prev) => {
         const idx = prev.findIndex((r) => r.id === t.id && r.role === t.role);
@@ -146,6 +148,8 @@ export function useVoice() {
     lastError,
     sending,
     busy,
+    spend,
+    dismissSpend: () => setSpend(null),
     sendText,
     clearTranscript: () => {
       setRows([]);

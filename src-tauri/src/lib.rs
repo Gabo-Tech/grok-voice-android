@@ -1,5 +1,6 @@
 mod actions;
 mod audio;
+mod backup;
 mod commands;
 mod diagnostics;
 mod memory;
@@ -7,8 +8,10 @@ mod people;
 mod error;
 mod native;
 mod realtime;
+mod recurrence;
 mod search;
 mod settings;
+mod usage;
 mod vault;
 mod wakeword;
 
@@ -72,8 +75,12 @@ pub fn run() {
             app.manage(actions::Agenda::load(dir.join("agenda.json")));
             app.manage(people::People::load(dir.join("people.json")));
             app.manage(memory::Memory::load(dir.join("memory.json")));
+            app.manage(usage::UsageStore::load(dir.join("usage.json")));
             let handle = app.handle().clone();
-            std::thread::spawn(move || actions::reschedule(&handle));
+            std::thread::spawn(move || {
+                let _ = actions::sync_person_reminders(&handle);
+                actions::reschedule(&handle);
+            });
             app.manage(Engine::spawn(app.handle().clone()));
             Ok(())
         })
@@ -103,6 +110,7 @@ pub fn run() {
             commands::delete_note,
             commands::save_scheduled,
             commands::cancel_scheduled,
+            commands::complete_scheduled,
             commands::save_event,
             commands::delete_event,
             commands::request_calendar,
@@ -114,6 +122,10 @@ pub fn run() {
             commands::phone_contact,
             commands::open_phone_contact,
             commands::ask_text,
+            commands::usage_status,
+            commands::export_backup,
+            commands::preview_backup,
+            commands::restore_backup,
             commands::recent_memory,
             commands::clear_memory,
         ])

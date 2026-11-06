@@ -209,6 +209,16 @@ mod imp {
             self.plugin_json("setTimer", Args { seconds, label, id, at_ms })
         }
 
+        pub fn share_file(&self, path: &str, mime: &str, title: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                path: &'a str,
+                mime: &'a str,
+                title: &'a str,
+            }
+            self.plugin_json("shareFile", Args { path, mime, title })
+        }
+
         pub fn schedule_item(&self, id: i32, kind: &str, title: &str, note: &str, at_ms: i64) -> Result<String> {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
@@ -394,6 +404,10 @@ mod imp {
             Ok(format!(
                 r#"{{"ok":true,"via":"local","detail":"Timer \"{label}\" for {seconds}s saved. It rings on the phone."}}"#
             ))
+        }
+
+        pub fn share_file(&self, _path: &str, _mime: &str, _title: &str) -> Result<String> {
+            Err(crate::error::msg("Sharing a file works on the Android phone."))
         }
 
         pub fn schedule_item(&self, _id: i32, _kind: &str, title: &str, _note: &str, _at_ms: i64) -> Result<String> {

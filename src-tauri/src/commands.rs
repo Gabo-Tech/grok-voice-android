@@ -317,7 +317,21 @@ pub fn save_scheduled(
     note: Option<String>,
     kind: Option<String>,
     id: Option<i32>,
+    recurrence: Option<String>,
+    weekdays: Option<Vec<u8>>,
+    time: Option<String>,
+    date: Option<String>,
+    lead_days: Option<u32>,
 ) -> Result<AgendaSnapshot> {
+    let schedule = actions::ScheduleMeta {
+        recurrence: recurrence.unwrap_or_default(),
+        weekdays: weekdays.unwrap_or_default(),
+        time: time.unwrap_or_default(),
+        date: date.unwrap_or_default(),
+        lead_days: lead_days.unwrap_or(0),
+        ..actions::ScheduleMeta::default()
+    };
+    let has_schedule = !schedule.recurrence.is_empty() || !schedule.weekdays.is_empty() || !schedule.time.is_empty() || !schedule.date.is_empty();
     app.state::<Agenda>()
         .upsert_item(
             &app,
@@ -326,6 +340,7 @@ pub fn save_scheduled(
             &title,
             note.as_deref().unwrap_or(""),
             at_ms,
+            has_schedule.then_some(schedule),
         )
         .map_err(msg)?;
     Ok(app.state::<Agenda>().snapshot(&app))
@@ -334,6 +349,12 @@ pub fn save_scheduled(
 #[tauri::command]
 pub fn cancel_scheduled(app: AppHandle, id: i32) -> Result<AgendaSnapshot> {
     app.state::<Agenda>().cancel(&app, id).map_err(msg)?;
+    Ok(app.state::<Agenda>().snapshot(&app))
+}
+
+#[tauri::command]
+pub fn complete_scheduled(app: AppHandle, id: i32) -> Result<AgendaSnapshot> {
+    app.state::<Agenda>().complete(&app, id).map_err(msg)?;
     Ok(app.state::<Agenda>().snapshot(&app))
 }
 
@@ -428,12 +449,15 @@ pub fn list_people(app: AppHandle) -> Vec<Person> {
 
 #[tauri::command]
 pub fn save_person(app: AppHandle, person: people::PersonDraft) -> Result<Person> {
-    app.state::<People>().save(person).map_err(msg)
+    let saved = app.state::<People>().save(person).map_err(msg)?;
+    actions::sync_person_reminders(&app).map_err(msg)?;
+    Ok(saved)
 }
 
 #[tauri::command]
 pub fn delete_person(app: AppHandle, id: String) -> Result<Vec<Person>> {
     app.state::<People>().delete(&id).map_err(msg)?;
+    actions::sync_person_reminders(&app).map_err(msg)?;
     Ok(app.state::<People>().list())
 }
 
@@ -473,6 +497,75 @@ pub fn open_phone_contact(app: AppHandle, id: String) -> Result<()> {
     let raw = app.state::<NativeBridge>().open_phone_contact(id.trim()).map_err(|e| msg(e.to_string()))?;
     phone_payload(&raw)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn usage_status(app: AppHandle) -> crate::usage::UsageStatus {
+    let settings = app.state::<SettingsStore>().get();
+    app.state::<crate::usage::UsageStore>().status(settings.daily_budget_minutes, settings.daily_budget_hard_stop)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedBackup {
+    pub file_name: String,
+    pub data_b64: String,
+    pub shared: bool,
+}
+
+#[tauri::command]
+pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bool>) -> Result<ExportedBackup> {
+    let include_keys = include_keys.unwrap_or(false);
+    let mut payload = crate::backup::Payload::notes_and_people(app.state::<Agenda>().notes(), app.state::<People>().list());
+    if include_keys {
+        let secrets = app.state::<Vault>().accounts(&app.state::<NativeBridge>()).map_err(|e| msg(e.to_string()))?;
+        payload.keys = secrets
+            .into_iter()
+            .map(|account| crate::backup::BackupKey { id: account.id, provider: account.provider, secret: account.secret })
+            .collect();
+    }
+    let bytes = crate::backup::seal(&payload, &passphrase).map_err(msg)?;
+    let dir = app.path().app_cache_dir().map_err(|e| msg(e.to_string()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| msg(e.to_string()))?;
+    let file_name = format!("grok-voice-backup-{}.gvb", chrono::Local::now().format("%Y-%m-%d"));
+    let path = dir.join(&file_name);
+    std::fs::write(&path, &bytes).map_err(|e| msg(e.to_string()))?;
+    let shared = path.to_str().is_some_and(|path| {
+        app.state::<NativeBridge>().share_file(path, "application/octet-stream", "Grok Voice backup").is_ok()
+    });
+    Ok(ExportedBackup {
+        file_name,
+        data_b64: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes),
+        shared,
+    })
+}
+
+#[tauri::command]
+pub fn preview_backup(data_b64: String, passphrase: String) -> Result<crate::backup::Preview> {
+    crate::backup::open_b64(&data_b64, &passphrase).map(|payload| payload.preview()).map_err(msg)
+}
+
+#[tauri::command]
+pub fn restore_backup(
+    app: AppHandle,
+    data_b64: String,
+    passphrase: String,
+    confirm: bool,
+    restore_keys: Option<bool>,
+) -> Result<crate::backup::Preview> {
+    if !confirm {
+        return Err(msg("Confirm before replacing notes and people on this phone."));
+    }
+    let payload = crate::backup::open_b64(&data_b64, &passphrase).map_err(msg)?;
+    let preview = payload.preview();
+    app.state::<People>().replace_all(payload.people).map_err(msg)?;
+    actions::replace_notes(&app, payload.notes).map_err(msg)?;
+    actions::sync_person_reminders(&app).map_err(msg)?;
+    if restore_keys.unwrap_or(false) && !payload.keys.is_empty() {
+        let rows: Vec<(String, String, String)> = payload.keys.into_iter().map(|key| (key.id, key.provider, key.secret)).collect();
+        app.state::<Vault>().replace_secrets(&app.state::<NativeBridge>(), &rows).map_err(|e| msg(e.to_string()))?;
+    }
+    Ok(preview)
 }
 
 #[tauri::command]

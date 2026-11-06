@@ -38,6 +38,18 @@ export interface PersonHandles {
   signal: string;
 }
 
+export interface PersonReminder {
+  id: string;
+  label: "birthday" | "anniversary" | "custom" | string;
+  title: string;
+  /** MM-DD, or YYYY-MM-DD when it happens once. */
+  date: string;
+  recurrence: "yearly" | "once" | string;
+  leadDays: number;
+  time: string;
+  enabled: boolean;
+}
+
 export interface Person {
   id: string;
   androidContactId: string | null;
@@ -48,8 +60,7 @@ export interface Person {
   handles: PersonHandles;
   favorite: boolean;
   note: string;
-  /** Reserved for later. Always empty in this version. */
-  reminders: unknown[];
+  reminders: PersonReminder[];
 }
 
 export interface PersonDraft {
@@ -62,6 +73,7 @@ export interface PersonDraft {
   handles: PersonHandles;
   favorite: boolean;
   note: string;
+  reminders: PersonReminder[];
 }
 
 export interface PhoneContact {
@@ -84,6 +96,13 @@ export interface ScheduledItem {
   title: string;
   note: string;
   atMs: number;
+  recurrence?: string;
+  weekdays?: number[];
+  time?: string;
+  date?: string;
+  leadDays?: number;
+  personId?: string;
+  personReminderId?: string;
 }
 
 export interface CalEvent {
@@ -122,6 +141,39 @@ export interface Settings {
   wakeThreshold: number;
   idleTimeoutSecs: number;
   onboarded: boolean;
+  /** Soft daily voice budget in minutes. 0 is off. */
+  dailyBudgetMinutes: number;
+  /** End the session at the budget. Off unless the user opts in. */
+  dailyBudgetHardStop: boolean;
+}
+
+export interface UsageStatus {
+  day: string;
+  minutes: number;
+  sessions: number;
+  budgetMinutes: number;
+  hardStop: boolean;
+  message: string | null;
+}
+
+export interface BackupPreview {
+  notes: number;
+  people: number;
+  reminders: number;
+  keys: number;
+}
+
+export interface ExportedBackup {
+  fileName: string;
+  dataB64: string;
+  shared: boolean;
+}
+
+export interface SpendCue {
+  message: string;
+  minutes: number;
+  budgetMinutes: number;
+  blocked: boolean;
 }
 
 export interface DebugInfo {
@@ -203,6 +255,11 @@ export const api = {
     note?: string;
     kind?: string;
     id?: number;
+    recurrence?: string;
+    weekdays?: number[];
+    time?: string;
+    date?: string;
+    leadDays?: number;
   }) =>
     invoke<Agenda>("save_scheduled", {
       title: args.title,
@@ -210,8 +267,21 @@ export const api = {
       note: args.note ?? null,
       kind: args.kind ?? null,
       id: args.id ?? null,
+      recurrence: args.recurrence ?? null,
+      weekdays: args.weekdays ?? null,
+      time: args.time ?? null,
+      date: args.date ?? null,
+      leadDays: args.leadDays ?? null,
     }),
   cancelScheduled: (id: number) => invoke<Agenda>("cancel_scheduled", { id }),
+  completeScheduled: (id: number) => invoke<Agenda>("complete_scheduled", { id }),
+  usageStatus: () => invoke<UsageStatus>("usage_status"),
+  exportBackup: (passphrase: string, includeKeys = false) =>
+    invoke<ExportedBackup>("export_backup", { passphrase, includeKeys }),
+  previewBackup: (dataB64: string, passphrase: string) =>
+    invoke<BackupPreview>("preview_backup", { dataB64, passphrase }),
+  restoreBackup: (dataB64: string, passphrase: string, confirm: boolean, restoreKeys = false) =>
+    invoke<BackupPreview>("restore_backup", { dataB64, passphrase, confirm, restoreKeys }),
   saveEvent: (args: {
     title: string;
     startMs: number;
