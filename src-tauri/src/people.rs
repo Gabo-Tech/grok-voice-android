@@ -166,11 +166,8 @@ impl People {
     }
 
     fn persist(path: &PathBuf, store: &Store) -> Result<(), String> {
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
         let bytes = serde_json::to_vec_pretty(store).map_err(|e| e.to_string())?;
-        fs::write(path, bytes).map_err(|e| e.to_string())
+        crate::files::write_private(path, &bytes).map_err(|e| e.to_string())
     }
 
     pub fn list(&self) -> Vec<Person> {

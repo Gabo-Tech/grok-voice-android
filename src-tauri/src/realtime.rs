@@ -91,6 +91,7 @@ struct TranscriptEvent<'a> {
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(crate::http::api_redirect())
         .build()
         .expect("http client")
 }
@@ -112,6 +113,7 @@ pub async fn mint_ephemeral(client: &reqwest::Client, api_key: &str) -> Result<E
             .or(body["message"].as_str())
             .map(str::to_owned)
             .unwrap_or_else(|| text.chars().take(200).collect());
+        let detail = crate::diagnostics::redact(&detail);
         return Err(msg(format!("xAI rejected the request ({status}): {detail}")));
     }
     let value = body["value"]
@@ -143,6 +145,7 @@ pub async fn mint_openai(client: &reqwest::Client, api_key: &str) -> Result<Ephe
             .or(body["message"].as_str())
             .map(str::to_owned)
             .unwrap_or_else(|| text.chars().take(200).collect());
+        let detail = crate::diagnostics::redact(&detail);
         return Err(msg(format!("OpenAI rejected the request ({status}): {detail}")));
     }
     let value = body["value"]
@@ -267,7 +270,7 @@ impl Session<'_> {
                     };
                     match minted {
                         Ok(token) => {
-                            self.hub.info(format!("using {} ({})", cloud.label(), crate::vault::key_hint(&account.secret)));
+                            self.hub.info(format!("using {}", cloud.label()));
                             match self.run_cloud(mic, token, cloud).await {
                                 Ok(reason) => return Ok(reason),
                                 Err(err) => {
@@ -293,6 +296,7 @@ impl Session<'_> {
                 }
             }
         }
+        let last_error = crate::diagnostics::redact(&last_error);
         let message = crate::local::exhausted_message(&tried, &last_error);
         self.speak_failure(&message).await;
         Err(msg(message))
@@ -310,7 +314,7 @@ impl Session<'_> {
     }
 
     async fn run_cloud(&self, mic: &mut mpsc::Receiver<Vec<i16>>, token: EphemeralToken, cloud: Cloud) -> Result<String> {
-        let model = cloud.model_name(self.settings);
+        let model = crate::settings::safe_model_name(&cloud.model_name(self.settings));
         self.hub.update(|s| {
             s.token_minted_at_ms = Some(now_ms());
             s.token_expires_at = token.expires_at;

@@ -572,17 +572,30 @@ pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bo
             .collect();
     }
     let bytes = crate::backup::seal(&payload, &passphrase).map_err(msg)?;
-    let dir = app.path().app_cache_dir().map_err(|e| msg(e.to_string()))?;
+    let dir = app.path().app_cache_dir().map_err(|e| msg(e.to_string()))?.join("backups");
     std::fs::create_dir_all(&dir).map_err(|e| msg(e.to_string()))?;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("grok-voice-backup-") && name.ends_with(".gvb") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
     let file_name = format!("grok-voice-backup-{}.gvb", chrono::Local::now().format("%Y-%m-%d"));
     let path = dir.join(&file_name);
-    std::fs::write(&path, &bytes).map_err(|e| msg(e.to_string()))?;
+    crate::files::write_private(&path, &bytes).map_err(|e| msg(e.to_string()))?;
     let shared = path.to_str().is_some_and(|path| {
         app.state::<NativeBridge>().share_file(path, "application/octet-stream", "Grok Voice backup").is_ok()
     });
     Ok(ExportedBackup {
         file_name,
-        data_b64: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes),
+        data_b64: if shared {
+            String::new()
+        } else {
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
+        },
         shared,
     })
 }
@@ -612,7 +625,15 @@ pub fn restore_backup(
     }
     actions::sync_person_reminders(&app).map_err(msg)?;
     if restore_keys.unwrap_or(false) && !payload.keys.is_empty() {
-        let rows: Vec<(String, String, String)> = payload.keys.into_iter().map(|key| (key.id, key.provider, key.secret)).collect();
+        let rows: Vec<(String, String, String)> = payload
+            .keys
+            .into_iter()
+            .filter(|key| crate::backup::acceptable_key(key))
+            .map(|key| (key.id, key.provider, key.secret))
+            .collect();
+        if rows.is_empty() {
+            return Err(msg("That backup's voice keys could not be restored."));
+        }
         app.state::<Vault>().replace_secrets(&app.state::<NativeBridge>(), &rows).map_err(|e| msg(e.to_string()))?;
     }
     Ok(preview)

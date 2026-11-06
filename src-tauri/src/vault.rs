@@ -89,7 +89,7 @@ impl Vault {
         let mut raw = Zeroizing::new(vec![0u8; 32]);
         rand::rngs::OsRng.fill_bytes(&mut raw);
         let wrapped = bridge.wrap_key(&raw)?;
-        write_private(&self.wrapped_key_path(), &wrapped.blob)?;
+        crate::files::write_private(&self.wrapped_key_path(), &wrapped.blob)?;
         *self.security_level.lock().unwrap() = Some(wrapped.security_level);
         Ok(raw)
     }
@@ -389,12 +389,3 @@ pub fn key_hint(key: &str) -> String {
     format!("{head}…{tail}")
 }
 
-fn write_private(path: &PathBuf, data: &[u8]) -> Result<()> {
-    fs::write(path, data)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(())
-}

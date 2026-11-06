@@ -65,6 +65,69 @@ pub struct Hub {
     logs: Mutex<VecDeque<LogLine>>,
 }
 
+/// Strip credential-shaped text before it reaches logcat, the debug panel, or speech.
+pub fn redact(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len().min(400));
+    let mut rest = msg;
+    while !rest.is_empty() {
+        let lower = rest.to_ascii_lowercase();
+        let bearer = lower.find("bearer ");
+        let sk = find_key(&lower, "sk-");
+        let xai = find_key(&lower, "xai-");
+        let Some(at) = [bearer, sk, xai].into_iter().flatten().min() else {
+            push_limited(&mut out, rest);
+            break;
+        };
+        push_limited(&mut out, &rest[..at]);
+        if out.chars().count() >= 400 {
+            break;
+        }
+        if bearer == Some(at) {
+            let after = at + "bearer ".len();
+            let end = rest[after..].find(char::is_whitespace).map(|n| after + n).unwrap_or(rest.len());
+            push_limited(&mut out, "Bearer [redacted]");
+            rest = &rest[end..];
+        } else {
+            let prefix = if sk == Some(at) { 3 } else { 4 };
+            let after = at + prefix;
+            let token_bytes: usize = rest[after..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+                .map(|c| c.len_utf8())
+                .sum();
+            push_limited(&mut out, "[redacted]");
+            rest = &rest[after + token_bytes..];
+        }
+    }
+    out
+}
+
+fn find_key(lower: &str, prefix: &str) -> Option<usize> {
+    let mut from = 0;
+    while let Some(rel) = lower[from..].find(prefix) {
+        let at = from + rel;
+        let after = at + prefix.len();
+        let n = lower[after..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+            .count();
+        if n >= 8 {
+            return Some(at);
+        }
+        from = after.max(from + 1);
+    }
+    None
+}
+
+fn push_limited(out: &mut String, text: &str) {
+    for ch in text.chars() {
+        if out.chars().count() >= 400 {
+            break;
+        }
+        out.push(ch);
+    }
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -83,6 +146,7 @@ impl Hub {
     }
 
     fn push(&self, level: &'static str, msg: String) {
+        let msg = redact(&msg);
         match level {
             "error" => log::error!("{msg}"),
             "warn" => log::warn!("{msg}"),
@@ -108,7 +172,7 @@ impl Hub {
     }
 
     pub fn error(&self, msg: impl Into<String>) {
-        let msg = msg.into();
+        let msg = redact(&msg.into());
         self.update(|s| s.last_error = Some(msg.clone()));
         self.push("error", msg);
     }
@@ -135,5 +199,21 @@ impl Hub {
 
     pub fn logs(&self) -> Vec<LogLine> {
         self.logs.lock().unwrap().iter().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redact_strips_credential_shapes_and_leaves_ordinary_text() {
+        let line = redact("OpenAI rejected the request (401): bad sk-proj-abcdefghij123456 key");
+        assert!(line.contains("401"));
+        assert!(!line.contains("abcdefghij"));
+        assert!(line.contains("[redacted]"));
+        assert_eq!(redact("using xAI"), "using xAI");
+        assert!(redact("Authorization: Bearer super-secret-token").contains("[redacted]"));
+        assert!(!redact("Authorization: Bearer super-secret-token").to_lowercase().contains("super-secret"));
     }
 }

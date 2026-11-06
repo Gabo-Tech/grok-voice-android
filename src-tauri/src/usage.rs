@@ -132,7 +132,7 @@ impl UsageStore {
             let _ = fs::create_dir_all(dir);
         }
         if let Ok(bytes) = serde_json::to_vec_pretty(usage) {
-            let _ = fs::write(path, bytes);
+            let _ = crate::files::write_private(path, &bytes);
         }
     }
 

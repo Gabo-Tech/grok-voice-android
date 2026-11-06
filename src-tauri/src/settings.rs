@@ -63,6 +63,16 @@ impl Default for Settings {
     }
 }
 
+/// Query values that are placed on the realtime URL. Letters, digits, and ._- only.
+pub fn safe_model_name(model: &str) -> String {
+    let cleaned: String = model
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .take(64)
+        .collect();
+    if cleaned.is_empty() { Settings::default().model } else { cleaned }
+}
+
 pub struct SettingsStore {
     path: PathBuf,
     inner: RwLock<Settings>,
@@ -92,13 +102,11 @@ impl SettingsStore {
         } else {
             crate::i18n::normalize(&s.locale).to_string()
         };
-        if s.model.trim().is_empty() {
-            s.model = Settings::default().model;
-        }
+        s.model = safe_model_name(&s.model);
         if s.voice.trim().is_empty() {
             s.voice = Settings::default().voice;
         }
-        fs::write(&self.path, serde_json::to_vec_pretty(&s)?)?;
+        crate::files::write_private(&self.path, &serde_json::to_vec_pretty(&s)?)?;
         *self.inner.write().unwrap() = s.clone();
         Ok(s)
     }

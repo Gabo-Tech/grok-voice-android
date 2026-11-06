@@ -143,6 +143,7 @@ fn fetch_html(query: &str) -> Result<Value, String> {
 fn get(url: &str) -> Result<String, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
+        .redirect(crate::http::search_redirect())
         .build()
         .map_err(|err| err.to_string())?;
     let response = client

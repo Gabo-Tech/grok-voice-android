@@ -140,6 +140,19 @@ pub fn open_b64(encoded: &str, passphrase: &str) -> Result<Payload, String> {
     open(&bytes, passphrase)
 }
 
+pub fn acceptable_key(key: &BackupKey) -> bool {
+    let provider_ok = matches!(key.provider.as_str(), "xai" | "openai" | "local");
+    let id_ok = !key.id.is_empty()
+        && key.id.len() <= 64
+        && key.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    let secret = key.secret.trim();
+    let secret_ok = !secret.is_empty()
+        && secret.len() <= 300
+        && !secret.chars().any(|c| c.is_whitespace() || c.is_control())
+        && secret == key.secret;
+    provider_ok && id_ok && secret_ok
+}
+
 fn check_passphrase(passphrase: &str) -> Result<(), String> {
     if passphrase.chars().count() < 8 {
         Err("Use a passphrase of at least 8 characters.".into())
@@ -230,5 +243,14 @@ mod tests {
         assert_eq!(opened.preview().facts, 1);
         assert!(opened.preview().has_memory);
         assert_eq!(opened.memory.as_ref().unwrap().facts[0].text, "I live in Zurich");
+    }
+
+    #[test]
+    fn restore_rejects_unknown_providers_and_whitespace_secrets() {
+        assert!(acceptable_key(&BackupKey { id: "xai-1".into(), provider: "xai".into(), secret: "xai-test-secret".into() }));
+        assert!(acceptable_key(&BackupKey { id: "legacy-xai".into(), provider: "xai".into(), secret: "xai-test-secret".into() }));
+        assert!(!acceptable_key(&BackupKey { id: "k1".into(), provider: "other".into(), secret: "xai-test-secret".into() }));
+        assert!(!acceptable_key(&BackupKey { id: "k 1".into(), provider: "xai".into(), secret: "xai-test-secret".into() }));
+        assert!(!acceptable_key(&BackupKey { id: "k1".into(), provider: "xai".into(), secret: "has space".into() }));
     }
 }

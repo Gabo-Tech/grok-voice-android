@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebSettings
 import android.webkit.WebView
 import org.json.JSONObject
 import androidx.activity.OnBackPressedCallback
@@ -51,25 +52,43 @@ class MainActivity : TauriActivity() {
   }
 
   private fun applyWidget(intent: Intent?) {
-    val widget = intent?.getStringExtra(EXTRA_WIDGET)
+    val claimed = intent?.getStringExtra(EXTRA_WIDGET)
     val headless = intent?.getBooleanExtra(EXTRA_HEADLESS, false) == true
-    val overLock = widget == "lock"
+    val expected = when {
+      !claimed.isNullOrBlank() -> claimed
+      headless -> "headless"
+      else -> null
+    }
+    val action = if (expected == null) null else WidgetGate.consume(this, expected)
+    val granted = action ?: run {
+      if (Build.VERSION.SDK_INT >= 27) {
+        setShowWhenLocked(false)
+        setTurnScreenOn(false)
+      }
+      return
+    }
+    val overLock = granted == "lock"
     if (Build.VERSION.SDK_INT >= 27) {
       setShowWhenLocked(overLock)
       setTurnScreenOn(overLock)
     }
-    if (widget == "arm") {
-      val start = Intent(this, VoiceListenerService::class.java).setAction(VoiceListenerService.ACTION_START)
-      androidx.core.content.ContextCompat.startForegroundService(this, start)
-      window?.decorView?.postDelayed({ moveTaskToBack(true) }, 700)
-    } else if (widget == "disarm") {
-      stopService(Intent(this, VoiceListenerService::class.java))
-      window?.decorView?.post { moveTaskToBack(true) }
-    } else if (headless) {
-      window?.decorView?.post { moveTaskToBack(true) }
+    when (granted) {
+      "arm" -> {
+        val start = Intent(this, VoiceListenerService::class.java).setAction(VoiceListenerService.ACTION_START)
+        androidx.core.content.ContextCompat.startForegroundService(this, start)
+        window?.decorView?.postDelayed({ moveTaskToBack(true) }, 700)
+      }
+      "disarm" -> {
+        stopService(Intent(this, VoiceListenerService::class.java))
+        window?.decorView?.post { moveTaskToBack(true) }
+      }
+      "headless" -> window?.decorView?.post { moveTaskToBack(true) }
+      "lock" -> {
+        deliverWidget("talk")
+        return
+      }
     }
-    if (widget == "lock") deliverWidget("talk")
-    else if (widget != null) deliverWidget(widget)
+    if (granted != "headless") deliverWidget(granted)
   }
 
   private fun deliverWidget(action: String) {
@@ -104,6 +123,15 @@ class MainActivity : TauriActivity() {
     webView.setBackgroundColor(Color.parseColor("#0E0E0E"))
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+    }
+    val settings = webView.settings
+    settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+    @Suppress("DEPRECATION")
+    settings.allowFileAccessFromFileURLs = false
+    @Suppress("DEPRECATION")
+    settings.allowUniversalAccessFromFileURLs = false
+    if (!BuildConfig.DEBUG) {
+      WebView.setWebContentsDebuggingEnabled(false)
     }
     // A forced hardware layer blanks this page when audio starts. A forced
     // software layer smears icons and flattens text. Leave the default.

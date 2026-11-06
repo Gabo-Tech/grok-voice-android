@@ -8,6 +8,7 @@ use std::{
 };
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 pub const STT_URL: &str =
@@ -27,6 +28,7 @@ struct Spec {
     detail: &'static str,
     url: &'static str,
     download_bytes: u64,
+    sha256: &'static str,
     archive: bool,
     /// English speech plus the language model. German packs are optional.
     required: bool,
@@ -39,6 +41,7 @@ const PACKS: &[Spec] = &[
         detail: "Moonshine Tiny English, int8",
         url: STT_URL,
         download_bytes: 107_600_538,
+        sha256: "d5fe6ec4334fef36255b2a4010412cad4c007e33103fec62fb5d17cad88086f2",
         archive: true,
         required: true,
     },
@@ -48,6 +51,7 @@ const PACKS: &[Spec] = &[
         detail: "Qwen2.5 0.5B Instruct, Q4_K_M",
         url: LLM_URL,
         download_bytes: 491_400_032,
+        sha256: "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
         archive: false,
         required: true,
     },
@@ -57,6 +61,7 @@ const PACKS: &[Spec] = &[
         detail: "Piper en_US lessac, low",
         url: TTS_URL,
         download_bytes: 67_097_098,
+        sha256: "8fb427b8637334072ee5723d72fa418c45bfdd4b7deebeacdf2938662618c1cb",
         archive: true,
         required: true,
     },
@@ -66,6 +71,7 @@ const PACKS: &[Spec] = &[
         detail: "NeMo FastConformer German, int8",
         url: STT_DE_URL,
         download_bytes: 108_124_747,
+        sha256: "73b3cce9f94a19fc04bc54b55abd576b622e3925a84ddd554a95e5984bc11677",
         archive: true,
         required: false,
     },
@@ -75,6 +81,7 @@ const PACKS: &[Spec] = &[
         detail: "Piper de_DE thorsten, low",
         url: TTS_DE_URL,
         download_bytes: 67_101_576,
+        sha256: "41fab35910fdcec4696b031951d8fd6c262e594cf77b35e1068fadbeb5a091a6",
         archive: true,
         required: false,
     },
@@ -244,12 +251,16 @@ pub fn download_pack(root: &Path, id: &str, mut progress: impl FnMut(PackProgres
 }
 
 fn download_locked(root: &Path, spec: &Spec, progress: &mut impl FnMut(PackProgress)) -> Result<(), String> {
+    if !crate::http::https_url_allowed(spec.url, PACK_HOSTS) {
+        return Err("download address was not https".into());
+    }
     let dir = root.join(spec.id);
     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     let partial = dir.join("download.partial");
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(900))
         .connect_timeout(std::time::Duration::from_secs(20))
+        .redirect(crate::http::pack_redirect())
         .build()
         .map_err(|err| err.to_string())?;
     let mut response = client
@@ -263,18 +274,24 @@ fn download_locked(root: &Path, spec: &Spec, progress: &mut impl FnMut(PackProgr
     let total = response.content_length().unwrap_or(spec.download_bytes);
     let mut file = File::create(&partial).map_err(|err| err.to_string())?;
     let mut received = 0u64;
+    let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
         let n = response.read(&mut buf).map_err(|err| format!("download failed: {err}"))?;
         if n == 0 {
             break;
         }
+        hasher.update(&buf[..n]);
         file.write_all(&buf[..n]).map_err(|err| err.to_string())?;
         received += n as u64;
         progress(PackProgress { id: spec.id.into(), received, total });
     }
     file.flush().map_err(|err| err.to_string())?;
     drop(file);
+    if hex_encode(&hasher.finalize()) != spec.sha256 {
+        let _ = fs::remove_file(&partial);
+        return Err(format!("{} download did not match the expected checksum", spec.label));
+    }
     if spec.archive {
         unpack_bz2(&partial, &dir)?;
         let _ = fs::remove_file(&partial);
@@ -302,20 +319,36 @@ pub fn delete_pack(root: &Path, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+const PACK_HOSTS: &[&str] = &[
+    "github.com",
+    "*.githubusercontent.com",
+    "huggingface.co",
+    "*.huggingface.co",
+    "*.hf.co",
+];
+
 fn unpack_bz2(archive: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest).map_err(|err| err.to_string())?;
     let file = File::open(archive).map_err(|err| err.to_string())?;
     let decoder = bzip2::read::BzDecoder::new(file);
     let mut tar = tar::Archive::new(decoder);
     for entry in tar.entries().map_err(|err| err.to_string())? {
         let mut entry = entry.map_err(|err| err.to_string())?;
-        let rel = entry.path().map_err(|err| err.to_string())?.into_owned();
-        if rel.components().any(|component| matches!(component, Component::ParentDir)) {
+        let kind = entry.header().entry_type();
+        if kind.is_pax_global_extensions() || kind.is_pax_local_extensions() || kind.is_gnu_longname() || kind.is_gnu_longlink() {
+            continue;
+        }
+        if kind.is_symlink() || kind.is_hard_link() || kind.is_fifo() || kind.is_character_special() || kind.is_block_special() {
             return Err("the model archive contained an unsafe path".into());
         }
-        let out = dest.join(&rel);
-        if entry.header().entry_type().is_dir() {
+        let rel = entry.path().map_err(|err| err.to_string())?.into_owned();
+        let out = contained_path(dest, &rel)?;
+        if kind.is_dir() {
             fs::create_dir_all(&out).map_err(|err| err.to_string())?;
             continue;
+        }
+        if !kind.is_file() {
+            return Err("the model archive contained an unsafe path".into());
         }
         if let Some(parent) = out.parent() {
             fs::create_dir_all(parent).map_err(|err| err.to_string())?;
@@ -324,6 +357,39 @@ fn unpack_bz2(archive: &Path, dest: &Path) -> Result<(), String> {
         io::copy(&mut entry, &mut file).map_err(|err| err.to_string())?;
     }
     Ok(())
+}
+
+fn contained_path(dest: &Path, rel: &Path) -> Result<PathBuf, String> {
+    let err = "the model archive contained an unsafe path";
+    if !rel.components().any(|component| matches!(component, Component::Normal(_)))
+        || rel.components().any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(err.into());
+    }
+    let out = dest.join(rel);
+    let dest_canon = dest.canonicalize().map_err(|err| err.to_string())?;
+    let Some(parent) = out.parent() else {
+        return Err(err.into());
+    };
+    fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    let parent_canon = parent.canonicalize().map_err(|err| err.to_string())?;
+    if !parent_canon.starts_with(&dest_canon) {
+        return Err(err.into());
+    }
+    if out.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return Err(err.into());
+    }
+    Ok(out)
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0xf) as usize] as char);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -383,5 +449,53 @@ mod tests {
             b"token"
         );
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn archive_extract_rejects_paths_outside_the_pack() {
+        let root = std::env::temp_dir().join(format!("gv-tar-escape-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let outside = root.join("outside.txt");
+        let absolute = root.join("absolute.txt");
+        for (label, name, kind) in [
+            ("parent", "../outside.txt", tar::EntryType::Regular),
+            ("absolute", absolute.to_str().unwrap(), tar::EntryType::Regular),
+            ("symlink", "inside-link", tar::EntryType::Symlink),
+        ] {
+            let archive = root.join(format!("{label}.tar.bz2"));
+            {
+                let encoder = bzip2::write::BzEncoder::new(File::create(&archive).unwrap(), bzip2::Compression::fast());
+                let mut builder = tar::Builder::new(encoder);
+                let data = b"nope";
+                let mut header = tar::Header::new_gnu();
+                header.set_entry_type(kind);
+                header.set_mode(0o644);
+                header.set_size(if kind.is_symlink() { 0 } else { data.len() as u64 });
+                if kind.is_symlink() {
+                    header.set_link_name_literal(b"../outside").unwrap();
+                }
+                if name.starts_with('/') {
+                    header.set_path_absolute(name).unwrap();
+                } else {
+                    let bytes = name.as_bytes();
+                    header.as_old_mut().name[..bytes.len()].copy_from_slice(bytes);
+                }
+                header.set_cksum();
+                let body: &[u8] = if kind.is_symlink() { b"" } else { &data[..] };
+                builder.append(&header, body).unwrap();
+                builder.finish().unwrap();
+            }
+            assert!(unpack_bz2(&archive, &root.join("stt")).is_err(), "{label}");
+        }
+        assert!(!outside.exists());
+        assert!(!absolute.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn pinned_checksums_are_sha256() {
+        assert!(PACKS.iter().all(|spec| spec.sha256.len() == 64 && spec.sha256.chars().all(|c| c.is_ascii_hexdigit())));
+        assert_eq!(hex_encode(&[0x74, 0xa4]), "74a4");
     }
 }

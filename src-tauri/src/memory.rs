@@ -71,7 +71,7 @@ impl Memory {
         if let Ok(mut turns) = self.turns.lock() {
             turns.clear();
         }
-        let _ = fs::write(&self.path, b"[]");
+        let _ = crate::files::write_private(&self.path, b"[]");
     }
 
     /// A short block for the next voice session. Empty when there is nothing recent.
@@ -101,7 +101,7 @@ impl Memory {
             turns.drain(..drop_n);
         }
         if let Ok(bytes) = serde_json::to_vec_pretty(&*turns) {
-            let _ = fs::write(&self.path, bytes);
+            let _ = crate::files::write_private(&self.path, &bytes);
         }
     }
 }

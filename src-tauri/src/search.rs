@@ -26,6 +26,7 @@ fn remember_for_voice(text: String) {
 fn client() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(90))
+        .redirect(crate::http::api_redirect())
         .build()
         .expect("search client")
 }
@@ -95,7 +96,7 @@ fn post(app: &AppHandle, body: &Value) -> Result<Value, String> {
     let status = resp.status();
     let value: Value = resp.json().map_err(|e| format!("xAI response: {e}"))?;
     if !status.is_success() {
-        let why = value["error"]["message"].as_str().unwrap_or("request rejected");
+        let why = crate::diagnostics::redact(value["error"]["message"].as_str().unwrap_or("request rejected"));
         return Err(format!("xAI {status}: {why}"));
     }
     Ok(value)

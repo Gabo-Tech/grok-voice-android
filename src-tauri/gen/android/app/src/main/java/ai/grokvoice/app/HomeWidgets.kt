@@ -43,6 +43,7 @@ object HomeWidgets {
   }
 
   fun open(context: Context, widget: String) {
+    WidgetGate.allow(context, widget)
     val launch = Intent(context, MainActivity::class.java)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
       .putExtra(MainActivity.EXTRA_WIDGET, widget)

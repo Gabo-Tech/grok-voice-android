@@ -9,6 +9,7 @@ import type { VoiceState } from "@/hooks/useVoice";
 import type { VoiceAccount } from "@/lib/api";
 import { readyProvider, recoveryFor, settingsLabel, type SettingsDestination } from "@/lib/flow";
 import { useT } from "@/lib/i18n";
+import { safeHttps } from "@/lib/links";
 import { cn } from "@/lib/utils";
 
 function RichText({ text }: { text: string }) {
@@ -30,7 +31,7 @@ function inline(block: string): ReactNode[] {
     if (part.startsWith("**") && part.endsWith("**")) {
       return <strong key={i}>{part.slice(2, -2)}</strong>;
     }
-    if (/^https?:\/\//.test(part)) {
+    if (/^https?:\/\//.test(part) && safeHttps(part)) {
       return (
         <button key={i} type="button" className="min-h-12 break-all text-left underline" onClick={() => void openUrl(part)}>
           {part}
