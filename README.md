@@ -48,6 +48,11 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 | “Remind me tomorrow at 9 to call Sam” | A notification at that local time. |
 | “What’s on my calendar today?” | Reads the phone calendar. Android asks for calendar access the first time. |
 | “Add lunch with Ana tomorrow at 1” | Writes an event. If you omit the end time, it lasts one hour. |
+| “Call Mom” | Looks up that People nickname. A preferred channel wins; otherwise the dialer opens after you say yes. The call is not placed for you. |
+| “Text Sam that I’m late” | Opens the text app with the draft. You tap Send. |
+| “Message Ana” | If Ana’s preferred channel is WhatsApp, Signal, text, or email, that app opens after you confirm. |
+
+**People** is under **Settings**. It is an overlay on this phone, not a second contacts app. Phone numbers and email still come from Android contacts. Nicknames, aliases, a favorite, a note, and a preferred channel (call, text, WhatsApp, Signal, or email) stay in Grok Voice. Unlink or delete removes only that overlay.
 
 The bottom bar is **Talk**, **Notes**, **Calendar**, **Remind**, and **More**. Lists stay quiet by default; tap **+** to add, or open a row to edit. Voice still works for create, edit, and delete (“change that note”, “delete the lunch event”, “move my reminder to 5”). Calendar access is requested from the Calendar tab or the first voice calendar ask. If the phone has no writable calendar account, events are saved in the app instead.
 
@@ -61,7 +66,7 @@ Times you say are local. “Remind me tomorrow at 3” is a one-off reminder. �
 - **Vault.** The key lives in a [Stronghold](https://github.com/iotaledger/stronghold.rs) snapshot. On Android the snapshot key is wrapped by a non-exportable Android Keystore key (StrongBox, then TEE).
 - **Wake word.** [rustpotter](https://github.com/GiviMAD/rustpotter), trained from the three recordings on the phone. The samples are not uploaded.
 - **Background.** A microphone foreground service and a partial wake lock keep capture alive with the screen off. Leaving with the back gesture keeps the process up while hands-free is armed.
-- **Phone tools.** Notes are stored in the app. Alarms and timers prefer the system Clock app when the screen is open, and `AlarmManager` otherwise. Reminders are notifications. Calendar reads and writes use `CalendarContract`.
+- **Phone tools.** Notes, reminders, and People preferences are stored in the app. Phone numbers and email are read from `ContactsContract` and are not written back. Alarms and timers prefer the system Clock app when the screen is open, and `AlarmManager` otherwise. Reminders are notifications. Calendar reads and writes use `CalendarContract`. A call opens the dialer, and a text, WhatsApp, Signal, or email opens a draft. Nothing is sent until you confirm in that app.
 
 xAI does not offer a public third-party OAuth flow for this API, so sign-in is the API key you paste.
 

@@ -7,6 +7,7 @@ use zeroize::Zeroizing;
 use crate::{
     actions::{self, Agenda, AgendaSnapshot},
     memory::{Memory, Turn},
+    people::{self, People, Person, PhoneContact},
     audio::engine::{Ctl, Engine},
     diagnostics::{self, DebugSnapshot, Hub, LogLine, now_ms},
     error::{Result, msg},
@@ -418,6 +419,60 @@ pub fn delete_event(app: AppHandle, id: String) -> Result<AgendaSnapshot> {
 #[tauri::command]
 pub async fn request_calendar(app: AppHandle) -> Result<PermissionStatus> {
     blocking(app, |app| app.state::<NativeBridge>().request_calendar()).await
+}
+
+#[tauri::command]
+pub fn list_people(app: AppHandle) -> Vec<Person> {
+    app.state::<People>().list()
+}
+
+#[tauri::command]
+pub fn save_person(app: AppHandle, person: people::PersonDraft) -> Result<Person> {
+    app.state::<People>().save(person).map_err(msg)
+}
+
+#[tauri::command]
+pub fn delete_person(app: AppHandle, id: String) -> Result<Vec<Person>> {
+    app.state::<People>().delete(&id).map_err(msg)?;
+    Ok(app.state::<People>().list())
+}
+
+#[tauri::command]
+pub async fn request_contacts(app: AppHandle) -> Result<PermissionStatus> {
+    blocking(app, |app| app.state::<NativeBridge>().request_contacts()).await
+}
+
+fn phone_payload(raw: &str) -> Result<serde_json::Value> {
+    let value: serde_json::Value = serde_json::from_str(raw).map_err(|e| msg(e.to_string()))?;
+    if value["ok"] == false {
+        return Err(msg(value["error"].as_str().unwrap_or("Could not read phone contacts.")));
+    }
+    Ok(value)
+}
+
+#[tauri::command]
+pub fn list_phone_contacts(app: AppHandle, query: Option<String>) -> Result<Vec<PhoneContact>> {
+    let raw = app
+        .state::<NativeBridge>()
+        .list_phone_contacts(query.unwrap_or_default().trim())
+        .map_err(|e| msg(e.to_string()))?;
+    let value = phone_payload(&raw)?;
+    serde_json::from_value(value["contacts"].clone()).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub fn phone_contact(app: AppHandle, id: String) -> Result<PhoneContact> {
+    let raw = app.state::<NativeBridge>().contact_handles(id.trim()).map_err(|e| msg(e.to_string()))?;
+    let value = phone_payload(&raw)?;
+    let rows: Vec<PhoneContact> = serde_json::from_value(value["matches"].clone()).unwrap_or_default();
+    rows.into_iter().next().ok_or_else(|| msg("That phone contact is not on this device."))
+}
+
+#[tauri::command]
+pub fn open_phone_contact(app: AppHandle, id: String) -> Result<()> {
+    let raw = app.state::<NativeBridge>().open_phone_contact(id.trim()).map_err(|e| msg(e.to_string()))?;
+    phone_payload(&raw)?;
+    Ok(())
 }
 
 #[tauri::command]

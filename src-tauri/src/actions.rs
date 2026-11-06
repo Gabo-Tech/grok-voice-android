@@ -184,7 +184,7 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["direction"]
         })),
-        fn_tool("find_contact", "Look up a person in the phone contacts by name. Returns phone and email. Call this before asking the user to spell a number. Then speak the match and wait for yes before opening WhatsApp, Signal, or email.", json!({
+        fn_tool("find_contact", "Look up a person by name, nickname, or alias. Checks People saved in this app first, including favorites, then the phone contacts. Returns phone, email, preferredChannel, openTool, and channelHandle. If preferredChannel is set, use that channel even if the user said call, text, or email: call opens open_call, sms opens open_sms, whatsapp opens open_whatsapp, signal opens open_signal, email opens open_email. Speak the match and wait for a clear yes before opening. Never send or place the call yourself.", json!({
             "type": "object",
             "properties": { "name": { "type": "string" } },
             "required": ["name"]
@@ -234,6 +234,23 @@ pub fn tool_definitions() -> Value {
                 "confirmed": { "type": "boolean" }
             },
             "required": ["to", "confirmed"]
+        })),
+        fn_tool("open_call", "Open the phone dialer with a number filled in. Speak the number, wait for a clear yes, then call with confirmed true. This uses the dialer only. The call is not placed until the user taps Call.", json!({
+            "type": "object",
+            "properties": {
+                "phone": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["phone", "confirmed"]
+        })),
+        fn_tool("open_sms", "Open the texting app with a draft. phone is the number. text is the message. Speak both, wait for a clear yes, then call with confirmed true. The message is not sent until the user taps Send.", json!({
+            "type": "object",
+            "properties": {
+                "phone": { "type": "string" },
+                "text": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["phone", "confirmed"]
         })),
         fn_tool("web_search", "Search the live web and return a sourced summary. Use this for news, weather, scores, prices, and anything about today or recently. query is a specific search, such as 'most relevant news Zurich today'.", json!({
             "type": "object",
@@ -518,6 +535,57 @@ pub fn run(app: &AppHandle, name: &str, arguments: &str) -> String {
     out
 }
 
+fn unconfirmed_handoff(name: &str, args: &Value) -> Option<Value> {
+    if args["confirmed"] == true {
+        return None;
+    }
+    let plan = match name {
+        "open_browser" => format!(
+            "Open the browser for {}?",
+            args["query"].as_str().filter(|s| !s.is_empty()).unwrap_or(args["url"].as_str().unwrap_or("that page"))
+        ),
+        "open_youtube" => format!(
+            "Open YouTube for {}?",
+            args["query"].as_str().filter(|s| !s.is_empty()).unwrap_or(args["url"].as_str().unwrap_or("that video"))
+        ),
+        "open_whatsapp" => format!(
+            "Open WhatsApp to {} with: {}?",
+            args["phone"].as_str().unwrap_or(""),
+            args["text"].as_str().unwrap_or("")
+        ),
+        "open_signal" => format!(
+            "Open Signal for {}? Message: {}",
+            args["phone"].as_str().unwrap_or(""),
+            args["text"].as_str().unwrap_or("")
+        ),
+        "open_call" => format!(
+            "Open the dialer for {}? The call is not placed until you tap Call.",
+            args["phone"].as_str().unwrap_or("")
+        ),
+        "open_sms" => {
+            let phone = args["phone"].as_str().unwrap_or("");
+            let text = args["text"].as_str().unwrap_or("").trim();
+            if text.is_empty() {
+                format!("Open a text to {phone}? Nothing is sent until you tap Send.")
+            } else {
+                format!("Open a text to {phone}: {text}? Nothing is sent until you tap Send.")
+            }
+        }
+        "open_email" => format!(
+            "Open an email to {} about {}? {}",
+            args["to"].as_str().unwrap_or(""),
+            args["subject"].as_str().unwrap_or(""),
+            args["body"].as_str().unwrap_or("")
+        ),
+        _ => return None,
+    };
+    Some(json!({
+        "ok": true,
+        "opened": false,
+        "detail": format!("{plan} Nothing was opened. Wait for a clear yes, then call this again with confirmed true.")
+    }))
+}
+
 fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     let bridge = app.state::<NativeBridge>();
     let raw = match name {
@@ -530,48 +598,10 @@ fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>
                 .adjust_volume(args["direction"].as_str().unwrap_or(""), steps)
                 .map_err(|e| e.to_string())?
         }
-        "find_contact" => {
-            let name = args["name"].as_str().unwrap_or("").trim().to_string();
-            let mut raw = bridge.lookup_contacts(&name).map_err(|e| e.to_string())?;
-            if raw.contains("not granted") {
-                let _ = bridge.request_contacts();
-                raw = bridge.lookup_contacts(&name).map_err(|e| e.to_string())?;
-            }
-            return serde_json::from_str(&raw).map(Some).map_err(|e| e.to_string());
-        }
-        "open_youtube" | "open_whatsapp" | "open_signal" | "open_email" | "open_browser" => {
-            if args["confirmed"] != true {
-                let plan = match name {
-                    "open_browser" => format!(
-                        "Open the browser for {}?",
-                        args["query"].as_str().filter(|s| !s.is_empty()).unwrap_or(args["url"].as_str().unwrap_or("that page"))
-                    ),
-                    "open_youtube" => format!(
-                        "Open YouTube for {}?",
-                        args["query"].as_str().filter(|s| !s.is_empty()).unwrap_or(args["url"].as_str().unwrap_or("that video"))
-                    ),
-                    "open_whatsapp" => format!(
-                        "Open WhatsApp to {} with: {}?",
-                        args["phone"].as_str().unwrap_or(""),
-                        args["text"].as_str().unwrap_or("")
-                    ),
-                    "open_signal" => format!(
-                        "Open Signal for {}? Message: {}",
-                        args["phone"].as_str().unwrap_or(""),
-                        args["text"].as_str().unwrap_or("")
-                    ),
-                    _ => format!(
-                        "Open an email to {} about {}? {}",
-                        args["to"].as_str().unwrap_or(""),
-                        args["subject"].as_str().unwrap_or(""),
-                        args["body"].as_str().unwrap_or("")
-                    ),
-                };
-                return Ok(Some(json!({
-                    "ok": true,
-                    "opened": false,
-                    "detail": format!("{plan} Nothing was opened. Wait for a clear yes, then call this again with confirmed true.")
-                })));
+        "find_contact" => return crate::people::find_contact(app, args["name"].as_str().unwrap_or("")).map(Some),
+        "open_youtube" | "open_whatsapp" | "open_signal" | "open_email" | "open_browser" | "open_call" | "open_sms" => {
+            if let Some(wait) = unconfirmed_handoff(name, args) {
+                return Ok(Some(wait));
             }
             let kind = name.trim_start_matches("open_");
             bridge
@@ -1062,6 +1092,17 @@ mod tests {
     #[test]
     fn rejects_blank_time() {
         assert!(parse_local_when("  ").is_err());
+    }
+
+    #[test]
+    fn call_and_sms_wait_for_confirmation() {
+        let call = unconfirmed_handoff("open_call", &json!({"phone": "+1555", "confirmed": false})).unwrap();
+        assert_eq!(call["opened"], false);
+        assert!(call["detail"].as_str().unwrap().contains("not placed"));
+        let sms = unconfirmed_handoff("open_sms", &json!({"phone": "+1555", "text": "running late", "confirmed": false})).unwrap();
+        assert!(sms["detail"].as_str().unwrap().contains("Nothing is sent"));
+        assert!(unconfirmed_handoff("open_call", &json!({"phone": "+1555", "confirmed": true})).is_none());
+        assert!(unconfirmed_handoff("set_alarm", &json!({})).is_none());
     }
 
     #[test]
