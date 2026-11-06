@@ -8,4 +8,12 @@
     <string name="widget_next_empty">Cap recordatori següent</string>
     <string name="tile_talk">Parlar</string>
     <string name="tile_talk_idle">Recordatori següent</string>
+    <string name="listener_title">Hey Grok està escoltant</string>
+    <string name="listener_text">Digues «Hey Grok», o toca per obrir</string>
+    <string name="listener_stop">Para</string>
+    <string name="listener_channel_name">Escolta de Hey Grok</string>
+    <string name="listener_channel_desc">Visible mentre Grok Voice escolta «Hey Grok»</string>
+    <string name="listener_alert_channel_name">Hey Grok</string>
+    <string name="listener_alert_title">Hey Grok</string>
+    <string name="listener_alert_text">Escoltant</string>
 </resources>

@@ -13,6 +13,21 @@ object RustBridge {
   @JvmStatic
   external fun ensureUi()
 
+  @JvmStatic
+  external fun feedMic(samples: ShortArray, count: Int)
+
+  @JvmStatic
+  external fun pollPresentTalk(): Boolean
+
+  @JvmStatic
+  external fun pollReopenMic(): Boolean
+
+  @JvmStatic
+  external fun note(msg: String): Boolean
+
+  @JvmStatic
+  external fun serviceFailed()
+
   fun stopListeningSafe() {
     try {
       stopListening()
@@ -37,6 +52,24 @@ object RustBridge {
       ensureUi()
     } catch (e: UnsatisfiedLinkError) {
       Log.w("GrokVoice", "Rust core not loaded; window stays with the activity", e)
+    }
+  }
+
+  fun noteSafe(msg: String): Boolean {
+    return try {
+      System.loadLibrary("grok_voice_lib")
+      note(msg)
+    } catch (e: UnsatisfiedLinkError) {
+      false
+    }
+  }
+
+  fun serviceFailedSafe() {
+    try {
+      System.loadLibrary("grok_voice_lib")
+      serviceFailed()
+    } catch (e: UnsatisfiedLinkError) {
+      Log.w("GrokVoice", "Rust core not loaded; listener will retry after the window opens", e)
     }
   }
 }

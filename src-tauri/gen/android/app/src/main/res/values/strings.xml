@@ -7,4 +7,12 @@
     <string name="widget_next_empty">No next reminder</string>
     <string name="tile_talk">Talk</string>
     <string name="tile_talk_idle">Next reminder</string>
+    <string name="listener_title">Hey Grok is listening</string>
+    <string name="listener_text">Say “Hey Grok”, or tap to open</string>
+    <string name="listener_stop">Stop</string>
+    <string name="listener_channel_name">Wake word listener</string>
+    <string name="listener_channel_desc">Shown while Grok Voice listens for “Hey Grok”</string>
+    <string name="listener_alert_channel_name">Hey Grok</string>
+    <string name="listener_alert_title">Hey Grok</string>
+    <string name="listener_alert_text">Listening</string>
 </resources>

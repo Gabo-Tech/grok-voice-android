@@ -22,6 +22,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    VoiceListenerService.setUiCreated(true)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     val content = findViewById<View>(android.R.id.content)
@@ -79,7 +80,15 @@ class MainActivity : TauriActivity() {
         window?.decorView?.postDelayed({ moveTaskToBack(true) }, 700)
       }
       "disarm" -> {
-        stopService(Intent(this, VoiceListenerService::class.java))
+        val stop = Intent(this, VoiceListenerService::class.java)
+          .setAction(VoiceListenerService.ACTION_STOP)
+          .putExtra(VoiceListenerService.EXTRA_REASON, VoiceListenerService.REASON_USER)
+        try {
+          startService(stop)
+        } catch (_: Exception) {
+          VoiceListenerService.setArmed(this, false)
+          stopService(Intent(this, VoiceListenerService::class.java))
+        }
         window?.decorView?.post { moveTaskToBack(true) }
       }
       "headless" -> window?.decorView?.post { moveTaskToBack(true) }
@@ -139,20 +148,25 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onPause() {
+    VoiceListenerService.setUiResumed(false)
     super.onPause()
-    // Resume only while the screen is on and this window is still in front.
-    // Resuming after Home or screen-off keeps the process from settling into
-    // the microphone foreground service, and that drops wake-word capture.
+    // Don't resume the WebView while the screen is off or another app is in front.
+    // Capture itself lives in the microphone service; resuming the page here used
+    // to fight that and drop wake-word audio.
     if (!isFinishing && screenInteractive() && hasWindowFocus()) resumeWebViews()
   }
 
   override fun onStart() {
     super.onStart()
-    resumeWebViews()
+    if (screenInteractive()) resumeWebViews()
   }
 
   override fun onResume() {
     super.onResume()
+    VoiceListenerService.setUiResumed(true)
+    VoiceListenerService.setUiCreated(true)
+    VoiceListenerService.rememberReopen(this)
+    VoiceListenerService.cancelAlert(this)
     resumeWebViews()
     // A living process can outlast the activity. If the window was destroyed
     // with the task, open it again without restarting wake enrollment.
@@ -191,5 +205,16 @@ class MainActivity : TauriActivity() {
     if (view is ViewGroup) {
       for (i in 0 until view.childCount) walk(view.getChildAt(i))
     }
+  }
+
+  override fun onDestroy() {
+    VoiceListenerService.setUiResumed(false)
+    if (!isChangingConfigurations) {
+      VoiceListenerService.setUiCreated(false)
+      if (VoiceListenerService.isArmed(this)) {
+        ListenTrace.event(this, "activity destroyed, listening continues")
+      }
+    }
+    super.onDestroy()
   }
 }

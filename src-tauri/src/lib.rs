@@ -1,17 +1,19 @@
 mod actions;
+#[cfg(target_os = "android")]
+mod android_mic;
 mod audio;
 mod backup;
 mod commands;
-mod local;
 mod diagnostics;
+mod error;
 mod files;
 mod http;
 mod i18n;
+mod local;
 mod local_memory;
 mod memory;
-mod people;
-mod error;
 mod native;
+mod people;
 mod realtime;
 mod recurrence;
 mod search;
@@ -42,7 +44,10 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_stopListening(
 ) {
     if let Some(tx) = audio::engine::control() {
         let _ = tx.send(audio::engine::Ctl::EndSession);
-        let _ = tx.send(audio::engine::Ctl::SetWakeEnabled(false));
+        let _ = tx.send(audio::engine::Ctl::SetWakeEnabled {
+            enabled: false,
+            reason: "notification Stop",
+        });
     }
 }
 
@@ -72,7 +77,9 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            app.manage(Arc::new(Hub::new(app.handle().clone())));
+            let hub = Arc::new(Hub::new(app.handle().clone()));
+            diagnostics::install(hub.clone());
+            app.manage(hub);
             app.manage(Arc::new(Player::new()));
             app.manage(SettingsStore::load(dir.join("settings.json")));
             app.manage(Vault::new(dir.join("vault")));
@@ -80,7 +87,9 @@ pub fn run() {
             app.manage(actions::Agenda::load(dir.join("agenda.json")));
             app.manage(people::People::load(dir.join("people.json")));
             app.manage(memory::Memory::load(dir.join("memory.json")));
-            app.manage(local_memory::LocalMemory::load(dir.join("local-memory.json")));
+            app.manage(local_memory::LocalMemory::load(
+                dir.join("local-memory.json"),
+            ));
             app.manage(actions::Handoffs::default());
             app.manage(usage::UsageStore::load(dir.join("usage.json")));
             let handle = app.handle().clone();
@@ -163,9 +172,16 @@ pub fn run() {
             // and take the microphone service with it. Hands-free has to keep running.
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 let armed = app.state::<SettingsStore>().get().listen_armed;
-                if audio::engine::hold_listener_process(armed, audio::engine::keep_alive()) {
+                let hold = audio::engine::hold_listener_process(armed, audio::engine::keep_alive());
+                if hold {
                     api.prevent_exit();
-                    log::info!("wake listener stays up after the window closes");
+                }
+                if let Some(hub) = app.try_state::<Arc<Hub>>() {
+                    if hold {
+                        hub.info("activity destroyed, wake listening continues");
+                    } else {
+                        hub.info("process exiting because Listen is off");
+                    }
                 }
             }
         });
@@ -187,9 +203,13 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_ensureUi() {
         if !app.webview_windows().is_empty() {
             return;
         }
-        match tauri::webview::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::App("index.html".into()))
-            .title("Grok Voice")
-            .build()
+        match tauri::webview::WebviewWindowBuilder::new(
+            &app,
+            "main",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("Grok Voice")
+        .build()
         {
             Ok(_) => log::info!("reopened the window for the wake listener"),
             Err(err) => log::warn!("could not reopen the window: {err}"),

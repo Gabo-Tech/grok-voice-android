@@ -160,11 +160,31 @@ export function DebugPanel({
           <Row k="Last event" v={info?.lastEvent ?? "—"} />
           <Separator className="my-2" />
           <Row k="Mic" v={info?.micRate ? `${info.micRate} Hz → 16 kHz` : "closed"} />
+          <Row
+            k="Mic path"
+            v={info?.micSource || "closed"}
+            tone={info?.micSource === "audiorecord" || info?.micSource === "cpal" ? "ok" : info?.micSource === "starting" ? "warn" : undefined}
+          />
+          <Row k="Foreground service" v={info?.foregroundService ? "running" : "stopped"} tone={info?.foregroundService ? "ok" : undefined} />
+          <Row k="Screen" v={info?.screenInteractive ? "on" : "off"} />
+          <Row k="Activity" v={info?.activityResumed ? "visible" : "background"} />
+          <Row k="Last stop" v={info?.lastStopReason || "—"} tone={info?.lastStopReason ? "warn" : undefined} />
           <Row k="Speaker" v={info?.speakerRate ? `24 kHz → ${info.speakerRate} Hz` : "closed"} />
           <Row k="Wake word" v={info?.wakewordTrained ? "trained" : "not trained"} tone={info?.wakewordTrained ? "ok" : "warn"} />
           <Row k="Last wake score" v={info?.lastWakeScore?.toFixed(3) ?? "—"} />
           <Row k="Platform" v={info?.platform ?? "—"} />
           {info?.lastError && <Row k="Last error" v={info.lastError} tone="bad" />}
+          {(info?.listenerHistory?.length ?? 0) > 0 && (
+            <>
+              <Separator className="my-2" />
+              <p className="py-1 text-xs text-muted-foreground">Background listener</p>
+              <div className="max-h-40 space-y-0.5 overflow-y-auto font-mono text-xs leading-snug">
+                {info?.listenerHistory?.slice(-20).map((line, i) => (
+                  <p key={`${line}-${i}`}>{line}</p>
+                ))}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

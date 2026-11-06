@@ -272,6 +272,12 @@ export interface DebugInfo {
   lastWakeScore: number | null;
   sessions: number;
   provider?: string | null;
+  foregroundService?: boolean;
+  micSource?: string;
+  activityResumed?: boolean;
+  screenInteractive?: boolean;
+  lastStopReason?: string | null;
+  listenerHistory?: string[];
   vaultSecurityLevel: string | null;
   keyHint: string | null;
   platform: string;
