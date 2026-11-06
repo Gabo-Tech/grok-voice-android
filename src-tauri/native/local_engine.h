@@ -58,6 +58,9 @@ int gv_tts_synth(
 
 GvLlm *gv_llm_load(const char *model, int n_ctx, int threads, char *err, int err_len);
 void gv_llm_free(GvLlm *llm);
+/* 0 writes a reply. A grammar or sampler failure returns -2 and sets err.
+   The C++ exception must be caught inside this call. It aborts the process
+   if it reaches Rust. */
 int gv_llm_complete(
     GvLlm *llm,
     const char *prompt,

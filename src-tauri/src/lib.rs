@@ -89,6 +89,10 @@ pub fn run() {
                 actions::reschedule(&handle);
             });
             app.manage(Engine::spawn(app.handle().clone()));
+            #[cfg(target_os = "android")]
+            {
+                let _ = ANDROID_APP.set(app.handle().clone());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -98,6 +102,7 @@ pub fn run() {
             commands::add_voice_account,
             commands::update_voice_account,
             commands::remove_voice_account,
+            commands::reorder_voice_accounts,
             commands::move_voice_account,
             commands::permissions_status,
             commands::request_permissions,
@@ -153,13 +158,41 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
-            // Swiping the app away destroys the activity. While hands-free is armed the
-            // foreground service still owns the microphone, so the process has to stay up.
-            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
-                if code.is_none() && audio::engine::keep_alive() {
+        .run(|app, event| {
+            // Clearing the task destroys the activity. Tauri would then exit the process
+            // and take the microphone service with it. Hands-free has to keep running.
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let armed = app.state::<SettingsStore>().get().listen_armed;
+                if audio::engine::hold_listener_process(armed, audio::engine::keep_alive()) {
                     api.prevent_exit();
+                    log::info!("wake listener stays up after the window closes");
                 }
             }
         });
+}
+
+#[cfg(target_os = "android")]
+static ANDROID_APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// The activity was created again in a process that is already listening.
+/// Rebuild the window if the previous one was destroyed with the task.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_grokvoice_app_RustBridge_ensureUi() {
+    let Some(app) = ANDROID_APP.get() else {
+        return;
+    };
+    let app = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if !app.webview_windows().is_empty() {
+            return;
+        }
+        match tauri::webview::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::App("index.html".into()))
+            .title("Grok Voice")
+            .build()
+        {
+            Ok(_) => log::info!("reopened the window for the wake listener"),
+            Err(err) => log::warn!("could not reopen the window: {err}"),
+        }
+    });
 }

@@ -7,7 +7,7 @@ fn main() {
 }
 
 fn build_android_local() -> Result<(), String> {
-    println!("cargo:rerun-if-changed=native/local_engine.c");
+    println!("cargo:rerun-if-changed=native/local_engine.cpp");
     println!("cargo:rerun-if-changed=native/local_engine.h");
     println!("cargo:rerun-if-env-changed=ANDROID_NDK_HOME");
     println!("cargo:rerun-if-env-changed=NDK_HOME");
@@ -31,7 +31,7 @@ fn build_android_local() -> Result<(), String> {
     let ar = ndk_tool(&ndk, "llvm-ar")?;
     let mut build = cc::Build::new();
     build
-        .file(manifest.join("native/local_engine.c"))
+        .file(manifest.join("native/local_engine.cpp"))
         .include(manifest.join("native"))
         .include(sherpa.join("include"))
         .include(llama.join("include"))
@@ -39,6 +39,9 @@ fn build_android_local() -> Result<(), String> {
         .compiler(&clang)
         .archiver(&ar)
         .target("aarch64-linux-android")
+        .cpp(true)
+        .flag("-fexceptions")
+        .flag("-frtti")
         .flag("-fPIC")
         .warnings(false)
         .compile("gv_local_engine");

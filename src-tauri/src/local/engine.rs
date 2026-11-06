@@ -311,6 +311,32 @@ fn c_path(path: &std::path::Path) -> Result<std::ffi::CString, String> {
     std::ffi::CString::new(path.to_string_lossy().as_bytes()).map_err(|_| "model path contained a null".into())
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn grammar_exceptions_are_caught_before_they_leave_the_native_call() {
+        let src = include_str!("../../native/local_engine.cpp");
+        let body_at = src.find("gv_llm_complete_body").expect("sample body");
+        let sample_at = src.find("llama_sampler_sample").expect("sampler");
+        let accept_at = src.find("llama_sampler_accept").expect("accept");
+        let decode_at = src.find("llama_decode").expect("decode");
+        let complete_at = src.find("\nint gv_llm_complete(").expect("public entry");
+        let guarded = &src[complete_at..];
+        assert!(body_at < sample_at && sample_at < accept_at);
+        assert!(decode_at < complete_at);
+        assert!(guarded.contains("gv_llm_complete_body"));
+        assert!(guarded.contains("catch (const std::exception"));
+        assert!(guarded.contains("catch (...)"));
+        let typed = guarded.find("catch (const std::exception").unwrap();
+        let unknown = guarded.find("catch (...)").unwrap();
+        assert!(typed < unknown);
+        assert!(src.contains("grammar failed:"));
+        let build = include_str!("../../build.rs");
+        assert!(build.contains("local_engine.cpp"));
+        assert!(build.contains("-fexceptions"));
+    }
+}
+
 #[cfg(target_os = "android")]
 fn read_buf(buf: &[std::os::raw::c_char]) -> Option<String> {
     let text = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }

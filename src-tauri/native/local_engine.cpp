@@ -1,5 +1,7 @@
 #include "local_engine.h"
 
+#include <android/log.h>
+#include <exception>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -359,7 +361,37 @@ void gv_llm_free(GvLlm *llm) {
     free(llm);
 }
 
-int gv_llm_complete(
+struct GvMalloc {
+    void *ptr;
+    GvMalloc() : ptr(nullptr) {}
+    ~GvMalloc() { free(ptr); }
+    GvMalloc(const GvMalloc &) = delete;
+    GvMalloc &operator=(const GvMalloc &) = delete;
+};
+
+struct GvSamplerFree {
+    llama_sampler *chain;
+    GvSamplerFree() : chain(nullptr) {}
+    ~GvSamplerFree() {
+        if (chain) {
+            llama_sampler_free(chain);
+        }
+    }
+    GvSamplerFree(const GvSamplerFree &) = delete;
+    GvSamplerFree &operator=(const GvSamplerFree &) = delete;
+};
+
+static void gv_llm_reset(GvLlm *llm) {
+    if (!llm || !llm->ctx) {
+        return;
+    }
+    try {
+        llama_memory_clear(llama_get_memory(llm->ctx), true);
+    } catch (...) {
+    }
+}
+
+static int gv_llm_complete_body(
     GvLlm *llm,
     const char *prompt,
     const char *grammar,
@@ -380,65 +412,65 @@ int gv_llm_complete(
     }
     llama_memory_clear(llama_get_memory(llm->ctx), true);
 
+    GvMalloc tokens;
     int cap = 4096;
-    llama_token *tokens = (llama_token *)malloc(sizeof(llama_token) * (size_t)cap);
-    if (!tokens) {
+    tokens.ptr = malloc(sizeof(llama_token) * (size_t)cap);
+    if (!tokens.ptr) {
         gv_set_err(err, err_len, "out of memory");
         return -1;
     }
-    int n = llama_tokenize(llm->vocab, prompt, (int)strlen(prompt), tokens, cap, false, true);
+    llama_token *toks = static_cast<llama_token *>(tokens.ptr);
+    int n = llama_tokenize(llm->vocab, prompt, (int)strlen(prompt), toks, cap, false, true);
     if (n < 0) {
         int need = -n;
         if (need > 0 && need < 16384) {
-            llama_token *grown = (llama_token *)realloc(tokens, sizeof(llama_token) * (size_t)need);
+            void *grown = realloc(tokens.ptr, sizeof(llama_token) * (size_t)need);
             if (!grown) {
-                free(tokens);
                 gv_set_err(err, err_len, "out of memory");
                 return -1;
             }
-            tokens = grown;
-            n = llama_tokenize(llm->vocab, prompt, (int)strlen(prompt), tokens, need, false, true);
+            tokens.ptr = grown;
+            toks = static_cast<llama_token *>(tokens.ptr);
+            n = llama_tokenize(llm->vocab, prompt, (int)strlen(prompt), toks, need, false, true);
         }
     }
     if (n <= 0) {
-        free(tokens);
         gv_set_err(err, err_len, "could not tokenize the prompt");
         return -1;
     }
     if (n > 1900) {
-        free(tokens);
         gv_set_err(err, err_len, "that turn is too long for the on-device model");
         return -1;
     }
-    if (gv_decode(llm->ctx, tokens, n, llm->n_batch) != 0) {
-        free(tokens);
+    if (gv_decode(llm->ctx, toks, n, llm->n_batch) != 0) {
         gv_set_err(err, err_len, "the on-device model failed while reading the turn");
         return -1;
     }
-    free(tokens);
 
     struct llama_sampler_chain_params params = llama_sampler_chain_default_params();
-    struct llama_sampler *chain = llama_sampler_chain_init(params);
-    if (!chain) {
+    GvSamplerFree sampler;
+    sampler.chain = llama_sampler_chain_init(params);
+    if (!sampler.chain) {
         gv_set_err(err, err_len, "could not sample a reply");
         return -1;
     }
     if (grammar && grammar[0]) {
         struct llama_sampler *g = llama_sampler_init_grammar(llm->vocab, grammar, "root");
         if (!g) {
-            llama_sampler_free(chain);
             gv_set_err(err, err_len, "grammar rejected");
             return -2;
         }
-        llama_sampler_chain_add(chain, g);
+        llama_sampler_chain_add(sampler.chain, g);
     }
-    llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+    llama_sampler_chain_add(sampler.chain, llama_sampler_init_greedy());
 
     out[0] = '\0';
     int used = 0;
     for (int i = 0; i < max_tokens; i++) {
-        llama_token id = llama_sampler_sample(chain, llm->ctx, -1);
-        llama_sampler_accept(chain, id);
+        /* The first sample after a grammar is attached is where a combined
+           piece such as {" used to throw and abort the process. */
+        llama_token id = llama_sampler_sample(sampler.chain, llm->ctx, -1);
+        llama_sampler_accept(sampler.chain, id);
         if (llama_vocab_is_eog(llm->vocab, id)) {
             break;
         }
@@ -454,8 +486,34 @@ int gv_llm_complete(
             break;
         }
     }
-    llama_sampler_free(chain);
     return 0;
+}
+
+int gv_llm_complete(
+    GvLlm *llm,
+    const char *prompt,
+    const char *grammar,
+    int max_tokens,
+    char *out,
+    int out_len,
+    char *err,
+    int err_len) {
+    try {
+        return gv_llm_complete_body(llm, prompt, grammar, max_tokens, out, out_len, err, err_len);
+    } catch (const std::exception &ex) {
+        const char *what = ex.what() ? ex.what() : "the reply stopped";
+        __android_log_print(ANDROID_LOG_ERROR, "GrokVoice", "on-device grammar failed: %s", what);
+        gv_llm_reset(llm);
+        char buf[480];
+        snprintf(buf, sizeof(buf), "grammar failed: %s", what);
+        gv_set_err(err, err_len, buf);
+        return -2;
+    } catch (...) {
+        __android_log_print(ANDROID_LOG_ERROR, "GrokVoice", "on-device grammar failed");
+        gv_llm_reset(llm);
+        gv_set_err(err, err_len, "grammar failed: the on-device model stopped the reply");
+        return -2;
+    }
 }
 
 void gv_free(void *ptr) {
