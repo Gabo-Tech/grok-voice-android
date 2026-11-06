@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Trash2 } from "lucide-react";
-import { EmptyState, PageChrome, RowButton } from "@/components/PageChrome";
+import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
+import { ShareButton } from "@/components/ShareButton";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,7 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
   return (
     <>
       <PageChrome title={t("Notes")} subtitle={`${agenda.agenda.notes.length} ${t("saved")}`} onAdd={openNew} addLabel={t("New note")}>
+        {(agenda.agenda.notes.length > 0 || query) && (
         <div className="mb-6">
           <Field label={t("Search")}>
             <div className="relative">
@@ -86,7 +88,7 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
               {query && (
                 <button
                   type="button"
-                  className="absolute top-0 right-0 h-12 px-3 text-xs tracking-[0.12em] text-foreground uppercase"
+                  className="absolute top-0 right-0 h-12 px-3 text-sm text-foreground"
                   onClick={() => setQuery("")}
                 >
                   {t("Clear")}
@@ -95,11 +97,14 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
             </div>
           </Field>
         </div>
-        {agenda.error && <p className="mb-3 px-1 text-xs text-muted-foreground">{agenda.error}</p>}
+        )}
+        {agenda.error && <Notice title={agenda.error} />}
         {notes.length === 0 ? (
           <EmptyState
             title={query ? t("No matches") : t("No notes yet")}
             body={query ? t("Try another word.") : t("Tap + or ask Grok to remember something.")}
+            actionLabel={query ? t("Clear search") : t("New note")}
+            onAction={query ? () => setQuery("") : openNew}
           />
         ) : (
           <div className="divide-y divide-border border-y border-border">
@@ -128,6 +133,7 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
         onClose={close}
         footer={
           <div className="flex flex-wrap items-center gap-2">
+            <ShareButton title={title} text={text} />
             {editing && (
               <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
                 <Trash2 /> Delete
@@ -158,12 +164,8 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
           </div>
           <div className="border-t border-border px-3 py-3">
             <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Note</span>
-              <button
-                type="button"
-                className="text-xs tracking-[0.12em] text-foreground uppercase"
-                onClick={() => setPreview((on) => !on)}
-              >
+              <span className="text-sm text-muted-foreground">Note</span>
+              <button type="button" className="min-h-12 px-2 text-sm text-foreground" onClick={() => setPreview((on) => !on)}>
                 {preview ? "Edit" : "Preview"}
               </button>
             </div>

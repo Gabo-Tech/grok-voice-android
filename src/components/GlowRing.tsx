@@ -1,16 +1,7 @@
 import type { CSSProperties } from "react";
-import { AudioLines, Loader2, Mic, Sparkles, Square } from "lucide-react";
+import { AudioLines, Loader2, Mic, Square } from "lucide-react";
 import type { Level, Phase } from "@/lib/api";
-
-const PHASE_STYLE: Record<Phase, { color: string; label: string }> = {
-  idle: { color: "#8a8a8a", label: "Tap to talk" },
-  wake: { color: "#f5f5f5", label: "Say “Hey Grok”" },
-  recording: { color: "#d4d4d4", label: "Recording sample…" },
-  connecting: { color: "#c2c2c2", label: "Connecting…" },
-  listening: { color: "#ffffff", label: "Listening…" },
-  thinking: { color: "#bdbdbd", label: "Thinking…" },
-  speaking: { color: "#ffffff", label: "Speaking…" },
-};
+import { useT } from "@/lib/i18n";
 
 const LIVE: Phase[] = ["connecting", "listening", "thinking", "speaking"];
 
@@ -19,7 +10,6 @@ export function GlowRing({
   level,
   onPress,
   disabled,
-  wakePhrase = "Hey Grok",
 }: {
   phase: Phase;
   level: Level;
@@ -27,44 +17,42 @@ export function GlowRing({
   disabled?: boolean;
   wakePhrase?: string;
 }) {
-  const style = PHASE_STYLE[phase] ?? PHASE_STYLE.idle;
+  const t = useT();
+  const copy = {
+    idle: { label: t("Ready"), hint: t("Tap the circle to talk") },
+    wake: { label: t("Waiting for Hey Grok"), hint: t("Or tap the circle to talk now") },
+    recording: { label: t("Recording"), hint: t("Keep speaking") },
+    connecting: { label: t("Connecting"), hint: t("Trying your voices in order") },
+    listening: { label: t("Listening"), hint: t("Speak now. Tap the circle to hang up.") },
+    thinking: { label: t("Thinking"), hint: t("Tap the circle to hang up.") },
+    speaking: { label: t("Speaking"), hint: t("Tap the circle to hang up.") },
+  }[phase] ?? { label: t("Ready"), hint: t("Tap the circle to talk") };
   const live = LIVE.includes(phase);
   const raw = phase === "speaking" ? level?.out : phase === "idle" ? 0 : level?.mic;
   const amp = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
   const Icon =
-    phase === "connecting" || phase === "thinking"
-      ? Loader2
-      : phase === "speaking"
-        ? AudioLines
-        : phase === "listening"
-          ? Sparkles
-          : live
-            ? Square
-            : Mic;
-
-  const left = live ? style.label : `Say “${wakePhrase}”`;
-  const right = live ? "Tap to end" : "or tap to talk";
+    phase === "connecting" || phase === "thinking" ? Loader2 : phase === "speaking" ? AudioLines : live ? Square : Mic;
 
   return (
-    <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-1">
-      <p className="text-right text-[10px] leading-4 tracking-[0.08em] uppercase" style={{ color: style.color }}>
-        {left}
-      </p>
+    <div className="flex shrink-0 flex-col items-center gap-3 px-1 pb-1">
+      <div className="text-center">
+        <p className="text-lg leading-6 font-medium text-foreground" role="status">
+          {copy.label}
+        </p>
+        <p className="mt-1 text-sm leading-5 text-muted-foreground">{copy.hint}</p>
+      </div>
       <button
         type="button"
         onClick={onPress}
         disabled={disabled}
+        aria-pressed={live}
         aria-label={live ? "End voice session" : "Start voice session"}
         className="mark shrink-0 rounded-full disabled:opacity-50"
-        style={{ "--ink": style.color } as CSSProperties}
+        style={{ "--ink": live ? "#f2f2f2" : "#b5b5b5", width: "5.75rem", height: "5.75rem" } as CSSProperties}
       >
         <span className="mark-fill rounded-full" style={{ opacity: 0.12 + amp * 0.7 }} />
-        <Icon className="relative size-5" strokeWidth={1.25} />
+        <Icon className={`relative size-6 ${phase === "connecting" || phase === "thinking" ? "animate-spin" : ""}`} strokeWidth={1.25} />
       </button>
-      <p className="text-left text-[10px] leading-4 tracking-[0.08em] text-muted-foreground uppercase">{right}</p>
-      <span className="sr-only" role="status">
-        {style.label}
-      </span>
     </div>
   );
 }

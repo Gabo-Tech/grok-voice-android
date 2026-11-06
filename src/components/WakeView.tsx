@@ -107,9 +107,8 @@ export function WakeView({
             <RotateCcw /> Reset
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          Status: {status.trained ? "trained ✓" : "not trained"}. Too many false wakes? Raise the
-          sensitivity threshold in Debug → Settings.
+        <p className="text-sm leading-6 text-muted-foreground">
+          Status: {status.trained ? "trained" : "not trained"}. Too many false wakes? Go back to Settings, open Debug, and raise Wake threshold.
         </p>
       </CardContent>
     </Card>

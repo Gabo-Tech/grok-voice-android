@@ -31,8 +31,8 @@ export function Sheet({
       <button type="button" className="sheet-scrim" aria-label="Close" onClick={onClose} />
       <div className="sheet-panel">
         <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <h2 className="text-sm font-medium tracking-wide">{title}</h2>
-          <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label="Close">
+          <h2 className="text-lg leading-6 font-medium">{title}</h2>
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close">
             <X />
           </Button>
         </header>

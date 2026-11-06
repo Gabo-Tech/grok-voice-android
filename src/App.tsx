@@ -11,6 +11,7 @@ import { RemindersPage } from "@/components/RemindersPage";
 import { useAgenda } from "@/hooks/useAgenda";
 import { useVoice } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type WakewordStatus } from "@/lib/api";
+import type { SettingsDestination } from "@/lib/flow";
 import { setAppLocale, useT } from "@/lib/i18n";
 
 const PREVIEW_AUTH: AuthStatus = { hasKey: false, keyHint: null, securityLevel: null, accounts: [] };
@@ -23,6 +24,7 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [wake, setWake] = useState<WakewordStatus>(EMPTY_WAKE);
   const [tab, setTab] = useState<AppTab>("talk");
+  const [moreFocus, setMoreFocus] = useState<SettingsDestination>("menu");
   const voice = useVoice();
   const agenda = useAgenda();
   const t = useT();
@@ -61,8 +63,14 @@ export default function App() {
 
   if (bootError) {
     return (
-      <main className="grid h-full place-items-center p-6 text-center text-sm text-destructive">
-        {t("Secure storage failed to open")}: {bootError}
+      <main className="safe-area grid h-full place-items-center p-6 text-center">
+        <div className="max-w-sm">
+          <h1 className="text-xl leading-7 font-medium">{t("Secure storage failed to open")}</h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{bootError}</p>
+          <p className="mt-3 text-base leading-6 text-foreground">
+            {t("Force-close Grok Voice and open it again. Keys already saved stay in the vault on this phone.")}
+          </p>
+        </div>
       </main>
     );
   }
@@ -90,25 +98,32 @@ export default function App() {
     );
   }
 
+  const openSettings = (where: SettingsDestination) => {
+    setMoreFocus(where);
+    setTab("more");
+  };
+
   return (
     <main className="safe-area flex h-full flex-col bg-background">
-      <header className="flex shrink-0 items-start justify-between gap-3 px-5 pt-3 pb-1">
-        <h1 className="min-w-0 text-2xl leading-tight font-medium tracking-tight text-foreground">Grok Talk</h1>
-        <p className="max-w-[40%] shrink-0 truncate pt-1 text-[10px] tracking-[0.12em] text-muted-foreground/80">{auth.keyHint}</p>
-      </header>
-
       {voice.spend && (
-        <div className="mx-4 mb-2 flex items-start justify-between gap-3 border border-border px-3 py-2">
-          <p className="text-xs leading-5 text-foreground">{voice.spend}</p>
-          <button type="button" className="shrink-0 text-[10px] tracking-[0.12em] text-muted-foreground uppercase" onClick={voice.dismissSpend}>
+        <div className="mx-4 mt-3 flex items-center justify-between gap-3 border border-border px-3 py-2" role="status">
+          <p className="text-sm leading-5 text-foreground">{voice.spend}</p>
+          <button type="button" className="min-h-12 shrink-0 px-3 text-sm text-foreground" onClick={voice.dismissSpend}>
             {t("Hide")}
           </button>
         </div>
       )}
 
-      <section className="flex min-h-0 flex-1 flex-col px-4 pt-2">
+      <section className="flex min-h-0 flex-1 flex-col px-4 pt-3">
         <div key={tab} className="flex min-h-0 flex-1 flex-col">
-          {tab === "talk" && <AssistantView voice={voice} wakeTrained={wake.trained} />}
+          {tab === "talk" && (
+            <AssistantView
+              voice={voice}
+              wakeTrained={wake.trained}
+              accounts={auth.accounts ?? []}
+              onOpenSettings={openSettings}
+            />
+          )}
           {tab === "notes" && <NotesPage agenda={agenda} />}
           {tab === "calendar" && <CalendarPage agenda={agenda} />}
           {tab === "reminders" && <RemindersPage agenda={agenda} />}
@@ -117,6 +132,7 @@ export default function App() {
               voice={voice}
               wake={wake}
               auth={auth}
+              initialSection={moreFocus}
               onAuth={setAuth}
               onWake={setWake}
               onSignedOut={() => {
@@ -129,7 +145,13 @@ export default function App() {
         </div>
       </section>
 
-      <BottomNav tab={tab} onChange={setTab} />
+      <BottomNav
+        tab={tab}
+        onChange={(next) => {
+          if (next === "more") setMoreFocus("menu");
+          setTab(next);
+        }}
+      />
     </main>
   );
 }

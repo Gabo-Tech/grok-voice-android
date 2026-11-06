@@ -20,12 +20,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorText, type AuthStatus, type PermissionStatus, type WakewordStatus } from "@/lib/api";
+import { chainPlace, providerLabel } from "@/lib/flow";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const PROVIDERS = [
-  { id: "xai", label: "xAI", placeholder: "xai-…", url: "https://console.x.ai/team/default/api-keys", link: "Open xAI console" },
-  { id: "openai", label: "OpenAI", placeholder: "sk-…", url: "https://platform.openai.com/api-keys", link: "Open OpenAI keys" },
-  { id: "local", label: "On device", placeholder: "", url: "", link: "" },
+  {
+    id: "xai",
+    label: "xAI",
+    blurb: "Grok's voice. Needs a key from the xAI console.",
+    placeholder: "xai-…",
+    url: "https://console.x.ai/team/default/api-keys",
+    link: "Open xAI console",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    blurb: "Another cloud voice. Needs an OpenAI key.",
+    placeholder: "sk-…",
+    url: "https://platform.openai.com/api-keys",
+    link: "Open OpenAI keys",
+  },
+  {
+    id: "local",
+    label: "On device",
+    blurb: "No key. Download packs, then this phone can answer.",
+    placeholder: "",
+    url: "",
+    link: "",
+  },
 ] as const;
 
 const STEPS = [
@@ -167,7 +190,7 @@ export function Onboarding({
               >
                 {state === "done" ? <Check className="size-3.5" /> : i + 1}
               </span>
-              <span className="text-[9px] tracking-widest text-muted-foreground uppercase">{s.label}</span>
+              <span className={cn("text-xs", state === "now" ? "text-foreground" : "text-muted-foreground")}>{s.label}</span>
             </li>
           );
         })}
@@ -200,7 +223,15 @@ export function Onboarding({
         {id === "ready" && <ReadyStep wakeTrained={wake.trained} />}
       </div>
 
-      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-3 text-sm leading-6 text-foreground">
+          {error}
+        </p>
+      )}
+      {!canNext && id === "key" && (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">Save a voice to continue. On device counts after you tap Use on device.</p>
+      )}
+      {!canNext && id === "mic" && <p className="mt-3 text-sm leading-6 text-muted-foreground">Allow the microphone to continue.</p>}
       {done && preview && (
         <p className="mt-3 text-center text-sm text-primary">Preview finished. In the app this opens the assistant.</p>
       )}
@@ -233,8 +264,8 @@ function HelloStep() {
         <p className="mt-2 text-sm text-muted-foreground">Five short steps. About two minutes.</p>
       </div>
       <ul className="space-y-3">
-        <Point n="1" title="Pick a voice provider and add its key">
-          You can save more than one. They are tried in order if the first one fails.
+        <Point n="1" title="Choose xAI, OpenAI, or On device">
+          xAI and OpenAI need a key. On device needs a download. The first one in the list is tried first.
         </Point>
         <Point n="2" title="Allow the microphone">
           Needed to hear you, including when the screen is off.
@@ -282,6 +313,7 @@ function KeyStep({
   onRemove: (id: string) => void;
   onMove: (id: string, up: boolean) => void;
 }) {
+  const t = useT();
   const chosen = PROVIDERS.find((p) => p.id === provider) ?? PROVIDERS[0];
   const accounts = auth.accounts ?? [];
   return (
@@ -293,27 +325,29 @@ function KeyStep({
         <CardDescription>First in the list is tried first. The next one is the fallback.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
           {PROVIDERS.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => onProvider(item.id)}
-                className={cn(
-                  "flex h-12 items-center justify-center border px-2 text-center text-[11px] leading-tight tracking-[0.08em] uppercase",
-                  item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                )}
+              className={cn(
+                "flex min-h-12 w-full flex-col items-start justify-center border px-3 py-2 text-left",
+                item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+              )}
             >
-              {item.label}
+              <span className="text-base text-foreground">{item.label}</span>
+              <span className="text-sm leading-5">{item.blurb}</span>
             </button>
           ))}
         </div>
         {chosen.id === "local" ? (
           <div className="space-y-3">
-            <p className="text-sm leading-6 text-muted-foreground">
-              Speech and replies stay on the phone. No key. Download the packs below, then put On device first. Talk uses them when they are ready. If they are missing or the model cannot load, the next saved key is used. Web search uses the open web when you are online, and says so when you are not.
-            </p>
-            <LocalPacks />
+            <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-muted-foreground">
+              <li>Tap Use on device. That adds it to the list. No key.</li>
+              <li>Leave it first if the phone should answer before a cloud key.</li>
+              <li>Download the packs below. Until they finish, Talk uses the next key.</li>
+            </ol>
           </div>
         ) : (
           <>
@@ -342,31 +376,34 @@ function KeyStep({
         {accounts.length > 0 && (
           <ul className="divide-y divide-border border-y border-border">
             {accounts.map((account, index) => (
-              <li key={account.id} className="flex items-center gap-2 py-2 text-sm">
-                <span className="w-5 tabular-nums text-muted-foreground">{index + 1}</span>
-                <span className="min-w-0 flex-1 truncate">
-                  {account.provider} · {account.hint}
-                </span>
-                <button type="button" className="px-1 text-xs uppercase" onClick={() => onMove(account.id, true)}>
-                  Up
-                </button>
-                <button type="button" className="px-1 text-xs uppercase" onClick={() => onMove(account.id, false)}>
-                  Down
-                </button>
-                <button type="button" className="px-1 text-xs uppercase" onClick={() => onRemove(account.id)}>
-                  Remove
-                </button>
+              <li key={account.id} className="py-3 text-sm">
+                <p className="text-muted-foreground">{t(chainPlace(index, accounts.length))}</p>
+                <p className="mt-1 text-base text-foreground">
+                  {providerLabel(account.provider)}
+                  <span className="text-muted-foreground"> · {account.hint}</span>
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <Button type="button" variant="outline" disabled={index === 0} onClick={() => onMove(account.id, true)}>
+                    {t("Move up")}
+                  </Button>
+                  <Button type="button" variant="outline" disabled={index === accounts.length - 1} onClick={() => onMove(account.id, false)}>
+                    {t("Move down")}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => onRemove(account.id)}>
+                    {t("Remove")}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
         )}
         {accounts.length > 0 && (
-          <p className="text-xs text-muted-foreground">Add another key if you want a fallback, then tap Next.</p>
+          <p className="text-sm leading-6 text-muted-foreground">Add another voice if you want a fallback, then tap Next.</p>
         )}
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Each key stays on this phone. xAI is verified before it is stored. On device needs no key. The others are kept in
-          this order and used when that voice connection is available. If the first one fails, the next is tried.
+        <p className="text-sm leading-6 text-muted-foreground">
+          Each key stays on this phone. xAI is checked before it is stored. If the first voice fails, the next one is tried.
         </p>
+        {chosen.id === "local" && <LocalPacks />}
       </CardContent>
     </Card>
   );
@@ -420,11 +457,10 @@ function MicStep({
 }
 
 function StatusLine({ label, value }: { label: string; value?: string }) {
-  const ok = value === "granted";
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <span className={ok ? "text-primary" : "text-muted-foreground"}>{value ?? "not requested"}</span>
+      <span className="text-foreground">{value === "granted" ? "Allowed" : value === "denied" ? "Blocked" : "Not asked yet"}</span>
     </div>
   );
 }
@@ -455,7 +491,7 @@ function ReadyStep({ wakeTrained }: { wakeTrained: boolean }) {
               <span className="block text-muted-foreground">
                 {wakeTrained
                   ? "Turn on Listen on the Talk tab. A notification means it is listening."
-                  : "You skipped enrollment. Train it anytime under More → Wake word, then flip Listen on."}
+                  : "You skipped enrollment. Train it anytime under Settings, then Wake word, and turn Listen on."}
               </span>
             </li>
           </ol>
@@ -467,7 +503,7 @@ function ReadyStep({ wakeTrained }: { wakeTrained: boolean }) {
           <p className="text-sm text-muted-foreground">
             Use headphones the first time. On a loudspeaker the microphone hears the reply and Grok
             answers itself. Echo guard is on so the mic mutes while Grok is talking. Turn it off in
-            Debug if you want to interrupt.
+            Settings, then Debug, if you want to interrupt.
           </p>
         </CardContent>
       </Card>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Archive, Bell, Brain, Bug, ChevronRight, KeyRound, Users, Wand2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Brain, Bug, ChevronLeft, ChevronRight, Hourglass, KeyRound, Languages, Package, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { LocalPacks } from "@/components/LocalPacks";
 import { Field } from "@/components/Field";
@@ -10,10 +10,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type LocalMemoryBundle, type Settings, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { chainPlace, providerLabel } from "@/lib/flow";
 import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-type Section = "menu" | "wake" | "debug" | "keys" | "people" | "backup" | "memory" | "access";
+type Section =
+  | "menu"
+  | "wake"
+  | "debug"
+  | "keys"
+  | "people"
+  | "backup"
+  | "memory"
+  | "access"
+  | "packs"
+  | "spend"
+  | "quiet"
+  | "model"
+  | "language";
 
 const PROVIDERS = [
   { id: "xai", label: "xAI" },
@@ -25,6 +39,7 @@ export function MorePage({
   voice,
   wake,
   auth,
+  initialSection = "menu",
   onAuth,
   onWake,
   onSignedOut,
@@ -33,17 +48,22 @@ export function MorePage({
   voice: VoiceState;
   wake: WakewordStatus;
   auth: AuthStatus;
+  initialSection?: Section;
   onAuth: (auth: AuthStatus) => void;
   onWake: (s: WakewordStatus) => void;
   onSignedOut: () => void;
   onReplayTour: () => void;
 }) {
   const t = useT();
-  const [section, setSection] = useState<Section>("menu");
+  const [section, setSection] = useState<Section>(initialSection);
   const [quiet, setQuiet] = useState(10);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState("");
   const [usage, setUsage] = useState<UsageStatus | null>(null);
+
+  useEffect(() => {
+    setSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     void api
@@ -142,239 +162,325 @@ export function MorePage({
     );
   }
 
-  return (
-    <PageChrome title={t("Settings")} subtitle={t("Voice keys")}>
-      <div className="mb-6 border-y border-border px-1 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[15px] text-foreground">Quiet gap</p>
-            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-              After this pause, the conversation ends and only the wake word is heard.
-            </p>
+  if (section === "packs") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <Back onClick={() => setSection("menu")} />
+        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("On-device packs")}</h2>
+        <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
+          {t("Speech, the language model, and the voice. They stay on this phone.")}
+        </p>
+        <LocalPacks showHeading={false} />
+      </div>
+    );
+  }
+
+  if (section === "quiet") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <Back onClick={() => setSection("menu")} />
+        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Quiet gap")}</h2>
+        <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
+          {t("After this pause, the conversation ends and only the wake word is heard.")}
+        </p>
+        <div className="border-y border-border px-1 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-base text-foreground">{t("Pause")}</p>
+            <p className="shrink-0 text-sm tabular-nums text-foreground">{quiet}s</p>
           </div>
-          <p className="shrink-0 text-sm tabular-nums text-foreground">{quiet}s</p>
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <button type="button" className="h-12 border border-border px-3 text-sm" onClick={() => setQuietGap(quiet - 5)}>
-            −5
-          </button>
-          <input
-            type="range"
-            min={5}
-            max={120}
-            step={5}
-            value={quiet}
-            aria-label="Quiet gap in seconds"
-            className="w-full accent-white"
-            onChange={(e) => setQuietGap(Number(e.target.value))}
-          />
-          <button type="button" className="h-12 border border-border px-3 text-sm" onClick={() => setQuietGap(quiet + 5)}>
-            +5
-          </button>
+          <div className="mt-3 flex items-center gap-2">
+            <button type="button" className="h-12 min-w-12 border border-border px-3 text-sm" onClick={() => setQuietGap(quiet - 5)}>
+              −5
+            </button>
+            <input
+              type="range"
+              min={5}
+              max={120}
+              step={5}
+              value={quiet}
+              aria-label={t("Quiet gap")}
+              className="w-full accent-white"
+              onChange={(e) => setQuietGap(Number(e.target.value))}
+            />
+            <button type="button" className="h-12 min-w-12 border border-border px-3 text-sm" onClick={() => setQuietGap(quiet + 5)}>
+              +5
+            </button>
+          </div>
         </div>
       </div>
-      {settings && (
-        <div className="mb-6 space-y-4">
-          <div className="border border-border px-3 py-3">
-            <p className="text-[15px] text-foreground">{t("Daily voice budget")}</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Off by default. Near the minutes you pick, one short cue appears and can be spoken. The call keeps going unless you also turn on a hard stop.
-            </p>
-            <p className="mt-2 text-sm text-foreground">
-              {usage ? `${usage.minutes} min across ${usage.sessions} ${usage.sessions === 1 ? "session" : "sessions"} today` : "Today's time is counted on this phone."}
-            </p>
-            <div className="mt-3 grid grid-cols-4 gap-2">
-              {[
-                { minutes: 0, label: "Off" },
-                { minutes: 15, label: "15" },
-                { minutes: 30, label: "30" },
-                { minutes: 60, label: "60" },
-              ].map((choice) => (
-                <button
-                  key={choice.label}
-                  type="button"
-                  onClick={() => saveBudget({ ...settings, dailyBudgetMinutes: choice.minutes })}
-                  className={cn(
-                    "h-12 border text-xs tracking-[0.08em] uppercase",
-                    settings.dailyBudgetMinutes === choice.minutes ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                  )}
-                >
-                  {choice.label}
-                </button>
-              ))}
+    );
+  }
+
+  if (section === "spend") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
+        <Back onClick={() => setSection("menu")} />
+        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Daily voice budget")}</h2>
+        {settings ? (
+          <div className="mt-4 space-y-4">
+            <div className="border border-border px-3 py-3">
+              <p className="text-sm leading-6 text-muted-foreground">
+                {t("Off by default. Near the minutes you pick, one short cue appears and can be spoken. The call keeps going unless you also turn on a hard stop.")}
+              </p>
+              <p className="mt-2 text-sm text-foreground">
+                {usage
+                  ? `${usage.minutes} min across ${usage.sessions} ${usage.sessions === 1 ? t("session") : t("sessions")} today`
+                  : t("Today's time is counted on this phone.")}
+              </p>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {[
+                  { minutes: 0, label: t("Off") },
+                  { minutes: 15, label: "15" },
+                  { minutes: 30, label: "30" },
+                  { minutes: 60, label: "60" },
+                ].map((choice) => (
+                  <button
+                    key={choice.label}
+                    type="button"
+                    onClick={() => saveBudget({ ...settings, dailyBudgetMinutes: choice.minutes })}
+                    className={cn(
+                      "h-12 border text-sm",
+                      settings.dailyBudgetMinutes === choice.minutes ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                    )}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={!settings.dailyBudgetMinutes}
+                onClick={() => saveBudget({ ...settings, dailyBudgetHardStop: !settings.dailyBudgetHardStop })}
+                className={cn(
+                  "mt-2 flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
+                  settings.dailyBudgetHardStop ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                  !settings.dailyBudgetMinutes && "opacity-50",
+                )}
+              >
+                <span>{t("Hard stop")}</span>
+                <span>{settings.dailyBudgetHardStop ? t("On") : t("Off")}</span>
+              </button>
             </div>
-            <button
-              type="button"
-              disabled={!settings.dailyBudgetMinutes}
-              onClick={() => saveBudget({ ...settings, dailyBudgetHardStop: !settings.dailyBudgetHardStop })}
-              className={cn(
-                "mt-2 flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
-                settings.dailyBudgetHardStop ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                !settings.dailyBudgetMinutes && "opacity-50",
-              )}
-            >
-              <span>{t("Hard stop")}</span>
-              <span className="text-xs tracking-[0.12em] uppercase">{settings.dailyBudgetHardStop ? "On" : "Off"}</span>
-            </button>
-          </div>
-          {usage && (
-            <p className="text-sm text-foreground">
-              xAI {usage.xaiMinutes} · OpenAI {usage.openaiMinutes} · {t("On device")} {usage.localMinutes}
-              {usage.monthMinutes ? ` · ${usage.month} ${usage.monthMinutes}` : ""}
-            </p>
-          )}
-          <div className="border border-border px-3 py-3">
-            <p className="text-[15px] text-foreground">{t("Monthly voice budget")}</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Counts xAI, OpenAI, and on-device time together, so a fallback key is not silent.
-            </p>
-            <div className="mt-3 grid grid-cols-4 gap-2">
-              {[
-                { minutes: 0, label: t("Off") },
-                { minutes: 60, label: "60" },
-                { minutes: 300, label: "300" },
-                { minutes: 1000, label: "1000" },
-              ].map((choice) => (
-                <button
-                  key={choice.label}
-                  type="button"
-                  onClick={() => saveBudget({ ...settings, monthlyBudgetMinutes: choice.minutes })}
-                  className={cn(
-                    "h-12 border text-xs tracking-[0.08em] uppercase",
-                    settings.monthlyBudgetMinutes === choice.minutes ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                  )}
-                >
-                  {choice.label}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              disabled={!settings.monthlyBudgetMinutes}
-              onClick={() => saveBudget({ ...settings, monthlyBudgetHardStop: !settings.monthlyBudgetHardStop })}
-              className={cn(
-                "mt-2 flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
-                settings.monthlyBudgetHardStop ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                !settings.monthlyBudgetMinutes && "opacity-50",
-              )}
-            >
-              <span>{t("Hard stop")}</span>
-              <span className="text-xs tracking-[0.12em] uppercase">{settings.monthlyBudgetHardStop ? "On" : t("Off")}</span>
-            </button>
-          </div>
-          <div>
-            <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{t("Language")}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: "", label: t("Follow the phone") },
-                { id: "en", label: t("English") },
-                { id: "es", label: t("Spanish") },
-                { id: "de", label: t("German") },
-                { id: "pt", label: t("Portuguese") },
-                { id: "ca-ES-valencia", label: t("Valencian") },
-              ].map((choice) => (
-                <button
-                  key={choice.id || "system"}
-                  type="button"
-                  onClick={() => {
-                    setAppLocale(choice.id);
-                    saveBudget({ ...settings, locale: choice.id });
-                  }}
-                  className={cn(
-                    "h-12 border px-2 text-xs",
-                    (settings.locale || "") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                  )}
-                >
-                  {choice.label}
-                </button>
-              ))}
+            {usage && (
+              <p className="text-sm text-foreground">
+                xAI {usage.xaiMinutes} · OpenAI {usage.openaiMinutes} · {t("On device")} {usage.localMinutes}
+                {usage.monthMinutes ? ` · ${usage.month} ${usage.monthMinutes}` : ""}
+              </p>
+            )}
+            <div className="border border-border px-3 py-3">
+              <p className="text-base text-foreground">{t("Monthly voice budget")}</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                {t("Counts xAI, OpenAI, and on-device time together, so a fallback key is not silent.")}
+              </p>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {[
+                  { minutes: 0, label: t("Off") },
+                  { minutes: 60, label: "60" },
+                  { minutes: 300, label: "300" },
+                  { minutes: 1000, label: "1000" },
+                ].map((choice) => (
+                  <button
+                    key={choice.label}
+                    type="button"
+                    onClick={() => saveBudget({ ...settings, monthlyBudgetMinutes: choice.minutes })}
+                    className={cn(
+                      "h-12 border text-sm",
+                      settings.monthlyBudgetMinutes === choice.minutes ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                    )}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={!settings.monthlyBudgetMinutes}
+                onClick={() => saveBudget({ ...settings, monthlyBudgetHardStop: !settings.monthlyBudgetHardStop })}
+                className={cn(
+                  "mt-2 flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
+                  settings.monthlyBudgetHardStop ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                  !settings.monthlyBudgetMinutes && "opacity-50",
+                )}
+              >
+                <span>{t("Hard stop")}</span>
+                <span>{settings.monthlyBudgetHardStop ? t("On") : t("Off")}</span>
+              </button>
             </div>
           </div>
-          <div>
-            <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{t("Local speech")}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: "en", label: t("English") },
-                { id: "de", label: t("German") },
-              ].map((choice) => (
-                <button
-                  key={choice.id}
-                  type="button"
-                  onClick={() => saveBudget({ ...settings, localSpeech: choice.id })}
-                  className={cn(
-                    "h-12 border px-2 text-xs",
-                    (settings.localSpeech || "en") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                  )}
-                >
-                  {choice.label}
-                </button>
-              ))}
+        ) : (
+          <p className="mt-4 px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (section === "language") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
+        <Back onClick={() => setSection("menu")} />
+        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Language")}</h2>
+        {settings ? (
+          <div className="mt-4 space-y-6">
+            <div>
+              <p className="mb-2 text-sm text-muted-foreground">{t("Language")}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "", label: t("Follow the phone") },
+                  { id: "en", label: t("English") },
+                  { id: "es", label: t("Spanish") },
+                  { id: "de", label: t("German") },
+                  { id: "pt", label: t("Portuguese") },
+                  { id: "ca-ES-valencia", label: t("Valencian") },
+                ].map((choice) => (
+                  <button
+                    key={choice.id || "system"}
+                    type="button"
+                    onClick={() => {
+                      setAppLocale(choice.id);
+                      saveBudget({ ...settings, locale: choice.id });
+                    }}
+                    className={cn(
+                      "h-12 border px-2 text-sm",
+                      (settings.locale || "") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                    )}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              English uses Moonshine Tiny. German uses a separate download. Moonshine does not understand German.
-            </p>
+            <div>
+              <p className="mb-2 text-sm text-muted-foreground">{t("Local speech")}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "en", label: t("English") },
+                  { id: "de", label: t("German") },
+                ].map((choice) => (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    onClick={() => saveBudget({ ...settings, localSpeech: choice.id })}
+                    className={cn(
+                      "h-12 border px-2 text-sm",
+                      (settings.localSpeech || "en") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                    )}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {t("English uses Moonshine Tiny. German uses a separate download. Moonshine does not understand German.")}
+              </p>
+            </div>
           </div>
-          <Field label="Voice">
-            <Input value={settings.voice} onChange={(e) => setSettings({ ...settings, voice: e.target.value })} />
-          </Field>
-          <Field label="Model">
-            <Input value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })} />
-          </Field>
-          <div className="flex items-center gap-3">
-            <Button type="button" onClick={saveModel}>
-              Save model
-            </Button>
-            {saved && <p className="text-sm text-muted-foreground">{saved}</p>}
+        ) : (
+          <p className="mt-4 px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (section === "model") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
+        <Back onClick={() => setSection("menu")} />
+        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Voice and model")}</h2>
+        <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
+          {t("These names go out with the xAI key. OpenAI and On device keep their own.")}
+        </p>
+        {settings ? (
+          <div className="space-y-4">
+            <Field label={t("Voice")}>
+              <Input value={settings.voice} onChange={(e) => setSettings({ ...settings, voice: e.target.value })} />
+            </Field>
+            <Field label={t("Model")}>
+              <Input value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })} />
+            </Field>
+            <div className="flex items-center gap-3">
+              <Button type="button" onClick={saveModel}>
+                {t("Save model")}
+              </Button>
+              {saved && <p className="text-sm text-muted-foreground">{saved}</p>}
+            </div>
           </div>
-        </div>
-      )}
-      <div className="divide-y divide-border border-y border-border">
-        <MenuRow
-          icon={<Users className="size-4" />}
-          title={t("People")}
-          detail="Nicknames and how to reach them"
-          onClick={() => setSection("people")}
-        />
-        <MenuRow
-          icon={<KeyRound className="size-4" />}
-          title={t("Voice keys")}
-          detail="Order, fallback, and on device"
-          onClick={() => setSection("keys")}
-        />
-        <MenuRow
-          icon={<Archive className="size-4" />}
-          title={t("Backup")}
-          detail="Encrypted notes, People, and memory"
-          onClick={() => setSection("backup")}
-        />
-        <MenuRow
-          icon={<Brain className="size-4" />}
-          title={t("Memory")}
-          detail="Pinned facts for on-device Talk"
-          onClick={() => setSection("memory")}
-        />
-        <MenuRow
-          icon={<Bell className="size-4" />}
-          title={t("Phone access")}
-          detail="Notifications, Do Not Disturb, history"
-          onClick={() => setSection("access")}
-        />
+        ) : (
+          <p className="px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
+        )}
+      </div>
+    );
+  }
+
+  const accounts = auth.accounts ?? [];
+  const first = accounts[0];
+
+  return (
+    <PageChrome title={t("Settings")} subtitle={t("Voice, people, and this phone")}>
+      <div className="mb-6 border border-border px-3 py-3">
+        <p className="text-base text-foreground">
+          {first ? t("Tried first") + `: ${providerLabel(first.provider)}` : t("No voice yet")}
+        </p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {accounts.length > 1
+            ? `${t("Then this")} ${accounts
+                .slice(1)
+                .map((account) => providerLabel(account.provider))
+                .join(", ")}.`
+            : first
+              ? t("Add another voice if you want a fallback.")
+              : t("Add xAI, OpenAI, or On device.")}
+        </p>
+        <p className="mt-2 text-sm text-foreground">
+          {usage
+            ? `${usage.minutes} min · ${usage.sessions} ${usage.sessions === 1 ? t("session") : t("sessions")}`
+            : t("Today's time is counted on this phone.")}
+        </p>
+      </div>
+      <SettingsGroup title={t("Voice")}>
+        <MenuRow icon={<KeyRound className="size-4" />} title={t("Voice keys")} detail={t("Order and fallback")} onClick={() => setSection("keys")} />
+        <MenuRow icon={<Package className="size-4" />} title={t("On-device packs")} detail={t("Speech, model, and voice")} onClick={() => setSection("packs")} />
         <MenuRow
           icon={<Wand2 className="size-4" />}
           title={t("Wake word")}
-          detail={wake.trained ? "Hey Grok enrolled" : "Not enrolled yet"}
+          detail={wake.trained ? t("Hey Grok enrolled") : t("Not enrolled yet")}
           onClick={() => setSection("wake")}
         />
+        <MenuRow icon={<Hourglass className="size-4" />} title={t("Quiet gap")} detail={`${quiet}s`} onClick={() => setSection("quiet")} />
+        <MenuRow icon={<Languages className="size-4" />} title={t("Language")} detail={t("Follow the phone")} onClick={() => setSection("language")} />
+      </SettingsGroup>
+      <SettingsGroup title={t("Spend")}>
         <MenuRow
-          icon={<Bug className="size-4" />}
-          title="Debug"
-          detail="Logs and sign out"
-          onClick={() => setSection("debug")}
+          icon={<Wallet className="size-4" />}
+          title={t("Daily voice budget")}
+          detail={settings?.dailyBudgetMinutes ? `${settings.dailyBudgetMinutes} min` : t("Off")}
+          onClick={() => setSection("spend")}
         />
-      </div>
+      </SettingsGroup>
+      <SettingsGroup title={t("This phone")}>
+        <MenuRow icon={<Users className="size-4" />} title={t("People")} detail={t("Nicknames and how to reach them")} onClick={() => setSection("people")} />
+        <MenuRow icon={<Brain className="size-4" />} title={t("Memory")} detail={t("Pinned facts for on-device Talk")} onClick={() => setSection("memory")} />
+        <MenuRow icon={<Bell className="size-4" />} title={t("Phone access")} detail={t("Notifications, Do Not Disturb, history")} onClick={() => setSection("access")} />
+        <MenuRow icon={<AudioLines className="size-4" />} title={t("Voice and model")} detail={t("Names sent with the xAI key")} onClick={() => setSection("model")} />
+      </SettingsGroup>
+      <SettingsGroup title={t("Your data")}>
+        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, and memory")} onClick={() => setSection("backup")} />
+      </SettingsGroup>
+      <SettingsGroup title={t("Support")}>
+        <MenuRow icon={<Bug className="size-4" />} title={t("Debug")} detail={t("Logs, echo guard, and sign out")} onClick={() => setSection("debug")} />
+      </SettingsGroup>
     </PageChrome>
   );
 }
+
+function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 px-1 text-sm text-muted-foreground">{title}</h2>
+      <div className="divide-y divide-border border-y border-border">{children}</div>
+    </section>
+  );
+}
+
 
 function MemorySection() {
   const t = useT();
@@ -660,11 +766,8 @@ function downloadBase64(name: string, data: string) {
   URL.revokeObjectURL(url);
 }
 
-function providerName(id: string) {
-  return PROVIDERS.find((item) => item.id === id)?.label ?? id;
-}
-
 function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatus) => void }) {
+  const t = useT();
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["id"]>("xai");
   const [secret, setSecret] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -788,8 +891,8 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
           settings?.preferLocalOnWake ? "border-foreground text-foreground" : "border-border text-muted-foreground",
         )}
       >
-        <span>Prefer local when packs ready</span>
-        <span className="text-xs tracking-[0.12em] uppercase">{settings?.preferLocalOnWake ? "On" : "Off"}</span>
+        <span>{t("Prefer On device for Hey Grok")}</span>
+        <span>{settings?.preferLocalOnWake ? t("On") : t("Off")}</span>
       </button>
       <p className="text-sm leading-6 text-muted-foreground">
         Off follows the list for every session. On uses On device first for the wake word, when the packs are downloaded and On device is in this list. Talk still follows the order above.
@@ -798,23 +901,26 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
       <LocalPacks />
       <ul className="divide-y divide-border border-y border-border">
         {accounts.map((account, index) => (
-          <li key={account.id} className="flex items-center gap-2 py-3 text-sm">
-            <span className="w-5 tabular-nums text-muted-foreground">{index + 1}</span>
-            <span className="min-w-0 flex-1 truncate">
-              {providerName(account.provider)} · {account.hint}
-            </span>
-            <button type="button" className="h-10 px-2 text-xs uppercase" onClick={() => edit(account.id, account.provider)}>
-              Edit
-            </button>
-            <button type="button" className="h-10 px-2 text-xs uppercase" onClick={() => void move(account.id, true)}>
-              Up
-            </button>
-            <button type="button" className="h-10 px-2 text-xs uppercase" onClick={() => void move(account.id, false)}>
-              Down
-            </button>
-            <button type="button" className="h-10 px-2 text-xs uppercase" onClick={() => void remove(account.id)}>
-              Remove
-            </button>
+          <li key={account.id} className="py-3">
+            <p className="text-sm text-muted-foreground">{t(chainPlace(index, accounts.length))}</p>
+            <p className="mt-1 text-base text-foreground">
+              {providerLabel(account.provider)}
+              <span className="text-muted-foreground"> · {account.hint}</span>
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={() => edit(account.id, account.provider)}>
+                {t("Edit")}
+              </Button>
+              <Button type="button" variant="outline" disabled={index === 0} onClick={() => void move(account.id, true)}>
+                {t("Move up")}
+              </Button>
+              <Button type="button" variant="outline" disabled={index === accounts.length - 1} onClick={() => void move(account.id, false)}>
+                {t("Move down")}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => void remove(account.id)}>
+                {t("Remove")}
+              </Button>
+            </div>
           </li>
         ))}
       </ul>
@@ -823,13 +929,15 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
 }
 
 function Back({ onClick }: { onClick: () => void }) {
+  const t = useT();
   return (
     <button
       type="button"
-      className="mb-3 shrink-0 px-1 text-left text-xs leading-5 tracking-[0.16em] text-muted-foreground uppercase"
       onClick={onClick}
+      className="mb-2 flex min-h-12 w-full shrink-0 items-center gap-1 px-1 text-left text-base text-foreground"
     >
-      ← Settings
+      <ChevronLeft className="size-5 shrink-0" aria-hidden />
+      <span>{t("Back to Settings")}</span>
     </button>
   );
 }
@@ -846,10 +954,10 @@ function MenuRow({
 }) {
   return (
     <RowButton onClick={onClick} className="items-center">
-      <span className={cn("grid size-9 place-items-center border border-border text-foreground")}>{icon}</span>
+      <span className={cn("grid size-12 place-items-center border border-border text-foreground")}>{icon}</span>
       <div className="min-w-0 flex-1">
-        <p className="text-[15px] text-foreground">{title}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
+        <p className="text-base text-foreground">{title}</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p>
       </div>
       <ChevronRight className="size-4 text-muted-foreground" />
     </RowButton>

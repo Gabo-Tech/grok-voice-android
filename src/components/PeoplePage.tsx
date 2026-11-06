@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { EmptyState, PageChrome, RowButton } from "@/components/PageChrome";
+import { BackButton, EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
+import { ShareButton } from "@/components/ShareButton";
 import { Field } from "@/components/Field";
 import { Sheet } from "@/components/Sheet";
 import { Button } from "@/components/ui/button";
@@ -306,8 +307,8 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
   if (screen === "pick") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <Back
-          label={draft.displayName || draft.id ? "← Person" : "← People"}
+        <BackButton
+          label={draft.displayName || draft.id ? "Back to person" : "Back to People"}
           onClick={() => {
             setError(null);
             setScreen(draft.displayName || draft.id ? "edit" : "list");
@@ -324,7 +325,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
               />
             </Field>
           </div>
-          {error && <p className="mb-3 px-1 text-xs text-muted-foreground">{error}</p>}
+          {error && <Notice title={error} />}
           {contactsAllowed === false ? (
             <div className="px-1">
               <EmptyState title="Contacts access is off" body="Allow it to pick a phone contact, or go back and add someone without one." />
@@ -364,13 +365,14 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     const linkedLine = [linked?.phone, linked?.email].filter(Boolean).join(" · ");
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <Back label="← People" onClick={() => setScreen("list")} />
+        <BackButton label="Back to People" onClick={() => setScreen("list")} />
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
           <h2 className="px-1 text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || "Person" : "New person"}</h2>
           <p className="mt-1 px-1 text-xs leading-5 text-muted-foreground">
             This record stays on the phone. It does not change the Contacts app.
           </p>
           <div className="mt-6 space-y-4">
+            <h3 className="text-base text-foreground">Who</h3>
             <Field label="Name" error={error}>
               <Input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} placeholder="Ana Lopez" />
             </Field>
@@ -380,8 +382,9 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
             <Field label="Aliases" hint="Comma separated. Voice matches these too.">
               <Input value={draft.aliases} onChange={(e) => setDraft({ ...draft, aliases: e.target.value })} placeholder="mummy, ma" />
             </Field>
+            <h3 className="pt-2 text-base text-foreground">{t("How you reach them")}</h3>
             <div>
-              <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Preferred channel</p>
+              <p className="mb-2 text-sm text-muted-foreground">Preferred channel</p>
               <div className="grid grid-cols-3 gap-2">
                 {CHANNELS.map((item) => (
                   <button
@@ -389,7 +392,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
                     type="button"
                     onClick={() => setDraft({ ...draft, preferredChannel: item.id })}
                     className={cn(
-                      "h-12 border px-2 text-[11px] tracking-[0.08em] uppercase",
+                      "h-12 border px-2 text-sm",
                       draft.preferredChannel === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
                     )}
                   >
@@ -419,7 +422,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
               )}
             >
               <span>Favorite</span>
-              <span className="text-xs tracking-[0.12em] uppercase">{draft.favorite ? "Pinned" : "Off"}</span>
+              <span>{draft.favorite ? "Pinned" : "Off"}</span>
             </button>
             <Field label={t("Reach out every")}>
               <Input
@@ -429,7 +432,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
                 onChange={(e) => setDraft({ ...draft, reachOutDays: Math.max(0, Math.min(365, Number(e.target.value) || 0)) })}
               />
             </Field>
-            <p className="text-xs leading-5 text-muted-foreground">
+            <p className="text-sm leading-5 text-muted-foreground">
               {draft.lastContactedMs
                 ? `${t("Last call or text")}: ${new Date(draft.lastContactedMs).toLocaleString()}`
                 : t("Last call or text")}
@@ -467,15 +470,17 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
                 </Button>
               )}
             </div>
+            <h3 className="pt-2 text-base text-foreground">{t("Note")}</h3>
             <Field label={t("Note")}>
               <Textarea value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder="Call after 5" className="min-h-28" />
             </Field>
             <div>
+              <h3 className="text-base text-foreground">Dates</h3>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Dates</p>
+                <p className="text-sm text-muted-foreground">Birthdays and anniversaries</p>
                 <button
                   type="button"
-                  className="h-10 border border-border px-3 text-xs tracking-[0.12em] uppercase"
+                  className="h-12 border border-border px-3 text-sm"
                   onClick={() => setDraft({ ...draft, reminders: [...draft.reminders, blankReminder()] })}
                 >
                   Add
@@ -500,7 +505,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div className="border border-border px-3 py-3">
-              <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Phone contact</p>
+              <p className="text-sm text-muted-foreground">Phone contact</p>
               {draft.androidContactId ? (
                 <>
                   <p className="mt-2 text-sm text-foreground">{linked?.name || "Linked"}</p>
@@ -535,6 +540,10 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border py-3">
+          <ShareButton
+            title={draft.displayName}
+            text={[draft.nickname, channelLabel(draft.preferredChannel), draft.phone, draft.email, draft.note].filter(Boolean).join("\n")}
+          />
           {draft.id && (
             <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
               <Trash2 /> Delete overlay
@@ -554,11 +563,12 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Back label="← Settings" onClick={onBack} />
-        <PageChrome title={t("People")} subtitle={`${people.length} ${t("saved on this phone")}`} onAdd={openCreate} addLabel={t("Add person")}>
+      <BackButton label={t("Back to Settings")} onClick={onBack} />
+      <PageChrome title={t("People")} subtitle={`${people.length} ${t("saved on this phone")}`} onAdd={openCreate} addLabel={t("Add person")}>
         <p className="mb-6 px-1 text-sm leading-6 text-muted-foreground">
           Nicknames and how you reach someone. Phone numbers and email still come from Contacts.
         </p>
+        {(people.length > 0 || query) && (
         <div className="mb-6">
           <Field label="Search">
             <div className="relative">
@@ -572,7 +582,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
               {query && (
                 <button
                   type="button"
-                  className="absolute top-0 right-0 h-12 px-3 text-xs tracking-[0.12em] text-foreground uppercase"
+                  className="absolute top-0 right-0 h-12 px-3 text-sm text-foreground"
                   onClick={() => setQuery("")}
                 >
                   Clear
@@ -581,11 +591,14 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
             </div>
           </Field>
         </div>
-        {error && <p className="mb-3 px-1 text-xs text-muted-foreground">{error}</p>}
+        )}
+        {error && <Notice title={error} />}
         {visible.favorites.length === 0 && visible.rest.length === 0 ? (
           <EmptyState
             title={query ? t("No matches") : t("No people yet")}
             body={query ? "Try another name." : "Tap + to pick a phone contact, or add someone with only a nickname."}
+            actionLabel={query ? "Clear search" : "Add person"}
+            onAction={query ? () => setQuery("") : openCreate}
           />
         ) : (
           <div className="space-y-6">
@@ -641,7 +654,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
 function PersonGroup({ title, people, onOpen }: { title: string; people: Person[]; onOpen: (person: Person) => void }) {
   return (
     <section>
-      <p className="mb-2 px-1 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{title}</p>
+      <p className="mb-2 px-1 text-sm text-muted-foreground">{title}</p>
       <div className="divide-y divide-border border-y border-border">
         {people.map((person) => {
           const aka = person.nickname || person.aliases[0] || "";
@@ -649,7 +662,10 @@ function PersonGroup({ title, people, onOpen }: { title: string; people: Person[
           const dated = person.reminders?.find((reminder) => reminder.enabled)?.label ?? "";
           const detail = [aka, channel && channel !== "None" ? channel : "", dated].filter(Boolean).join(" · ");
           return (
-            <RowButton key={person.id} onClick={() => onOpen(person)}>
+            <RowButton key={person.id} onClick={() => onOpen(person)} className="items-center">
+              <span className="grid size-12 shrink-0 place-items-center border border-border text-base text-foreground" aria-hidden>
+                {(person.displayName.trim()[0] || "?").toUpperCase()}
+              </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base leading-6 text-foreground">{person.displayName}</p>
                 <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
@@ -682,7 +698,7 @@ function ReminderEditor({
             type="button"
             onClick={() => onChange({ ...reminder, label: item.id })}
             className={cn(
-              "h-10 border text-[11px] tracking-[0.08em] uppercase",
+              "h-12 border text-sm",
               reminder.label === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
             )}
           >
@@ -701,7 +717,7 @@ function ReminderEditor({
             type="button"
             onClick={() => onChange({ ...reminder, recurrence: item })}
             className={cn(
-              "h-10 border text-[11px] tracking-[0.08em] uppercase",
+              "h-12 border text-sm",
               reminder.recurrence === item ? "border-foreground text-foreground" : "border-border text-muted-foreground",
             )}
           >
@@ -717,7 +733,7 @@ function ReminderEditor({
             type="button"
             onClick={() => onChange({ ...reminder, leadDays: days })}
             className={cn(
-              "h-10 flex-1 border text-xs",
+              "h-12 flex-1 border text-sm",
               reminder.leadDays === days ? "border-foreground text-foreground" : "border-border text-muted-foreground",
             )}
           >
@@ -728,12 +744,12 @@ function ReminderEditor({
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
-          className="text-xs tracking-[0.12em] text-muted-foreground uppercase"
+          className="min-h-12 px-2 text-sm text-foreground"
           onClick={() => onChange({ ...reminder, enabled: !reminder.enabled })}
         >
           {reminder.enabled ? "On" : "Off"}
         </button>
-        <button type="button" className="text-xs tracking-[0.12em] uppercase" onClick={onRemove}>
+        <button type="button" className="min-h-12 px-2 text-sm" onClick={onRemove}>
           Remove
         </button>
       </div>
@@ -741,14 +757,3 @@ function ReminderEditor({
   );
 }
 
-function Back({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="mb-3 shrink-0 px-1 text-left text-xs leading-5 tracking-[0.16em] text-muted-foreground uppercase"
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
-}

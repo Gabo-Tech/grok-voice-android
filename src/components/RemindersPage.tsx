@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { EmptyState, PageChrome } from "@/components/PageChrome";
+import { EmptyState, Notice, PageChrome } from "@/components/PageChrome";
+import { ShareButton } from "@/components/ShareButton";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
@@ -144,14 +145,15 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
               onClick={() => setKindFilter(item)}
               className={
                 kindFilter === item
-                  ? "h-10 shrink-0 border border-foreground px-3 text-xs tracking-[0.08em] text-foreground uppercase"
-                  : "h-10 shrink-0 border border-border px-3 text-xs tracking-[0.08em] text-muted-foreground uppercase"
+                  ? "h-12 shrink-0 border border-foreground px-3 text-sm text-foreground"
+                  : "h-12 shrink-0 border border-border px-3 text-sm text-muted-foreground"
               }
             >
-              {item === "timer" ? "countdown" : item}
+              {item === "all" ? "All" : item === "timer" ? "Countdowns" : item === "alarm" ? "Alarms" : "Reminders"}
             </button>
           ))}
         </div>
+        {(items.length > 0 || query) && (
         <div className="mb-6">
           <Field label="Search">
             <div className="relative">
@@ -165,7 +167,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
               {query && (
                 <button
                   type="button"
-                  className="absolute top-0 right-0 h-12 px-3 text-xs tracking-[0.12em] text-foreground uppercase"
+                  className="absolute top-0 right-0 h-12 px-3 text-sm text-foreground"
                   onClick={() => setQuery("")}
                 >
                   Clear
@@ -174,26 +176,31 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
             </div>
           </Field>
         </div>
-        {agenda.error && !open && <p className="mb-3 px-1 text-sm text-foreground">{agenda.error}</p>}
+        )}
+        {agenda.error && !open && <Notice title={agenda.error} />}
         {grouped.total === 0 ? (
           <EmptyState
             title={query ? "No matches" : "Nothing scheduled"}
             body={query ? "Try another word." : "Add an alarm, a countdown, or a reminder."}
+            actionLabel={query ? "Clear search" : "New reminder"}
+            onAction={query ? () => setQuery("") : () => openNew("reminder")}
           />
         ) : (
           <div className="space-y-6">
             {grouped.sections.map((section) => (
               <section key={section.name}>
-                <h2 className="mb-2 px-1 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{section.name}</h2>
+                <h2 className="mb-2 px-1 text-sm text-muted-foreground">{section.name}</h2>
                 <div className="divide-y divide-border border-y border-border">
                   {section.items.map((item) => (
                     <div key={item.id} className="flex items-start gap-3 px-1 py-3.5">
                       <button
                         type="button"
                         aria-label={`Mark ${item.title} done`}
-                        className="mt-1 size-5 shrink-0 rounded-full border border-foreground/70"
+                        className="grid size-12 shrink-0 place-items-center"
                         onClick={() => finish(item.id)}
-                      />
+                      >
+                        <span className="size-5 rounded-full border border-foreground" />
+                      </button>
                       <button type="button" className="flex min-w-0 flex-1 items-start gap-4 text-left" onClick={() => openEdit(item)}>
                         <div className="w-16 shrink-0 pt-0.5 text-right">
                           <p className="text-sm leading-5 tabular-nums text-foreground">{formatClock(item.atMs)}</p>
@@ -204,7 +211,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
                           )}
                         </div>
                         <div className="min-w-0 flex-1 border-l border-border pl-4">
-                          <p className="text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                          <p className="text-xs text-muted-foreground">
                             {[item.kind, patternLabel(item)].filter(Boolean).join(" · ")}
                           </p>
                           <p className="truncate text-base leading-6 text-foreground">{item.title}</p>
@@ -228,6 +235,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
         onClose={close}
         footer={
           <div className="flex flex-wrap items-center gap-2">
+            <ShareButton title={title} text={[kind, repeating ? `${clock} ${date}`.trim() : kind === "timer" ? `${minutes} min` : at, note].filter(Boolean).join("\n")} />
             {editing && (
               <Button variant="ghost" disabled={agenda.busy} onClick={() => remove(editing.id)}>
                 <Trash2 /> Delete
@@ -252,8 +260,8 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
                 onClick={() => setKind(item)}
                 className={
                   item === kind
-                    ? "h-12 border border-foreground text-xs tracking-[0.12em] text-foreground uppercase"
-                    : "h-12 border border-border text-xs tracking-[0.12em] text-muted-foreground uppercase"
+                    ? "h-12 border border-foreground text-sm text-foreground"
+                    : "h-12 border border-border text-sm text-muted-foreground"
                 }
               >
                 {item}
@@ -271,7 +279,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
           </Field>
           {kind === "reminder" && (
             <div>
-              <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Repeats</p>
+              <p className="mb-2 text-sm text-muted-foreground">Repeats</p>
               <div className="grid grid-cols-3 gap-2">
                 {(linked ? (["yearly", "once"] as Repeat[]) : (["none", "daily", "weekly"] as Repeat[])).map((item) => (
                   <button
@@ -286,8 +294,8 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
                     }}
                     className={
                       repeat === item
-                        ? "h-12 border border-foreground text-xs tracking-[0.12em] text-foreground uppercase"
-                        : "h-12 border border-border text-xs tracking-[0.12em] text-muted-foreground uppercase"
+                        ? "h-12 border border-foreground text-sm text-foreground"
+                        : "h-12 border border-border text-sm text-muted-foreground"
                     }
                   >
                     {item === "none" ? "Once" : item}
@@ -305,8 +313,8 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
                         onClick={() => setWeekdays(on ? weekdays.filter((value) => value !== day.id) : [...weekdays, day.id].sort())}
                         className={
                           on
-                            ? "h-10 border border-foreground text-[10px] text-foreground uppercase"
-                            : "h-10 border border-border text-[10px] text-muted-foreground uppercase"
+                            ? "h-12 border border-foreground text-xs text-foreground"
+                            : "h-12 border border-border text-xs text-muted-foreground"
                         }
                       >
                         {day.label}
