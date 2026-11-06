@@ -42,8 +42,33 @@ use crate::{
 
 const CLIENT_SECRETS_URL: &str = "https://api.x.ai/v1/realtime/client_secrets";
 const REALTIME_URL: &str = "wss://api.x.ai/v1/realtime";
+const OPENAI_CLIENT_SECRETS_URL: &str = "https://api.openai.com/v1/realtime/client_secrets";
+const OPENAI_REALTIME_URL: &str = "wss://api.openai.com/v1/realtime";
+const OPENAI_MODEL: &str = "gpt-realtime";
 const OUTPUT_RATE: u32 = 24_000;
 const TOKEN_TTL_SECS: u64 = 300;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Cloud {
+    Xai,
+    OpenAi,
+}
+
+impl Cloud {
+    fn label(self) -> &'static str {
+        match self {
+            Cloud::Xai => "xAI",
+            Cloud::OpenAi => "OpenAI",
+        }
+    }
+
+    fn model_name(self, settings: &Settings) -> String {
+        match self {
+            Cloud::Xai => settings.model.clone(),
+            Cloud::OpenAi => OPENAI_MODEL.into(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +123,37 @@ pub async fn mint_ephemeral(client: &reqwest::Client, api_key: &str) -> Result<E
     Ok(EphemeralToken { value, expires_at })
 }
 
+pub async fn mint_openai(client: &reqwest::Client, api_key: &str) -> Result<EphemeralToken> {
+    let resp = client
+        .post(OPENAI_CLIENT_SECRETS_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "expires_after": { "anchor": "created_at", "seconds": TOKEN_TTL_SECS },
+            "session": { "type": "realtime", "model": OPENAI_MODEL }
+        }))
+        .send()
+        .await?;
+    let status = resp.status();
+    let text = resp.text().await?;
+    let body: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    if !status.is_success() {
+        let detail = body["error"]["message"]
+            .as_str()
+            .or(body["error"].as_str())
+            .or(body["message"].as_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| text.chars().take(200).collect());
+        return Err(msg(format!("OpenAI rejected the request ({status}): {detail}")));
+    }
+    let value = body["value"]
+        .as_str()
+        .or(body["client_secret"]["value"].as_str())
+        .ok_or_else(|| msg("OpenAI client secret response had no token value"))?
+        .to_owned();
+    let expires_at = unix_seconds(body["expires_at"].as_u64().or(body["client_secret"]["expires_at"].as_u64()));
+    Ok(EphemeralToken { value, expires_at })
+}
+
 /// xAI returns a unix timestamp. Accept either seconds or milliseconds.
 fn unix_seconds(raw: Option<u64>) -> Option<u64> {
     raw.map(|n| if n > 10_000_000_000 { n / 1000 } else { n })
@@ -109,16 +165,21 @@ pub async fn run_session(
     player: Arc<Player>,
     active: Arc<AtomicBool>,
     settings: Settings,
+    wake: bool,
 ) {
     let hub = app.state::<Arc<Hub>>().inner().clone();
-    let result = Session { app: &app, hub: &hub, player: &player, active: &active, settings: &settings }
+    let result = Session { app: &app, hub: &hub, player: &player, active: &active, settings: &settings, wake }
         .run(&mut mic)
         .await;
     match result {
         Ok(reason) => hub.info(format!("session ended: {reason}")),
         Err(e) => hub.error(format!("session failed: {e}")),
     }
-    hub.update(|s| s.ws_state = "closed".into());
+    hub.update(|s| {
+        s.ws_state = "closed".into();
+        s.provider = None;
+    });
+    hub.emit("voice://provider", "");
     // Dropping `mic` closes the channel; the engine notices and returns to wake listening.
 }
 
@@ -136,6 +197,7 @@ struct Session<'a> {
     player: &'a Player,
     active: &'a AtomicBool,
     settings: &'a Settings,
+    wake: bool,
 }
 
 impl Session<'_> {
@@ -172,11 +234,21 @@ impl Session<'_> {
         }
 
         let ready = crate::local::model_dir(self.app).map(|dir| crate::local::packs_ready(&dir)).unwrap_or(false);
+        let providers: Vec<&str> = accounts.iter().map(|account| account.provider.as_str()).collect();
+        let order = crate::local::attempt_order(&providers, self.wake, self.settings.prefer_local_on_wake, ready);
         let http = http_client();
-        let mut last_error = String::from("no voice provider connected");
-        for account in &accounts {
+        let mut last_error = String::from("No voice provider connected.");
+        let mut tried: Vec<String> = Vec::new();
+        for index in order {
+            let account = &accounts[index];
+            let label = crate::local::provider_label(&account.provider);
+            if !self.active.load(Ordering::Acquire) {
+                return Ok("ended by user".into());
+            }
             match crate::local::route(&account.provider, ready) {
                 crate::local::Route::Local => {
+                    tried.push(label.into());
+                    self.announce(label);
                     self.hub.info("using on-device voice");
                     match crate::local::run_session(self.app, mic, self.player, self.active, self.settings, self.hub).await {
                         Ok(reason) => return Ok(reason),
@@ -186,26 +258,50 @@ impl Session<'_> {
                         }
                     }
                 }
-                crate::local::Route::Xai => {
-                    match mint_ephemeral(&http, &account.secret).await {
+                crate::local::Route::Xai | crate::local::Route::OpenAi => {
+                    let cloud = if account.provider == "openai" { Cloud::OpenAi } else { Cloud::Xai };
+                    tried.push(cloud.label().into());
+                    self.announce(cloud.label());
+                    let minted = match cloud {
+                        Cloud::Xai => mint_ephemeral(&http, &account.secret).await,
+                        Cloud::OpenAi => mint_openai(&http, &account.secret).await,
+                    };
+                    match minted {
                         Ok(token) => {
-                            self.hub.info(format!("using xai ({})", crate::vault::key_hint(&account.secret)));
-                            return self.run_xai(mic, token).await;
+                            self.hub.info(format!("using {} ({})", cloud.label(), crate::vault::key_hint(&account.secret)));
+                            match self.run_cloud(mic, token, cloud).await {
+                                Ok(reason) => return Ok(reason),
+                                Err(err) => {
+                                    if !self.active.load(Ordering::Acquire) {
+                                        return Ok("ended by user".into());
+                                    }
+                                    last_error = err.to_string();
+                                    self.hub.warn(format!("{} failed, trying the next key: {last_error}", cloud.label()));
+                                }
+                            }
                         }
                         Err(err) => {
                             last_error = err.to_string();
-                            self.hub.warn(format!("xai failed, trying the next key: {last_error}"));
+                            self.hub.warn(format!("{} failed, trying the next key: {last_error}", cloud.label()));
                         }
                     }
                 }
                 crate::local::Route::Skip(reason) => {
-                    last_error = reason;
-                    self.hub.warn(format!("{} skipped: {last_error}", account.provider));
+                    self.hub.warn(format!("{label} skipped: {reason}"));
+                    if tried.is_empty() {
+                        last_error = reason;
+                    }
                 }
             }
         }
-        self.speak_failure(&last_error).await;
-        Err(msg(last_error))
+        let message = crate::local::exhausted_message(&tried, &last_error);
+        self.speak_failure(&message).await;
+        Err(msg(message))
+    }
+
+    fn announce(&self, label: &str) {
+        self.hub.update(|state| state.provider = Some(label.to_string()));
+        self.hub.emit("voice://provider", label.to_string());
     }
 
     async fn speak_failure(&self, last_error: &str) {
@@ -214,15 +310,19 @@ impl Session<'_> {
         let _ = tokio::task::spawn_blocking(move || app.state::<NativeBridge>().speak_fallback(&text)).await;
     }
 
-    async fn run_xai(&self, mic: &mut mpsc::Receiver<Vec<i16>>, token: EphemeralToken) -> Result<String> {
+    async fn run_cloud(&self, mic: &mut mpsc::Receiver<Vec<i16>>, token: EphemeralToken, cloud: Cloud) -> Result<String> {
+        let model = cloud.model_name(self.settings);
         self.hub.update(|s| {
             s.token_minted_at_ms = Some(now_ms());
             s.token_expires_at = token.expires_at;
-            s.model = Some(self.settings.model.clone());
+            s.model = Some(model.clone());
         });
         self.hub.info("ephemeral token minted on-device");
 
-        let url = format!("{REALTIME_URL}?model={}", self.settings.model);
+        let url = match cloud {
+            Cloud::Xai => format!("{REALTIME_URL}?model={model}"),
+            Cloud::OpenAi => format!("{OPENAI_REALTIME_URL}?model={model}"),
+        };
         let mut req = url.as_str().into_client_request()?;
         req.headers_mut().insert(
             AUTHORIZATION,
@@ -231,12 +331,12 @@ impl Session<'_> {
         self.hub.update(|s| s.ws_state = "connecting".into());
         let (ws, _resp) = tokio::time::timeout(Duration::from_secs(12), tokio_tungstenite::connect_async(req))
             .await
-            .map_err(|_| msg("timed out connecting to wss://api.x.ai"))??;
+            .map_err(|_| msg(format!("timed out connecting to {url}")))??;
         self.hub.update(|s| s.ws_state = "open".into());
-        self.hub.info(format!("websocket open ({})", self.settings.model));
+        self.hub.info(format!("websocket open ({model})"));
 
         let (mut tx, mut rx) = ws.split();
-        tx.send(Message::Text(self.session_update().to_string())).await?;
+        tx.send(Message::Text(self.session_update(cloud).to_string())).await?;
 
         let mut down_rate = self.player.rate();
         let mut down = Resampler::new(OUTPUT_RATE, down_rate);
@@ -248,6 +348,7 @@ impl Session<'_> {
         let mut spend_check = Instant::now();
         let mut logged_uplink = false;
         let mut configured = false;
+        let mut heard_audio = false;
         let mut held: Vec<Vec<i16>> = Vec::new();
         let mut pending_tools: Vec<(String, String, String)> = Vec::new();
         let mut tool_followup = false;
@@ -270,7 +371,9 @@ impl Session<'_> {
                     Self::append_pcm(&self.hub, &mut tx, &frame, &mut logged_uplink).await?;
                 }
                 msg_in = rx.next() => {
-                    let Some(msg_in) = msg_in else { return Ok("connection closed".into()) };
+                    let Some(msg_in) = msg_in else {
+                        return self.retry_connect(heard_audio, "connection closed");
+                    };
                     match msg_in? {
                         Message::Text(text) => {
                             let ev: Value = match serde_json::from_str(&text) {
@@ -306,6 +409,10 @@ impl Session<'_> {
                                         self.transcript(id, "user", Some(""), None, false);
                                     }
                                 }
+                                "conversation.item.input_audio_transcription.delta" => {
+                                    let id = ev["item_id"].as_str().unwrap_or("user");
+                                    self.transcript(id, "user", None, ev["delta"].as_str(), false);
+                                }
                                 "conversation.item.input_audio_transcription.updated"
                                 | "conversation.item.input_audio_transcription.completed" => {
                                     let id = ev["item_id"].as_str().unwrap_or("user");
@@ -330,6 +437,9 @@ impl Session<'_> {
                                         let mut out = Vec::with_capacity(pcm.len() * 2);
                                         down.process(&pcm, &mut out);
                                         self.player.push(&out);
+                                        if !bytes.is_empty() {
+                                            heard_audio = true;
+                                        }
                                         let n = bytes.len() as u64;
                                         self.hub.update(|s| { s.audio_deltas += 1; s.bytes_received += n; });
                                         if !speaking {
@@ -354,20 +464,8 @@ impl Session<'_> {
                                         Some(other) if !other.is_null() => other.to_string(),
                                         _ => "{}".into(),
                                     };
-                                    if name == "web_search" {
-                                        self.hub.emit("voice://busy", "Searching the web…");
-                                        self.phase(Phase::Thinking);
-                                    }
-                                    let app = self.app.clone();
-                                    let tool_name = name.clone();
-                                    let output = match tokio::task::spawn_blocking(move || actions::run(&app, &tool_name, &arguments)).await {
-                                        Ok(s) => s,
-                                        Err(e) => json!({ "ok": false, "error": e.to_string() }).to_string(),
-                                    };
-                                    if name == "web_search" {
-                                        self.hub.emit("voice://busy", "");
-                                    }
-                                    if !call_id.is_empty() {
+                                    if !call_id.is_empty() && !pending_tools.iter().any(|(id, _, _)| id == &call_id) {
+                                        let output = self.invoke_tool(&name, &arguments).await;
                                         pending_tools.push((call_id, name, output));
                                         if !response_active {
                                             tool_followup = true;
@@ -376,6 +474,25 @@ impl Session<'_> {
                                     last_activity = Instant::now();
                                 }
                                 "response.done" => {
+                                    if let Some(items) = ev["response"]["output"].as_array() {
+                                        let calls: Vec<(String, String, String)> = items
+                                            .iter()
+                                            .filter(|item| item["type"] == "function_call")
+                                            .filter_map(|item| {
+                                                let call_id = item["call_id"].as_str().unwrap_or("").to_string();
+                                                if call_id.is_empty() || pending_tools.iter().any(|(id, _, _)| id == &call_id) {
+                                                    return None;
+                                                }
+                                                let name = item["name"].as_str().unwrap_or("").to_string();
+                                                let arguments = item["arguments"].as_str().unwrap_or("{}").to_string();
+                                                Some((call_id, name, arguments))
+                                            })
+                                            .collect();
+                                        for (call_id, name, arguments) in calls {
+                                            let output = self.invoke_tool(&name, &arguments).await;
+                                            pending_tools.push((call_id, name, output));
+                                        }
+                                    }
                                     response_active = false;
                                     last_activity = Instant::now();
                                     if !pending_tools.is_empty() {
@@ -384,20 +501,27 @@ impl Session<'_> {
                                     if let Some(status) = ev["response"]["status"].as_str() {
                                         if status == "failed" {
                                             let why = ev["response"]["status_details"].to_string();
+                                            if !heard_audio && crate::local::retries_on_connect(&why) {
+                                                return Err(msg(format!("{}: {why}", cloud.label())));
+                                            }
                                             self.hub.error(format!("response failed: {why}"));
                                         }
                                     }
                                 }
                                 "error" => {
                                     let m = ev["error"]["message"].as_str().unwrap_or("unknown realtime error");
-                                    self.hub.error(format!("xAI: {m}"));
+                                    let line = format!("{}: {m}", cloud.label());
+                                    if !heard_audio && (crate::local::retries_on_connect(m) || !configured) {
+                                        return Err(msg(line));
+                                    }
+                                    self.hub.error(line);
                                 }
                                 _ => {}
                             }
                         }
                         Message::Close(frame) => {
                             let why = frame.map(|f| format!("{} {}", f.code, f.reason)).unwrap_or_default();
-                            return Ok(format!("server closed {why}"));
+                            return self.retry_connect(heard_audio, &format!("server closed {why}"));
                         }
                         _ => {}
                     }
@@ -422,7 +546,7 @@ impl Session<'_> {
                                     "response": { "instructions": format!("Say only this, then wait: {message}") }
                                 });
                                 if tx.send(Message::Text(say.to_string())).await.is_err() {
-                                    return Ok("connection closed".into());
+                                    return self.retry_connect(heard_audio, "connection closed");
                                 }
                                 response_active = true;
                                 last_activity = Instant::now();
@@ -450,7 +574,7 @@ impl Session<'_> {
                             }
                         });
                         if tx.send(Message::Text(item.to_string())).await.is_err() {
-                            return Ok("connection closed".into());
+                            return self.retry_connect(heard_audio, "connection closed");
                         }
                     }
                     if tool_followup && !response_active && !playing {
@@ -462,7 +586,7 @@ impl Session<'_> {
                                 "item": { "type": "function_call_output", "call_id": call_id, "output": output }
                             });
                             if tx.send(Message::Text(ev.to_string())).await.is_err() {
-                                return Ok("connection closed".into());
+                                return self.retry_connect(heard_audio, "connection closed");
                             }
                         }
                         let follow = if searched {
@@ -476,20 +600,45 @@ impl Session<'_> {
                             json!({ "type": "response.create" })
                         };
                         if tx.send(Message::Text(follow.to_string())).await.is_err() {
-                            return Ok("connection closed".into());
+                            return self.retry_connect(heard_audio, "connection closed");
                         }
                         tool_followup = false;
                         response_active = true;
                         last_activity = Instant::now();
                         self.phase(Phase::Thinking);
                     }
-                    if !playing && !response_active && !tool_followup && last_activity.elapsed() >= idle {
+                    if configured && !playing && !response_active && !tool_followup && last_activity.elapsed() >= idle {
                         let _ = tx.send(Message::Close(None)).await;
                         return Ok(format!("idle for {}s", idle.as_secs()));
                     }
                 }
             }
         }
+    }
+
+    fn retry_connect(&self, heard_audio: bool, reason: &str) -> Result<String> {
+        if !self.active.load(Ordering::Acquire) || reason == "ended by user" || reason == "daily voice limit" || heard_audio {
+            return Ok(reason.to_string());
+        }
+        Err(msg(reason))
+    }
+
+    async fn invoke_tool(&self, name: &str, arguments: &str) -> String {
+        if name == "web_search" {
+            self.hub.emit("voice://busy", "Searching the web…");
+            self.phase(Phase::Thinking);
+        }
+        let app = self.app.clone();
+        let tool_name = name.to_string();
+        let arguments = arguments.to_string();
+        let output = match tokio::task::spawn_blocking(move || actions::run(&app, &tool_name, &arguments)).await {
+            Ok(output) => output,
+            Err(err) => json!({ "ok": false, "error": err.to_string() }).to_string(),
+        };
+        if name == "web_search" {
+            self.hub.emit("voice://busy", "");
+        }
+        output
     }
 
     async fn append_pcm(
@@ -519,36 +668,14 @@ impl Session<'_> {
         Ok(())
     }
 
-    fn session_update(&self) -> Value {
-        json!({
-            "type": "session.update",
-            "session": {
-                "voice": self.settings.voice,
-                "instructions": self.spoken_instructions(),
-                "tools": actions::tool_definitions(),
-                "turn_detection": {
-                    "type": "server_vad",
-                    "threshold": 0.2,
-                    "prefix_padding_ms": 400,
-                    "silence_duration_ms": 700
-                },
-                "audio": {
-                    "input": {
-                        "format": { "type": "audio/pcm", "rate": UPLINK_RATE },
-                        "transcription": { "model": "grok-transcribe" }
-                    },
-                    "output": {
-                        "format": { "type": "audio/pcm", "rate": OUTPUT_RATE }
-                    }
-                }
-            }
-        })
+    fn session_update(&self, cloud: Cloud) -> Value {
+        cloud_session(cloud, &self.settings.voice, &self.spoken_instructions(), &actions::tool_definitions())
     }
 
     fn spoken_instructions(&self) -> String {
         let mut s = self.settings.instructions.trim().to_string();
         s.push_str(
-            "\n\nYou can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. media_control and set_volume act immediately on whatever is playing. For a question about a person, call get_person and speak the answer. That includes preferred channel, birthday, anniversary, note, nickname, and favorite. get_person does not open any app. Do not call find_contact or any open_ tool for those questions. Call find_contact only when they want to reach someone. It resolves People nicknames, aliases, and favorites along with phone contacts. If preferredChannel is set, use it even when they said call, text, or email: call is open_call, sms is open_sms, whatsapp is open_whatsapp, signal is open_signal, email is open_email. Pass channelHandle as phone or to. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, and open_sms, say exactly what will open and wait for a clear yes before calling with confirmed true. Nothing is sent, and a call is not placed, until the user confirms in that app. Save a birthday or anniversary with set_person_reminder. A repeating reminder uses set_reminder with recurrence daily or weekly, time HH:MM, and weekdays such as mon,wed,fri. Leave recurrence off for a one-off. snooze_reminder delays the reminder that just rang, or an id they name. If it says to ask which one, ask. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, snooze_reminder, get_person, set_person_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
+            "\n\nIf a tool returns an error, speak that error in one short sentence. You can search the live web with web_search. For news, weather, sports, prices, or anything about today, call web_search first. When the result comes back, speak that summary. Do not ask for a city or fact the user already gave, including in the typed conversation. media_control and set_volume act immediately on whatever is playing. For a question about a person, call get_person and speak the answer. That includes preferred channel, birthday, anniversary, note, nickname, and favorite. get_person does not open any app. Do not call find_contact or any open_ tool for those questions. Call find_contact only when they want to reach someone. It resolves People nicknames, aliases, and favorites along with phone contacts. If preferredChannel is set, use it even when they said call, text, or email: call is open_call, sms is open_sms, whatsapp is open_whatsapp, signal is open_signal, email is open_email. Pass channelHandle as phone or to. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, and open_sms, say exactly what will open and wait for a clear yes before calling with confirmed true. Nothing is sent, and a call is not placed, until the user confirms in that app. Save a birthday or anniversary with set_person_reminder. A repeating reminder uses set_reminder with recurrence daily or weekly, time HH:MM, and weekdays such as mon,wed,fri. Leave recurrence off for a one-off. snooze_reminder delays the reminder that just rang, or an id they name. If it says to ask which one, ask. You can also use these phone tools: create_note, list_notes, update_note, delete_note, set_alarm, set_timer, set_reminder, list_reminders, update_reminder, cancel_reminder, snooze_reminder, get_person, set_person_reminder, list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event. Always list first when the user wants to change or delete something, then use the id. Call the tool before saying it is done, then confirm in one short sentence. Times are local YYYY-MM-DDTHH:MM. Alarms use hour 0-23 and minute. Timers use seconds.",
         );
         s.push_str(&self.app.state::<crate::memory::Memory>().prompt());
         s
@@ -573,5 +700,96 @@ impl Session<'_> {
             }
         }
         self.hub.emit("voice://transcript", TranscriptEvent { id, role, text, delta, is_final });
+    }
+}
+
+fn openai_voice(voice: &str) -> &str {
+    match voice {
+        "alloy" | "ash" | "ballad" | "coral" | "echo" | "sage" | "shimmer" | "verse" | "marin" | "cedar" => voice,
+        _ => "marin",
+    }
+}
+
+fn cloud_session(cloud: Cloud, voice: &str, instructions: &str, tools: &Value) -> Value {
+    match cloud {
+        Cloud::Xai => json!({
+            "type": "session.update",
+            "session": {
+                "voice": voice,
+                "instructions": instructions,
+                "tools": tools,
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.2,
+                    "prefix_padding_ms": 400,
+                    "silence_duration_ms": 700
+                },
+                "audio": {
+                    "input": {
+                        "format": { "type": "audio/pcm", "rate": UPLINK_RATE },
+                        "transcription": { "model": "grok-transcribe" }
+                    },
+                    "output": {
+                        "format": { "type": "audio/pcm", "rate": OUTPUT_RATE }
+                    }
+                }
+            }
+        }),
+        Cloud::OpenAi => json!({
+            "type": "session.update",
+            "session": {
+                "type": "realtime",
+                "instructions": instructions,
+                "tools": tools,
+                "tool_choice": "auto",
+                "audio": {
+                    "input": {
+                        "format": { "type": "audio/pcm", "rate": OUTPUT_RATE },
+                        "transcription": { "model": "gpt-4o-mini-transcribe" },
+                        "turn_detection": {
+                            "type": "server_vad",
+                            "threshold": 0.5,
+                            "prefix_padding_ms": 300,
+                            "silence_duration_ms": 500
+                        }
+                    },
+                    "output": {
+                        "format": { "type": "audio/pcm", "rate": OUTPUT_RATE },
+                        "voice": openai_voice(voice)
+                    }
+                }
+            }
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openai_session_uses_24khz_pcm_and_a_known_voice() {
+        let tools = json!([{ "type": "function", "name": "create_note" }]);
+        let session = cloud_session(Cloud::OpenAi, "eve", "Be brief.", &tools);
+        assert_eq!(session["session"]["type"], "realtime");
+        assert_eq!(session["session"]["audio"]["input"]["format"]["rate"], 24_000);
+        assert_eq!(session["session"]["audio"]["input"]["format"]["type"], "audio/pcm");
+        assert_eq!(session["session"]["audio"]["output"]["format"]["rate"], 24_000);
+        assert_eq!(session["session"]["audio"]["output"]["voice"], "marin");
+        assert_eq!(session["session"]["audio"]["input"]["turn_detection"]["type"], "server_vad");
+        assert_eq!(session["session"]["tools"][0]["name"], "create_note");
+        let named = cloud_session(Cloud::OpenAi, "cedar", "Be brief.", &tools);
+        assert_eq!(named["session"]["audio"]["output"]["voice"], "cedar");
+    }
+
+    #[test]
+    fn xai_session_keeps_the_existing_talk_loop() {
+        let tools = json!([]);
+        let session = cloud_session(Cloud::Xai, "eve", "Be brief.", &tools);
+        assert_eq!(session["session"]["voice"], "eve");
+        assert_eq!(session["session"]["audio"]["input"]["transcription"]["model"], "grok-transcribe");
+        assert_eq!(session["session"]["audio"]["input"]["format"]["rate"], 24_000);
+        assert_eq!(session["session"]["audio"]["output"]["format"]["rate"], 24_000);
+        assert_eq!(session["session"]["turn_detection"]["type"], "server_vad");
     }
 }

@@ -28,7 +28,7 @@ use super::{
     engine::Engines,
     memory_enough,
     mode::set_public_search,
-    packs::{model_dir, model_paths},
+    packs::{model_dir, model_paths, packs_ready},
     turn::{self, ChatTurn},
     vad::Vad,
     MIN_FREE_MB,
@@ -49,6 +49,43 @@ struct Transcript<'a> {
     text: &'a str,
     delta: Option<&'a str>,
     is_final: bool,
+}
+
+/// One typed turn when the phone is offline and the packs can load.
+/// Notes, reminders, and People run through the same tool path as Talk.
+pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
+    let dir = model_dir(app)?;
+    if !packs_ready(&dir) {
+        return Err(super::web::OFFLINE_VOICE.into());
+    }
+    let facts = app.state::<NativeBridge>().device_facts().unwrap_or(crate::native::DeviceFacts {
+        avail_mb: 0,
+        low_memory: false,
+        online: false,
+    });
+    if !memory_enough(facts.avail_mb, facts.low_memory) {
+        return Err("This phone is offline, and it is too low on memory to run the on-device voice.".into());
+    }
+    let paths = model_paths(&dir);
+    let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
+    let mut engines = Engines::load(&paths, threads)?;
+    let system = turn::system_prompt(
+        &app.state::<crate::settings::SettingsStore>().get().instructions,
+        &app.state::<crate::memory::Memory>().prompt(),
+    );
+    let mut history = Vec::new();
+    let spoken = turn::run_turns(
+        &system,
+        &mut history,
+        text,
+        |prompt, grammar| match engines.complete(prompt, grammar) {
+            Err(err) if err.contains("grammar") => engines.complete(prompt, ""),
+            other => other,
+        },
+        |name, args| actions::run(app, name, &args.to_string()),
+    )?;
+    let _ = app.state::<NativeBridge>().speak_fallback(&spoken);
+    Ok(spoken)
 }
 
 pub async fn run_session(

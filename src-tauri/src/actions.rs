@@ -767,6 +767,9 @@ pub fn run(app: &AppHandle, name: &str, arguments: &str) -> String {
                 v["detail"].as_str().map(str::to_owned).or_else(|| v["error"].as_str().map(str::to_owned))
             })
             .unwrap_or_else(|| "done".into());
+        if brief.contains("needs a network connection") {
+            hub.error(brief.clone());
+        }
         hub.info(format!("tool {name}: {brief}"));
     }
     out
@@ -861,6 +864,14 @@ fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>
 }
 
 fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> {
+    let online = app
+        .state::<crate::native::NativeBridge>()
+        .device_facts()
+        .map(|facts| facts.online)
+        .unwrap_or(true);
+    if let Some(message) = crate::local::network_block(name, online) {
+        return Err(message.into());
+    }
     if name == "web_search" {
         return crate::search::lookup(app, args["query"].as_str().unwrap_or(""));
     }

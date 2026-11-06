@@ -17,8 +17,6 @@ type Section = "menu" | "wake" | "debug" | "keys" | "people" | "backup";
 const PROVIDERS = [
   { id: "xai", label: "xAI" },
   { id: "openai", label: "OpenAI" },
-  { id: "azure", label: "Azure" },
-  { id: "elevenlabs", label: "ElevenLabs" },
   { id: "local", label: "On device" },
 ] as const;
 
@@ -414,19 +412,33 @@ function downloadBase64(name: string, data: string) {
   URL.revokeObjectURL(url);
 }
 
+function providerName(id: string) {
+  return PROVIDERS.find((item) => item.id === id)?.label ?? id;
+}
+
 function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatus) => void }) {
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["id"]>("xai");
   const [secret, setSecret] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [settings, setSettings] = useState<Settings | null>(null);
   const accounts = auth.accounts ?? [];
+
+  useEffect(() => {
+    void api.getSettings().then(setSettings).catch(() => {});
+  }, []);
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      const status = await api.addVoiceAccount(provider, provider === "local" ? "on-device" : secret);
+      const value = provider === "local" ? "on-device" : secret;
+      const status = editing
+        ? await api.updateVoiceAccount(editing, provider, value)
+        : await api.addVoiceAccount(provider, value);
       setSecret("");
+      setEditing(null);
       onAuth(status);
     } catch (e) {
       setError(errorText(e));
@@ -440,14 +452,39 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
   };
 
   const remove = async (id: string) => {
+    if (editing === id) setEditing(null);
     onAuth(await api.removeVoiceAccount(id));
   };
+
+  const edit = (id: string, current: string) => {
+    setEditing(id);
+    setSecret("");
+    setError(null);
+    if (PROVIDERS.some((item) => item.id === current)) {
+      setProvider(current as (typeof PROVIDERS)[number]["id"]);
+    }
+  };
+
+  const togglePrefer = () => {
+    if (!settings) return;
+    const next = { ...settings, preferLocalOnWake: !settings.preferLocalOnWake };
+    setSettings(next);
+    void api.saveSettings(next).then(setSettings).catch((err) => setError(errorText(err)));
+  };
+
+  const editingAccount = accounts.find((account) => account.id === editing);
+  const secretReady =
+    provider === "local" ||
+    secret.trim().length >= 12 ||
+    (editingAccount !== undefined && editingAccount.provider === provider && secret.trim().length === 0);
 
   return (
     <div className="space-y-4 pb-6">
       <h2 className="text-2xl font-medium tracking-tight">Voice keys</h2>
-      <p className="text-sm leading-6 text-muted-foreground">First is tried first. If it fails, the next one is used.</p>
-      <div className="grid grid-cols-2 gap-2">
+      <p className="text-sm leading-6 text-muted-foreground">
+        First is tried first. If that key fails to sign in, reach the network, hits a rate limit, or the model is unavailable, the next one is used. On device can sit anywhere in the list.
+      </p>
+      <div className="grid grid-cols-3 gap-2">
         {PROVIDERS.map((item) => (
           <button
             key={item.id}
@@ -464,16 +501,51 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
       </div>
       {provider === "local" ? (
         <p className="text-sm leading-6 text-muted-foreground">
-          No key. Talk uses this phone when On device is first and the packs below are ready. If a pack is missing or the model cannot load, the next key is used.
+          No key. Talk uses this phone when the packs below are ready. If a pack is missing or the model cannot load, the next key is used.
         </p>
       ) : (
-        <Field label="Key">
-          <Input type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+        <Field label={editing ? "New key" : "Key"}>
+          <Input
+            type="password"
+            autoComplete="off"
+            placeholder={editing ? "Leave blank to keep the saved key" : ""}
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+          />
         </Field>
       )}
-      <Button disabled={busy || (provider !== "local" && secret.trim().length < 12)} onClick={() => void save()}>
-        {provider === "local" ? "Use on device" : "Save this key"}
-      </Button>
+      <div className="flex gap-2">
+        <Button disabled={busy || !secretReady} onClick={() => void save()}>
+          {provider === "local" ? (editing ? "Update on device" : "Use on device") : editing ? "Update this key" : "Save this key"}
+        </Button>
+        {editing && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setEditing(null);
+              setSecret("");
+            }}
+          >
+            Cancel
+          </Button>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={togglePrefer}
+        disabled={!settings}
+        className={cn(
+          "flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
+          settings?.preferLocalOnWake ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+        )}
+      >
+        <span>Prefer local when packs ready</span>
+        <span className="text-xs tracking-[0.12em] uppercase">{settings?.preferLocalOnWake ? "On" : "Off"}</span>
+      </button>
+      <p className="text-sm leading-6 text-muted-foreground">
+        Off follows the list for every session. On uses On device first for the wake word, when the packs are downloaded and On device is in this list. Talk still follows the order above.
+      </p>
       {error && <p className="text-sm text-foreground">{error}</p>}
       <LocalPacks />
       <ul className="divide-y divide-border border-y border-border">
@@ -481,8 +553,11 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
           <li key={account.id} className="flex items-center gap-2 py-3 text-sm">
             <span className="w-5 tabular-nums text-muted-foreground">{index + 1}</span>
             <span className="min-w-0 flex-1 truncate">
-              {account.provider} · {account.hint}
+              {providerName(account.provider)} · {account.hint}
             </span>
+            <button type="button" className="h-10 px-2 text-xs uppercase" onClick={() => edit(account.id, account.provider)}>
+              Edit
+            </button>
             <button type="button" className="h-10 px-2 text-xs uppercase" onClick={() => void move(account.id, true)}>
               Up
             </button>

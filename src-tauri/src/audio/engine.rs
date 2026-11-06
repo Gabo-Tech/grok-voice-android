@@ -496,12 +496,14 @@ impl EngineThread {
         self.hub.update(|s| s.sessions += 1);
         self.hub.info(format!("voice session starting ({reason})"));
         self.hub.set_phase(Phase::Connecting);
+        let wake = reason == "wake word";
         tauri::async_runtime::spawn(realtime::run_session(
             self.app.clone(),
             rx,
             self.player.clone(),
             active,
             self.settings.clone(),
+            wake,
         ));
     }
 

@@ -25,8 +25,6 @@ import { cn } from "@/lib/utils";
 const PROVIDERS = [
   { id: "xai", label: "xAI", placeholder: "xai-…", url: "https://console.x.ai/team/default/api-keys", link: "Open xAI console" },
   { id: "openai", label: "OpenAI", placeholder: "sk-…", url: "https://platform.openai.com/api-keys", link: "Open OpenAI keys" },
-  { id: "azure", label: "Azure", placeholder: "Azure key", url: "https://portal.azure.com/", link: "Open Azure portal" },
-  { id: "elevenlabs", label: "ElevenLabs", placeholder: "xi-…", url: "https://elevenlabs.io/app/settings/api-keys", link: "Open ElevenLabs keys" },
   { id: "local", label: "On device", placeholder: "", url: "", link: "" },
 ] as const;
 

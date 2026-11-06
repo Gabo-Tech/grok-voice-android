@@ -138,6 +138,7 @@ export interface LocalPack {
   label: string;
   detail: string;
   downloadBytes: number;
+  installedBytes: number;
   ready: boolean;
 }
 
@@ -159,6 +160,8 @@ export interface Settings {
   dailyBudgetMinutes: number;
   /** End the session at the budget. Off unless the user opts in. */
   dailyBudgetHardStop: boolean;
+  /** Wake sessions try a saved on-device account first when packs are ready. */
+  preferLocalOnWake: boolean;
 }
 
 export interface UsageStatus {
@@ -210,6 +213,7 @@ export interface DebugInfo {
   speakerRate: number | null;
   lastWakeScore: number | null;
   sessions: number;
+  provider?: string | null;
   vaultSecurityLevel: string | null;
   keyHint: string | null;
   platform: string;
@@ -238,6 +242,8 @@ export const api = {
   saveUserToken: (token: string) => invoke<AuthStatus>("save_user_token", { token }),
   addVoiceAccount: (provider: string, secret: string) =>
     invoke<AuthStatus>("add_voice_account", { provider, secret }),
+  updateVoiceAccount: (id: string, provider: string, secret: string) =>
+    invoke<AuthStatus>("update_voice_account", { id, provider, secret }),
   removeVoiceAccount: (id: string) => invoke<AuthStatus>("remove_voice_account", { id }),
   moveVoiceAccount: (id: string, up: boolean) => invoke<AuthStatus>("move_voice_account", { id, up }),
   clearUserToken: () => invoke<AuthStatus>("clear_user_token"),

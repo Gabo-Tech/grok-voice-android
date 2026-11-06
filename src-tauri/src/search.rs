@@ -46,13 +46,16 @@ pub fn lookup(app: &AppHandle, query: &str) -> Result<Value, String> {
     if query.is_empty() {
         return Err("A search query is required.".into());
     }
+    let online = app
+        .state::<NativeBridge>()
+        .device_facts()
+        .map(|facts| facts.online)
+        .unwrap_or(true);
+    if !online {
+        return Err(crate::local::OFFLINE.into());
+    }
     if crate::local::public_search_enabled() {
-        let online = app
-            .state::<NativeBridge>()
-            .device_facts()
-            .map(|facts| facts.online)
-            .unwrap_or(true);
-        return crate::local::public_search(query, online);
+        return crate::local::public_search(query, true);
     }
     let body = json!({
         "model": MODEL,
@@ -82,7 +85,13 @@ fn post(app: &AppHandle, body: &Value) -> Result<Value, String> {
         .bearer_auth(key(app)?)
         .json(body)
         .send()
-        .map_err(|e| format!("xAI request failed: {e}"))?;
+        .map_err(|e| {
+            if e.is_connect() || e.is_timeout() || e.is_request() {
+                crate::local::OFFLINE.to_string()
+            } else {
+                format!("xAI request failed: {e}")
+            }
+        })?;
     let status = resp.status();
     let value: Value = resp.json().map_err(|e| format!("xAI response: {e}"))?;
     if !status.is_success() {
@@ -170,6 +179,19 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
         messages.push(json!({ "role": role, "content": turn.text }));
     }
 
+    let online = app
+        .state::<NativeBridge>()
+        .device_facts()
+        .map(|facts| facts.online)
+        .unwrap_or(true);
+    if crate::local::public_search_enabled() {
+        hub.emit("voice://busy", "");
+        return Ok("sent to the on-device session".into());
+    }
+    if !online {
+        return ask_offline(app, text);
+    }
+
     let tools = chat_tools();
     let mut input = messages;
     let mut answer = String::new();
@@ -185,6 +207,9 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
             Ok(v) => v,
             Err(e) => {
                 hub.emit("voice://busy", "");
+                if e.contains("needs a network connection") {
+                    hub.error(e.clone());
+                }
                 return Err(e);
             }
         };
@@ -233,4 +258,28 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
         json!({ "id": id, "role": "assistant", "text": answer, "delta": null, "isFinal": true }),
     );
     Ok(answer)
+}
+
+fn ask_offline(app: &AppHandle, text: &str) -> Result<String, String> {
+    let hub = app.state::<std::sync::Arc<Hub>>();
+    hub.emit("voice://busy", "On this phone…");
+    match crate::local::answer_text(app, text) {
+        Ok(answer) => {
+            remember_for_voice(format!("assistant: {}", answer.chars().take(500).collect::<String>()));
+            app.state::<crate::memory::Memory>().remember("assistant", &answer);
+            hub.emit("voice://busy", "");
+            let id = format!("text-a-{}", crate::diagnostics::now_ms());
+            hub.emit(
+                "voice://transcript",
+                json!({ "id": id, "role": "assistant", "text": answer, "delta": null, "isFinal": true }),
+            );
+            Ok(answer)
+        }
+        Err(err) => {
+            hub.emit("voice://busy", "");
+            hub.error(err.clone());
+            let _ = app.state::<NativeBridge>().speak_fallback(&err);
+            Err(err)
+        }
+    }
 }
