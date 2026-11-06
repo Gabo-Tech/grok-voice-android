@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Bug, ChevronRight, KeyRound, Wand2 } from "lucide-react";
+import { Bug, ChevronRight, KeyRound, Users, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { Field } from "@/components/Field";
 import { PageChrome, RowButton } from "@/components/PageChrome";
+import { PeoplePage } from "@/components/PeoplePage";
 import { WakeView } from "@/components/WakeView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import type { VoiceState } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type Settings, type WakewordStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Section = "menu" | "wake" | "debug" | "keys";
+type Section = "menu" | "wake" | "debug" | "keys" | "people";
 
 const PROVIDERS = [
   { id: "xai", label: "xAI" },
@@ -88,6 +89,10 @@ export function MorePage({
     );
   }
 
+  if (section === "people") {
+    return <PeoplePage onBack={() => setSection("menu")} />;
+  }
+
   if (section === "keys") {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -145,6 +150,12 @@ export function MorePage({
         </div>
       )}
       <div className="divide-y divide-border border-y border-border">
+        <MenuRow
+          icon={<Users className="size-4" />}
+          title="People"
+          detail="Nicknames and how to reach them"
+          onClick={() => setSection("people")}
+        />
         <MenuRow
           icon={<KeyRound className="size-4" />}
           title="Voice keys"

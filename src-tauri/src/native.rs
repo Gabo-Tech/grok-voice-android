@@ -17,6 +17,8 @@ pub struct PermissionStatus {
     pub notifications: String,
     #[serde(default)]
     pub calendar: String,
+    #[serde(default)]
+    pub contacts: String,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +158,30 @@ mod imp {
                 name: &'a str,
             }
             self.plugin_json("lookupContacts", Args { name })
+        }
+
+        pub fn list_phone_contacts(&self, query: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                query: &'a str,
+            }
+            self.plugin_json("listPhoneContacts", Args { query })
+        }
+
+        pub fn contact_handles(&self, id: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                id: &'a str,
+            }
+            self.plugin_json("contactHandles", Args { id })
+        }
+
+        pub fn open_phone_contact(&self, id: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                id: &'a str,
+            }
+            self.plugin_json("openPhoneContact", Args { id })
         }
 
         pub fn set_alarm(&self, hour: u32, minute: u32, label: &str, id: i32, at_ms: i64) -> Result<String> {
@@ -326,6 +352,7 @@ mod imp {
                 microphone: "granted".into(),
                 notifications: "granted".into(),
                 calendar: "granted".into(),
+                contacts: "granted".into(),
             })
         }
 
@@ -339,6 +366,18 @@ mod imp {
 
         pub fn lookup_contacts(&self, name: &str) -> Result<String> {
             Ok(format!(r#"{{"ok":false,"error":"Contacts for {name} are only on the Android phone."}}"#))
+        }
+
+        pub fn list_phone_contacts(&self, _query: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Phone contacts are only on the Android phone."}"#.into())
+        }
+
+        pub fn contact_handles(&self, _id: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Phone contacts are only on the Android phone."}"#.into())
+        }
+
+        pub fn open_phone_contact(&self, _id: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Opening a phone contact only works on Android."}"#.into())
         }
 
         pub fn request_calendar(&self) -> Result<PermissionStatus> {

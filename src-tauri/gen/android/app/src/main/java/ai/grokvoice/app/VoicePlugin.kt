@@ -280,10 +280,38 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
     var name: String = ""
   }
 
+  @InvokeArg
+  class ContactQueryArgs {
+    var query: String = ""
+  }
+
+  @InvokeArg
+  class ContactIdArgs {
+    var id: String = ""
+  }
+
   @Command
   fun lookupContacts(invoke: Invoke) {
     val a = invoke.parseArgs(ContactArgs::class.java)
     resolveJson(invoke, HandOff.contacts(activity.applicationContext, a.name))
+  }
+
+  @Command
+  fun listPhoneContacts(invoke: Invoke) {
+    val a = invoke.parseArgs(ContactQueryArgs::class.java)
+    resolveJson(invoke, HandOff.listContacts(activity.applicationContext, a.query))
+  }
+
+  @Command
+  fun contactHandles(invoke: Invoke) {
+    val a = invoke.parseArgs(ContactIdArgs::class.java)
+    resolveJson(invoke, HandOff.contact(activity.applicationContext, a.id))
+  }
+
+  @Command
+  fun openPhoneContact(invoke: Invoke) {
+    val a = invoke.parseArgs(ContactIdArgs::class.java)
+    resolveJson(invoke, HandOff.viewContact(activity.applicationContext, a.id))
   }
 
   @Command

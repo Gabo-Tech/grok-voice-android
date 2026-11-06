@@ -26,6 +26,49 @@ export interface PermissionStatus {
   microphone: string;
   notifications: string;
   calendar?: string;
+  contacts?: string;
+}
+
+export type PreferredChannel = "" | "call" | "sms" | "whatsapp" | "signal" | "email";
+
+export interface PersonHandles {
+  phone: string;
+  email: string;
+  whatsapp: string;
+  signal: string;
+}
+
+export interface Person {
+  id: string;
+  androidContactId: string | null;
+  displayName: string;
+  nickname: string;
+  aliases: string[];
+  preferredChannel: PreferredChannel;
+  handles: PersonHandles;
+  favorite: boolean;
+  note: string;
+  /** Reserved for later. Always empty in this version. */
+  reminders: unknown[];
+}
+
+export interface PersonDraft {
+  id?: string;
+  androidContactId: string | null;
+  displayName: string;
+  nickname: string;
+  aliases: string[];
+  preferredChannel: PreferredChannel;
+  handles: PersonHandles;
+  favorite: boolean;
+  note: string;
+}
+
+export interface PhoneContact {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
 }
 
 export interface Note {
@@ -185,6 +228,13 @@ export const api = {
     }),
   deleteEvent: (id: string) => invoke<Agenda>("delete_event", { id }),
   requestCalendar: () => invoke<PermissionStatus>("request_calendar"),
+  listPeople: () => invoke<Person[]>("list_people"),
+  savePerson: (person: PersonDraft) => invoke<Person>("save_person", { person }),
+  deletePerson: (id: string) => invoke<Person[]>("delete_person", { id }),
+  requestContacts: () => invoke<PermissionStatus>("request_contacts"),
+  listPhoneContacts: (query?: string) => invoke<PhoneContact[]>("list_phone_contacts", { query: query ?? null }),
+  phoneContact: (id: string) => invoke<PhoneContact>("phone_contact", { id }),
+  openPhoneContact: (id: string) => invoke<void>("open_phone_contact", { id }),
   recentMemory: () => invoke<Array<{ atMs: number; role: "user" | "assistant"; text: string }>>("recent_memory"),
   clearMemory: () => invoke<void>("clear_memory"),
 };

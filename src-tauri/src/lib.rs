@@ -3,6 +3,7 @@ mod audio;
 mod commands;
 mod diagnostics;
 mod memory;
+mod people;
 mod error;
 mod native;
 mod realtime;
@@ -69,6 +70,7 @@ pub fn run() {
             app.manage(Vault::new(dir.join("vault")));
             app.manage(WakewordFiles::new(dir.join("wakeword")));
             app.manage(actions::Agenda::load(dir.join("agenda.json")));
+            app.manage(people::People::load(dir.join("people.json")));
             app.manage(memory::Memory::load(dir.join("memory.json")));
             let handle = app.handle().clone();
             std::thread::spawn(move || actions::reschedule(&handle));
@@ -104,6 +106,13 @@ pub fn run() {
             commands::save_event,
             commands::delete_event,
             commands::request_calendar,
+            commands::list_people,
+            commands::save_person,
+            commands::delete_person,
+            commands::request_contacts,
+            commands::list_phone_contacts,
+            commands::phone_contact,
+            commands::open_phone_contact,
             commands::ask_text,
             commands::recent_memory,
             commands::clear_memory,
