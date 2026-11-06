@@ -215,6 +215,9 @@ impl Vault {
                     }
                 }
             }
+            if provider == "local" && list.iter().any(|account| account.provider == "local") {
+                return Err(crate::error::msg("On device is already in the list."));
+            }
             list.push(StoredAccount {
                 id: format!("{provider}-{}", chrono::Utc::now().timestamp_millis()),
                 provider,
@@ -243,6 +246,42 @@ impl Vault {
                 sh.write_client(CLIENT).map_err(verr)?;
                 sh.save().map_err(verr)?;
             }
+            Ok(public_accounts(&list))
+        })
+    }
+
+    pub fn update_account(&self, bridge: &NativeBridge, id: &str, provider: &str, secret: &str) -> Result<Vec<VoiceAccount>> {
+        let provider = provider.trim().to_string();
+        let secret = secret.trim().to_string();
+        self.with_store(bridge, |sh, client| {
+            let mut list = read_accounts(client)?;
+            if list.is_empty() {
+                if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
+                    let legacy = String::from_utf8_lossy(&bytes).trim().to_string();
+                    if !legacy.is_empty() {
+                        list.push(StoredAccount { id: "legacy-xai".into(), provider: "xai".into(), secret: legacy });
+                    }
+                }
+            }
+            let Some(index) = list.iter().position(|account| account.id == id) else {
+                return Err(crate::error::msg("That voice key is no longer on this phone."));
+            };
+            if provider == "local" && list.iter().any(|account| account.provider == "local" && account.id != id) {
+                return Err(crate::error::msg("On device is already in the list."));
+            }
+            if provider != "local" && secret.is_empty() && provider != list[index].provider {
+                return Err(crate::error::msg("Paste the key for this provider."));
+            }
+            let next_secret = if provider == "local" {
+                "on-device".to_string()
+            } else if secret.is_empty() {
+                list[index].secret.clone()
+            } else {
+                secret
+            };
+            list[index].provider = provider;
+            list[index].secret = next_secret;
+            write_accounts(sh, client, &list)?;
             Ok(public_accounts(&list))
         })
     }

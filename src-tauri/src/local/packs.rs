@@ -60,6 +60,7 @@ pub struct PackInfo {
     pub label: String,
     pub detail: String,
     pub download_bytes: u64,
+    pub installed_bytes: u64,
     pub ready: bool,
 }
 
@@ -114,6 +115,7 @@ pub fn pack_status(root: &Path) -> Vec<PackInfo> {
             label: spec.label.into(),
             detail: spec.detail.into(),
             download_bytes: spec.download_bytes,
+            installed_bytes: dir_bytes(&root.join(spec.id)),
             ready: pack_ready(root, spec.id),
         })
         .collect()
@@ -143,6 +145,22 @@ fn file_ok(path: &Path) -> bool {
 
 fn dir_ok(path: &Path) -> bool {
     fs::metadata(path).map(|meta| meta.is_dir()).unwrap_or(false)
+}
+
+fn dir_bytes(path: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.is_file() {
+            total += meta.len();
+        } else if meta.is_dir() {
+            total += dir_bytes(&entry.path());
+        }
+    }
+    total
 }
 
 static BUSY: AtomicBool = AtomicBool::new(false);
@@ -262,6 +280,7 @@ mod tests {
         assert!(status.iter().all(|pack| pack.ready));
         assert!(packs_ready(&root));
         assert_eq!(status[1].download_bytes, 491_400_032);
+        assert!(status.iter().all(|pack| pack.installed_bytes > 0));
         delete_pack(&root, "llm").unwrap();
         assert!(!packs_ready(&root));
         let _ = fs::remove_dir_all(&root);

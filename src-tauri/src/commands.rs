@@ -12,7 +12,7 @@ use crate::{
     diagnostics::{self, DebugSnapshot, Hub, LogLine, now_ms},
     error::{Result, msg},
     native::{NativeBridge, PermissionStatus},
-    realtime::{http_client, mint_ephemeral},
+    realtime::{http_client, mint_ephemeral, mint_openai},
     settings::{Settings, SettingsStore},
     vault::{AuthStatus, Vault},
     wakeword::{SAMPLE_COUNT, SampleInfo, WakewordFiles, WakewordStatus},
@@ -58,7 +58,7 @@ pub async fn ask_text(app: AppHandle, text: String) -> Result<String> {
 async fn ensure_key(app: &AppHandle) -> Result<()> {
     let status = blocking(app.clone(), |app| vault_status(&app)).await?;
     if !status.has_key {
-        return Err(msg("Add your xAI API key first."));
+        return Err(msg("Add a voice key first."));
     }
     Ok(())
 }
@@ -106,6 +106,9 @@ pub async fn clear_user_token(app: AppHandle, engine: State<'_, Engine>, hub: St
 pub async fn add_voice_account(app: AppHandle, provider: String, secret: String) -> Result<AuthStatus> {
     let provider = provider.trim().to_string();
     let secret = Zeroizing::new(secret.trim().to_string());
+    if !matches!(provider.as_str(), "xai" | "openai" | "local") {
+        return Err(msg("That provider is not available yet."));
+    }
     if provider == "local" {
         let secret = Zeroizing::new("on-device".to_string());
         return blocking(app, move |app| {
@@ -119,9 +122,46 @@ pub async fn add_voice_account(app: AppHandle, provider: String, secret: String)
     }
     if provider == "xai" {
         mint_ephemeral(&http_client(), &secret).await?;
+    } else if provider == "openai" {
+        mint_openai(&http_client(), &secret).await?;
     }
     blocking(app, move |app| {
         app.state::<Vault>().add_account(&app.state::<NativeBridge>(), &provider, &secret)?;
+        vault_status(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn update_voice_account(
+    app: AppHandle,
+    id: String,
+    provider: String,
+    secret: Option<String>,
+) -> Result<AuthStatus> {
+    let provider = provider.trim().to_string();
+    if !matches!(provider.as_str(), "xai" | "openai" | "local") {
+        return Err(msg("That provider is not available yet."));
+    }
+    let replacement = secret.unwrap_or_default();
+    let replacement = replacement.trim().to_string();
+    if provider != "local" && !replacement.is_empty() {
+        if replacement.len() < 12 || replacement.contains(char::is_whitespace) {
+            return Err(msg("That key looks too short."));
+        }
+        if provider == "xai" {
+            mint_ephemeral(&http_client(), &replacement).await?;
+        } else {
+            mint_openai(&http_client(), &replacement).await?;
+        }
+    }
+    let secret = Zeroizing::new(if provider == "local" {
+        "on-device".to_string()
+    } else {
+        replacement
+    });
+    blocking(app, move |app| {
+        app.state::<Vault>().update_account(&app.state::<NativeBridge>(), &id, &provider, &secret)?;
         vault_status(&app)
     })
     .await

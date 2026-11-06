@@ -47,6 +47,8 @@ pub struct DebugSnapshot {
     pub speaker_rate: Option<u32>,
     pub last_wake_score: Option<f32>,
     pub sessions: u64,
+    /// Talk badge: Local, xAI, or OpenAI. Empty when no session is up.
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

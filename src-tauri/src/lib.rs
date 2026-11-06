@@ -90,6 +90,7 @@ pub fn run() {
             commands::clear_user_token,
             commands::auth_status,
             commands::add_voice_account,
+            commands::update_voice_account,
             commands::remove_voice_account,
             commands::move_voice_account,
             commands::permissions_status,

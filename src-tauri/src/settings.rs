@@ -25,6 +25,9 @@ pub struct Settings {
     pub daily_budget_minutes: u32,
     /// End the live session when the soft budget is reached. Off unless the user opts in.
     pub daily_budget_hard_stop: bool,
+    /// Wake-word sessions try a saved on-device account first when the packs are ready.
+    /// Off keeps the saved key order. A missing local account is never invented.
+    pub prefer_local_on_wake: bool,
 }
 
 impl Default for Settings {
@@ -43,6 +46,7 @@ impl Default for Settings {
             listen_armed: false,
             daily_budget_minutes: 0,
             daily_budget_hard_stop: false,
+            prefer_local_on_wake: false,
         }
     }
 }

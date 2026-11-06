@@ -4,6 +4,20 @@
 use serde_json::{Value, json};
 
 pub const OFFLINE: &str = "Web search needs a network connection, and this phone is offline.";
+pub const OFFLINE_VOICE: &str = "This phone is offline. Notes, reminders, and People still work in the app. Web search needs a network connection, and the on-device packs are not ready for voice.";
+
+/// Network tools stop with a short sentence. Notes, time, and People stay available.
+pub fn network_block(name: &str, online: bool) -> Option<&'static str> {
+    if online {
+        return None;
+    }
+    match name {
+        "web_search" => Some(OFFLINE),
+        "open_browser" => Some("The browser needs a network connection, and this phone is offline."),
+        "open_youtube" => Some("YouTube needs a network connection, and this phone is offline."),
+        _ => None,
+    }
+}
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn offline_tool_error() -> String {
@@ -202,6 +216,30 @@ mod tests {
         let err = lookup("weather in zurich", false).unwrap_err();
         assert_eq!(err, OFFLINE);
         assert!(offline_tool_error().contains(OFFLINE));
+        assert!(network_block("web_search", false).unwrap().contains("offline"));
+        assert!(network_block("open_browser", false).unwrap().contains("offline"));
+        assert!(network_block("open_youtube", false).unwrap().contains("offline"));
+        assert!(network_block("web_search", true).is_none());
+        for name in [
+            "create_note",
+            "list_notes",
+            "update_note",
+            "delete_note",
+            "set_alarm",
+            "set_timer",
+            "set_reminder",
+            "list_reminders",
+            "snooze_reminder",
+            "list_calendar_events",
+            "create_calendar_event",
+            "get_person",
+            "find_contact",
+            "set_person_reminder",
+            "open_call",
+            "open_sms",
+        ] {
+            assert!(network_block(name, false).is_none(), "{name} stays available offline");
+        }
     }
 
     #[test]

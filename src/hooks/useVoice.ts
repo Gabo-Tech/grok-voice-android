@@ -22,6 +22,7 @@ export function useVoice() {
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState("");
   const [spend, setSpend] = useState<string | null>(null);
+  const [provider, setProvider] = useState("");
   const levelRef = useRef<Level>({ mic: 0, out: 0 });
   const [level, setLevel] = useState<Level>({ mic: 0, out: 0 });
   const raf = useRef<number | null>(null);
@@ -50,6 +51,7 @@ export function useVoice() {
     });
 
     void sub<Phase>("voice://phase", setPhase);
+    void sub<string>("voice://provider", setProvider);
     void sub<boolean>("voice://wake_enabled", setWakeEnabled);
     void sub<Level>("voice://level", (l) => {
       levelRef.current = l;
@@ -92,6 +94,7 @@ export function useVoice() {
       if (disposed) return;
       setPhase(d.phase);
       setWakeEnabled(d.wakeEnabled);
+      setProvider(d.provider ?? "");
     });
     void api.debugLogs().then((l) => !disposed && setLogs(l));
 
@@ -141,6 +144,7 @@ export function useVoice() {
 
   return {
     phase,
+    provider,
     wakeEnabled,
     rows,
     logs,

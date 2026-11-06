@@ -134,6 +134,13 @@ export function AssistantView({ voice, wakeTrained }: { voice: VoiceState; wakeT
         </button>
       </form>
       <div className="shrink-0 pt-4">
+        {voice.provider ? (
+          <p className="mb-3 text-center">
+            <span className="border border-border px-2 py-1 text-[10px] tracking-[0.14em] text-foreground uppercase">
+              {voice.provider}
+            </span>
+          </p>
+        ) : null}
         <GlowRing phase={voice.phase} level={voice.level} wakePhrase="Hey Grok" onPress={() => void voice.toggleSession()} />
       </div>
     </div>
