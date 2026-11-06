@@ -8,4 +8,12 @@
     <string name="widget_next_empty">Keine nächste Erinnerung</string>
     <string name="tile_talk">Sprechen</string>
     <string name="tile_talk_idle">Nächste Erinnerung</string>
+    <string name="listener_title">Hey Grok hört zu</string>
+    <string name="listener_text">Sag „Hey Grok“, oder tippe zum Öffnen</string>
+    <string name="listener_stop">Stopp</string>
+    <string name="listener_channel_name">Hey-Grok-Hören</string>
+    <string name="listener_channel_desc">Sichtbar, solange Grok Voice auf „Hey Grok“ hört</string>
+    <string name="listener_alert_channel_name">Hey Grok</string>
+    <string name="listener_alert_title">Hey Grok</string>
+    <string name="listener_alert_text">Hört zu</string>
 </resources>

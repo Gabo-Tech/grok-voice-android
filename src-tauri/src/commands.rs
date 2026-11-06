@@ -92,7 +92,7 @@ pub async fn save_user_token(app: AppHandle, hub: State<'_, Arc<Hub>>, token: St
 #[tauri::command]
 pub async fn clear_user_token(app: AppHandle, engine: State<'_, Engine>, hub: State<'_, Arc<Hub>>) -> Result<AuthStatus> {
     engine.send(Ctl::EndSession);
-    engine.send(Ctl::SetWakeEnabled(false));
+    engine.send(Ctl::SetWakeEnabled { enabled: false, reason: "signed out" });
     let status = blocking(app, |app| {
         app.state::<Vault>().delete_api_key(&app.state::<NativeBridge>())?;
         vault_status(&app)
@@ -220,7 +220,10 @@ pub async fn set_wake_enabled(app: AppHandle, engine: State<'_, Engine>, enabled
     let mut settings = app.state::<SettingsStore>().get();
     settings.listen_armed = enabled;
     let _ = app.state::<SettingsStore>().save(settings);
-    engine.send(Ctl::SetWakeEnabled(enabled));
+    engine.send(Ctl::SetWakeEnabled {
+        enabled,
+        reason: if enabled { "user turned Listen on" } else { "user turned Listen off" },
+    });
     Ok(enabled)
 }
 
@@ -310,7 +313,40 @@ pub struct DebugInfo {
 
 #[tauri::command]
 pub async fn debug_snapshot(app: AppHandle) -> Result<DebugInfo> {
-    let snapshot = app.state::<Arc<Hub>>().snapshot();
+    #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
+    let mut snapshot = app.state::<Arc<Hub>>().snapshot();
+    #[cfg(target_os = "android")]
+    {
+        let bridge = app.state::<NativeBridge>();
+        if let Ok(status) = bridge.listener_status() {
+            snapshot.foreground_service = status.service_running;
+            snapshot.activity_resumed = status.activity_resumed;
+            snapshot.screen_interactive = status.screen_interactive;
+            if status.mic_open {
+                snapshot.mic_source = "audiorecord".into();
+                if snapshot.mic_rate.is_none() {
+                    snapshot.mic_rate = Some(16_000);
+                }
+            } else if snapshot.mic_source.is_empty() || snapshot.mic_source == "audiorecord" {
+                snapshot.mic_source = if snapshot.mic_rate.is_some() { "cpal".into() } else { "closed".into() };
+            }
+            if !status.last_stop_reason.is_empty() {
+                snapshot.last_stop_reason = Some(status.last_stop_reason);
+            }
+            snapshot.listener_history = status
+                .history
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| line.to_string())
+                .collect();
+        }
+        if let Ok(lines) = bridge.drain_listener_events() {
+            let hub = app.state::<Arc<Hub>>();
+            for line in lines {
+                hub.info(line);
+            }
+        }
+    }
     let auth = blocking(app.clone(), |app| vault_status(&app)).await.ok();
     Ok(DebugInfo {
         snapshot,

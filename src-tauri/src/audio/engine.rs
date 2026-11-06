@@ -6,7 +6,7 @@
 use std::{
     collections::VecDeque,
     sync::{
-        Arc, OnceLock,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError},
     },
@@ -46,12 +46,34 @@ const LEVEL_INTERVAL: Duration = Duration::from_millis(66);
 pub type RecordReply = Sender<Result<Vec<f32>, String>>;
 
 pub enum Ctl {
-    SetWakeEnabled(bool),
+    SetWakeEnabled { enabled: bool, reason: &'static str },
     StartSession,
     EndSession,
     Record { secs: f32, reply: RecordReply },
     ReloadWakeword,
     ReloadSettings,
+}
+
+/// Where the next microphone samples should come from.
+///
+/// On Android the foreground service's AudioRecord is the capture that keeps
+/// working with the screen off and after the activity is destroyed. cpal's
+/// AAudio stream is silenced in those states, so it is only the fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapturePlan {
+    Cpal,
+    Service,
+    WaitForService,
+}
+
+pub fn capture_plan(android: bool, service_running: bool, service_recent: bool) -> CapturePlan {
+    if android && service_running && service_recent {
+        CapturePlan::Service
+    } else if android && service_running {
+        CapturePlan::WaitForService
+    } else {
+        CapturePlan::Cpal
+    }
 }
 
 #[derive(Clone)]
@@ -61,6 +83,48 @@ pub struct Engine {
 
 static CONTROL: OnceLock<Sender<Ctl>> = OnceLock::new();
 static KEEP_ALIVE: AtomicBool = AtomicBool::new(false);
+static SERVICE_TX: Mutex<Option<SyncSender<Vec<f32>>>> = Mutex::new(None);
+static PRESENT_TALK: AtomicBool = AtomicBool::new(false);
+static REOPEN_MIC: AtomicBool = AtomicBool::new(false);
+static SERVICE_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// PCM from the Android foreground service, already at 16 kHz. Drops the chunk
+/// if the engine is not listening yet or has fallen behind.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn push_service_mic(pcm: Vec<f32>) -> bool {
+    let guard = SERVICE_TX.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(tx) => tx.try_send(pcm).is_ok(),
+        None => false,
+    }
+}
+
+pub fn request_present_talk() {
+    PRESENT_TALK.store(true, Ordering::Release);
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn poll_present_talk() -> bool {
+    PRESENT_TALK.swap(false, Ordering::AcqRel)
+}
+
+pub fn request_reopen_mic() {
+    REOPEN_MIC.store(true, Ordering::Release);
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn poll_reopen_mic() -> bool {
+    REOPEN_MIC.swap(false, Ordering::AcqRel)
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn mark_service_failed() {
+    SERVICE_FAILED.store(true, Ordering::Release);
+}
+
+fn take_service_failed() -> bool {
+    SERVICE_FAILED.swap(false, Ordering::AcqRel)
+}
 
 /// Used by the JNI entry point when the user taps "Stop" on the foreground notification.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -82,10 +146,12 @@ pub fn hold_listener_process(listen_armed: bool, service_running: bool) -> bool 
 impl Engine {
     pub fn spawn(app: AppHandle) -> Self {
         let (tx, rx) = mpsc::channel();
+        let (service_tx, service_rx) = mpsc::sync_channel(64);
         let _ = CONTROL.set(tx.clone());
+        *SERVICE_TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(service_tx);
         thread::Builder::new()
             .name("grok-audio".into())
-            .spawn(move || EngineThread::new(app, rx).run())
+            .spawn(move || EngineThread::new(app, rx, service_rx).run())
             .expect("spawn audio engine thread");
         Self { tx }
     }
@@ -104,7 +170,6 @@ struct Level {
 struct Input {
     _stream: Stream,
     rx: Receiver<Vec<f32>>,
-    resampler: Resampler,
 }
 
 struct SessionLink {
@@ -124,6 +189,14 @@ struct EngineThread {
     hub: Arc<Hub>,
     player: Arc<Player>,
     rx: Receiver<Ctl>,
+    service_rx: Receiver<Vec<f32>>,
+    mic_resampler: Resampler,
+    service_format: bool,
+    service_failures: u32,
+    last_service_at: Option<Instant>,
+    service_wait_started: Option<Instant>,
+    service_retry_at: Option<Instant>,
+    speaker_fail_since: Option<Instant>,
     settings: Settings,
     wake_enabled: bool,
     service_running: bool,
@@ -147,7 +220,7 @@ struct EngineThread {
 }
 
 impl EngineThread {
-    fn new(app: AppHandle, rx: Receiver<Ctl>) -> Self {
+    fn new(app: AppHandle, rx: Receiver<Ctl>, service_rx: Receiver<Vec<f32>>) -> Self {
         let hub = app.state::<Arc<Hub>>().inner().clone();
         let player = app.state::<Arc<Player>>().inner().clone();
         let settings = app.state::<SettingsStore>().get();
@@ -156,6 +229,14 @@ impl EngineThread {
             hub,
             player,
             rx,
+            service_rx,
+            mic_resampler: Resampler::new(WAKE_RATE, WAKE_RATE),
+            service_format: false,
+            service_failures: 0,
+            last_service_at: None,
+            service_wait_started: None,
+            service_retry_at: None,
+            speaker_fail_since: None,
             wake_enabled: settings.listen_armed,
             settings,
             service_running: false,
@@ -182,22 +263,22 @@ impl EngineThread {
     fn run(mut self) {
         self.reload_wakeword();
         loop {
-            loop {
-                match self.rx.try_recv() {
-                    Ok(c) => self.handle(c),
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => return,
-                }
+            if !self.drain_control() {
+                return;
             }
+            self.drain_service();
 
             if self.input_failed.swap(false, Ordering::Relaxed) {
                 self.hub.warn("microphone stream interrupted, reopening");
                 self.input = None;
             }
-            // Screen-off and leaving the app can silence capture without an error.
-            // Wait long enough that a stream which is still starting is not torn down.
-            let needs_mic = self.wake_enabled || self.session.is_some() || self.recording.is_some();
-            if needs_mic && self.input.is_some() && self.last_chunk_at.elapsed() >= Duration::from_secs(6) {
+            // A cpal/AAudio stream can go silent when the screen locks without reporting
+            // an error. The service capture has its own reopen path.
+            let needs_mic = self.needs_mic();
+            if needs_mic
+                && self.input.is_some()
+                && self.last_chunk_at.elapsed() >= Duration::from_secs(6)
+            {
                 self.hub.warn("microphone silent, reopening");
                 self.input = None;
                 self.wake_buf.clear();
@@ -211,36 +292,130 @@ impl EngineThread {
             }
             self.reconcile();
 
-            let Some(input) = self.input.as_ref() else {
-                let needs = self.wake_enabled || self.session.is_some() || self.recording.is_some();
-                let recv = if needs {
-                    self.rx.recv_timeout(Duration::from_millis(400))
-                } else {
-                    self.rx.recv_timeout(Duration::from_secs(3600))
-                };
-                match recv {
-                    Ok(c) => self.handle(c),
-                    Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => return,
+            if !self.needs_mic() {
+                if !self.wait_control(Duration::from_secs(3600)) {
+                    return;
                 }
                 continue;
-            };
-            match input.rx.recv_timeout(Duration::from_millis(40)) {
-                Ok(chunk) => {
-                    self.on_chunk(&chunk);
-                    while let Some(chunk) = self.input.as_ref().and_then(|i| i.rx.try_recv().ok()) {
-                        self.on_chunk(&chunk);
+            }
+            let plan = capture_plan(
+                cfg!(target_os = "android"),
+                self.service_running,
+                self.service_recent(),
+            );
+            match plan {
+                CapturePlan::Service => {
+                    if self
+                        .last_service_at
+                        .is_none_or(|t| t.elapsed() >= Duration::from_millis(20))
+                    {
+                        self.wait_service(Duration::from_millis(20));
                     }
                 }
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => self.input_failed.store(true, Ordering::Relaxed),
+                CapturePlan::WaitForService => self.wait_service(Duration::from_millis(200)),
+                CapturePlan::Cpal => {
+                    if self.input.is_none() {
+                        if !self.wait_control(Duration::from_millis(400)) {
+                            return;
+                        }
+                        continue;
+                    }
+                    self.read_cpal();
+                }
             }
         }
     }
 
+    fn needs_mic(&self) -> bool {
+        self.wake_enabled || self.session.is_some() || self.recording.is_some()
+    }
+
+    fn service_recent(&self) -> bool {
+        self.last_service_at
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(2))
+    }
+
+    fn drain_control(&mut self) -> bool {
+        loop {
+            match self.rx.try_recv() {
+                Ok(c) => self.handle(c),
+                Err(TryRecvError::Empty) => return true,
+                Err(TryRecvError::Disconnected) => return false,
+            }
+        }
+    }
+
+    fn wait_control(&mut self, dur: Duration) -> bool {
+        match self.rx.recv_timeout(dur) {
+            Ok(c) => {
+                self.handle(c);
+                true
+            }
+            Err(RecvTimeoutError::Timeout) => true,
+            Err(RecvTimeoutError::Disconnected) => false,
+        }
+    }
+
+    fn drain_service(&mut self) {
+        loop {
+            match self.service_rx.try_recv() {
+                Ok(chunk) => self.consume_service(&chunk),
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
+    }
+
+    fn wait_service(&mut self, dur: Duration) {
+        match self.service_rx.recv_timeout(dur) {
+            Ok(chunk) => self.consume_service(&chunk),
+            Err(RecvTimeoutError::Timeout) | Err(RecvTimeoutError::Disconnected) => {}
+        }
+    }
+
+    fn read_cpal(&mut self) {
+        let Some(input) = self.input.as_ref() else {
+            return;
+        };
+        match input.rx.recv_timeout(Duration::from_millis(40)) {
+            Ok(chunk) => {
+                self.on_chunk(&chunk);
+                while let Some(chunk) = self.input.as_ref().and_then(|i| i.rx.try_recv().ok()) {
+                    self.on_chunk(&chunk);
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => self.input_failed.store(true, Ordering::Relaxed),
+        }
+    }
+
+    fn consume_service(&mut self, chunk: &[f32]) {
+        if !self.service_format {
+            self.service_format = true;
+            self.mic_resampler = Resampler::new(WAKE_RATE, WAKE_RATE);
+            self.hub.update(|s| {
+                s.mic_rate = Some(WAKE_RATE);
+                s.mic_source = "audiorecord".into();
+            });
+            self.hub
+                .info("microphone reaching the wake engine from the foreground service");
+        }
+        self.last_service_at = Some(Instant::now());
+        self.service_failures = 0;
+        self.service_wait_started = None;
+        if self.input.is_some() {
+            self.input = None;
+            self.hub
+                .info("closed the activity microphone; the foreground service owns capture");
+        }
+        self.on_chunk(chunk);
+    }
+
     fn handle(&mut self, c: Ctl) {
         match c {
-            Ctl::SetWakeEnabled(on) => {
+            Ctl::SetWakeEnabled {
+                enabled: on,
+                reason,
+            } => {
                 self.wake_enabled = on;
                 KEEP_ALIVE.store(on || self.service_running, Ordering::Release);
                 self.settings.listen_armed = on;
@@ -248,13 +423,26 @@ impl EngineThread {
                 if let Ok(saved) = store.save(self.settings.clone()) {
                     self.settings = saved;
                 }
-                self.hub.update(|s| s.wake_enabled = on);
+                self.hub.update(|s| {
+                    s.wake_enabled = on;
+                    if !on {
+                        s.last_stop_reason = Some(reason.into());
+                    }
+                });
                 self.hub.emit("voice://wake_enabled", on);
                 if on && self.detector.is_none() {
                     self.hub.warn("wake word not trained yet — tap the ring to talk, or enroll “Hey Grok” in the Wake tab");
                 }
                 if on {
+                    self.service_failures = 0;
                     self.hub.info("listening for “Hey Grok”");
+                } else {
+                    // Android records the same line from the service, including after the
+                    // process is gone. Desktop has no service, so the hub is the log.
+                    #[cfg(not(target_os = "android"))]
+                    self.hub.info(format!("listening stopped: {reason}"));
+                    self.last_service_at = None;
+                    self.service_format = false;
                 }
             }
             Ctl::StartSession => self.start_session("manual"),
@@ -266,7 +454,11 @@ impl EngineThread {
                     let _ = reply.send(Err("already recording".into()));
                 } else {
                     let target = (secs.clamp(0.5, 5.0) * WAKE_RATE as f32) as usize;
-                    self.recording = Some(Recording { buf: Vec::with_capacity(target), target, reply });
+                    self.recording = Some(Recording {
+                        buf: Vec::with_capacity(target),
+                        target,
+                        reply,
+                    });
                     self.hub.info(format!("recording wake sample ({secs:.1}s)"));
                 }
             }
@@ -301,31 +493,65 @@ impl EngineThread {
     }
 
     fn reconcile(&mut self) {
-        let need_in = self.wake_enabled || self.session.is_some() || self.recording.is_some();
+        let need_in = self.needs_mic();
         let need_out = self.session.is_some();
 
-        // Android 14+: a microphone foreground service must be running before (or while)
-        // we capture, otherwise capture is silenced once the activity leaves the foreground.
-        if need_in && !self.service_running {
+        if take_service_failed() {
+            self.service_running = false;
+            self.service_retry_at = Some(Instant::now() + Duration::from_secs(5));
+            self.hub.warn("foreground service failed to start");
+        }
+
+        // Android 14+ silences capture once the activity leaves the foreground unless a
+        // microphone foreground service is already running. The service owns AudioRecord;
+        // opening cpal here would race it and get silence after lock or task removal.
+        let service_due = self.service_retry_at.is_none_or(|t| Instant::now() >= t);
+        if need_in && !self.service_running && service_due {
             let bridge = self.app.state::<NativeBridge>();
-            match bridge.start_service("Hey Grok is listening", "Say “Hey Grok”, or tap to open") {
+            match bridge.start_service("Hey Grok is listening", "Say “Hey Grok”, or tap to open")
+            {
                 Ok(()) => {
                     self.service_running = true;
                     self.service_warned = false;
-                    // startForeground runs on the main thread after this returns. Give it
-                    // a moment so Android still allows the microphone once we leave the app.
-                    thread::sleep(Duration::from_millis(400));
+                    self.service_retry_at = None;
+                    self.service_wait_started = Some(Instant::now());
+                    #[cfg(target_os = "android")]
+                    self.hub.info("foreground service requested");
                 }
                 Err(e) if !self.service_warned => {
                     self.service_warned = true;
-                    self.hub.warn(format!("foreground service not started: {e}"));
+                    self.service_retry_at = Some(Instant::now() + Duration::from_secs(5));
+                    self.hub
+                        .warn(format!("foreground service not started: {e}"));
                 }
-                Err(_) => {}
+                Err(_) => {
+                    self.service_retry_at = Some(Instant::now() + Duration::from_secs(5));
+                }
             }
         }
 
+        let plan = capture_plan(
+            cfg!(target_os = "android"),
+            self.service_running,
+            self.service_recent(),
+        );
+        if matches!(plan, CapturePlan::WaitForService) {
+            let started = *self.service_wait_started.get_or_insert_with(Instant::now);
+            if started.elapsed() >= Duration::from_secs(6) {
+                self.service_failures = self.service_failures.saturating_add(1);
+                if self.service_failures == 1 || self.service_failures.is_multiple_of(5) {
+                    self.hub.warn("foreground microphone silent, reopening");
+                }
+                request_reopen_mic();
+                self.service_wait_started = Some(Instant::now());
+            }
+        } else if matches!(plan, CapturePlan::Service) {
+            self.service_wait_started = None;
+        }
+
         let retry_due = self.mic_retry_at.is_none_or(|t| Instant::now() >= t);
-        if need_in && self.input.is_none() && retry_due {
+        let use_cpal = matches!(plan, CapturePlan::Cpal);
+        if use_cpal && need_in && self.input.is_none() && retry_due {
             match self.open_input() {
                 Ok(input) => {
                     self.input = Some(input);
@@ -336,7 +562,8 @@ impl EngineThread {
                 Err(e) => {
                     if !self.mic_warned {
                         self.mic_warned = true;
-                        self.hub.warn(format!("microphone unavailable, will keep trying: {e}"));
+                        self.hub
+                            .warn(format!("microphone unavailable, will keep trying: {e}"));
                     }
                     self.mic_retry_at = Some(Instant::now() + Duration::from_secs(1));
                     if let Some(r) = self.recording.take() {
@@ -344,17 +571,31 @@ impl EngineThread {
                     }
                 }
             }
-        } else if !need_in && self.input.is_some() {
+        } else if (!use_cpal || !need_in) && self.input.is_some() {
             self.input = None;
-            self.hub.update(|s| s.mic_rate = None);
+            if !matches!(plan, CapturePlan::Service) {
+                self.hub.update(|s| s.mic_rate = None);
+            }
         }
 
         if need_out && self.output.is_none() {
             match self.open_output() {
-                Ok(s) => self.output = Some(s),
+                Ok(s) => {
+                    self.output = Some(s);
+                    self.speaker_fail_since = None;
+                }
                 Err(e) => {
-                    self.hub.error(format!("speaker unavailable: {e}"));
-                    self.finish_session();
+                    // The screen may still be off when a wake opens the speaker. Keep the
+                    // session while Talk is being brought forward.
+                    if self.speaker_fail_since.is_none() {
+                        self.hub.warn(format!("speaker unavailable, will keep trying: {e}"));
+                    }
+                    let since = *self.speaker_fail_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() >= Duration::from_secs(8) {
+                        self.hub.error(format!("speaker unavailable: {e}"));
+                        self.speaker_fail_since = None;
+                        self.finish_session();
+                    }
                 }
             }
         } else if !need_out && self.output.is_some() {
@@ -362,14 +603,36 @@ impl EngineThread {
             self.hub.update(|s| s.speaker_rate = None);
         }
 
-        let need_in = self.wake_enabled || self.session.is_some() || self.recording.is_some();
+        let need_in = self.needs_mic();
         if !need_in && self.service_running {
             let _ = self.app.state::<NativeBridge>().stop_service();
             self.service_running = false;
             self.service_warned = false;
             self.mic_retry_at = None;
+            self.service_failures = 0;
+            self.last_service_at = None;
+            self.service_format = false;
+            self.service_wait_started = None;
         }
-        KEEP_ALIVE.store(hold_listener_process(self.wake_enabled, self.service_running), Ordering::Release);
+        let plan = capture_plan(
+            cfg!(target_os = "android"),
+            self.service_running,
+            self.service_recent(),
+        );
+        let mic_open = self.input.is_some();
+        self.hub.update(|s| {
+            s.foreground_service = cfg!(target_os = "android") && self.service_running;
+            s.mic_source = match plan {
+                CapturePlan::Service => "audiorecord".into(),
+                CapturePlan::WaitForService => "starting".into(),
+                CapturePlan::Cpal if mic_open => "cpal".into(),
+                CapturePlan::Cpal => "closed".into(),
+            };
+        });
+        KEEP_ALIVE.store(
+            hold_listener_process(self.wake_enabled, self.service_running),
+            Ordering::Release,
+        );
         self.update_idle_phase();
     }
 
@@ -388,11 +651,10 @@ impl EngineThread {
     }
 
     fn on_chunk(&mut self, chunk: &[f32]) {
-        let Some(input) = self.input.as_mut() else { return };
         self.last_chunk_at = Instant::now();
         let mut pcm = std::mem::take(&mut self.scratch);
         pcm.clear();
-        input.resampler.process(chunk, &mut pcm);
+        self.mic_resampler.process(chunk, &mut pcm);
 
         if self.last_level.elapsed() >= LEVEL_INTERVAL {
             self.last_level = Instant::now();
@@ -403,7 +665,10 @@ impl EngineThread {
             };
             self.hub.emit(
                 "voice://level",
-                Level { mic: (mic * 8.0).min(1.0), out: (self.player.level() * 5.0).min(1.0) },
+                Level {
+                    mic: (mic * 8.0).min(1.0),
+                    out: (self.player.level() * 5.0).min(1.0),
+                },
             );
         }
 
@@ -428,7 +693,13 @@ impl EngineThread {
             let mut up = Vec::new();
             self.uplink.process(&pcm, &mut up);
             let gain = self.uplink_gain;
-            link.pending.extend(up.iter().map(|&s| if mute { 0 } else { f32_to_i16((s * gain).clamp(-1.0, 1.0)) }));
+            link.pending.extend(up.iter().map(|&s| {
+                if mute {
+                    0
+                } else {
+                    f32_to_i16((s * gain).clamp(-1.0, 1.0))
+                }
+            }));
             let mut closed = false;
             while link.pending.len() >= UPLINK_CHUNK {
                 let frame: Vec<i16> = link.pending.drain(..UPLINK_CHUNK).collect();
@@ -459,7 +730,10 @@ impl EngineThread {
                 if let Some(d) = fired {
                     let score = d.score;
                     self.hub.update(|s| s.last_wake_score = Some(score));
-                    self.hub.info(format!("wake word detected (score {score:.3}, avg {:.3})", d.avg_score));
+                    self.hub.info(format!(
+                        "wake word detected (score {score:.3}, avg {:.3})",
+                        d.avg_score
+                    ));
                     self.hub.emit("voice://wake", score);
                     self.start_session("wake word");
                 }
@@ -483,8 +757,15 @@ impl EngineThread {
         let peak = lead.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         // Phone float audio is often far below full scale. Server VAD ignores it,
         // while the wake-word model still matches. Lift speech toward half scale.
-        self.uplink_gain = if peak < 0.0008 { 1.0 } else { (0.45 / peak).clamp(1.0, 16.0) };
-        self.hub.info(format!("uplink gain {:.1} (mic peak {:.4})", self.uplink_gain, peak));
+        self.uplink_gain = if peak < 0.0008 {
+            1.0
+        } else {
+            (0.45 / peak).clamp(1.0, 16.0)
+        };
+        self.hub.info(format!(
+            "uplink gain {:.1} (mic peak {:.4})",
+            self.uplink_gain, peak
+        ));
         let mut up = Vec::new();
         self.uplink.process(&lead, &mut up);
         let gain = self.uplink_gain;
@@ -501,6 +782,9 @@ impl EngineThread {
         }
         self.player.clear();
         self.hub.update(|s| s.sessions += 1);
+        if reason == "wake word" {
+            request_present_talk();
+        }
         self.hub.info(format!("voice session starting ({reason})"));
         self.hub.set_phase(Phase::Connecting);
         let wake = reason == "wake word";
@@ -515,6 +799,7 @@ impl EngineThread {
     }
 
     fn finish_session(&mut self) {
+        self.speaker_fail_since = None;
         if let Some(link) = self.session.take() {
             link.active.store(false, Ordering::Release);
             self.player.clear();
@@ -549,9 +834,20 @@ impl EngineThread {
             f => return Err(format!("unsupported mic sample format {f:?}")),
         }?;
         stream.play().map_err(|e| e.to_string())?;
-        self.hub.update(|s| s.mic_rate = Some(rate));
-        self.hub.info(format!("mic open: {rate} Hz × {channels}ch {:?}", supported.sample_format()));
-        Ok(Input { _stream: stream, rx, resampler: Resampler::new(rate, WAKE_RATE) })
+        self.service_format = false;
+        self.mic_resampler = Resampler::new(rate, WAKE_RATE);
+        self.hub.update(|s| {
+            s.mic_rate = Some(rate);
+            s.mic_source = "cpal".into();
+        });
+        self.hub.info(format!(
+            "mic open: {rate} Hz × {channels}ch {:?}",
+            supported.sample_format()
+        ));
+        Ok(Input {
+            _stream: stream,
+            rx,
+        })
     }
 
     fn open_output(&mut self) -> Result<Stream, String> {
@@ -578,7 +874,10 @@ impl EngineThread {
         }?;
         stream.play().map_err(|e| e.to_string())?;
         self.hub.update(|s| s.speaker_rate = Some(rate));
-        self.hub.info(format!("speaker open: {rate} Hz × {channels}ch {:?}", supported.sample_format()));
+        self.hub.info(format!(
+            "speaker open: {rate} Hz × {channels}ch {:?}",
+            supported.sample_format()
+        ));
         Ok(stream)
     }
 }
@@ -601,7 +900,9 @@ where
             move |data: &[T], _: &cpal::InputCallbackInfo| {
                 let mono: Vec<f32> = data
                     .chunks(channels)
-                    .map(|frame| frame.iter().map(|&s| s.to_sample::<f32>()).sum::<f32>() / channels as f32)
+                    .map(|frame| {
+                        frame.iter().map(|&s| s.to_sample::<f32>()).sum::<f32>() / channels as f32
+                    })
                     .collect();
                 // Never block the realtime callback; drop audio if the engine fell behind.
                 let _ = tx.try_send(mono);
@@ -649,5 +950,14 @@ mod tests {
         assert!(hold_listener_process(true, false));
         assert!(hold_listener_process(false, true));
         assert!(!hold_listener_process(false, false));
+    }
+
+    #[test]
+    fn android_prefers_the_service_microphone_until_it_fails() {
+        use super::{CapturePlan, capture_plan};
+        assert_eq!(capture_plan(true, true, true), CapturePlan::Service);
+        assert_eq!(capture_plan(true, true, false), CapturePlan::WaitForService);
+        assert_eq!(capture_plan(false, true, true), CapturePlan::Cpal);
+        assert_eq!(capture_plan(true, false, false), CapturePlan::Cpal);
     }
 }

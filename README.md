@@ -70,11 +70,11 @@ Times you say are local. “Remind me tomorrow at 3” is a one-off reminder. �
 ## How it is put together
 
 - **UI.** React, Vite, and Tailwind. The screen is flat grayscale.
-- **Audio.** A Rust thread uses `cpal` (AAudio on Android). Uplink is 16 kHz PCM16. Downlink is 24 kHz PCM16.
+- **Audio.** A Rust thread reads the microphone. On Android that capture is an `AudioRecord` owned by the microphone foreground service, so it keeps running with the screen off or after the app is swiped away. `cpal` is the desktop capture and the speaker. Uplink is 16 kHz PCM16. Downlink is 24 kHz PCM16.
 - **Session.** Each call mints a short-lived client secret with `POST https://api.x.ai/v1/realtime/client_secrets`, then connects to `wss://api.x.ai/v1/realtime?model=grok-voice-latest` with `Authorization: Bearer <ephemeral>`. The long-lived API key is not sent on the WebSocket.
 - **Vault.** The key lives in a [Stronghold](https://github.com/iotaledger/stronghold.rs) snapshot. On Android the snapshot key is wrapped by a non-exportable Android Keystore key (StrongBox, then TEE).
 - **Wake word.** [rustpotter](https://github.com/GiviMAD/rustpotter), trained from the three recordings on the phone. The samples are not uploaded.
-- **Background.** A microphone foreground service and a partial wake lock keep capture alive with the screen off. Leaving with the back gesture keeps the process up while hands-free is armed.
+- **Background.** The microphone foreground service records, holds a partial wake lock, and keeps the process up when the activity is destroyed. Leaving with the back gesture, locking the screen, or clearing recents does not stop hands-free. Listen off, Stop on the notification, or a force-stop does.
 - **Phone tools.** Notes, reminders, and People preferences are stored in the app. Phone numbers and email are read from `ContactsContract` and are not written back. Alarms and timers prefer the system Clock app when the screen is open, and `AlarmManager` otherwise. Reminders, including repeating ones and person dates, are notifications. Calendar reads and writes use `CalendarContract`. A call opens the dialer, and a text, WhatsApp, Signal, or email opens a draft. Nothing is sent until you confirm in that app. Questions about a person are answered in the session. Backups are encrypted on the phone and do not include vault keys unless you opt in.
 
 xAI does not offer a public third-party OAuth flow for this API, so sign-in is the API key you paste.

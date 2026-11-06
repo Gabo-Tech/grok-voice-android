@@ -2117,6 +2117,7 @@ dependencies = [
  "half",
  "hound",
  "iota_stronghold",
+ "jni",
  "log",
  "pbkdf2",
  "rand 0.8.8",

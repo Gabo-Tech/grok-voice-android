@@ -169,6 +169,7 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
         .setAction(VoiceListenerService.ACTION_START)
         .putExtra(VoiceListenerService.EXTRA_TITLE, args.title)
         .putExtra(VoiceListenerService.EXTRA_TEXT, args.text)
+      VoiceListenerService.rememberReopen(activity)
       ContextCompat.startForegroundService(activity, intent)
       requestUnrestrictedBattery(activity)
       invoke.resolve()
@@ -191,13 +192,36 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun stopListeningService(invoke: Invoke) {
     VoiceListenerService.setArmed(activity, false)
-    val stop = Intent(activity, VoiceListenerService::class.java).setAction(VoiceListenerService.ACTION_STOP)
+    val stop = Intent(activity, VoiceListenerService::class.java)
+      .setAction(VoiceListenerService.ACTION_STOP)
+      .putExtra(VoiceListenerService.EXTRA_REASON, VoiceListenerService.REASON_USER)
     try {
       activity.startService(stop)
     } catch (_: Exception) {
       activity.stopService(Intent(activity, VoiceListenerService::class.java))
     }
     invoke.resolve()
+  }
+
+  @Command
+  fun listenerStatus(invoke: Invoke) {
+    val pm = activity.getSystemService(android.os.PowerManager::class.java)
+    val ret = JSObject()
+    ret.put("serviceRunning", VoiceListenerService.isActive())
+    ret.put("armed", VoiceListenerService.isArmed(activity))
+    ret.put("micOpen", VoiceListenerService.isMicOpen())
+    ret.put("activityResumed", VoiceListenerService.uiIsResumed())
+    ret.put("screenInteractive", pm?.isInteractive == true)
+    ret.put("lastStopReason", ListenTrace.lastStop(activity))
+    ret.put("history", ListenTrace.history(activity))
+    invoke.resolve(ret)
+  }
+
+  @Command
+  fun drainListenerEvents(invoke: Invoke) {
+    val ret = JSObject()
+    ret.put("lines", ListenTrace.drain(activity))
+    invoke.resolve(ret)
   }
 
   @Command

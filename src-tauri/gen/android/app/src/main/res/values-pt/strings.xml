@@ -8,4 +8,12 @@
     <string name="widget_next_empty">Nenhum próximo lembrete</string>
     <string name="tile_talk">Falar</string>
     <string name="tile_talk_idle">Próximo lembrete</string>
+    <string name="listener_title">Hey Grok está a ouvir</string>
+    <string name="listener_text">Diz «Hey Grok», ou toca para abrir</string>
+    <string name="listener_stop">Parar</string>
+    <string name="listener_channel_name">Escuta do Hey Grok</string>
+    <string name="listener_channel_desc">Visível enquanto o Grok Voice ouve «Hey Grok»</string>
+    <string name="listener_alert_channel_name">Hey Grok</string>
+    <string name="listener_alert_title">Hey Grok</string>
+    <string name="listener_alert_text">A ouvir</string>
 </resources>

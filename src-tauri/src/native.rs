@@ -35,6 +35,21 @@ pub struct WrappedKey {
     pub security_level: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub struct ListenerStatus {
+    pub service_running: bool,
+    pub armed: bool,
+    pub mic_open: bool,
+    pub activity_resumed: bool,
+    pub screen_interactive: bool,
+    #[serde(default)]
+    pub last_stop_reason: String,
+    #[serde(default)]
+    pub history: String,
+}
+
 pub struct NativeBridge {
     #[cfg(target_os = "android")]
     handle: tauri::plugin::PluginHandle<Wry>,
@@ -118,6 +133,19 @@ mod imp {
                 .run_mobile_plugin::<serde_json::Value>("stopListeningService", ())
                 .map_err(|e| msg(e.to_string()))?;
             Ok(())
+        }
+
+        pub fn listener_status(&self) -> Result<ListenerStatus> {
+            self.handle.run_mobile_plugin("listenerStatus", ()).map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn drain_listener_events(&self) -> Result<Vec<String>> {
+            #[derive(Deserialize)]
+            struct Out {
+                lines: String,
+            }
+            let out: Out = self.handle.run_mobile_plugin("drainListenerEvents", ()).map_err(|e| msg(e.to_string()))?;
+            Ok(out.lines.lines().filter(|line| !line.is_empty()).map(|line| line.to_string()).collect())
         }
 
         pub fn refresh_widgets(&self) {
@@ -432,6 +460,16 @@ mod imp {
 
         pub fn stop_service(&self) -> Result<()> {
             Ok(())
+        }
+
+        #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+        pub fn listener_status(&self) -> Result<ListenerStatus> {
+            Ok(ListenerStatus::default())
+        }
+
+        #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+        pub fn drain_listener_events(&self) -> Result<Vec<String>> {
+            Ok(Vec::new())
         }
 
         pub fn refresh_widgets(&self) {}

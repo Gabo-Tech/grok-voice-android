@@ -3,7 +3,7 @@
 
 use std::{
     collections::VecDeque,
-    sync::Mutex,
+    sync::{Arc, Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -49,6 +49,18 @@ pub struct DebugSnapshot {
     pub sessions: u64,
     /// Talk badge: Local, xAI, or OpenAI. Empty when no session is up.
     pub provider: Option<String>,
+    /// Microphone foreground service is in the foreground on this process.
+    pub foreground_service: bool,
+    /// `audiorecord` (service), `cpal` (activity stream), `starting`, or `closed`.
+    pub mic_source: String,
+    /// The Talk window is resumed. False while locked, backgrounded, or swiped away.
+    pub activity_resumed: bool,
+    /// The display is on. False while the screen is locked or off.
+    pub screen_interactive: bool,
+    /// Why listening last stopped, when it was the user or the notification.
+    pub last_stop_reason: Option<String>,
+    /// Persisted listener lines. These survive the process dying.
+    pub listener_history: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,7 +96,10 @@ pub fn redact(msg: &str) -> String {
         }
         if bearer == Some(at) {
             let after = at + "bearer ".len();
-            let end = rest[after..].find(char::is_whitespace).map(|n| after + n).unwrap_or(rest.len());
+            let end = rest[after..]
+                .find(char::is_whitespace)
+                .map(|n| after + n)
+                .unwrap_or(rest.len());
             push_limited(&mut out, "Bearer [redacted]");
             rest = &rest[end..];
         } else {
@@ -128,15 +143,36 @@ fn push_limited(out: &mut String, text: &str) {
     }
 }
 
+static NOTES: OnceLock<Arc<Hub>> = OnceLock::new();
+
+/// Remember the hub so the Android service can append a line before the UI exists.
+pub fn install(hub: Arc<Hub>) {
+    let _ = NOTES.set(hub);
+}
+
+/// Record a listener lifecycle line. False when the engine has not started yet.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn note_line(msg: &str) -> bool {
+    let Some(hub) = NOTES.get() else { return false };
+    hub.info(msg);
+    true
+}
+
 pub fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 impl Hub {
     pub fn new(app: AppHandle) -> Self {
         Self {
             app,
-            snap: Mutex::new(DebugSnapshot { ws_state: "closed".into(), ..Default::default() }),
+            snap: Mutex::new(DebugSnapshot {
+                ws_state: "closed".into(),
+                ..Default::default()
+            }),
             logs: Mutex::new(VecDeque::with_capacity(MAX_LOGS)),
         }
     }
@@ -152,7 +188,11 @@ impl Hub {
             "warn" => log::warn!("{msg}"),
             _ => log::info!("{msg}"),
         }
-        let line = LogLine { ts_ms: now_ms(), level, msg };
+        let line = LogLine {
+            ts_ms: now_ms(),
+            level,
+            msg,
+        };
         {
             let mut logs = self.logs.lock().unwrap();
             if logs.len() == MAX_LOGS {
@@ -214,6 +254,10 @@ mod tests {
         assert!(line.contains("[redacted]"));
         assert_eq!(redact("using xAI"), "using xAI");
         assert!(redact("Authorization: Bearer super-secret-token").contains("[redacted]"));
-        assert!(!redact("Authorization: Bearer super-secret-token").to_lowercase().contains("super-secret"));
+        assert!(
+            !redact("Authorization: Bearer super-secret-token")
+                .to_lowercase()
+                .contains("super-secret")
+        );
     }
 }
