@@ -237,6 +237,12 @@ mod tests {
             "set_person_reminder",
             "open_call",
             "open_sms",
+            "share_item",
+            "read_notifications",
+            "set_dnd",
+            "go_home",
+            "phone_status",
+            "media_control",
         ] {
             assert!(network_block(name, false).is_none(), "{name} stays available offline");
         }

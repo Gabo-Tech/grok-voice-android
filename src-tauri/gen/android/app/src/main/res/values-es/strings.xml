@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Grok Voice</string>
+    <string name="main_activity_title">Grok Voice</string>
+    <string name="widget_listen_desc">Activa o para la escucha en segundo plano, o empieza ahora</string>
+    <string name="widget_reminders_desc">Próximos recordatorios</string>
+    <string name="widget_schedule_desc">Eventos, alarmas y cuentas atrás</string>
+    <string name="widget_next_empty">Sin próximo recordatorio</string>
+    <string name="tile_talk">Hablar</string>
+    <string name="tile_talk_idle">Próximo recordatorio</string>
+</resources>

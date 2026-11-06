@@ -28,6 +28,14 @@ pub struct Settings {
     /// Wake-word sessions try a saved on-device account first when the packs are ready.
     /// Off keeps the saved key order. A missing local account is never invented.
     pub prefer_local_on_wake: bool,
+    /// Soft monthly voice budget in minutes. 0 is off. Counts every provider, including failover.
+    pub monthly_budget_minutes: u32,
+    /// End the live session when the monthly budget is reached. Off unless the user opts in.
+    pub monthly_budget_hard_stop: bool,
+    /// On-device speech: `en` (Moonshine + Piper English) or `de` (German packs).
+    pub local_speech: String,
+    /// UI locale. Empty follows the phone. `ca-ES-valencia` is Valencian.
+    pub locale: String,
 }
 
 impl Default for Settings {
@@ -47,6 +55,10 @@ impl Default for Settings {
             daily_budget_minutes: 0,
             daily_budget_hard_stop: false,
             prefer_local_on_wake: false,
+            monthly_budget_minutes: 0,
+            monthly_budget_hard_stop: false,
+            local_speech: "en".into(),
+            locale: String::new(),
         }
     }
 }
@@ -73,6 +85,13 @@ impl SettingsStore {
         s.wake_threshold = s.wake_threshold.clamp(0.2, 0.95);
         s.idle_timeout_secs = s.idle_timeout_secs.clamp(5, 600);
         s.daily_budget_minutes = s.daily_budget_minutes.min(24 * 60);
+        s.monthly_budget_minutes = s.monthly_budget_minutes.min(31 * 24 * 60);
+        s.local_speech = if s.local_speech == "de" { "de".into() } else { "en".into() };
+        s.locale = if s.locale.trim().is_empty() {
+            String::new()
+        } else {
+            crate::i18n::normalize(&s.locale).to_string()
+        };
         if s.model.trim().is_empty() {
             s.model = Settings::default().model;
         }

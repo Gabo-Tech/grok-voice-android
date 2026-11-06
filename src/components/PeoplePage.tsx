@@ -15,6 +15,7 @@ import {
   type PhoneContact,
   type PreferredChannel,
 } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const CHANNELS: { id: PreferredChannel; label: string }[] = [
@@ -40,6 +41,8 @@ type Draft = {
   favorite: boolean;
   note: string;
   reminders: PersonReminder[];
+  reachOutDays: number;
+  lastContactedMs: number | null;
 };
 
 const LABELS = [
@@ -66,6 +69,8 @@ function emptyDraft(): Draft {
     favorite: false,
     note: "",
     reminders: [],
+    reachOutDays: 0,
+    lastContactedMs: null,
   };
 }
 
@@ -84,6 +89,8 @@ function draftFrom(person: Person): Draft {
     favorite: person.favorite,
     note: person.note,
     reminders: person.reminders ?? [],
+    reachOutDays: person.reachOutDays ?? 0,
+    lastContactedMs: person.lastContactedMs ?? null,
   };
 }
 
@@ -96,6 +103,7 @@ function channelLabel(channel: string) {
 }
 
 export function PeoplePage({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const [people, setPeople] = useState<Person[]>([]);
   const [query, setQuery] = useState("");
   const [screen, setScreen] = useState<"list" | "edit" | "pick">("list");
@@ -265,6 +273,8 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
       favorite: draft.favorite,
       note: draft.note.trim(),
       reminders: draft.reminders.filter((reminder) => reminder.date.trim()),
+      reachOutDays: draft.reachOutDays,
+      lastContactedMs: draft.lastContactedMs,
     };
     setBusy(true);
     try {
@@ -411,7 +421,53 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
               <span>Favorite</span>
               <span className="text-xs tracking-[0.12em] uppercase">{draft.favorite ? "Pinned" : "Off"}</span>
             </button>
-            <Field label="Note">
+            <Field label={t("Reach out every")}>
+              <Input
+                inputMode="numeric"
+                value={draft.reachOutDays ? String(draft.reachOutDays) : ""}
+                placeholder={t("Off")}
+                onChange={(e) => setDraft({ ...draft, reachOutDays: Math.max(0, Math.min(365, Number(e.target.value) || 0)) })}
+              />
+            </Field>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {draft.lastContactedMs
+                ? `${t("Last call or text")}: ${new Date(draft.lastContactedMs).toLocaleString()}`
+                : t("Last call or text")}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!draft.id}
+                onClick={() => {
+                  if (!draft.id) return;
+                  void api
+                    .requestHistoryAccess()
+                    .then(() => api.refreshLastContact(draft.id || ""))
+                    .then((person) => setDraft(draftFrom(person)))
+                    .catch((e) => setError(errorText(e)));
+                }}
+              >
+                {t("Use call and text history")}
+              </Button>
+              {draft.androidContactId && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!draft.id}
+                  onClick={() => {
+                    if (!draft.id) return;
+                    void api
+                      .importContactBirthday(draft.id)
+                      .then((person) => setDraft(draftFrom(person)))
+                      .catch((e) => setError(errorText(e)));
+                  }}
+                >
+                  {t("Import birthday")}
+                </Button>
+              )}
+            </div>
+            <Field label={t("Note")}>
               <Textarea value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder="Call after 5" className="min-h-28" />
             </Field>
             <div>
@@ -499,7 +555,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Back label="← Settings" onClick={onBack} />
-      <PageChrome title="People" subtitle={`${people.length} saved on this phone`} onAdd={openCreate} addLabel="Add person">
+        <PageChrome title={t("People")} subtitle={`${people.length} ${t("saved on this phone")}`} onAdd={openCreate} addLabel={t("Add person")}>
         <p className="mb-6 px-1 text-sm leading-6 text-muted-foreground">
           Nicknames and how you reach someone. Phone numbers and email still come from Contacts.
         </p>
@@ -528,12 +584,12 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
         {error && <p className="mb-3 px-1 text-xs text-muted-foreground">{error}</p>}
         {visible.favorites.length === 0 && visible.rest.length === 0 ? (
           <EmptyState
-            title={query ? "No matches" : "No people yet"}
+            title={query ? t("No matches") : t("No people yet")}
             body={query ? "Try another name." : "Tap + to pick a phone contact, or add someone with only a nickname."}
           />
         ) : (
           <div className="space-y-6">
-            {visible.favorites.length > 0 && <PersonGroup title="Favorites" people={visible.favorites} onOpen={openEdit} />}
+            {visible.favorites.length > 0 && <PersonGroup title={t("Favorites")} people={visible.favorites} onOpen={openEdit} />}
             {visible.rest.length > 0 && <PersonGroup title="A–Z" people={visible.rest} onOpen={openEdit} />}
           </div>
         )}

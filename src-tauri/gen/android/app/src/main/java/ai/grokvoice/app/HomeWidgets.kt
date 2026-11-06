@@ -83,6 +83,7 @@ object HomeWidgets {
 
   private fun bindListen(context: Context, views: RemoteViews) {
     val on = VoiceListenerService.isArmed(context)
+    views.setTextViewText(R.id.widget_next, nextReminder(context).ifBlank { context.getString(R.string.widget_next_empty) })
     views.setTextViewText(R.id.widget_listen_state, if (on) "Background listening is on" else "Background listening is off")
     views.setTextViewText(R.id.widget_listen_toggle, if (on) "Stop" else "Listen in background")
     views.setOnClickPendingIntent(R.id.widget_listen_toggle, broadcast(context, ACTION_TOGGLE, 1))
@@ -131,6 +132,11 @@ object HomeWidgets {
       return
     }
     am.set(AlarmManager.RTC, System.currentTimeMillis() + 30_000L, pi)
+  }
+
+  fun nextReminder(context: Context): String {
+    val next = reminderLines(context).firstOrNull() ?: return ""
+    return if (next.detail.isBlank()) next.title else "${next.detail}  ${next.title}"
   }
 
   private fun reminderLines(context: Context): List<Line> {

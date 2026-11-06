@@ -4,4 +4,7 @@
     <string name="widget_listen_desc">Turn background listening on or off, or start a turn now</string>
     <string name="widget_reminders_desc">Upcoming reminders</string>
     <string name="widget_schedule_desc">Events, alarms, and countdowns</string>
+    <string name="widget_next_empty">No next reminder</string>
+    <string name="tile_talk">Talk</string>
+    <string name="tile_talk_idle">Next reminder</string>
 </resources>

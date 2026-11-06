@@ -10,8 +10,10 @@ import { Textarea } from "@/components/ui/textarea";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { formatWhen } from "@/hooks/useAgenda";
 import { api, type Note } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 export function NotesPage({ agenda }: { agenda: AgendaState }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
   const [title, setTitle] = useState("");
@@ -70,14 +72,14 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
 
   return (
     <>
-      <PageChrome title="Notes" subtitle={`${agenda.agenda.notes.length} saved`} onAdd={openNew} addLabel="New note">
+      <PageChrome title={t("Notes")} subtitle={`${agenda.agenda.notes.length} ${t("saved")}`} onAdd={openNew} addLabel={t("New note")}>
         <div className="mb-6">
-          <Field label="Search">
+          <Field label={t("Search")}>
             <div className="relative">
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="A word from a note"
+                placeholder={t("A word from a note")}
                 aria-label="Search notes"
                 className="pr-16"
               />
@@ -87,7 +89,7 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
                   className="absolute top-0 right-0 h-12 px-3 text-xs tracking-[0.12em] text-foreground uppercase"
                   onClick={() => setQuery("")}
                 >
-                  Clear
+                  {t("Clear")}
                 </button>
               )}
             </div>
@@ -96,8 +98,8 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
         {agenda.error && <p className="mb-3 px-1 text-xs text-muted-foreground">{agenda.error}</p>}
         {notes.length === 0 ? (
           <EmptyState
-            title={query ? "No matches" : "No notes yet"}
-            body={query ? "Try another word." : "Tap + or ask Grok to remember something."}
+            title={query ? t("No matches") : t("No notes yet")}
+            body={query ? t("Try another word.") : t("Tap + or ask Grok to remember something.")}
           />
         ) : (
           <div className="divide-y divide-border border-y border-border">
@@ -122,7 +124,7 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
 
       <Sheet
         open={open}
-        title={editing ? "Edit note" : "New note"}
+        title={editing ? t("Edit note") : t("New note")}
         onClose={close}
         footer={
           <div className="flex flex-wrap items-center gap-2">

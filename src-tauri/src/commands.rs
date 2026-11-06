@@ -542,7 +542,13 @@ pub fn open_phone_contact(app: AppHandle, id: String) -> Result<()> {
 #[tauri::command]
 pub fn usage_status(app: AppHandle) -> crate::usage::UsageStatus {
     let settings = app.state::<SettingsStore>().get();
-    app.state::<crate::usage::UsageStore>().status(settings.daily_budget_minutes, settings.daily_budget_hard_stop)
+    let caps = crate::usage::Caps {
+        daily_minutes: settings.daily_budget_minutes,
+        daily_hard_stop: settings.daily_budget_hard_stop,
+        monthly_minutes: settings.monthly_budget_minutes,
+        monthly_hard_stop: settings.monthly_budget_hard_stop,
+    };
+    app.state::<crate::usage::UsageStore>().status(caps, &settings.locale)
 }
 
 #[derive(Serialize)]
@@ -557,6 +563,7 @@ pub struct ExportedBackup {
 pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bool>) -> Result<ExportedBackup> {
     let include_keys = include_keys.unwrap_or(false);
     let mut payload = crate::backup::Payload::notes_and_people(app.state::<Agenda>().notes(), app.state::<People>().list());
+    payload.memory = Some(app.state::<crate::local_memory::LocalMemory>().snapshot());
     if include_keys {
         let secrets = app.state::<Vault>().accounts(&app.state::<NativeBridge>()).map_err(|e| msg(e.to_string()))?;
         payload.keys = secrets
@@ -600,6 +607,9 @@ pub fn restore_backup(
     let preview = payload.preview();
     app.state::<People>().replace_all(payload.people).map_err(msg)?;
     actions::replace_notes(&app, payload.notes).map_err(msg)?;
+    if let Some(memory) = payload.memory {
+        app.state::<crate::local_memory::LocalMemory>().replace(memory);
+    }
     actions::sync_person_reminders(&app).map_err(msg)?;
     if restore_keys.unwrap_or(false) && !payload.keys.is_empty() {
         let rows: Vec<(String, String, String)> = payload.keys.into_iter().map(|key| (key.id, key.provider, key.secret)).collect();
@@ -616,6 +626,99 @@ pub fn recent_memory(memory: State<'_, Memory>) -> Vec<Turn> {
 #[tauri::command]
 pub fn clear_memory(memory: State<'_, Memory>) {
     memory.clear();
+}
+
+#[tauri::command]
+pub fn local_memory(memory: State<'_, crate::local_memory::LocalMemory>) -> crate::local_memory::Bundle {
+    memory.snapshot()
+}
+
+#[tauri::command]
+pub fn pin_local_fact(app: AppHandle, text: String, id: Option<String>) -> Result<crate::local_memory::Bundle> {
+    let locale = app.state::<SettingsStore>().get().locale;
+    app.state::<crate::local_memory::LocalMemory>()
+        .remember(id.as_deref(), &text, &locale)
+        .map_err(msg)?;
+    Ok(app.state::<crate::local_memory::LocalMemory>().snapshot())
+}
+
+#[tauri::command]
+pub fn forget_local_fact(app: AppHandle, id: Option<String>, text: Option<String>) -> Result<crate::local_memory::Bundle> {
+    let locale = app.state::<SettingsStore>().get().locale;
+    app.state::<crate::local_memory::LocalMemory>()
+        .forget(id.as_deref(), text.as_deref(), &locale)
+        .map_err(msg)?;
+    Ok(app.state::<crate::local_memory::LocalMemory>().snapshot())
+}
+
+#[tauri::command]
+pub fn wipe_local_memory(memory: State<'_, crate::local_memory::LocalMemory>) -> crate::local_memory::Bundle {
+    memory.wipe()
+}
+
+#[tauri::command]
+pub fn confirm_handoff(app: AppHandle) -> Result<serde_json::Value> {
+    actions::confirm_pending(&app).map_err(msg)
+}
+
+#[tauri::command]
+pub fn dismiss_handoff(app: AppHandle) -> Result<()> {
+    if let Some(handoffs) = app.try_state::<actions::Handoffs>() {
+        handoffs.clear();
+    }
+    app.state::<Arc<Hub>>().emit("voice://handoff", serde_json::Value::Null);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn access_status(app: AppHandle) -> Result<serde_json::Value> {
+    let raw = app.state::<NativeBridge>().access_status().map_err(|e| msg(e.to_string()))?;
+    serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub fn open_access_settings(app: AppHandle, kind: String) -> Result<serde_json::Value> {
+    let raw = app.state::<NativeBridge>().open_access_settings(&kind).map_err(|e| msg(e.to_string()))?;
+    serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub fn request_history_access(app: AppHandle) -> Result<PermissionStatus> {
+    app.state::<NativeBridge>().request_history_access().map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub fn refresh_last_contact(app: AppHandle, id: String) -> Result<crate::people::Person> {
+    let people = app.state::<People>().list();
+    let person = people.into_iter().find(|person| person.id == id).ok_or_else(|| msg("No person with that id."))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .last_contact(&person.id, &person.handles.phone, &person.display_name)
+        .map_err(|e| msg(e.to_string()))?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))?;
+    if value["ok"] == false {
+        return Err(msg(value["error"].as_str().unwrap_or("Could not read call or text history.")));
+    }
+    let at_ms = value["atMs"].as_i64().ok_or_else(|| msg("No recent call or text for that person."))?;
+    let saved = app.state::<People>().set_last_contacted(&id, at_ms).map_err(msg)?;
+    actions::sync_person_reminders(&app).map_err(msg)?;
+    Ok(saved)
+}
+
+#[tauri::command]
+pub fn import_contact_birthday(app: AppHandle, id: String) -> Result<crate::people::Person> {
+    let people = app.state::<People>().list();
+    let person = people.into_iter().find(|person| person.id == id).ok_or_else(|| msg("No person with that id."))?;
+    let contact = person.android_contact_id.clone().ok_or_else(|| msg("Link a phone contact first."))?;
+    let raw = app.state::<NativeBridge>().contact_birthday(&contact).map_err(|e| msg(e.to_string()))?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))?;
+    if value["ok"] == false {
+        return Err(msg(value["error"].as_str().unwrap_or("Could not read that birthday.")));
+    }
+    let date = value["date"].as_str().unwrap_or("").trim();
+    let saved = app.state::<People>().add_birthday_if_missing(&id, date).map_err(msg)?;
+    actions::sync_person_reminders(&app).map_err(msg)?;
+    Ok(saved)
 }
 
 #[tauri::command]

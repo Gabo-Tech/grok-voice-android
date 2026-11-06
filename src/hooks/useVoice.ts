@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { api, type Level, type LogLine, type Phase, type SpendCue, type TranscriptEvent } from "@/lib/api";
+import { api, type HandoffDraft, type Level, type LogLine, type Phase, type SpendCue, type TranscriptEvent, type UsageStatus } from "@/lib/api";
 
 export interface TranscriptRow {
   id: string;
@@ -23,6 +23,8 @@ export function useVoice() {
   const [busy, setBusy] = useState("");
   const [spend, setSpend] = useState<string | null>(null);
   const [provider, setProvider] = useState("");
+  const [handoff, setHandoff] = useState<HandoffDraft | null>(null);
+  const [usage, setUsage] = useState<UsageStatus | null>(null);
   const levelRef = useRef<Level>({ mic: 0, out: 0 });
   const [level, setLevel] = useState<Level>({ mic: 0, out: 0 });
   const raf = useRef<number | null>(null);
@@ -72,6 +74,7 @@ export function useVoice() {
     });
     void sub<string>("voice://busy", setBusy);
     void sub<SpendCue>("voice://spend", (cue) => setSpend(cue.message));
+    void sub<HandoffDraft | null>("voice://handoff", (draft) => setHandoff(draft && draft.id ? draft : null));
     void sub<TranscriptEvent>("voice://transcript", (t) => {
       setRows((prev) => {
         const idx = prev.findIndex((r) => r.id === t.id && r.role === t.role);
@@ -129,6 +132,24 @@ export function useVoice() {
     }
   }, [sending]);
 
+  useEffect(() => {
+    if (!isTauri()) return;
+    const live = ["connecting", "listening", "thinking", "speaking"].includes(phase);
+    if (!live) return;
+    let stop = false;
+    const pull = () => {
+      void api.usageStatus().then((next) => {
+        if (!stop) setUsage(next);
+      });
+    };
+    pull();
+    const id = window.setInterval(pull, 1000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [phase]);
+
   const toggleSession = useCallback(async () => {
     setLastError(null);
     try {
@@ -153,6 +174,16 @@ export function useVoice() {
     sending,
     busy,
     spend,
+    handoff,
+    usage,
+    confirmHandoff: () => {
+      setHandoff(null);
+      if (isTauri()) void api.confirmHandoff().catch((e) => setLastError(String(e)));
+    },
+    dismissHandoff: () => {
+      setHandoff(null);
+      if (isTauri()) void api.dismissHandoff();
+    },
     dismissSpend: () => setSpend(null),
     sendText,
     clearTranscript: () => {

@@ -61,6 +61,8 @@ export interface Person {
   favorite: boolean;
   note: string;
   reminders: PersonReminder[];
+  reachOutDays: number;
+  lastContactedMs: number | null;
 }
 
 export interface PersonDraft {
@@ -74,6 +76,8 @@ export interface PersonDraft {
   favorite: boolean;
   note: string;
   reminders: PersonReminder[];
+  reachOutDays?: number;
+  lastContactedMs?: number | null;
 }
 
 export interface PhoneContact {
@@ -162,6 +166,13 @@ export interface Settings {
   dailyBudgetHardStop: boolean;
   /** Wake sessions try a saved on-device account first when packs are ready. */
   preferLocalOnWake: boolean;
+  /** Soft monthly voice budget in minutes. 0 is off. */
+  monthlyBudgetMinutes: number;
+  monthlyBudgetHardStop: boolean;
+  /** `en` or `de` for on-device speech. */
+  localSpeech: string;
+  /** Empty follows the phone. */
+  locale: string;
 }
 
 export interface UsageStatus {
@@ -170,6 +181,18 @@ export interface UsageStatus {
   sessions: number;
   budgetMinutes: number;
   hardStop: boolean;
+  xaiMinutes: number;
+  openaiMinutes: number;
+  localMinutes: number;
+  month: string;
+  monthMinutes: number;
+  monthXaiMinutes: number;
+  monthOpenaiMinutes: number;
+  monthLocalMinutes: number;
+  monthlyBudgetMinutes: number;
+  monthlyHardStop: boolean;
+  openSinceMs: number | null;
+  openProvider: string;
   message: string | null;
 }
 
@@ -178,6 +201,41 @@ export interface BackupPreview {
   people: number;
   reminders: number;
   keys: number;
+  facts: number;
+  sessions: number;
+  hasMemory: boolean;
+}
+
+export interface LocalFact {
+  id: string;
+  text: string;
+  updatedMs: number;
+}
+
+export interface LocalSessionNote {
+  id: string;
+  atMs: number;
+  text: string;
+}
+
+export interface LocalMemoryBundle {
+  facts: LocalFact[];
+  sessions: LocalSessionNote[];
+}
+
+export interface HandoffDraft {
+  id: string;
+  summary: string;
+  kind: string;
+  phone: string;
+  text: string;
+}
+
+export interface AccessStatus {
+  notificationListener: string;
+  dnd: string;
+  callLog: string;
+  sms: string;
 }
 
 export interface ExportedBackup {
@@ -327,6 +385,19 @@ export const api = {
   openPhoneContact: (id: string) => invoke<void>("open_phone_contact", { id }),
   recentMemory: () => invoke<Array<{ atMs: number; role: "user" | "assistant"; text: string }>>("recent_memory"),
   clearMemory: () => invoke<void>("clear_memory"),
+  localMemory: () => invoke<LocalMemoryBundle>("local_memory"),
+  pinLocalFact: (text: string, id?: string) =>
+    invoke<LocalMemoryBundle>("pin_local_fact", { text, id: id ?? null }),
+  forgetLocalFact: (id?: string, text?: string) =>
+    invoke<LocalMemoryBundle>("forget_local_fact", { id: id ?? null, text: text ?? null }),
+  wipeLocalMemory: () => invoke<LocalMemoryBundle>("wipe_local_memory"),
+  confirmHandoff: () => invoke<unknown>("confirm_handoff"),
+  dismissHandoff: () => invoke<void>("dismiss_handoff"),
+  accessStatus: () => invoke<AccessStatus>("access_status"),
+  openAccessSettings: (kind: "notifications" | "dnd") => invoke<unknown>("open_access_settings", { kind }),
+  requestHistoryAccess: () => invoke<PermissionStatus>("request_history_access"),
+  refreshLastContact: (id: string) => invoke<Person>("refresh_last_contact", { id }),
+  importContactBirthday: (id: string) => invoke<Person>("import_contact_birthday", { id }),
   localPacks: () => invoke<LocalPack[]>("local_pack_status"),
   downloadLocalPack: (id: string) => invoke<LocalPack[]>("download_local_pack", { id }),
   deleteLocalPack: (id: string) => invoke<LocalPack[]>("delete_local_pack", { id }),

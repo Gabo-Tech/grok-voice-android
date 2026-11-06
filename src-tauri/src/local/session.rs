@@ -28,7 +28,7 @@ use super::{
     engine::Engines,
     memory_enough,
     mode::set_public_search,
-    packs::{model_dir, model_paths, packs_ready},
+    packs::{model_dir, model_paths_for, packs_ready_for},
     turn::{self, ChatTurn},
     vad::Vad,
     MIN_FREE_MB,
@@ -55,8 +55,14 @@ struct Transcript<'a> {
 /// Notes, reminders, and People run through the same tool path as Talk.
 pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
     let dir = model_dir(app)?;
-    if !packs_ready(&dir) {
-        return Err(super::web::OFFLINE_VOICE.into());
+    let settings = app.state::<crate::settings::SettingsStore>().get();
+    let speech = settings.local_speech.clone();
+    if !packs_ready_for(&dir, &speech) {
+        return Err(if speech == "de" {
+            "German on-device speech is not downloaded. English Moonshine does not understand German. Download the German packs in Settings.".into()
+        } else {
+            super::web::OFFLINE_VOICE.into()
+        });
     }
     let facts = app.state::<NativeBridge>().device_facts().unwrap_or(crate::native::DeviceFacts {
         avail_mb: 0,
@@ -66,13 +72,10 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
     if !memory_enough(facts.avail_mb, facts.low_memory) {
         return Err("This phone is offline, and it is too low on memory to run the on-device voice.".into());
     }
-    let paths = model_paths(&dir);
+    let paths = model_paths_for(&dir, &speech);
     let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
     let mut engines = Engines::load(&paths, threads)?;
-    let system = turn::system_prompt(
-        &app.state::<crate::settings::SettingsStore>().get().instructions,
-        &app.state::<crate::memory::Memory>().prompt(),
-    );
+    let system = local_system(app);
     let mut history = Vec::new();
     let spoken = turn::run_turns(
         &system,
@@ -82,8 +85,9 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
             Err(err) if err.contains("grammar") => engines.complete(prompt, ""),
             other => other,
         },
-        |name, args| actions::run(app, name, &args.to_string()),
+        |name, args| call_tool(app, name, args),
     )?;
+    record_exchange(app, &history);
     let _ = app.state::<NativeBridge>().speak_fallback(&spoken);
     Ok(spoken)
 }
@@ -117,14 +121,22 @@ pub async fn run_session(
         return Err(why);
     }
     let dir = model_dir(app)?;
-    let paths = model_paths(&dir);
+    let speech = settings.local_speech.as_str();
+    if !packs_ready_for(&dir, speech) {
+        return Err(if speech == "de" {
+            "German on-device speech is not downloaded. English Moonshine does not understand German. Download the German packs in Settings.".into()
+        } else {
+            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice keys.".into()
+        });
+    }
+    let paths = model_paths_for(&dir, speech);
     let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
     hub.info("loading on-device speech, language model, and voice");
     let engines = tokio::task::spawn_blocking(move || Engines::load(&paths, threads))
         .await
         .map_err(|err| err.to_string())??;
     let engines = Arc::new(Mutex::new(engines));
-    let system = turn::system_prompt(&settings.instructions, &app.state::<crate::memory::Memory>().prompt());
+    let system = local_system(app);
     let mut history = Vec::new();
     let mut vad = Vad::new(UPLINK_RATE);
     let mut last = Instant::now();
@@ -135,12 +147,12 @@ pub async fn run_session(
     }
     hub.info("on-device voice is listening");
 
-    loop {
+    let outcome = loop {
         tokio::select! {
             frame = mic.recv() => {
-                let Some(frame) = frame else { return Ok("ended by user".into()) };
+                let Some(frame) = frame else { break Ok("ended by user".into()) };
                 if !active.load(Ordering::Acquire) {
-                    return Ok("ended by user".into());
+                    break Ok("ended by user".into());
                 }
                 if let Some(utterance) = vad.push(&frame) {
                     if let Err(err) = handle_audio(app, hub, player, active, &engines, &system, &mut history, &utterance).await {
@@ -156,7 +168,7 @@ pub async fn run_session(
             }
             _ = tick.tick() => {
                 if !active.load(Ordering::Acquire) {
-                    return Ok("ended by user".into());
+                    break Ok("ended by user".into());
                 }
                 for note in crate::search::take_context_notes() {
                     let text = format!("Typed just now. Use this and do not answer it by itself. {note}");
@@ -169,11 +181,31 @@ pub async fn run_session(
                     last = Instant::now();
                 }
                 if last.elapsed() >= idle {
-                    return Ok(format!("idle for {}s", idle.as_secs()));
+                    break Ok(format!("idle for {}s", idle.as_secs()));
                 }
             }
         }
-    }
+    };
+    record_exchange(app, &history);
+    outcome
+}
+
+fn local_system(app: &AppHandle) -> String {
+    let settings = app.state::<crate::settings::SettingsStore>().get();
+    turn::system_prompt(
+        &settings.instructions,
+        &app.state::<crate::memory::Memory>().prompt(),
+        &app.state::<crate::local_memory::LocalMemory>().prompt(),
+        &settings.local_speech,
+    )
+}
+
+fn record_exchange(app: &AppHandle, history: &[ChatTurn]) {
+    let turns = history
+        .iter()
+        .map(|turn| crate::local_memory::ExchangeTurn { role: turn.role.to_string(), text: turn.text.clone() })
+        .collect::<Vec<_>>();
+    crate::local_memory::record_exchange(app, &turns);
 }
 
 async fn device_facts(app: &AppHandle) -> crate::native::DeviceFacts {
@@ -264,6 +296,9 @@ fn complete_with_fallback(engines: &Mutex<Engines>, prompt: &str, grammar: &str)
 }
 
 fn call_tool(app: &AppHandle, name: &str, args: &serde_json::Value) -> String {
+    if let Some(output) = crate::local_memory::run_tool(app, name, args) {
+        return output;
+    }
     let hub = app.state::<Arc<Hub>>();
     if name == "web_search" {
         hub.emit("voice://busy", "Searching the web…");

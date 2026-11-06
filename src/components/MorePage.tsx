@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Archive, Bug, ChevronRight, KeyRound, Users, Wand2 } from "lucide-react";
+import { Archive, Bell, Brain, Bug, ChevronRight, KeyRound, Users, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { LocalPacks } from "@/components/LocalPacks";
 import { Field } from "@/components/Field";
@@ -9,10 +9,11 @@ import { WakeView } from "@/components/WakeView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { VoiceState } from "@/hooks/useVoice";
-import { api, errorText, type AuthStatus, type BackupPreview, type Settings, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type LocalMemoryBundle, type Settings, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-type Section = "menu" | "wake" | "debug" | "keys" | "people" | "backup";
+type Section = "menu" | "wake" | "debug" | "keys" | "people" | "backup" | "memory" | "access";
 
 const PROVIDERS = [
   { id: "xai", label: "xAI" },
@@ -37,6 +38,7 @@ export function MorePage({
   onSignedOut: () => void;
   onReplayTour: () => void;
 }) {
+  const t = useT();
   const [section, setSection] = useState<Section>("menu");
   const [quiet, setQuiet] = useState(10);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -104,6 +106,24 @@ export function MorePage({
     return <PeoplePage onBack={() => setSection("menu")} />;
   }
 
+  if (section === "memory") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <Back onClick={() => setSection("menu")} />
+        <MemorySection />
+      </div>
+    );
+  }
+
+  if (section === "access") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <Back onClick={() => setSection("menu")} />
+        <AccessSection />
+      </div>
+    );
+  }
+
   if (section === "backup") {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -123,7 +143,7 @@ export function MorePage({
   }
 
   return (
-    <PageChrome title="Settings" subtitle="Keys, model, wake word">
+    <PageChrome title={t("Settings")} subtitle={t("Voice keys")}>
       <div className="mb-6 border-y border-border px-1 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -156,7 +176,7 @@ export function MorePage({
       {settings && (
         <div className="mb-6 space-y-4">
           <div className="border border-border px-3 py-3">
-            <p className="text-[15px] text-foreground">Daily voice budget</p>
+            <p className="text-[15px] text-foreground">{t("Daily voice budget")}</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               Off by default. Near the minutes you pick, one short cue appears and can be spoken. The call keeps going unless you also turn on a hard stop.
             </p>
@@ -193,9 +213,106 @@ export function MorePage({
                 !settings.dailyBudgetMinutes && "opacity-50",
               )}
             >
-              <span>Hard stop</span>
+              <span>{t("Hard stop")}</span>
               <span className="text-xs tracking-[0.12em] uppercase">{settings.dailyBudgetHardStop ? "On" : "Off"}</span>
             </button>
+          </div>
+          {usage && (
+            <p className="text-sm text-foreground">
+              xAI {usage.xaiMinutes} · OpenAI {usage.openaiMinutes} · {t("On device")} {usage.localMinutes}
+              {usage.monthMinutes ? ` · ${usage.month} ${usage.monthMinutes}` : ""}
+            </p>
+          )}
+          <div className="border border-border px-3 py-3">
+            <p className="text-[15px] text-foreground">{t("Monthly voice budget")}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Counts xAI, OpenAI, and on-device time together, so a fallback key is not silent.
+            </p>
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              {[
+                { minutes: 0, label: t("Off") },
+                { minutes: 60, label: "60" },
+                { minutes: 300, label: "300" },
+                { minutes: 1000, label: "1000" },
+              ].map((choice) => (
+                <button
+                  key={choice.label}
+                  type="button"
+                  onClick={() => saveBudget({ ...settings, monthlyBudgetMinutes: choice.minutes })}
+                  className={cn(
+                    "h-12 border text-xs tracking-[0.08em] uppercase",
+                    settings.monthlyBudgetMinutes === choice.minutes ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                  )}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={!settings.monthlyBudgetMinutes}
+              onClick={() => saveBudget({ ...settings, monthlyBudgetHardStop: !settings.monthlyBudgetHardStop })}
+              className={cn(
+                "mt-2 flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
+                settings.monthlyBudgetHardStop ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                !settings.monthlyBudgetMinutes && "opacity-50",
+              )}
+            >
+              <span>{t("Hard stop")}</span>
+              <span className="text-xs tracking-[0.12em] uppercase">{settings.monthlyBudgetHardStop ? "On" : t("Off")}</span>
+            </button>
+          </div>
+          <div>
+            <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{t("Language")}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "", label: t("Follow the phone") },
+                { id: "en", label: t("English") },
+                { id: "es", label: t("Spanish") },
+                { id: "de", label: t("German") },
+                { id: "pt", label: t("Portuguese") },
+                { id: "ca-ES-valencia", label: t("Valencian") },
+              ].map((choice) => (
+                <button
+                  key={choice.id || "system"}
+                  type="button"
+                  onClick={() => {
+                    setAppLocale(choice.id);
+                    saveBudget({ ...settings, locale: choice.id });
+                  }}
+                  className={cn(
+                    "h-12 border px-2 text-xs",
+                    (settings.locale || "") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                  )}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{t("Local speech")}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "en", label: t("English") },
+                { id: "de", label: t("German") },
+              ].map((choice) => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  onClick={() => saveBudget({ ...settings, localSpeech: choice.id })}
+                  className={cn(
+                    "h-12 border px-2 text-xs",
+                    (settings.localSpeech || "en") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                  )}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              English uses Moonshine Tiny. German uses a separate download. Moonshine does not understand German.
+            </p>
           </div>
           <Field label="Voice">
             <Input value={settings.voice} onChange={(e) => setSettings({ ...settings, voice: e.target.value })} />
@@ -214,25 +331,37 @@ export function MorePage({
       <div className="divide-y divide-border border-y border-border">
         <MenuRow
           icon={<Users className="size-4" />}
-          title="People"
+          title={t("People")}
           detail="Nicknames and how to reach them"
           onClick={() => setSection("people")}
         />
         <MenuRow
           icon={<KeyRound className="size-4" />}
-          title="Voice keys"
+          title={t("Voice keys")}
           detail="Order, fallback, and on device"
           onClick={() => setSection("keys")}
         />
         <MenuRow
           icon={<Archive className="size-4" />}
-          title="Backup"
-          detail="Encrypted notes and People"
+          title={t("Backup")}
+          detail="Encrypted notes, People, and memory"
           onClick={() => setSection("backup")}
         />
         <MenuRow
+          icon={<Brain className="size-4" />}
+          title={t("Memory")}
+          detail="Pinned facts for on-device Talk"
+          onClick={() => setSection("memory")}
+        />
+        <MenuRow
+          icon={<Bell className="size-4" />}
+          title={t("Phone access")}
+          detail="Notifications, Do Not Disturb, history"
+          onClick={() => setSection("access")}
+        />
+        <MenuRow
           icon={<Wand2 className="size-4" />}
-          title="Wake word"
+          title={t("Wake word")}
           detail={wake.trained ? "Hey Grok enrolled" : "Not enrolled yet"}
           onClick={() => setSection("wake")}
         />
@@ -244,6 +373,124 @@ export function MorePage({
         />
       </div>
     </PageChrome>
+  );
+}
+
+function MemorySection() {
+  const t = useT();
+  const [bundle, setBundle] = useState<LocalMemoryBundle | null>(null);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [confirmWipe, setConfirmWipe] = useState(false);
+
+  useEffect(() => {
+    void api.localMemory().then(setBundle).catch((e) => setError(errorText(e)));
+  }, []);
+
+  const pin = async () => {
+    const next = text.trim();
+    if (!next) return;
+    try {
+      setBundle(await api.pinLocalFact(next));
+      setText("");
+      setError(null);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  return (
+    <div className="space-y-4 pb-6">
+      <h2 className="text-2xl font-medium tracking-tight">{t("Memory")}</h2>
+      <p className="text-sm leading-6 text-muted-foreground">
+        On-device Talk reads these pinned facts and short notes from recent local sessions. Cloud Talk does not. Wiping this does not delete notes, People, or voice keys.
+      </p>
+      <Field label={t("Pin fact")}>
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="I live in Zurich" />
+      </Field>
+      <Button type="button" onClick={() => void pin()}>
+        {t("Pin fact")}
+      </Button>
+      <ul className="divide-y divide-border border-y border-border">
+        {(bundle?.facts ?? []).map((fact) => (
+          <li key={fact.id} className="flex items-center gap-2 py-3 text-sm">
+            <span className="min-w-0 flex-1">{fact.text}</span>
+            <button
+              type="button"
+              className="h-10 px-2 text-xs uppercase"
+              onClick={() => void api.forgetLocalFact(fact.id).then(setBundle).catch((e) => setError(errorText(e)))}
+            >
+              {t("Forget")}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="space-y-2">
+        {(bundle?.sessions ?? []).map((note) => (
+          <p key={note.id} className="text-sm leading-6 text-muted-foreground">
+            {note.text}
+          </p>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          if (!confirmWipe) {
+            setConfirmWipe(true);
+            return;
+          }
+          void api.wipeLocalMemory().then((next) => {
+            setBundle(next);
+            setConfirmWipe(false);
+          });
+        }}
+      >
+        {confirmWipe ? t("Wipe memory") : t("Wipe memory")}
+      </Button>
+      {confirmWipe && <p className="text-xs leading-5 text-muted-foreground">Tap again. Notes, People, and voice keys stay.</p>}
+      {error && <p className="text-sm text-foreground">{error}</p>}
+    </div>
+  );
+}
+
+function AccessSection() {
+  const t = useT();
+  const [status, setStatus] = useState<AccessStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = () => {
+    void api.accessStatus().then(setStatus).catch((e) => setError(errorText(e)));
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  return (
+    <div className="space-y-4 pb-6">
+      <h2 className="text-2xl font-medium tracking-tight">{t("Phone access")}</h2>
+      <p className="text-sm leading-6 text-muted-foreground">
+        These are asked only when you turn them on. Notification access and Do Not Disturb open system settings. Call and text history is a separate permission and is not read until you allow it.
+      </p>
+      <button type="button" className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm" onClick={() => void api.openAccessSettings("notifications").then(refresh)}>
+        <span>{t("Notification access")}</span>
+        <span className="text-xs uppercase">{status?.notificationListener || ""}</span>
+      </button>
+      <button type="button" className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm" onClick={() => void api.openAccessSettings("dnd").then(refresh)}>
+        <span>{t("Do Not Disturb")}</span>
+        <span className="text-xs uppercase">{status?.dnd || ""}</span>
+      </button>
+      <button
+        type="button"
+        className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm"
+        onClick={() => void api.requestHistoryAccess().then(refresh).catch((e) => setError(errorText(e)))}
+      >
+        <span>{t("Call and text history")}</span>
+        <span className="text-xs uppercase">{status ? `${status.callLog} / ${status.sms}` : ""}</span>
+      </button>
+      {error && <p className="text-sm text-foreground">{error}</p>}
+    </div>
   );
 }
 
@@ -328,7 +575,7 @@ function BackupPage() {
     <div className="space-y-4 pb-6">
       <h2 className="text-2xl font-medium tracking-tight">Backup</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        An encrypted file of notes and People, including birthdays. Voice keys stay in the vault unless you include them here. Nothing is uploaded.
+        An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.
       </p>
       <Field label="Passphrase">
         <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
@@ -377,6 +624,7 @@ function BackupPage() {
             <p>
               {preview.notes} notes · {preview.people} people · {preview.reminders} dates
               {preview.keys ? ` · ${preview.keys} keys in the file` : ""}
+              {preview.hasMemory ? ` · ${preview.facts} facts` : " · no memory section"}
             </p>
             {preview.keys > 0 && (
               <button

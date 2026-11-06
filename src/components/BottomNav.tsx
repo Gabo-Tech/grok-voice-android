@@ -1,4 +1,5 @@
 import { AlarmClock, CalendarDays, Mic, NotebookPen, Settings } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export type AppTab = "talk" | "notes" | "calendar" | "reminders" | "more";
@@ -12,6 +13,7 @@ const ITEMS: Array<{ id: AppTab; label: string; icon: typeof Mic }> = [
 ];
 
 export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab) => void }) {
+  const t = useT();
   return (
     <nav className="bottom-nav">
       <ul className="grid grid-cols-5">
@@ -28,7 +30,7 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                 )}
               >
                 <Icon className="size-5" strokeWidth={1.5} />
-                <span className="mt-1">{label}</span>
+                <span className="mt-1">{t(label)}</span>
               </button>
             </li>
           );

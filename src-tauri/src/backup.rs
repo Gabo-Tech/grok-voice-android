@@ -38,6 +38,9 @@ pub struct Payload {
     pub people: Vec<Person>,
     #[serde(default)]
     pub keys: Vec<BackupKey>,
+    /// Absent in backups written before on-device memory. Restore leaves the phone's memory alone then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<crate::local_memory::Bundle>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -47,11 +50,18 @@ pub struct Preview {
     pub people: usize,
     pub reminders: usize,
     pub keys: usize,
+    #[serde(default)]
+    pub facts: usize,
+    #[serde(default)]
+    pub sessions: usize,
+    /// False for a backup that has no memory section.
+    #[serde(default)]
+    pub has_memory: bool,
 }
 
 impl Payload {
     pub fn notes_and_people(notes: Vec<Note>, people: Vec<Person>) -> Self {
-        Self { kind: "grok-voice-backup".into(), version: 1, notes, people, keys: Vec::new() }
+        Self { kind: "grok-voice-backup".into(), version: 1, notes, people, keys: Vec::new(), memory: None }
     }
 
     pub fn preview(&self) -> Preview {
@@ -60,6 +70,9 @@ impl Payload {
             people: self.people.len(),
             reminders: self.people.iter().map(|p| p.reminders.len()).sum(),
             keys: self.keys.len(),
+            facts: self.memory.as_ref().map(|bundle| bundle.facts.len()).unwrap_or(0),
+            sessions: self.memory.as_ref().map(|bundle| bundle.sessions.len()).unwrap_or(0),
+            has_memory: self.memory.is_some(),
         }
     }
 }
@@ -152,6 +165,8 @@ mod tests {
             handles: Handles::default(),
             favorite: true,
             note: "call after 5".into(),
+            reach_out_days: 0,
+            last_contacted_ms: None,
             reminders: vec![PersonReminder {
                 id: "r1".into(),
                 label: "birthday".into(),
@@ -190,5 +205,30 @@ mod tests {
         assert_eq!(opened.keys.len(), 1);
         assert_eq!(opened.keys[0].secret, "xai-test-secret");
         assert_eq!(opened.preview().keys, 1);
+    }
+
+    #[test]
+    fn old_backups_without_memory_still_open() {
+        let old = r#"{"kind":"grok-voice-backup","version":1,"notes":[],"people":[],"keys":[]}"#;
+        let payload: Payload = serde_json::from_str(old).unwrap();
+        assert!(payload.memory.is_none());
+        assert!(!payload.preview().has_memory);
+        let bytes = seal(&payload, "correct horse").unwrap();
+        let opened = open(&bytes, "correct horse").unwrap();
+        assert!(opened.memory.is_none());
+    }
+
+    #[test]
+    fn memory_round_trips_inside_version_one() {
+        let mut payload = sample();
+        payload.memory = Some(crate::local_memory::Bundle {
+            facts: vec![crate::local_memory::Fact { id: "f1".into(), text: "I live in Zurich".into(), updated_ms: 1 }],
+            sessions: vec![crate::local_memory::SessionNote { id: "s1".into(), at_ms: 2, text: "You said hello. The reply was hi.".into() }],
+            next_id: 2,
+        });
+        let opened = open(&seal(&payload, "correct horse").unwrap(), "correct horse").unwrap();
+        assert_eq!(opened.preview().facts, 1);
+        assert!(opened.preview().has_memory);
+        assert_eq!(opened.memory.as_ref().unwrap().facts[0].text, "I live in Zurich");
     }
 }
