@@ -2,14 +2,23 @@ package ai.grokvoice.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.ClipData
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
 import androidx.core.content.FileProvider
 import org.json.JSONObject
+import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
 import java.io.File
@@ -366,6 +375,70 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
     } catch (e: Exception) {
       resolveJson(invoke, JSONObject().put("ok", false).put("error", e.message ?: "calendar delete failed").toString())
     }
+  }
+
+  @InvokeArg
+  class SpeakArgs {
+    var text: String = ""
+  }
+
+  @Command
+  fun deviceFacts(invoke: Invoke) {
+    val am = activity.getSystemService(ActivityManager::class.java)
+    val info = ActivityManager.MemoryInfo()
+    am?.getMemoryInfo(info)
+    val ret = JSObject()
+    ret.put("availMb", info.availMem / (1024 * 1024))
+    ret.put("lowMemory", info.lowMemory)
+    ret.put("online", online())
+    invoke.resolve(ret)
+  }
+
+  @Command
+  fun speakFallback(invoke: Invoke) {
+    val text = invoke.parseArgs(SpeakArgs::class.java).text.trim().take(180)
+    if (text.isEmpty()) {
+      invoke.resolve()
+      return
+    }
+    val latch = CountDownLatch(1)
+    activity.runOnUiThread {
+      var engine: TextToSpeech? = null
+      engine = TextToSpeech(activity) { status ->
+        val tts = engine
+        if (tts == null || status != TextToSpeech.SUCCESS) {
+          latch.countDown()
+          return@TextToSpeech
+        }
+        tts.language = Locale.US
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+          override fun onStart(utteranceId: String?) {}
+          override fun onDone(utteranceId: String?) {
+            tts.shutdown()
+            latch.countDown()
+          }
+          override fun onError(utteranceId: String?) {
+            tts.shutdown()
+            latch.countDown()
+          }
+        })
+        val params = Bundle()
+        val queued = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, "gv-local")
+        if (queued == TextToSpeech.ERROR) {
+          tts.shutdown()
+          latch.countDown()
+        }
+      }
+    }
+    latch.await(20, TimeUnit.SECONDS)
+    invoke.resolve()
+  }
+
+  private fun online(): Boolean {
+    val cm = activity.getSystemService(ConnectivityManager::class.java) ?: return false
+    val network = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(network) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
   }
 
   private fun resolveJson(invoke: Invoke, json: String) {

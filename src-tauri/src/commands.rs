@@ -577,3 +577,35 @@ pub fn recent_memory(memory: State<'_, Memory>) -> Vec<Turn> {
 pub fn clear_memory(memory: State<'_, Memory>) {
     memory.clear();
 }
+
+#[tauri::command]
+pub async fn local_pack_status(app: AppHandle) -> Result<Vec<crate::local::PackInfo>> {
+    blocking(app, |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        Ok(crate::local::pack_status(&dir))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn download_local_pack(app: AppHandle, id: String) -> Result<Vec<crate::local::PackInfo>> {
+    let hub = app.state::<Arc<Hub>>().inner().clone();
+    let dir = crate::local::model_dir(&app).map_err(msg)?;
+    tokio::task::spawn_blocking(move || {
+        crate::local::download_pack(&dir, &id, |progress| hub.emit("voice://pack", progress))
+    })
+    .await
+    .map_err(|e| msg(e.to_string()))?
+    .map_err(msg)?;
+    local_pack_status(app).await
+}
+
+#[tauri::command]
+pub async fn delete_local_pack(app: AppHandle, id: String) -> Result<Vec<crate::local::PackInfo>> {
+    blocking(app, move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        crate::local::delete_pack(&dir, &id).map_err(msg)?;
+        Ok(crate::local::pack_status(&dir))
+    })
+    .await
+}

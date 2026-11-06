@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import { LocalPacks } from "@/components/LocalPacks";
 import { WakeView } from "@/components/WakeView";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -310,9 +311,12 @@ function KeyStep({
           ))}
         </div>
         {chosen.id === "local" ? (
-          <p className="text-sm leading-6 text-muted-foreground">
-            Speech and replies stay on the phone. No key. This voice is saved and used when the on-device connection is ready. Live search still needs a cloud key.
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm leading-6 text-muted-foreground">
+              Speech and replies stay on the phone. No key. Download the packs below, then put On device first. Talk uses them when they are ready. If they are missing or the model cannot load, the next saved key is used. Web search uses the open web when you are online, and says so when you are not.
+            </p>
+            <LocalPacks />
+          </div>
         ) : (
           <>
             <Button variant="outline" className="w-full" onClick={() => onOpen(chosen.url)}>

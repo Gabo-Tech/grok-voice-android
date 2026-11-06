@@ -1,0 +1,308 @@
+//! Utterance session: listen, transcribe, run phone tools, speak.
+
+use std::{
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+use serde::Serialize;
+use tauri::{AppHandle, Manager};
+use tokio::sync::mpsc;
+
+use crate::{
+    actions,
+    audio::{
+        engine::UPLINK_RATE,
+        playback::Player,
+        resample::{Resampler, i16_to_f32},
+    },
+    diagnostics::{Hub, Phase, now_ms},
+    native::NativeBridge,
+    settings::Settings,
+};
+
+use super::{
+    engine::Engines,
+    memory_enough,
+    mode::set_public_search,
+    packs::{model_dir, model_paths},
+    turn::{self, ChatTurn},
+    vad::Vad,
+    MIN_FREE_MB,
+};
+
+struct SearchGuard;
+impl Drop for SearchGuard {
+    fn drop(&mut self) {
+        set_public_search(false);
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Transcript<'a> {
+    id: String,
+    role: &'a str,
+    text: &'a str,
+    delta: Option<&'a str>,
+    is_final: bool,
+}
+
+pub async fn run_session(
+    app: &AppHandle,
+    mic: &mut mpsc::Receiver<Vec<i16>>,
+    player: &Player,
+    active: &AtomicBool,
+    settings: &Settings,
+    hub: &Hub,
+) -> Result<String, String> {
+    let _guard = SearchGuard;
+    set_public_search(true);
+    hub.update(|state| {
+        state.ws_state = "on device".into();
+        state.model = Some("qwen2.5-0.5b-instruct-q4_k_m".into());
+        state.token_minted_at_ms = None;
+        state.token_expires_at = None;
+    });
+    if active.load(Ordering::Acquire) {
+        hub.set_phase(Phase::Connecting);
+    }
+    let facts = device_facts(app).await;
+    if !memory_enough(facts.avail_mb, facts.low_memory) {
+        let why = if facts.low_memory {
+            "This phone is low on memory, so the on-device voice cannot load.".to_string()
+        } else {
+            format!("On-device voice needs about {MIN_FREE_MB} MB free, and this phone has {} MB free.", facts.avail_mb)
+        };
+        return Err(why);
+    }
+    let dir = model_dir(app)?;
+    let paths = model_paths(&dir);
+    let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
+    hub.info("loading on-device speech, language model, and voice");
+    let engines = tokio::task::spawn_blocking(move || Engines::load(&paths, threads))
+        .await
+        .map_err(|err| err.to_string())??;
+    let engines = Arc::new(Mutex::new(engines));
+    let system = turn::system_prompt(&settings.instructions, &app.state::<crate::memory::Memory>().prompt());
+    let mut history = Vec::new();
+    let mut vad = Vad::new(UPLINK_RATE);
+    let mut last = Instant::now();
+    let idle = Duration::from_secs(settings.idle_timeout_secs.max(5));
+    let mut tick = tokio::time::interval(Duration::from_millis(200));
+    if active.load(Ordering::Acquire) {
+        hub.set_phase(Phase::Listening);
+    }
+    hub.info("on-device voice is listening");
+
+    loop {
+        tokio::select! {
+            frame = mic.recv() => {
+                let Some(frame) = frame else { return Ok("ended by user".into()) };
+                if !active.load(Ordering::Acquire) {
+                    return Ok("ended by user".into());
+                }
+                if let Some(utterance) = vad.push(&frame) {
+                    if let Err(err) = handle_audio(app, hub, player, active, &engines, &system, &mut history, &utterance).await {
+                        hub.error(format!("on-device turn failed: {err}"));
+                        speak_line(app, hub, player, active, &engines, &format!("I couldn't finish that. {err}")).await;
+                    }
+                    while mic.try_recv().is_ok() {}
+                    last = Instant::now();
+                    if active.load(Ordering::Acquire) {
+                        hub.set_phase(Phase::Listening);
+                    }
+                }
+            }
+            _ = tick.tick() => {
+                if !active.load(Ordering::Acquire) {
+                    return Ok("ended by user".into());
+                }
+                for note in crate::search::take_context_notes() {
+                    let text = format!("Typed just now. Use this and do not answer it by itself. {note}");
+                    if let Err(err) = handle_text(app, hub, player, active, &engines, &system, &mut history, &text, false).await {
+                        hub.warn(format!("typed context skipped: {err}"));
+                    }
+                    last = Instant::now();
+                }
+                if player.is_active() {
+                    last = Instant::now();
+                }
+                if last.elapsed() >= idle {
+                    return Ok(format!("idle for {}s", idle.as_secs()));
+                }
+            }
+        }
+    }
+}
+
+async fn device_facts(app: &AppHandle) -> crate::native::DeviceFacts {
+    let app = app.clone();
+    match tokio::task::spawn_blocking(move || app.state::<NativeBridge>().device_facts()).await {
+        Ok(Ok(facts)) => facts,
+        _ => crate::native::DeviceFacts { avail_mb: 0, low_memory: false, online: true },
+    }
+}
+
+async fn handle_audio(
+    app: &AppHandle,
+    hub: &Hub,
+    player: &Player,
+    active: &AtomicBool,
+    engines: &Arc<Mutex<Engines>>,
+    system: &str,
+    history: &mut Vec<ChatTurn>,
+    utterance: &[i16],
+) -> Result<(), String> {
+    if active.load(Ordering::Acquire) {
+        hub.set_phase(Phase::Thinking);
+    }
+    let samples = resample_16k(utterance);
+    let engines_bg = engines.clone();
+    let text = tokio::task::spawn_blocking(move || {
+        engines_bg.lock().unwrap_or_else(|err| err.into_inner()).transcribe(&samples)
+    })
+    .await
+    .map_err(|err| err.to_string())??;
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Ok(());
+    }
+    hub.info(format!("heard: {text}"));
+    remember(app, hub, "user", &text);
+    handle_text(app, hub, player, active, engines, system, history, &text, true).await
+}
+
+async fn handle_text(
+    app: &AppHandle,
+    hub: &Hub,
+    player: &Player,
+    active: &AtomicBool,
+    engines: &Arc<Mutex<Engines>>,
+    system: &str,
+    history: &mut Vec<ChatTurn>,
+    text: &str,
+    already_recorded: bool,
+) -> Result<(), String> {
+    if !already_recorded {
+        remember(app, hub, "user", text);
+    }
+    if active.load(Ordering::Acquire) {
+        hub.set_phase(Phase::Thinking);
+    }
+    let engines_bg = engines.clone();
+    let app_bg = app.clone();
+    let system = system.to_string();
+    let text = text.to_string();
+    let mut history_owned = std::mem::take(history);
+    let outcome = tokio::task::spawn_blocking(move || {
+        let result = turn::run_turns(
+            &system,
+            &mut history_owned,
+            &text,
+            |prompt, grammar| complete_with_fallback(&engines_bg, prompt, grammar),
+            |name, args| call_tool(&app_bg, name, args),
+        );
+        (result, history_owned)
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+    let (result, history_owned) = outcome;
+    *history = history_owned;
+    let spoken = result?;
+    remember(app, hub, "assistant", &spoken);
+    speak_line(app, hub, player, active, engines, &spoken).await;
+    Ok(())
+}
+
+fn complete_with_fallback(engines: &Mutex<Engines>, prompt: &str, grammar: &str) -> Result<String, String> {
+    let mut engine = engines.lock().unwrap_or_else(|err| err.into_inner());
+    match engine.complete(prompt, grammar) {
+        Err(err) if err.contains("grammar") => engine.complete(prompt, ""),
+        other => other,
+    }
+}
+
+fn call_tool(app: &AppHandle, name: &str, args: &serde_json::Value) -> String {
+    let hub = app.state::<Arc<Hub>>();
+    if name == "web_search" {
+        hub.emit("voice://busy", "Searching the web…");
+    }
+    let arguments = args.to_string();
+    let output = actions::run(app, name, &arguments);
+    if name == "web_search" {
+        hub.emit("voice://busy", "");
+    }
+    output
+}
+
+fn remember(app: &AppHandle, hub: &Hub, role: &'static str, text: &str) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    app.state::<crate::memory::Memory>().remember(role, text);
+    hub.emit(
+        "voice://transcript",
+        Transcript { id: format!("local-{role}-{}", now_ms()), role, text, delta: None, is_final: true },
+    );
+}
+
+async fn speak_line(
+    app: &AppHandle,
+    hub: &Hub,
+    player: &Player,
+    active: &AtomicBool,
+    engines: &Arc<Mutex<Engines>>,
+    text: &str,
+) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    if active.load(Ordering::Acquire) {
+        hub.set_phase(Phase::Speaking);
+    }
+    let engines_bg = engines.clone();
+    let owned = text.to_string();
+    let synth = tokio::task::spawn_blocking(move || {
+        engines_bg.lock().unwrap_or_else(|err| err.into_inner()).synthesize(&owned)
+    })
+    .await;
+    match synth {
+        Ok(Ok((pcm, rate))) => play(player, &pcm, rate).await,
+        _ => {
+            let app = app.clone();
+            let line = text.to_string();
+            let _ = tokio::task::spawn_blocking(move || app.state::<NativeBridge>().speak_fallback(&line)).await;
+        }
+    }
+}
+
+async fn play(player: &Player, samples: &[f32], rate: u32) {
+    let out_rate = player.rate().max(16_000);
+    let mut resampler = Resampler::new(rate.max(1), out_rate);
+    let mut out = Vec::new();
+    resampler.process(samples, &mut out);
+    if out.is_empty() {
+        return;
+    }
+    player.push(&out);
+    let seconds = out.len() as f32 / out_rate as f32;
+    let timeout = Duration::from_secs_f32(seconds + 3.0);
+    let start = Instant::now();
+    while player.is_active() && start.elapsed() < timeout {
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+}
+
+fn resample_16k(pcm: &[i16]) -> Vec<f32> {
+    let floats: Vec<f32> = pcm.iter().copied().map(i16_to_f32).collect();
+    let mut resampler = Resampler::new(UPLINK_RATE, 16_000);
+    let mut out = Vec::new();
+    resampler.process(&floats, &mut out);
+    out
+}

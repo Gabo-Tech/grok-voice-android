@@ -2,6 +2,7 @@ mod actions;
 mod audio;
 mod backup;
 mod commands;
+mod local;
 mod diagnostics;
 mod memory;
 mod people;
@@ -128,6 +129,9 @@ pub fn run() {
             commands::restore_backup,
             commands::recent_memory,
             commands::clear_memory,
+            commands::local_pack_status,
+            commands::download_local_pack,
+            commands::delete_local_pack,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

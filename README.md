@@ -79,6 +79,26 @@ Times you say are local. “Remind me tomorrow at 3” is a one-off reminder. �
 
 xAI does not offer a public third-party OAuth flow for this API, so sign-in is the API key you paste.
 
+## On device
+
+Settings → Voice keys → **On device** is a full Talk path that does not call xAI for speech. It is utterance mode: the phone waits until you pause, then answers. It is not the full-duplex barge-in of `grok-voice-latest`.
+
+The stack is Moonshine Tiny English (int8) for speech to text, Qwen2.5-0.5B Instruct Q4_K_M for the reply and tool call, and Piper `en_US-lessac-low` for the voice. sherpa-onnx 1.13.8 runs the speech models. llama.cpp `b12140` runs the GGUF with a grammar so the reply is one JSON tool call. Phone tools (notes, reminders, calendar, People, and the confirm-before-open gates) go through the same action path as the realtime session. Android system speech is only a fallback if Piper cannot speak.
+
+The weights are not in the APK. Download them on the phone from Voice keys, or fetch them yourself:
+
+| Pack | Download | What it is |
+| --- | --- | --- |
+| Speech to text | 103 MB | [sherpa-onnx-moonshine-tiny-en-int8.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2) (about 119 MB unpacked) |
+| Language model | 469 MB | [qwen2.5-0.5b-instruct-q4_k_m.gguf](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf) |
+| Voice | 64 MB | [vits-piper-en_US-lessac-low.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2) (about 77 MB unpacked) |
+
+Put On device first in the key list. If the packs are missing, or the model cannot load (the phone wants about 1.4 GB free; 6–8 GB devices are the target), Talk tries the next saved key.
+
+Web search in this mode does not use xAI. It reads DuckDuckGo. Offline, the tool returns “Web search needs a network connection, and this phone is offline.” so the model can say that.
+
+Limits for this version: English recognition only, one English voice, a small model that is slower and less reliable than `grok-voice-latest`, and no true barge-in. The Android build downloads the sherpa-onnx arm64 libraries and compiles llama.cpp. It does not download the model packs.
+
 ## Build from source
 
 You need Node, pnpm, Rust, a JDK, and the Android SDK with NDK `27.1.12297006`.
