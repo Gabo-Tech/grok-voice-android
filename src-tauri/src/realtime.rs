@@ -70,23 +70,6 @@ pub fn http_client() -> reqwest::Client {
         .expect("http client")
 }
 
-async fn connect_account(
-    http: &reqwest::Client,
-    provider: &str,
-    secret: &str,
-    _model: &str,
-) -> Result<EphemeralToken> {
-    match provider {
-        "xai" => mint_ephemeral(http, secret).await,
-        "local" => Err(msg(
-            "on device is saved on this phone, and its voice connection is not ready yet",
-        )),
-        other => Err(msg(format!(
-            "{other} is saved on this phone, and its voice connection is not ready yet"
-        ))),
-    }
-}
-
 pub async fn mint_ephemeral(client: &reqwest::Client, api_key: &str) -> Result<EphemeralToken> {
     let resp = client
         .post(CLIENT_SECRETS_URL)
@@ -188,23 +171,50 @@ impl Session<'_> {
             return Err(msg("No voice key saved. Add one in setup."));
         }
 
+        let ready = crate::local::model_dir(self.app).map(|dir| crate::local::packs_ready(&dir)).unwrap_or(false);
         let http = http_client();
-        let mut token = None;
         let mut last_error = String::from("no voice provider connected");
         for account in &accounts {
-            match connect_account(&http, &account.provider, &account.secret, &self.settings.model).await {
-                Ok(minted) => {
-                    self.hub.info(format!("using {} ({})", account.provider, crate::vault::key_hint(&account.secret)));
-                    token = Some(minted);
-                    break;
+            match crate::local::route(&account.provider, ready) {
+                crate::local::Route::Local => {
+                    self.hub.info("using on-device voice");
+                    match crate::local::run_session(self.app, mic, self.player, self.active, self.settings, self.hub).await {
+                        Ok(reason) => return Ok(reason),
+                        Err(err) => {
+                            last_error = err;
+                            self.hub.warn(format!("on device failed, trying the next key: {last_error}"));
+                        }
+                    }
                 }
-                Err(e) => {
-                    last_error = e.to_string();
-                    self.hub.warn(format!("{} failed, trying the next key: {last_error}", account.provider));
+                crate::local::Route::Xai => {
+                    match mint_ephemeral(&http, &account.secret).await {
+                        Ok(token) => {
+                            self.hub.info(format!("using xai ({})", crate::vault::key_hint(&account.secret)));
+                            return self.run_xai(mic, token).await;
+                        }
+                        Err(err) => {
+                            last_error = err.to_string();
+                            self.hub.warn(format!("xai failed, trying the next key: {last_error}"));
+                        }
+                    }
+                }
+                crate::local::Route::Skip(reason) => {
+                    last_error = reason;
+                    self.hub.warn(format!("{} skipped: {last_error}", account.provider));
                 }
             }
         }
-        let token = token.ok_or_else(|| msg(last_error))?;
+        self.speak_failure(&last_error).await;
+        Err(msg(last_error))
+    }
+
+    async fn speak_failure(&self, last_error: &str) {
+        let text: String = last_error.chars().take(180).collect();
+        let app = self.app.clone();
+        let _ = tokio::task::spawn_blocking(move || app.state::<NativeBridge>().speak_fallback(&text)).await;
+    }
+
+    async fn run_xai(&self, mic: &mut mpsc::Receiver<Vec<i16>>, token: EphemeralToken) -> Result<String> {
         self.hub.update(|s| {
             s.token_minted_at_ms = Some(now_ms());
             s.token_expires_at = token.expires_at;

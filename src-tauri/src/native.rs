@@ -10,6 +10,14 @@ use tauri::{
 
 use crate::error::Result;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceFacts {
+    pub avail_mb: u64,
+    pub low_memory: bool,
+    pub online: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionStatus {
@@ -327,6 +335,21 @@ mod imp {
                 Args { kind, query, url, phone, text, to, subject, body },
             )
         }
+
+        pub fn device_facts(&self) -> Result<DeviceFacts> {
+            self.handle.run_mobile_plugin("deviceFacts", ()).map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn speak_fallback(&self, text: &str) -> Result<()> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                text: &'a str,
+            }
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>("speakFallback", Args { text })
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(())
+        }
     }
 }
 
@@ -454,6 +477,14 @@ mod imp {
 
         pub fn delete_event(&self, _id: &str) -> Result<String> {
             Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
+        }
+
+        pub fn device_facts(&self) -> Result<DeviceFacts> {
+            Ok(DeviceFacts { avail_mb: 0, low_memory: false, online: true })
+        }
+
+        pub fn speak_fallback(&self, _text: &str) -> Result<()> {
+            Ok(())
         }
     }
 }

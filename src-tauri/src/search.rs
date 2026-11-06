@@ -46,6 +46,14 @@ pub fn lookup(app: &AppHandle, query: &str) -> Result<Value, String> {
     if query.is_empty() {
         return Err("A search query is required.".into());
     }
+    if crate::local::public_search_enabled() {
+        let online = app
+            .state::<NativeBridge>()
+            .device_facts()
+            .map(|facts| facts.online)
+            .unwrap_or(true);
+        return crate::local::public_search(query, online);
+    }
     let body = json!({
         "model": MODEL,
         "temperature": 0.2,

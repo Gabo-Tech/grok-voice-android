@@ -133,6 +133,20 @@ export interface SampleInfo {
   peak: number;
 }
 
+export interface LocalPack {
+  id: string;
+  label: string;
+  detail: string;
+  downloadBytes: number;
+  ready: boolean;
+}
+
+export interface PackProgress {
+  id: string;
+  received: number;
+  total: number;
+}
+
 export interface Settings {
   model: string;
   voice: string;
@@ -307,6 +321,9 @@ export const api = {
   openPhoneContact: (id: string) => invoke<void>("open_phone_contact", { id }),
   recentMemory: () => invoke<Array<{ atMs: number; role: "user" | "assistant"; text: string }>>("recent_memory"),
   clearMemory: () => invoke<void>("clear_memory"),
+  localPacks: () => invoke<LocalPack[]>("local_pack_status"),
+  downloadLocalPack: (id: string) => invoke<LocalPack[]>("download_local_pack", { id }),
+  deleteLocalPack: (id: string) => invoke<LocalPack[]>("delete_local_pack", { id }),
 };
 
 export function errorText(e: unknown): string {

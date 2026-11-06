@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Archive, Bug, ChevronRight, KeyRound, Users, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
+import { LocalPacks } from "@/components/LocalPacks";
 import { Field } from "@/components/Field";
 import { PageChrome, RowButton } from "@/components/PageChrome";
 import { PeoplePage } from "@/components/PeoplePage";
@@ -462,7 +463,9 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
         ))}
       </div>
       {provider === "local" ? (
-        <p className="text-sm leading-6 text-muted-foreground">No key. The on-device voice is saved until that connection is ready.</p>
+        <p className="text-sm leading-6 text-muted-foreground">
+          No key. Talk uses this phone when On device is first and the packs below are ready. If a pack is missing or the model cannot load, the next key is used.
+        </p>
       ) : (
         <Field label="Key">
           <Input type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
@@ -472,6 +475,7 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
         {provider === "local" ? "Use on device" : "Save this key"}
       </Button>
       {error && <p className="text-sm text-foreground">{error}</p>}
+      <LocalPacks />
       <ul className="divide-y divide-border border-y border-border">
         {accounts.map((account, index) => (
           <li key={account.id} className="flex items-center gap-2 py-3 text-sm">
