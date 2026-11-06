@@ -454,7 +454,11 @@ mod imp {
         }
 
         pub fn lookup_contacts(&self, name: &str) -> Result<String> {
-            Ok(format!(r#"{{"ok":false,"error":"Contacts for {name} are only on the Android phone."}}"#))
+            Ok(serde_json::json!({
+                "ok": false,
+                "error": format!("Contacts for {name} are only on the Android phone.")
+            })
+            .to_string())
         }
 
         pub fn list_phone_contacts(&self, _query: &str) -> Result<String> {
@@ -474,15 +478,21 @@ mod imp {
         }
 
         pub fn set_alarm(&self, _hour: u32, minute: u32, label: &str, _id: i32, _at_ms: i64) -> Result<String> {
-            Ok(format!(
-                r#"{{"ok":true,"via":"local","detail":"Alarm \"{label}\" saved for {minute:02}. It rings on the phone."}}"#
-            ))
+            Ok(serde_json::json!({
+                "ok": true,
+                "via": "local",
+                "detail": format!("Alarm \"{label}\" saved for {minute:02}. It rings on the phone.")
+            })
+            .to_string())
         }
 
         pub fn set_timer(&self, seconds: u32, label: &str, _id: i32, _at_ms: i64) -> Result<String> {
-            Ok(format!(
-                r#"{{"ok":true,"via":"local","detail":"Timer \"{label}\" for {seconds}s saved. It rings on the phone."}}"#
-            ))
+            Ok(serde_json::json!({
+                "ok": true,
+                "via": "local",
+                "detail": format!("Timer \"{label}\" for {seconds}s saved. It rings on the phone.")
+            })
+            .to_string())
         }
 
         pub fn share_file(&self, _path: &str, _mime: &str, _title: &str) -> Result<String> {
@@ -490,7 +500,12 @@ mod imp {
         }
 
         pub fn schedule_item(&self, _id: i32, _kind: &str, title: &str, _note: &str, _at_ms: i64) -> Result<String> {
-            Ok(format!(r#"{{"ok":true,"via":"local","detail":"Saved \"{title}\". It notifies on the phone."}}"#))
+            Ok(serde_json::json!({
+                "ok": true,
+                "via": "local",
+                "detail": format!("Saved \"{title}\". It notifies on the phone.")
+            })
+            .to_string())
         }
 
         pub fn cancel_item(&self, _id: i32) -> Result<String> {
@@ -498,11 +513,11 @@ mod imp {
         }
 
         pub fn media_control(&self, action: &str) -> Result<String> {
-            Ok(format!(r#"{{"ok":true,"detail":"Would send media {action} on the phone."}}"#))
+            Ok(serde_json::json!({ "ok": true, "detail": format!("Would send media {action} on the phone.") }).to_string())
         }
 
         pub fn adjust_volume(&self, direction: &str, _steps: i32) -> Result<String> {
-            Ok(format!(r#"{{"ok":true,"detail":"Would turn volume {direction} on the phone."}}"#))
+            Ok(serde_json::json!({ "ok": true, "detail": format!("Would turn volume {direction} on the phone.") }).to_string())
         }
 
         pub fn open_hand_off(
@@ -516,7 +531,7 @@ mod imp {
             _subject: &str,
             _body: &str,
         ) -> Result<String> {
-            Ok(format!(r#"{{"ok":true,"detail":"Would open {kind} on the phone."}}"#))
+            Ok(serde_json::json!({ "ok": true, "detail": format!("Would open {kind} on the phone.") }).to_string())
         }
 
         pub fn list_calendar(&self, _start_ms: i64, _end_ms: i64) -> Result<String> {

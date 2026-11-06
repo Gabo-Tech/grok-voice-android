@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { safeHttps } from "@/lib/links";
 import { Trash2 } from "lucide-react";
 import { EmptyState, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
@@ -225,7 +226,7 @@ function inline(value: string) {
   const parts = value.split(/(\*\*[^*]+\*\*|https?:\/\/[^\s)]+)/g);
   return parts.map((part, index) => {
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-    if (/^https?:\/\//.test(part)) {
+    if (/^https?:\/\//.test(part) && safeHttps(part)) {
       return (
         <button
           key={index}

@@ -203,7 +203,7 @@ impl LocalMemory {
             let _ = fs::create_dir_all(dir);
         }
         if let Ok(bytes) = serde_json::to_vec_pretty(&*bundle) {
-            let _ = fs::write(&self.path, bytes);
+            let _ = crate::files::write_private(&self.path, &bytes);
         }
     }
 }

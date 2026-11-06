@@ -80,6 +80,10 @@ object HandOff {
       context.startActivity(intent)
       ok(detail)
     } catch (_: Exception) {
+      if (!canDropPackage(kind, intent)) {
+        notify(context, intent, kind)
+        return ok("Posted a notification to open $kind. Nothing is sent until they tap it.")
+      }
       intent.setPackage(null)
       try {
         context.startActivity(intent)
@@ -88,6 +92,16 @@ object HandOff {
         notify(context, intent, kind)
         ok("Posted a notification to open $kind. Nothing is sent until they tap it.")
       }
+    }
+  }
+
+  private fun canDropPackage(kind: String, intent: Intent): Boolean {
+    val host = intent.data?.host?.trim()?.trimEnd('.')?.lowercase() ?: return false
+    return when (kind) {
+      "youtube" -> isYoutubeHost(host)
+      "whatsapp" -> host == "wa.me"
+      "signal" -> host == "signal.me"
+      else -> false
     }
   }
 
@@ -223,22 +237,59 @@ object HandOff {
   private fun browser(query: String, url: String): Intent {
     val raw = url.trim().ifEmpty { query.trim() }
     if (raw.isEmpty()) throw IllegalArgumentException("Say a site or a search.")
+    if (raw.any { it.isISOControl() }) throw IllegalArgumentException("That link is not a safe https address.")
     val target = when {
-      raw.startsWith("http://") || raw.startsWith("https://") -> raw
-      raw.contains(' ') -> "https://www.google.com/search?q=" + Uri.encode(raw)
-      else -> "https://$raw"
+      raw.contains("://") -> publicHttps(raw).toString()
+      raw.contains(' ') || !looksLikeHost(raw) -> {
+        if (raw.length > 300) throw IllegalArgumentException("That search is too long.")
+        "https://www.google.com/search?q=" + Uri.encode(raw)
+      }
+      else -> publicHttps("https://$raw").toString()
     }
     return Intent(Intent.ACTION_VIEW, Uri.parse(target))
   }
 
   private fun youtube(query: String, url: String): Intent {
-    val target = if (url.startsWith("http")) url.trim()
-    else {
+    val link = url.trim()
+    val target = if (link.isNotEmpty()) {
+      val uri = publicHttps(link)
+      val host = uri.host?.trim()?.trimEnd('.')?.lowercase() ?: throw IllegalArgumentException("That is not a YouTube link.")
+      if (!isYoutubeHost(host)) throw IllegalArgumentException("That is not a YouTube link.")
+      uri.toString()
+    } else {
       val q = query.trim()
       if (q.isEmpty()) throw IllegalArgumentException("Say what to play on YouTube.")
+      if (q.contains("://") || q.any { it.isISOControl() } || q.length > 300) {
+        throw IllegalArgumentException("Say a YouTube search, not a link.")
+      }
       "https://www.youtube.com/results?search_query=" + Uri.encode(q)
     }
     return Intent(Intent.ACTION_VIEW, Uri.parse(target)).setPackage("com.google.android.youtube")
+  }
+
+  private fun publicHttps(raw: String): Uri {
+    val text = raw.trim()
+    if (text.length > 2000 || text.any { it.isISOControl() || it.isWhitespace() }) {
+      throw IllegalArgumentException("That link is not a safe https address.")
+    }
+    val uri = Uri.parse(text)
+    val host = uri.host?.trim()?.trimEnd('.')?.lowercase()
+      ?: throw IllegalArgumentException("That link is not a safe https address.")
+    if (!uri.scheme.equals("https", ignoreCase = true) || !uri.userInfo.isNullOrEmpty()) {
+      throw IllegalArgumentException("Only https links can be opened.")
+    }
+    if (host.isEmpty() || !host.contains('.') || host == "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.contains(':') || host.all { it.isDigit() || it == '.' }) {
+      throw IllegalArgumentException("That link is not a safe https address.")
+    }
+    return uri
+  }
+
+  private fun isYoutubeHost(host: String): Boolean {
+    return host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com") || host == "youtube-nocookie.com" || host.endsWith(".youtube-nocookie.com")
+  }
+
+  private fun looksLikeHost(raw: String): Boolean {
+    return raw.length <= 253 && raw.contains('.') && !raw.contains('/') && !raw.contains('@') && raw.all { it.isLetterOrDigit() || it == '.' || it == '-' }
   }
 
   private fun whatsapp(phone: String, text: String): Intent {
@@ -280,14 +331,22 @@ object HandOff {
   }
 
   private fun phoneNumber(phone: String): String {
-    val digits = phone.filter { it.isDigit() }
-    if (digits.length < 3) throw IllegalArgumentException("A phone number is required.")
-    return if (phone.contains('+')) "+$digits" else digits
+    val trimmed = phone.trim()
+    if (trimmed.any { !(it.isDigit() || it.isWhitespace() || it == '+' || it == '-' || it == '(' || it == ')') }) {
+      throw IllegalArgumentException("A phone number is required.")
+    }
+    val digits = trimmed.filter { it.isDigit() }
+    if (digits.length < 3 || digits.length > 15) throw IllegalArgumentException("A phone number is required.")
+    return if (trimmed.startsWith('+')) "+$digits" else digits
   }
 
   private fun email(to: String, subject: String, body: String): Intent {
     val address = to.trim()
-    if (!address.contains("@")) throw IllegalArgumentException("Email needs an address.")
+    val at = address.indexOf('@')
+    val host = if (at >= 0) address.substring(at + 1) else ""
+    if (at <= 0 || address.length > 254 || host.contains('@') || !host.contains('.') || address.any { it.isWhitespace() || it.isISOControl() || it == '?' || it == '&' }) {
+      throw IllegalArgumentException("Email needs an address.")
+    }
     val uri = "mailto:" + Uri.encode(address) +
       "?subject=" + Uri.encode(subject.trim()) +
       "&body=" + Uri.encode(body.trim())

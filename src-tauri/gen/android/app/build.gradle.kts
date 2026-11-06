@@ -19,6 +19,7 @@ android {
     namespace = "ai.grokvoice.app"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["networkSecurityConfig"] = "@xml/network_security_release"
         applicationId = "ai.grokvoice.app"
         minSdk = 26
         targetSdk = 37
@@ -28,6 +29,7 @@ android {
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
+            manifestPlaceholders["networkSecurityConfig"] = "@xml/network_security_debug"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false

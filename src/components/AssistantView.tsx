@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { VoiceState } from "@/hooks/useVoice";
 import { useT } from "@/lib/i18n";
+import { safeHttps } from "@/lib/links";
 import { cn } from "@/lib/utils";
 
 function RichText({ text }: { text: string }) {
@@ -27,7 +28,7 @@ function inline(block: string): ReactNode[] {
     if (part.startsWith("**") && part.endsWith("**")) {
       return <strong key={i}>{part.slice(2, -2)}</strong>;
     }
-    if (/^https?:\/\//.test(part)) {
+    if (/^https?:\/\//.test(part) && safeHttps(part)) {
       return (
         <button
           key={i}

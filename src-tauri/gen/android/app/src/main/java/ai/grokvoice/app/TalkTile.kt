@@ -22,6 +22,7 @@ class TalkTile : TileService() {
   }
 
   override fun onClick() {
+    WidgetGate.allow(this, "lock")
     val launch = Intent(this, MainActivity::class.java)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
       .putExtra(MainActivity.EXTRA_WIDGET, "lock")

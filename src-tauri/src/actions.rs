@@ -388,7 +388,7 @@ impl Agenda {
 
     fn persist(path: &PathBuf, store: &Store) -> Result<(), String> {
         let bytes = serde_json::to_vec_pretty(store).map_err(|e| e.to_string())?;
-        fs::write(path, bytes).map_err(|e| e.to_string())
+        crate::files::write_private(path, &bytes).map_err(|e| e.to_string())
     }
 
     pub fn snapshot(&self, app: &AppHandle) -> AgendaSnapshot {
@@ -779,16 +779,11 @@ pub fn run(app: &AppHandle, name: &str, arguments: &str) -> String {
         Err(e) => json!({ "ok": false, "error": e }).to_string(),
     };
     if let Some(hub) = app.try_state::<Arc<Hub>>() {
-        let brief = serde_json::from_str::<Value>(&out)
-            .ok()
-            .and_then(|v| {
-                v["detail"].as_str().map(str::to_owned).or_else(|| v["error"].as_str().map(str::to_owned))
-            })
-            .unwrap_or_else(|| "done".into());
-        if brief.contains("needs a network connection") {
-            hub.error(brief.clone());
+        let ok = serde_json::from_str::<Value>(&out).ok().and_then(|v| v["ok"].as_bool()).unwrap_or(false);
+        if !ok && out.contains("needs a network connection") {
+            hub.error("tool needs a network connection");
         }
-        hub.info(format!("tool {name}: {brief}"));
+        hub.info(format!("tool {name}: {}", if ok { "ok" } else { "failed" }));
     }
     out
 }
@@ -879,18 +874,19 @@ impl Handoffs {
     }
 }
 
-fn stage_handoff(app: &AppHandle, kind: &str, summary: &str, args: &Value) {
+fn stage_handoff(app: &AppHandle, kind: &str, summary: &str, args: &Value) -> Result<(), String> {
+    let prepared = prepare_handoff(kind, args)?;
     let draft = HandoffDraft {
         id: format!("h{}", crate::diagnostics::now_ms()),
         summary: summary.to_string(),
         kind: kind.to_string(),
-        query: args["query"].as_str().unwrap_or("").to_string(),
-        url: args["url"].as_str().unwrap_or("").to_string(),
-        phone: args["phone"].as_str().unwrap_or("").to_string(),
-        text: args["text"].as_str().unwrap_or("").to_string(),
-        to: args["to"].as_str().unwrap_or("").to_string(),
-        subject: args["subject"].as_str().unwrap_or("").to_string(),
-        body: args["body"].as_str().unwrap_or("").to_string(),
+        query: prepared.query,
+        url: prepared.url,
+        phone: prepared.phone,
+        text: prepared.text,
+        to: prepared.to,
+        subject: prepared.subject,
+        body: prepared.body,
     };
     if let Some(handoffs) = app.try_state::<Handoffs>() {
         handoffs.stage(draft.clone());
@@ -898,6 +894,7 @@ fn stage_handoff(app: &AppHandle, kind: &str, summary: &str, args: &Value) {
     if let Some(hub) = app.try_state::<Arc<Hub>>() {
         hub.emit("voice://handoff", &draft);
     }
+    Ok(())
 }
 
 fn clear_handoff(app: &AppHandle) {
@@ -916,9 +913,30 @@ pub fn confirm_pending(app: &AppHandle) -> Result<Value, String> {
     let Some(draft) = handoffs.take() else {
         return Err("Nothing is waiting to send.".into());
     };
+    let prepared = prepare_handoff(
+        &draft.kind,
+        &json!({
+            "query": draft.query,
+            "url": draft.url,
+            "phone": draft.phone,
+            "text": draft.text,
+            "to": draft.to,
+            "subject": draft.subject,
+            "body": draft.body,
+        }),
+    )?;
     let raw = app
         .state::<NativeBridge>()
-        .open_hand_off(&draft.kind, &draft.query, &draft.url, &draft.phone, &draft.text, &draft.to, &draft.subject, &draft.body)
+        .open_hand_off(
+            &draft.kind,
+            &prepared.query,
+            &prepared.url,
+            &prepared.phone,
+            &prepared.text,
+            &prepared.to,
+            &prepared.subject,
+            &prepared.body,
+        )
         .map_err(|err| err.to_string())?;
     clear_handoff(app);
     serde_json::from_str(&raw).map_err(|err| err.to_string())
@@ -926,6 +944,187 @@ pub fn confirm_pending(app: &AppHandle) -> Result<Value, String> {
 
 fn locale_of(app: &AppHandle) -> String {
     app.try_state::<crate::settings::SettingsStore>().map(|store| store.get().locale).unwrap_or_default()
+}
+
+struct Handoff {
+    query: String,
+    url: String,
+    phone: String,
+    text: String,
+    to: String,
+    subject: String,
+    body: String,
+}
+
+fn prepare_handoff(kind: &str, args: &Value) -> Result<Handoff, String> {
+    let mut handoff = Handoff {
+        query: String::new(),
+        url: String::new(),
+        phone: String::new(),
+        text: clip(args["text"].as_str().unwrap_or(""), 1000),
+        to: String::new(),
+        subject: clip(args["subject"].as_str().unwrap_or(""), 200),
+        body: clip(args["body"].as_str().unwrap_or(""), 4000),
+    };
+    match kind {
+        "browser" => {
+            let (query, url) = browser_target(args["query"].as_str().unwrap_or(""), args["url"].as_str().unwrap_or(""))?;
+            handoff.query = query;
+            handoff.url = url;
+        }
+        "youtube" => {
+            let (query, url) = youtube_target(args["query"].as_str().unwrap_or(""), args["url"].as_str().unwrap_or(""))?;
+            handoff.query = query;
+            handoff.url = url;
+        }
+        "whatsapp" | "signal" => handoff.phone = phone_number(args["phone"].as_str().unwrap_or(""), 8)?,
+        "call" | "sms" => handoff.phone = phone_number(args["phone"].as_str().unwrap_or(""), 3)?,
+        "email" => handoff.to = email_address(args["to"].as_str().unwrap_or(""))?,
+        "share" => {
+            if handoff.text.trim().is_empty() && handoff.body.trim().is_empty() {
+                return Err("There is nothing to share.".into());
+            }
+        }
+        _ => return Err("Unknown app.".into()),
+    }
+    Ok(handoff)
+}
+
+fn browser_target(query: &str, url: &str) -> Result<(String, String), String> {
+    let raw = if !url.trim().is_empty() { url.trim() } else { query.trim() };
+    if raw.is_empty() {
+        return Err("Say a site or a search.".into());
+    }
+    if raw.contains("://") {
+        return Ok((String::new(), require_public_https(raw)?));
+    }
+    if raw.contains(':') {
+        return Err("Only https links can be opened.".into());
+    }
+    if raw.contains(' ') || !looks_like_host(raw) {
+        if raw.chars().count() > 300 || raw.chars().any(|c| c.is_control()) {
+            return Err("That search is too long.".into());
+        }
+        return Ok((raw.to_string(), String::new()));
+    }
+    Ok((String::new(), require_public_https(&format!("https://{raw}"))?))
+}
+
+fn youtube_target(query: &str, url: &str) -> Result<(String, String), String> {
+    if !url.trim().is_empty() {
+        let url = require_public_https(url.trim())?;
+        let host = host_of(&url).ok_or("That is not a YouTube link.")?;
+        if !youtube_host(&host) {
+            return Err("That is not a YouTube link.".into());
+        }
+        return Ok((String::new(), url));
+    }
+    let query = query.trim();
+    if query.is_empty() {
+        return Err("Say what to play on YouTube.".into());
+    }
+    if query.contains("://") || query.chars().any(|c| c.is_control()) || query.chars().count() > 300 {
+        return Err("Say a YouTube search, not a link.".into());
+    }
+    Ok((query.to_string(), String::new()))
+}
+
+fn require_public_https(raw: &str) -> Result<String, String> {
+    let err = "That link is not a safe https address.";
+    if raw.chars().count() > 2000 || raw.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(err.into());
+    }
+    let Some(rest) = raw.strip_prefix("https://") else {
+        return Err("Only https links can be opened.".into());
+    };
+    if rest.is_empty() {
+        return Err(err.into());
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains('@') || authority.contains('\\') {
+        return Err(err.into());
+    }
+    let host = match authority.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') && port.chars().all(|c| c.is_ascii_digit()) && !port.is_empty() => host,
+        _ => authority,
+    };
+    if host.contains(':') {
+        return Err(err.into());
+    }
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty()
+        || !host.contains('.')
+        || host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.parse::<std::net::Ipv4Addr>().is_ok()
+        || host.parse::<std::net::Ipv6Addr>().is_ok()
+    {
+        return Err(err.into());
+    }
+    Ok(raw.to_string())
+}
+
+fn host_of(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("https://")?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = match authority.rsplit_once(':') {
+        Some((host, port)) if port.chars().all(|c| c.is_ascii_digit()) => host,
+        _ => authority,
+    };
+    Some(host.trim_end_matches('.').to_ascii_lowercase())
+}
+
+fn youtube_host(host: &str) -> bool {
+    host == "youtu.be"
+        || host == "youtube.com"
+        || host.ends_with(".youtube.com")
+        || host == "youtube-nocookie.com"
+        || host.ends_with(".youtube-nocookie.com")
+}
+
+fn looks_like_host(raw: &str) -> bool {
+    raw.len() <= 253
+        && raw.contains('.')
+        && !raw.contains('/')
+        && !raw.contains('@')
+        && raw.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
+}
+
+fn phone_number(raw: &str, min_digits: usize) -> Result<String, String> {
+    let raw = raw.trim();
+    if raw.chars().any(|c| !(c.is_ascii_digit() || c.is_whitespace() || matches!(c, '+' | '-' | '(' | ')'))) {
+        return Err("A phone number is required.".into());
+    }
+    let plus = raw.starts_with('+');
+    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() < min_digits || digits.len() > 15 {
+        return Err("A phone number is required.".into());
+    }
+    Ok(if plus { format!("+{digits}") } else { digits })
+}
+
+fn email_address(raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    if raw.len() > 254 || raw.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("Email needs an address.".into());
+    }
+    let Some((local, host)) = raw.split_once('@') else {
+        return Err("Email needs an address.".into());
+    };
+    let local_ok = !local.is_empty() && local.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-'));
+    let host_ok = host.contains('.')
+        && !host.starts_with('.')
+        && !host.ends_with('.')
+        && host.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'));
+    if !local_ok || !host_ok {
+        return Err("Email needs an address.".into());
+    }
+    Ok(raw.to_string())
+}
+
+fn clip(value: &str, max: usize) -> String {
+    value.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').take(max).collect()
 }
 
 fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
@@ -948,21 +1147,22 @@ fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>
         "phone_status" => bridge.phone_status().map_err(|e| e.to_string())?,
         "open_youtube" | "open_whatsapp" | "open_signal" | "open_email" | "open_browser" | "open_call" | "open_sms" => {
             if let Some(wait) = unconfirmed_handoff(name, args) {
-                stage_handoff(app, name.trim_start_matches("open_"), wait["detail"].as_str().unwrap_or(""), args);
+                stage_handoff(app, name.trim_start_matches("open_"), wait["detail"].as_str().unwrap_or(""), args)?;
                 return Ok(Some(wait));
             }
             clear_handoff(app);
             let kind = name.trim_start_matches("open_");
+            let handoff = prepare_handoff(kind, args)?;
             bridge
                 .open_hand_off(
                     kind,
-                    args["query"].as_str().unwrap_or(""),
-                    args["url"].as_str().unwrap_or(""),
-                    args["phone"].as_str().unwrap_or(""),
-                    args["text"].as_str().unwrap_or(""),
-                    args["to"].as_str().unwrap_or(""),
-                    args["subject"].as_str().unwrap_or(""),
-                    args["body"].as_str().unwrap_or(""),
+                    &handoff.query,
+                    &handoff.url,
+                    &handoff.phone,
+                    &handoff.text,
+                    &handoff.to,
+                    &handoff.subject,
+                    &handoff.body,
                 )
                 .map_err(|e| e.to_string())?
         }
@@ -1792,7 +1992,7 @@ fn share_item(app: &AppHandle, args: &Value) -> Result<Value, String> {
         "body": body,
     });
     if args["confirmed"] != true {
-        stage_handoff(app, handoff_kind, &summary, &staged);
+        stage_handoff(app, handoff_kind, &summary, &staged)?;
         let locale = locale_of(app);
         return Ok(json!({
             "ok": true,
@@ -1802,9 +2002,19 @@ fn share_item(app: &AppHandle, args: &Value) -> Result<Value, String> {
         }));
     }
     clear_handoff(app);
+    let prepared = prepare_handoff(handoff_kind, &staged)?;
     let raw = app
         .state::<NativeBridge>()
-        .open_hand_off(handoff_kind, "", "", &phone, &body, "", &title, &body)
+        .open_hand_off(
+            handoff_kind,
+            &prepared.query,
+            &prepared.url,
+            &prepared.phone,
+            &prepared.text,
+            &prepared.to,
+            &prepared.subject,
+            &prepared.body,
+        )
         .map_err(|err| err.to_string())?;
     serde_json::from_str(&raw).map_err(|err| err.to_string())
 }
@@ -1902,7 +2112,16 @@ pub fn sync_person_reminders(app: &AppHandle) -> Result<(), String> {
 pub fn replace_notes(app: &AppHandle, notes: Vec<Note>) -> Result<(), String> {
     let agenda = app.state::<Agenda>();
     let mut store = agenda.lock();
-    store.notes = notes.into_iter().take(200).collect();
+    store.notes = notes
+        .into_iter()
+        .filter_map(|mut note| {
+            note.id = note.id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').take(40).collect();
+            note.title = note.title.chars().take(120).collect();
+            note.text = note.text.chars().take(20_000).collect();
+            if note.id.is_empty() || note.text.trim().is_empty() { None } else { Some(note) }
+        })
+        .take(200)
+        .collect();
     Agenda::persist(&agenda.path, &store)?;
     drop(store);
     touch(app);
@@ -1945,6 +2164,27 @@ mod tests {
         assert!(sms["detail"].as_str().unwrap().contains("Nothing is sent"));
         assert!(unconfirmed_handoff("open_call", &json!({"phone": "+1555", "confirmed": true})).is_none());
         assert!(unconfirmed_handoff("set_alarm", &json!({})).is_none());
+    }
+
+    #[test]
+    fn handoff_keeps_https_and_drops_other_schemes() {
+        let browser = prepare_handoff("browser", &json!({"url": "https://example.com/a", "confirmed": true})).unwrap();
+        assert_eq!(browser.url, "https://example.com/a");
+        assert!(prepare_handoff("browser", &json!({"url": "http://example.com"})).is_err());
+        assert!(prepare_handoff("browser", &json!({"url": "https://user:pw@example.com"})).is_err());
+        assert!(prepare_handoff("browser", &json!({"url": "https://127.0.0.1/admin"})).is_err());
+        assert!(prepare_handoff("browser", &json!({"url": "javascript:alert(1)"})).is_err());
+        let search = prepare_handoff("browser", &json!({"query": "weather zurich"})).unwrap();
+        assert_eq!(search.query, "weather zurich");
+        assert!(search.url.is_empty());
+        let video = prepare_handoff("youtube", &json!({"url": "https://youtu.be/abc"})).unwrap();
+        assert_eq!(video.url, "https://youtu.be/abc");
+        assert!(prepare_handoff("youtube", &json!({"url": "https://evil.example/watch"})).is_err());
+        assert!(prepare_handoff("youtube", &json!({"url": "https://youtube.com.evil.example/watch"})).is_err());
+        let call = prepare_handoff("call", &json!({"phone": "+1 (555) 010-0100"})).unwrap();
+        assert_eq!(call.phone, "+15550100100");
+        assert!(prepare_handoff("sms", &json!({"phone": "12"})).is_err());
+        assert!(prepare_handoff("email", &json!({"to": "a@b.com?bcc=x"})).is_err());
     }
 
     #[test]

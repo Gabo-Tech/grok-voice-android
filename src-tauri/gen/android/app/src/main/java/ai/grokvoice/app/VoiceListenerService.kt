@@ -85,6 +85,7 @@ class VoiceListenerService : Service() {
     // Clearing the app can kill this process. If it comes back, the activity
     // has to start once so the wake-word engine is running, then leave again.
     if (!RustBridge.engineAliveSafe()) {
+      WidgetGate.allow(this, "headless")
       val launch = Intent(this, MainActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         .putExtra(MainActivity.EXTRA_HEADLESS, true)

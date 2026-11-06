@@ -4,6 +4,8 @@ mod backup;
 mod commands;
 mod local;
 mod diagnostics;
+mod files;
+mod http;
 mod i18n;
 mod local_memory;
 mod memory;

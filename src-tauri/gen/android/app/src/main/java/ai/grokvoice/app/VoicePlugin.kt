@@ -216,23 +216,30 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   fun shareFile(invoke: Invoke) {
     try {
       val args = invoke.parseArgs(ShareArgs::class.java)
-      val file = File(args.path)
-      if (!file.exists()) {
-        invoke.reject("Backup file is missing")
-        return
-      }
+      val file = backupFile(args.path)
+      val title = args.title.trim().filterNot { it.isISOControl() }.take(80).ifBlank { "Grok Voice backup" }
       val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
       val send = Intent(Intent.ACTION_SEND)
-        .setType(args.mime.ifBlank { "application/octet-stream" })
+        .setType("application/octet-stream")
         .putExtra(Intent.EXTRA_STREAM, uri)
-        .putExtra(Intent.EXTRA_TITLE, args.title)
+        .putExtra(Intent.EXTRA_TITLE, title)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       send.clipData = ClipData.newRawUri("", uri)
-      activity.startActivity(Intent.createChooser(send, args.title))
+      activity.startActivity(Intent.createChooser(send, title))
       invoke.resolve()
     } catch (e: Exception) {
       invoke.reject(e.message ?: "could not share the backup", e)
     }
+  }
+
+  private fun backupFile(path: String): File {
+    val root = File(activity.cacheDir, "backups").canonicalFile
+    val file = File(path).canonicalFile
+    val nameOk = Regex("""grok-voice-backup-\d{4}-\d{2}-\d{2}\.gvb""").matches(file.name)
+    if (!nameOk || file.parentFile?.canonicalFile != root || !file.isFile) {
+      throw IllegalArgumentException("Backup file is not in the backup folder")
+    }
+    return file
   }
 
   @Command
