@@ -92,7 +92,7 @@
     --secondary: #1c1c1c;
     --secondary-foreground: #f2f2f2;
     --muted: #181818;
-    --muted-foreground: #8e8e8e;
+    --muted-foreground: #b5b5b5;
     --accent: #222222;
     --accent-foreground: #f2f2f2;
     --destructive: #f2f2f2;
@@ -134,7 +134,9 @@ body,
 
 body {
   background: #0e0e0e;
-  font-family: "IBM Plex Mono", "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 100%;
+  line-height: 1.5;
 }
 
 input[type="datetime-local"] {
@@ -279,6 +281,7 @@ input[type="datetime-local"] {
   .animate-page-in,
   .animate-row-in,
   .animate-sheet-in,
+  .animate-spin,
   .mark,
   .mark-fill,
   .fab-pulse,

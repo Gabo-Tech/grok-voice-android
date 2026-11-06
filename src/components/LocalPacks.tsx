@@ -12,7 +12,7 @@ function formatBytes(bytes: number) {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-export function LocalPacks() {
+export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
   const [packs, setPacks] = useState<LocalPack[]>([]);
   const [progress, setProgress] = useState<PackProgress | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -85,19 +85,22 @@ export function LocalPacks() {
     }
   };
 
+  const readyCount = packs.filter((pack) => pack.ready).length;
   const ready = packs.length > 0 && packs.every((pack) => pack.ready);
   const anyReady = packs.some((pack) => pack.ready);
   const anyMissing = packs.some((pack) => !pack.ready);
+  const summary =
+    packs.length === 0
+      ? "Packs show up here once this screen can reach the phone."
+      : ready
+        ? "All packs are on this phone. Talk can use On device without a cloud key."
+        : `${readyCount} of ${packs.length} packs are on this phone. Download the rest, or Talk uses the next cloud key.`;
 
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-sm text-foreground">On-device packs</p>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {ready
-            ? "Speech, the language model, and the voice are on this phone. Talk can run without a cloud key."
-            : "Download speech recognition, the language model, and the voice. They stay in app storage, not in the install."}
-        </p>
+        {showHeading ? <p className="text-base text-foreground">On-device packs</p> : null}
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{summary}</p>
       </div>
       <ul className="divide-y divide-border border-y border-border">
         {packs.map((pack) => {
@@ -118,7 +121,7 @@ export function LocalPacks() {
                 {pack.ready ? (
                   <div className="flex shrink-0 gap-2">
                     <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void download(pack.id)}>
-                      {busy === pack.id ? "Downloading" : "Again"}
+                      {busy === pack.id ? "Downloading" : "Download again"}
                     </Button>
                     <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void remove(pack.id)}>
                       Delete
@@ -146,7 +149,11 @@ export function LocalPacks() {
           Delete all
         </Button>
       </div>
-      {error && <p className="text-sm text-foreground">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm leading-6 text-foreground">
+          {error} Check the connection and try this pack again. A cloud key still works without these files.
+        </p>
+      )}
     </div>
   );
 }

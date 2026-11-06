@@ -1,5 +1,6 @@
-import { Plus } from "lucide-react";
+import { ChevronLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export function PageChrome({
@@ -23,7 +24,7 @@ export function PageChrome({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl leading-tight font-medium tracking-tight text-foreground">{title}</h1>
-            {subtitle && <p className="mt-1 text-xs leading-normal text-muted-foreground">{subtitle}</p>}
+            {subtitle && <p className="mt-1 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
           </div>
           {onAdd && (
             <Button size="icon" variant="outline" className="fab-pulse shrink-0" onClick={onAdd} aria-label={addLabel ?? "Add"}>
@@ -37,11 +38,75 @@ export function PageChrome({
   );
 }
 
-export function EmptyState({ title, body }: { title: string; body: string }) {
+export function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mb-2 flex min-h-12 w-full shrink-0 items-center gap-1 px-1 text-left text-base text-foreground"
+    >
+      <ChevronLeft className="size-5 shrink-0" aria-hidden />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export function EmptyState({
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <div className="px-1 py-8">
+      <p className="text-lg leading-7 text-foreground">{title}</p>
+      <p className="mt-2 text-base leading-6 text-muted-foreground">{body}</p>
+      {actionLabel && onAction ? (
+        <Button className="mt-4" onClick={onAction}>
+          {actionLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+export function Notice({
+  title,
+  body,
+  actionLabel,
+  onAction,
+  onDismiss,
+}: {
+  title: string;
+  body?: string | null;
+  actionLabel?: string;
+  onAction?: () => void;
+  onDismiss?: () => void;
+}) {
+  const t = useT();
+  return (
+    <div role="alert" className="mb-3 border border-foreground/40 px-3 py-3">
       <p className="text-base leading-6 text-foreground">{title}</p>
-      <p className="mt-2 text-sm leading-5 text-muted-foreground">{body}</p>
+      {body ? <p className="mt-1 text-sm leading-5 text-muted-foreground">{body}</p> : null}
+      {(onAction && actionLabel) || onDismiss ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {onAction && actionLabel ? (
+            <Button type="button" onClick={onAction}>
+              {actionLabel}
+            </Button>
+          ) : null}
+          {onDismiss ? (
+            <Button type="button" variant="outline" onClick={onDismiss}>
+              {t("Hide")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -63,7 +128,7 @@ export function RowButton({
       onClick={onClick}
       style={style}
       className={cn(
-        "row-item flex w-full shrink-0 items-start gap-3 px-1 py-3.5 text-left transition-colors active:bg-white/5",
+        "row-item flex min-h-12 w-full shrink-0 items-start gap-3 px-1 py-3.5 text-left transition-colors active:bg-white/5",
         className,
       )}
     >

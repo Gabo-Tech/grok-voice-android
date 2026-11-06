@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { EmptyState, PageChrome, RowButton } from "@/components/PageChrome";
+import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
+import { ShareButton } from "@/components/ShareButton";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
@@ -127,11 +128,16 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
             The phone calendar is not connected. Days below still show events saved in the app.
           </p>
         )}
-        {agenda.error && <p className="mb-3 px-1 text-xs text-muted-foreground">{agenda.error}</p>}
+        {agenda.error && <Notice title={agenda.error} />}
 
-        <p className="mb-2 px-1 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Today</p>
+        <p className="mb-2 px-1 text-sm text-muted-foreground">Today</p>
         {events.length === 0 ? (
-          <EmptyState title={t("Nothing today")} body={t("Tap + to add an event, or ask Grok to schedule one.")} />
+          <EmptyState
+            title={t("Nothing today")}
+            body={t("Tap + to add an event, or ask Grok to schedule one.")}
+            actionLabel={t("New event")}
+            onAction={openNew}
+          />
         ) : (
           <EventList events={events} onOpen={openEdit} />
         )}
@@ -151,7 +157,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
                   setSelected(next);
                 }}
               >
-                Prev
+                Previous
               </Button>
               <Button
                 size="sm"
@@ -166,37 +172,44 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-7 px-1 text-center text-[10px] tracking-normal text-muted-foreground uppercase">
-            {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
-              <span key={`${label}-${index}`}>{label}</span>
+          <div className="grid grid-cols-7 px-1 text-center text-xs text-muted-foreground">
+            {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((label) => (
+              <span key={label}>{label}</span>
             ))}
           </div>
           <div className="mt-1 grid grid-cols-7">
             {cells.map((day, i) => {
               if (!day) return <span key={`pad-${i}`} />;
               const on = sameDay(day, selected);
-              const has = monthEvents.some((event) => overlapsDay(event, day));
+              const count = monthEvents.filter((event) => overlapsDay(event, day)).length;
               const today = sameDay(day, new Date());
               return (
                 <button
                   key={day.toISOString()}
                   type="button"
                   onClick={() => setSelected(day)}
-                  className={`flex h-11 flex-col items-center justify-center text-sm tabular-nums ${
+                  aria-label={`${day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}, ${count} ${count === 1 ? "event" : "events"}`}
+                  aria-pressed={on}
+                  className={`flex h-12 flex-col items-center justify-center text-sm tabular-nums ${
                     on ? "bg-foreground text-background" : "text-foreground"
-                  } ${today && !on ? "underline" : ""}`}
+                  } ${today && !on ? "underline decoration-2 underline-offset-2" : ""}`}
                 >
                   {day.getDate()}
-                  <span className={`mt-0.5 h-1 w-1 ${has ? (on ? "bg-background" : "bg-foreground") : "bg-transparent"}`} />
+                  <span className="text-xs leading-4">{count > 0 ? count : ""}</span>
                 </button>
               );
             })}
           </div>
-          <p className="mt-4 mb-2 px-1 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">
+          <p className="mt-4 mb-2 px-1 text-sm text-muted-foreground">
             {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </p>
           {selectedEvents.length === 0 ? (
-            <EmptyState title={t("Nothing this day")} body={t("Choose another day, or tap + to add an event here.")} />
+            <EmptyState
+              title={t("Nothing this day")}
+              body={t("Choose another day, or tap + to add an event here.")}
+              actionLabel={t("New event")}
+              onAction={openNew}
+            />
           ) : (
             <EventList events={selectedEvents} onOpen={openEdit} />
           )}
@@ -209,6 +222,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
         onClose={close}
         footer={
           <div className="flex flex-wrap items-center gap-2">
+            <ShareButton title={title} text={[start, end, location].filter(Boolean).join("\n")} />
             {editing?.id && (
               <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
                 <Trash2 /> Delete

@@ -108,6 +108,9 @@ export function DebugPanel({
 
   return (
     <div className="space-y-4">
+      <p className="px-1 text-sm leading-6 text-muted-foreground">
+        Logs, echo guard, and wake sensitivity. Voice keys, packs, and the daily budget are on the Settings screen you just left.
+      </p>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
@@ -176,7 +179,7 @@ export function DebugPanel({
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-56 rounded-md border bg-black/40 p-2">
-            <div className="space-y-0.5 font-mono text-[10px] leading-snug">
+            <div className="space-y-0.5 font-mono text-xs leading-snug">
               {voice.logs.length === 0 && <p className="text-muted-foreground">No events yet.</p>}
               {voice.logs
                 .slice()
@@ -253,7 +256,7 @@ export function DebugPanel({
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="echo">Speaker echo guard</Label>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-sm leading-5 text-muted-foreground">
                   Mutes the mic while Grok talks. Turn off with headphones to allow interrupting.
                 </p>
               </div>

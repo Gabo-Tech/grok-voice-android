@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { api, type HandoffDraft, type Level, type LogLine, type Phase, type SpendCue, type TranscriptEvent, type UsageStatus } from "@/lib/api";
+import { api, errorText, type HandoffDraft, type Level, type LogLine, type Phase, type SpendCue, type TranscriptEvent, type UsageStatus } from "@/lib/api";
 
 export interface TranscriptRow {
   id: string;
@@ -113,7 +113,7 @@ export function useVoice() {
     try {
       setWakeEnabled(await api.setWakeEnabled(enabled));
     } catch (e) {
-      setLastError(String(e));
+      setLastError(errorText(e));
       setWakeEnabled(false);
     }
   }, []);
@@ -126,7 +126,7 @@ export function useVoice() {
     try {
       await api.askText(trimmed);
     } catch (e) {
-      setLastError(String(e));
+      setLastError(errorText(e));
     } finally {
       setSending(false);
     }
@@ -159,7 +159,7 @@ export function useVoice() {
         await api.startSession();
       }
     } catch (e) {
-      setLastError(String(e));
+      setLastError(errorText(e));
     }
   }, [phase]);
 
@@ -185,6 +185,7 @@ export function useVoice() {
       if (isTauri()) void api.dismissHandoff();
     },
     dismissSpend: () => setSpend(null),
+    dismissError: () => setLastError(null),
     sendText,
     clearTranscript: () => {
       setRows([]);

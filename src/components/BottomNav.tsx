@@ -24,8 +24,9 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
               <button
                 type="button"
                 onClick={() => onChange(id)}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex w-full flex-col items-center px-1 py-2 text-[10px] leading-4 tracking-[0.04em]",
+                  "flex min-h-12 w-full flex-col items-center justify-center px-1 py-2 text-xs leading-4",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
