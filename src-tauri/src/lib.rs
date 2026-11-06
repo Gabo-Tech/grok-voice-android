@@ -183,7 +183,7 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_ensureUi() {
         return;
     };
     let app = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    let _ = app.clone().run_on_main_thread(move || {
         if !app.webview_windows().is_empty() {
             return;
         }
