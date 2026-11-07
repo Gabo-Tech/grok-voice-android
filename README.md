@@ -4,14 +4,14 @@
 
 A bring-your-own-key voice assistant for Android. The phone talks to the [xAI Realtime API](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) directly. The wake word stays on the device. Speech, transcripts, and search are sent to xAI under your key.
 
-The current sideload build is [Grok Voice 0.1.22](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
+The current sideload build is [Grok Voice 0.1.23](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
 
 ## Install
 
-Download `GrokVoice-0.1.22.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
+Download `GrokVoice-0.1.23.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
 
 ```bash
-adb install -r GrokVoice-0.1.22.apk
+adb install -r GrokVoice-0.1.23.apk
 ```
 
 Allow installs from unknown sources if Android asks. This package is signed with a debug key so it can be installed by hand. It is not a Play Store upload.
