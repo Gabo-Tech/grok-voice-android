@@ -135,7 +135,10 @@ GvAsr *gv_asr_load_transducer(
     config.model_config.provider = "cpu";
     config.model_config.model_type = "nemo_transducer";
     config.model_config.num_threads = threads > 0 ? threads : 2;
-    config.decoding_method = "greedy_search";
+    /* Beam search is supported for this NeMo transducer and catches more
+       German words than greedy. Moonshine stays greedy; it has no beam. */
+    config.decoding_method = "modified_beam_search";
+    config.max_active_paths = 4;
 
     asr->recognizer = SherpaOnnxCreateOfflineRecognizer(&config);
     if (!asr->recognizer) {
@@ -323,8 +326,10 @@ GvLlm *gv_llm_load(const char *model, int n_ctx, int threads, char *err, int err
     }
     struct llama_context_params cp = llama_context_default_params();
     cp.n_ctx = (uint32_t)n_ctx;
-    cp.n_batch = 512;
-    cp.n_ubatch = 512;
+    /* 256 keeps the prompt-eval scratch smaller than 512 so a short voice
+       turn is less likely to get the process killed on a 6 GB phone. */
+    cp.n_batch = 256;
+    cp.n_ubatch = 256;
     cp.n_threads = threads;
     cp.n_threads_batch = threads;
     cp.offload_kqv = false;
@@ -344,8 +349,59 @@ GvLlm *gv_llm_load(const char *model, int n_ctx, int threads, char *err, int err
     llm->model = loaded;
     llm->ctx = ctx;
     llm->vocab = llama_model_get_vocab(loaded);
-    llm->n_batch = 512;
+    llm->n_batch = 256;
     return llm;
+}
+
+/* Stop once the spoken JSON object is closed, or the chat turn ends.
+   The caller's token cap is only the backstop. Waiting out a long cap
+   is what made a short reply feel hung. */
+static int gv_reply_ready(const char *text) {
+    if (!text || !text[0]) {
+        return 0;
+    }
+    if (strstr(text, "<|im_end|>") != NULL) {
+        return 1;
+    }
+    int depth = 0;
+    int started = 0;
+    int in_string = 0;
+    int escape = 0;
+    for (const char *p = text; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (in_string) {
+            if (escape) {
+                escape = 0;
+                continue;
+            }
+            if (c == '\\') {
+                escape = 1;
+                continue;
+            }
+            if (c == '"') {
+                in_string = 0;
+            }
+            continue;
+        }
+        if (c == '"') {
+            in_string = 1;
+            continue;
+        }
+        if (c == '{') {
+            depth++;
+            started = 1;
+            continue;
+        }
+        if (c == '}') {
+            if (depth > 0) {
+                depth--;
+            }
+            if (started && depth == 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 void gv_llm_free(GvLlm *llm) {
@@ -438,7 +494,13 @@ static int gv_llm_complete_body(
         gv_set_err(err, err_len, "could not tokenize the prompt");
         return -1;
     }
-    if (n > 1900) {
+    /* Leave room for the reply. The old fixed 1900 cut left almost no
+       tokens when the context was 2048 and the cap was 192. */
+    int room = (int)llama_n_ctx(llm->ctx) - max_tokens - 8;
+    if (room < 128) {
+        room = 128;
+    }
+    if (n > room) {
         gv_set_err(err, err_len, "that turn is too long for the on-device model");
         return -1;
     }
@@ -480,6 +542,9 @@ static int gv_llm_complete_body(
             memcpy(out + used, piece, (size_t)np);
             used += np;
             out[used] = '\0';
+        }
+        if (gv_reply_ready(out)) {
+            break;
         }
         llama_token next = id;
         if (gv_decode(llm->ctx, &next, 1, llm->n_batch) != 0) {

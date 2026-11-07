@@ -148,6 +148,8 @@ export interface LocalPack {
   downloadBytes: number;
   installedBytes: number;
   ready: boolean;
+  /** Set when an older pack is installed and this one still needs a download. */
+  note?: string;
 }
 
 export interface PackProgress {

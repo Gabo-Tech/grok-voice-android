@@ -59,7 +59,7 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
     let speech = settings.local_speech.clone();
     if !packs_ready_for(&dir, &speech) {
         return Err(if speech == "de" {
-            "German on-device speech is not downloaded. English Moonshine does not understand German. Download the German packs in Settings.".into()
+            "German on-device speech is not downloaded. English Moonshine Base does not understand German. Download the German packs in Settings.".into()
         } else {
             super::web::OFFLINE_VOICE.into()
         });
@@ -101,7 +101,7 @@ pub async fn run_session(
     set_public_search(true);
     hub.update(|state| {
         state.ws_state = "on device".into();
-        state.model = Some("smollm2-360m-instruct-q8_0".into());
+        state.model = Some(super::packs::llm_model_id().into());
         state.token_minted_at_ms = None;
         state.token_expires_at = None;
     });
@@ -121,7 +121,7 @@ pub async fn run_session(
     let speech = settings.local_speech.as_str();
     if !packs_ready_for(&dir, speech) {
         return Err(if speech == "de" {
-            "German on-device speech is not downloaded. English Moonshine does not understand German. Download the German packs in Settings.".into()
+            "German on-device speech is not downloaded. English Moonshine Base does not understand German. Download the German packs in Settings.".into()
         } else {
             "On-device voice packs are not downloaded yet. Download them in Settings, under Voice keys.".into()
         });

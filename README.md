@@ -83,14 +83,14 @@ xAI does not offer a public third-party OAuth flow for this API, so sign-in is t
 
 Settings → Voice keys → **On device** is a full Talk path that does not call xAI for speech. It is utterance mode: the phone waits until you pause, then answers. It is not the full-duplex barge-in of `grok-voice-latest`.
 
-The stack is Moonshine Tiny English (int8) for speech to text, SmolLM2 360M Instruct Q8_0 for the reply and tool call, and Piper `en_US-lessac-low` for the voice. sherpa-onnx 1.13.8 runs the speech models. llama.cpp `b12140` runs the GGUF. The reply is ordinary speech, and a JSON object in that reply can call a phone tool. A grammar is not applied, so a tokenizer piece cannot abort the process. Phone tools (notes, reminders, calendar, People, and the confirm-before-open gates) go through the same action path as the realtime session. Android system speech is only a fallback if Piper cannot speak.
+The stack is Moonshine Base English (int8) for speech to text, SmolLM2 135M Instruct Q8_0 for the reply and tool call, and Piper `en_US-lessac-low` for the voice. German uses a separate NeMo FastConformer download and Piper `de_DE-thorsten-low`. sherpa-onnx 1.13.8 runs the speech models. llama.cpp `b12140` runs the GGUF. The reply is ordinary speech, and a JSON object in that reply can call a phone tool. A grammar is not applied, so a tokenizer piece cannot abort the process. Generation stops when that JSON object closes. Phone tools (notes, reminders, calendar, People, and the confirm-before-open gates) go through the same action path as the realtime session. Android system speech is only a fallback if Piper cannot speak.
 
-The weights are not in the APK. Download them on the phone from Voice keys, or fetch them yourself:
+The weights are not in the APK. Download them on the phone from Voice keys, or fetch them yourself. A phone that already has Moonshine Tiny or SmolLM2 360M Q8_0 needs these two packs again. The Piper voices are unchanged.
 
 | Pack | Download | What it is |
 | --- | --- | --- |
-| Speech to text | 103 MB | [sherpa-onnx-moonshine-tiny-en-int8.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2) (about 119 MB unpacked) |
-| Language model | 369 MB | [smollm2-360m-instruct-q8_0.gguf](https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf) |
+| Speech to text | 239 MB | [sherpa-onnx-moonshine-base-en-int8.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-int8.tar.bz2) (about 275 MB unpacked), sha256 `21870cecaa2e44e4e2bf63e02d1072bed183ccd10284871353bd9d24dad14e5e` |
+| Language model | 138 MB | [SmolLM2-135M-Instruct-Q8_0.gguf](https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q8_0.gguf), sha256 `5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83` |
 | Voice | 64 MB | [vits-piper-en_US-lessac-low.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2) (about 77 MB unpacked) |
 
 Put On device first in the key list. If the packs are missing, or the model cannot load (the phone wants about 1.4 GB free; 6–8 GB devices are the target), Talk tries the next saved key.
@@ -99,7 +99,7 @@ Web search in this mode does not use xAI. It reads DuckDuckGo. Offline, the tool
 
 Hands-free “Hey Grok” uses a microphone foreground service and its notification. Leaving Talk, switching apps, locking the screen, or clearing the app from recents does not stop that listener and does not delete the enrollment. It stops when Listen is turned off (including Stop on the notification), when the app is force-stopped, or when Android kills the process because the phone is extremely low on memory. After a force-stop or that kind of kill, open the app and turn Listen on again.
 
-Limits for this version: English recognition only, one English voice, a small model that is slower and less reliable than `grok-voice-latest`, and no true barge-in. The Android build downloads the sherpa-onnx arm64 libraries and compiles llama.cpp. It does not download the model packs.
+Limits for this version: English and German recognition from downloaded packs, one voice per language, a small conversational model that is less capable than `grok-voice-latest`, and no true barge-in. The Android build downloads the sherpa-onnx arm64 libraries and compiles llama.cpp. It does not download the model packs.
 
 ## Build from source
 
