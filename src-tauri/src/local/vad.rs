@@ -25,7 +25,8 @@ impl Vad {
             silence_samples: 0,
             buf: Vec::new(),
             preroll: VecDeque::new(),
-            preroll_cap: rate as usize * 3 / 10,
+            // 400 ms of audio before the energy trigger, so the first syllable is kept.
+            preroll_cap: rate as usize * 2 / 5,
             noise: 0.005,
             min_speech: rate as usize / 4,
             hangover: rate as usize * 7 / 10,

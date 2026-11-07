@@ -3,6 +3,13 @@
 
 use super::packs::ModelPaths;
 
+/// Context stays 2048 so a turn that still carries pinned facts fits.
+/// The reply cap is short on purpose: a spoken sentence is a few dozen tokens.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub const LLM_N_CTX: i32 = 2048;
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub const LLM_MAX_TOKENS: i32 = 160;
+
 pub struct Engines {
     #[cfg(target_os = "android")]
     inner: Native,
@@ -197,7 +204,7 @@ impl Native {
             return Err(read_buf(&err).unwrap_or_else(|| "could not load the voice".into()));
         }
         let llm_path = c_path(&paths.llm)?;
-        let llm = unsafe { gv_llm_load(llm_path.as_ptr(), 2048, threads, err.as_mut_ptr(), err.len() as c_int) };
+        let llm = unsafe { gv_llm_load(llm_path.as_ptr(), LLM_N_CTX, threads, err.as_mut_ptr(), err.len() as c_int) };
         if llm.is_null() {
             unsafe {
                 gv_tts_free(tts);
@@ -244,7 +251,7 @@ impl Native {
                 self.llm,
                 prompt.as_ptr(),
                 grammar.as_ptr(),
-                192,
+                LLM_MAX_TOKENS,
                 out.as_mut_ptr(),
                 out.len() as c_int,
                 err.as_mut_ptr(),
@@ -331,9 +338,17 @@ mod tests {
         let unknown = guarded.find("catch (...)").unwrap();
         assert!(typed < unknown);
         assert!(src.contains("grammar failed:"));
+        assert!(src.contains("gv_reply_ready"));
+        assert!(src.contains("llama_n_ctx"));
+        assert!(src.contains("modified_beam_search"));
+        assert!(src.contains("max_active_paths = 4"));
+        assert!(src.contains("cp.n_batch = 256"));
+        assert!(src.contains("greedy_search"));
         let build = include_str!("../../build.rs");
         assert!(build.contains("local_engine.cpp"));
         assert!(build.contains("-fexceptions"));
+        assert!(super::LLM_MAX_TOKENS <= 160);
+        assert!(super::LLM_N_CTX >= super::LLM_MAX_TOKENS + 256);
     }
 }
 

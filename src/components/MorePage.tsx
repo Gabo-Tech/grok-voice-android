@@ -371,7 +371,7 @@ export function MorePage({
                 ))}
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {t("English uses Moonshine Tiny. German uses a separate download. Moonshine does not understand German.")}
+                {t("English uses Moonshine Base. German uses a separate download. Moonshine does not understand German.")}
               </p>
             </div>
           </div>

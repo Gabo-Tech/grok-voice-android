@@ -121,7 +121,8 @@ pub fn exhausted_message(labels: &[String], last: &str) -> String {
     }
 }
 
-/// About 1.4 GB free keeps Moonshine, SmolLM2 360M, and Piper from getting the process killed.
+/// About 1.4 GB free. Moonshine Base weighs more than Tiny, and SmolLM2 135M Q8
+/// weighs less than 360M Q8, so the same headroom still covers speech, chat, and Piper.
 pub const MIN_FREE_MB: u64 = 1400;
 
 pub fn memory_enough(avail_mb: u64, low_memory: bool) -> bool {

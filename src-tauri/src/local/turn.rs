@@ -36,17 +36,50 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
     listed.extend(crate::local_memory::tool_definitions());
     for tool in &listed {
         let name = tool["name"].as_str().unwrap_or("");
-        let desc: String = tool["description"].as_str().unwrap_or("").chars().take(180).collect();
+        let desc = brief_tool(tool["description"].as_str().unwrap_or(""));
         tools.push_str(&format!("- {name}: {desc}\n"));
     }
     let speech_line = if speech == "de" {
         "The user is speaking German. Put the spoken reply in the say field in German. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
     } else {
-        "This session uses the English Moonshine speech model. It does not understand German.\n"
+        "This session uses the English Moonshine Base speech model. It does not understand German.\n"
     };
     format!(
-        "{custom}\n\nYou are running on this phone. Reply with one JSON object and nothing else, shaped as {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. say is what you speak. tool is null or one name from the list. args is that tool's arguments. Call the tool before saying a note, reminder, alarm, timer, calendar change, or pinned fact is done. remember_fact and forget_fact change on-device memory only. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item, say what will open and pass confirmed false until the user clearly agrees, then call the same tool with confirmed true. Nothing is sent, and a call is not placed, until they confirm in the other app. media_control, set_volume, set_dnd, go_home, read_notifications, and phone_status act on this phone. Times are local YYYY-MM-DDTHH:MM. If web_search returns an error, speak that error.\n{speech_line}\nTools:\n{tools}\n{memory}{local_memory}"
-    )
+        "{custom}\n\nYou are running on this phone. Reply with one JSON object and nothing else, shaped as {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. say is what you speak. tool is null or one name from the list. args is that tool's arguments. Call the tool before saying a note, reminder, alarm, timer, calendar change, or pinned fact is done. remember_fact and forget_fact change on-device memory only. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item, say what will open and pass confirmed false until the user clearly agrees, then call the same tool with confirmed true. Nothing is sent, and a call is not placed, until they confirm in the other app. media_control, set_volume, set_dnd, go_home, read_notifications, and phone_status act on this phone. Times are local YYYY-MM-DDTHH:MM. If web_search returns an error, speak that error.\n{speech_line}\nTools:\n{tools}\n{}\n{}"
+    , clip_chars(memory.trim(), MEMORY_CLIP_CHARS), clip_chars(local_memory.trim(), MEMORY_CLIP_CHARS))
+}
+
+const TOOL_BLURB_CHARS: usize = 72;
+const MEMORY_CLIP_CHARS: usize = 600;
+const HISTORY_CHAR_BUDGET: usize = 1600;
+const HISTORY_TURN_CHARS: usize = 500;
+
+/// First sentence, capped. The long tool essays were most of the prefill.
+fn brief_tool(desc: &str) -> String {
+    let desc = desc.trim();
+    if desc.is_empty() {
+        return String::new();
+    }
+    let cut = desc.find('.').map(|i| i + 1).unwrap_or(desc.len());
+    let sentence = &desc[..cut];
+    let mut out: String = sentence.chars().take(TOOL_BLURB_CHARS).collect();
+    if sentence.chars().count() > TOOL_BLURB_CHARS {
+        if let Some(space) = out.rfind(' ') {
+            if space >= 24 {
+                out.truncate(space);
+            }
+        }
+    }
+    out.trim().trim_end_matches(',').trim().to_string()
+}
+
+fn clip_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(max).collect();
+    out.push('…');
+    out
 }
 
 pub fn prompt(system: &str, history: &[ChatTurn]) -> String {
@@ -59,7 +92,7 @@ pub fn prompt(system: &str, history: &[ChatTurn]) -> String {
         out.push_str("<|im_start|>");
         out.push_str(role);
         out.push('\n');
-        out.push_str(turn.text.trim());
+        out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
         out.push_str("<|im_end|>\n");
     }
     out.push_str("<|im_start|>assistant\n");
@@ -108,7 +141,7 @@ fn extract_json(raw: &str) -> &str {
 
 pub fn trim_history(history: &mut Vec<ChatTurn>) {
     let mut total: usize = history.iter().map(|turn| turn.text.len()).sum();
-    while history.len() > 2 && total > 4000 {
+    while history.len() > 2 && total > HISTORY_CHAR_BUDGET {
         let removed = history.remove(0);
         total = total.saturating_sub(removed.text.len());
     }
@@ -456,5 +489,34 @@ mod tests {
         .unwrap();
         assert_eq!(spoken, "Hello. Take your time.");
         assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn the_local_prompt_stays_short_enough_to_prefill() {
+        let empty = system_prompt("", "", "", "en");
+        let prompt = system_prompt("be brief", &"m".repeat(4000), &"l".repeat(4000), "en");
+        assert!(empty.len() < 4000, "empty prompt is {} chars", empty.len());
+        assert!(
+            prompt.len() < empty.len() + 1400,
+            "memory was not clipped: empty {} full {}",
+            empty.len(),
+            prompt.len()
+        );
+        assert!(prompt.contains("create_note"));
+        assert!(prompt.contains("remember_fact"));
+        assert!(prompt.contains("confirmed true"));
+        assert!(prompt.contains("Moonshine Base"));
+        assert!(!prompt.contains("Never send or place the call yourself"));
+        let chat = super::prompt(&prompt, &[ChatTurn { role: "user", text: "hello".into() }]);
+        assert!(chat.contains("<|im_start|>system\n"));
+        assert!(chat.ends_with("<|im_start|>assistant\n"));
+        let mut history = vec![
+            ChatTurn { role: "user", text: "a".repeat(2000) },
+            ChatTurn { role: "assistant", text: "b".repeat(2000) },
+            ChatTurn { role: "user", text: "c".repeat(2000) },
+        ];
+        trim_history(&mut history);
+        let total: usize = history.iter().map(|turn| turn.text.len()).sum();
+        assert!(history.len() <= 2 || total <= super::HISTORY_CHAR_BUDGET);
     }
 }

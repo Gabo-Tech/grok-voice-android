@@ -12,9 +12,20 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 pub const STT_URL: &str =
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2";
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-int8.tar.bz2";
+/// SmolLM2 135M Instruct, Q8_0. Same ChatML family as the old 360M pack, and not a
+/// coding model. Q8 keeps tool JSON closer to the full weights. The 360M Q8 file
+/// was 386 MB, which is too much to reread on every voice turn.
 pub const LLM_URL: &str =
-    "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf";
+    "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q8_0.gguf";
+pub const LLM_FILE: &str = "smollm2-135m-instruct-q8_0.gguf";
+pub const STT_DIR: &str = "sherpa-onnx-moonshine-base-en-int8";
+const LEGACY_STT_DIR: &str = "sherpa-onnx-moonshine-tiny-en-int8";
+const REPLACE_NOTE: &str = "Replaces the previous pack. Download it again.";
+
+pub fn llm_model_id() -> &'static str {
+    "smollm2-135m-instruct-q8_0"
+}
 pub const TTS_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2";
 pub const STT_DE_URL: &str =
@@ -38,20 +49,20 @@ const PACKS: &[Spec] = &[
     Spec {
         id: "stt",
         label: "Speech to text",
-        detail: "Moonshine Tiny English, int8",
+        detail: "Moonshine Base English, int8",
         url: STT_URL,
-        download_bytes: 107_600_538,
-        sha256: "d5fe6ec4334fef36255b2a4010412cad4c007e33103fec62fb5d17cad88086f2",
+        download_bytes: 250_807_309,
+        sha256: "21870cecaa2e44e4e2bf63e02d1072bed183ccd10284871353bd9d24dad14e5e",
         archive: true,
         required: true,
     },
     Spec {
         id: "llm",
         label: "Language model",
-        detail: "SmolLM2 360M Instruct, Q8_0",
+        detail: "SmolLM2 135M Instruct, Q8_0",
         url: LLM_URL,
-        download_bytes: 386_404_992,
-        sha256: "48ab3034d0dd401fbc721eb1df3217902fee7dab9078992d66431f09b7750201",
+        download_bytes: 144_811_360,
+        sha256: "5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83",
         archive: false,
         required: true,
     },
@@ -96,6 +107,8 @@ pub struct PackInfo {
     pub download_bytes: u64,
     pub installed_bytes: u64,
     pub ready: bool,
+    /// Set when an older pack is on the phone and this one still needs a download.
+    pub note: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -134,7 +147,7 @@ pub fn model_paths(root: &Path) -> ModelPaths {
 }
 
 pub fn model_paths_for(root: &Path, lang: &str) -> ModelPaths {
-    let llm = root.join("llm/smollm2-360m-instruct-q8_0.gguf");
+    let llm = root.join("llm").join(LLM_FILE);
     if lang == "de" {
         let stt = root.join("stt-de/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8");
         let tts = root.join("tts-de/vits-piper-de_DE-thorsten-low");
@@ -152,7 +165,7 @@ pub fn model_paths_for(root: &Path, lang: &str) -> ModelPaths {
             tts_data: tts.join("espeak-ng-data"),
         };
     }
-    let stt = root.join("stt/sherpa-onnx-moonshine-tiny-en-int8");
+    let stt = root.join("stt").join(STT_DIR);
     let tts = root.join("tts/vits-piper-en_US-lessac-low");
     ModelPaths {
         asr: "moonshine",
@@ -179,6 +192,7 @@ pub fn pack_status(root: &Path) -> Vec<PackInfo> {
             download_bytes: spec.download_bytes,
             installed_bytes: dir_bytes(&root.join(spec.id)),
             ready: pack_ready(root, spec.id),
+            note: pack_note(root, spec.id),
         })
         .collect()
 }
@@ -210,6 +224,30 @@ fn pack_ready(root: &Path, id: &str) -> bool {
         "tts" => file_ok(&english.tts_model) && file_ok(&english.tts_tokens) && dir_ok(&english.tts_data),
         "stt-de" => file_ok(&german.encoder) && file_ok(&german.uncached) && file_ok(&german.joiner) && file_ok(&german.stt_tokens),
         "tts-de" => file_ok(&german.tts_model) && file_ok(&german.tts_tokens) && dir_ok(&german.tts_data),
+        _ => false,
+    }
+}
+
+fn pack_note(root: &Path, id: &str) -> String {
+    if pack_ready(root, id) || !legacy_pack(root, id) {
+        return String::new();
+    }
+    REPLACE_NOTE.into()
+}
+
+fn legacy_pack(root: &Path, id: &str) -> bool {
+    match id {
+        "stt" => root.join("stt").join(LEGACY_STT_DIR).exists(),
+        "llm" => {
+            let current = model_paths(root).llm;
+            let Ok(entries) = fs::read_dir(root.join("llm")) else {
+                return false;
+            };
+            entries.flatten().any(|entry| {
+                let path = entry.path();
+                path != current && path.extension().and_then(|ext| ext.to_str()) == Some("gguf")
+            })
+        }
         _ => false,
     }
 }
@@ -293,6 +331,7 @@ fn download_locked(root: &Path, spec: &Spec, progress: &mut impl FnMut(PackProgr
         return Err(format!("{} download did not match the expected checksum", spec.label));
     }
     if spec.archive {
+        clear_extracted(&dir, &partial)?;
         unpack_bz2(&partial, &dir)?;
         let _ = fs::remove_file(&partial);
     } else {
@@ -334,6 +373,25 @@ const PACK_HOSTS: &[&str] = &[
     "*.huggingface.co",
     "*.hf.co",
 ];
+
+fn clear_extracted(dir: &Path, keep: &Path) -> Result<(), String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == keep {
+            continue;
+        }
+        let meta = entry.metadata().map_err(|err| err.to_string())?;
+        if meta.is_dir() {
+            fs::remove_dir_all(&path).map_err(|err| err.to_string())?;
+        } else {
+            fs::remove_file(&path).map_err(|err| err.to_string())?;
+        }
+    }
+    Ok(())
+}
 
 fn unpack_bz2(archive: &Path, dest: &Path) -> Result<(), String> {
     fs::create_dir_all(dest).map_err(|err| err.to_string())?;
@@ -425,7 +483,11 @@ mod tests {
         assert!(!packs_ready_for(&root, "de"));
         assert_eq!(status.iter().find(|pack| pack.id == "stt-de").unwrap().download_bytes, 108_124_747);
         assert_eq!(status.iter().find(|pack| pack.id == "tts-de").unwrap().download_bytes, 67_101_576);
-        assert_eq!(status[1].download_bytes, 386_404_992);
+        assert_eq!(status[0].download_bytes, 250_807_309);
+        assert_eq!(status[1].download_bytes, 144_811_360);
+        assert!(status[1].detail.contains("135M"));
+        assert!(status[0].detail.contains("Base"));
+        assert!(status.iter().all(|pack| pack.note.is_empty()));
         assert!(status.iter().filter(|pack| pack.ready).all(|pack| pack.installed_bytes > 0));
         delete_pack(&root, "llm").unwrap();
         assert!(!packs_ready(&root));
@@ -505,5 +567,47 @@ mod tests {
     fn pinned_checksums_are_sha256() {
         assert!(PACKS.iter().all(|spec| spec.sha256.len() == 64 && spec.sha256.chars().all(|c| c.is_ascii_hexdigit())));
         assert_eq!(hex_encode(&[0x74, 0xa4]), "74a4");
+        let llm = PACKS.iter().find(|spec| spec.id == "llm").unwrap();
+        let stt = PACKS.iter().find(|spec| spec.id == "stt").unwrap();
+        let tts = PACKS.iter().find(|spec| spec.id == "tts").unwrap();
+        let stt_de = PACKS.iter().find(|spec| spec.id == "stt-de").unwrap();
+        assert_eq!(llm.sha256, "5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83");
+        assert_eq!(stt.sha256, "21870cecaa2e44e4e2bf63e02d1072bed183ccd10284871353bd9d24dad14e5e");
+        assert_eq!(tts.sha256, "8fb427b8637334072ee5723d72fa418c45bfdd4b7deebeacdf2938662618c1cb");
+        assert_eq!(stt_de.sha256, "73b3cce9f94a19fc04bc54b55abd576b622e3925a84ddd554a95e5984bc11677");
+        assert!(crate::http::https_url_allowed(llm.url, PACK_HOSTS));
+        assert!(crate::http::https_url_allowed(stt.url, PACK_HOSTS));
+        assert_eq!(llm_model_id(), "smollm2-135m-instruct-q8_0");
+        assert!(model_paths(Path::new("/models")).llm.ends_with(LLM_FILE));
+    }
+
+    #[test]
+    fn an_older_pack_asks_for_the_new_download() {
+        let root = std::env::temp_dir().join(format!("gv-legacy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let old_llm = root.join("llm/smollm2-360m-instruct-q8_0.gguf");
+        let old_stt = root.join("stt").join(LEGACY_STT_DIR).join("tokens.txt");
+        fs::create_dir_all(old_llm.parent().unwrap()).unwrap();
+        fs::create_dir_all(old_stt.parent().unwrap()).unwrap();
+        fs::write(&old_llm, b"old-model").unwrap();
+        fs::write(&old_stt, b"old-tokens").unwrap();
+        let status = pack_status(&root);
+        let llm = status.iter().find(|pack| pack.id == "llm").unwrap();
+        let stt = status.iter().find(|pack| pack.id == "stt").unwrap();
+        assert!(!llm.ready);
+        assert!(!stt.ready);
+        assert!(llm.note.contains("previous"));
+        assert!(stt.note.contains("previous"));
+        assert!(!packs_ready(&root));
+        let fresh = root.join("fresh");
+        fs::create_dir_all(&fresh).unwrap();
+        fs::write(fresh.join("download.partial"), b"keep").unwrap();
+        fs::create_dir_all(fresh.join(LEGACY_STT_DIR)).unwrap();
+        fs::write(fresh.join("stale.txt"), b"stale").unwrap();
+        clear_extracted(&fresh, &fresh.join("download.partial")).unwrap();
+        assert!(fresh.join("download.partial").exists());
+        assert!(!fresh.join(LEGACY_STT_DIR).exists());
+        assert!(!fresh.join("stale.txt").exists());
+        let _ = fs::remove_dir_all(&root);
     }
 }

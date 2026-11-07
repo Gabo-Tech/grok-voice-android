@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { api, errorText, type LocalPack, type PackProgress } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 function formatBytes(bytes: number) {
   const mb = bytes / (1024 * 1024);
@@ -13,6 +14,7 @@ function formatBytes(bytes: number) {
 }
 
 export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
+  const t = useT();
   const [packs, setPacks] = useState<LocalPack[]>([]);
   const [progress, setProgress] = useState<PackProgress | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -91,16 +93,21 @@ export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
   const anyMissing = packs.some((pack) => !pack.ready);
   const summary =
     packs.length === 0
-      ? "Packs show up here once this screen can reach the phone."
+      ? t("Packs show up here once this screen can reach the phone.")
       : ready
-        ? "All packs are on this phone. Talk can use On device without a cloud key."
-        : `${readyCount} of ${packs.length} packs are on this phone. Download the rest, or Talk uses the next cloud key.`;
+        ? t("All packs are on this phone. Talk can use On device without a cloud key.")
+        : `${readyCount} / ${packs.length}. ${t("Download the ones that are missing, or Talk uses the next cloud key.")}`;
 
   return (
     <div className="space-y-3">
       <div>
-        {showHeading ? <p className="text-base text-foreground">On-device packs</p> : null}
+        {showHeading ? <p className="text-base text-foreground">{t("On-device packs")}</p> : null}
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{summary}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {t(
+            "Speech to text is Moonshine Base. The language model is SmolLM2 135M Instruct. Download a pack if it is not on this phone. German speech and the Piper voices stay as they are.",
+          )}
+        </p>
       </div>
       <ul className="divide-y divide-border border-y border-border">
         {packs.map((pack) => {
@@ -111,25 +118,25 @@ export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
             <li key={pack.id} className="py-3">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-foreground">{pack.label}</p>
+                  <p className="text-sm text-foreground">{t(pack.label)}</p>
                   <p className="text-xs leading-5 text-muted-foreground">
-                    {pack.detail} · {size}
-                    {pack.ready ? " on device" : " download"}
+                    {pack.detail} · {size} · {pack.ready ? t("On this phone") : t("Not downloaded")}
                     {ratio !== null ? ` · ${formatBytes(current?.received ?? 0)} / ${formatBytes(current?.total ?? pack.downloadBytes)}` : ""}
                   </p>
+                  {pack.note ? <p className="text-xs leading-5 text-muted-foreground">{t(pack.note)}</p> : null}
                 </div>
                 {pack.ready ? (
                   <div className="flex shrink-0 gap-2">
                     <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void download(pack.id)}>
-                      {busy === pack.id ? "Downloading" : "Download again"}
+                      {busy === pack.id ? t("Downloading") : t("Download again")}
                     </Button>
                     <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void remove(pack.id)}>
-                      Delete
+                      {t("Delete")}
                     </Button>
                   </div>
                 ) : (
                   <Button type="button" disabled={busy !== null} onClick={() => void download(pack.id)}>
-                    {busy === pack.id ? "Downloading" : "Download"}
+                    {busy === pack.id ? t("Downloading") : t("Download")}
                   </Button>
                 )}
               </div>
@@ -140,18 +147,18 @@ export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
       </ul>
       <div className="flex gap-2">
         <Button type="button" variant="outline" disabled={busy !== null || !anyMissing} onClick={() => void downloadMissing()}>
-          Download all
+          {t("Download all")}
         </Button>
         <Button type="button" variant="outline" disabled={busy !== null || !anyReady} onClick={() => void redownloadReady()}>
-          Re-download all
+          {t("Re-download all")}
         </Button>
         <Button type="button" variant="outline" disabled={busy !== null || !anyReady} onClick={() => void removeReady()}>
-          Delete all
+          {t("Delete all")}
         </Button>
       </div>
       {error && (
         <p role="alert" className="text-sm leading-6 text-foreground">
-          {error} Check the connection and try this pack again. A cloud key still works without these files.
+          {error} {t("Check the connection and try this pack again. A cloud key still works without these files.")}
         </p>
       )}
     </div>
