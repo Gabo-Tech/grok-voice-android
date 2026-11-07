@@ -167,10 +167,15 @@ object PhoneActions {
     )
     val rules = eventRules(context)
     val events = JSONArray()
+    var truncated = false
     try {
       cr.query(uri, proj, null, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { c ->
         var n = 0
-        while (c.moveToNext() && n < 80) {
+        while (c.moveToNext()) {
+          if (n >= 400) {
+            truncated = true
+            break
+          }
           n++
           val id = c.getLong(0)
           val end = c.getLong(3).let { if (it == 0L) c.getLong(2) + 3_600_000L else it }
@@ -189,7 +194,7 @@ object PhoneActions {
     } catch (e: SecurityException) {
       return """{"ok":false,"error":"Calendar permission is not granted."}"""
     }
-    return JSONObject().put("ok", true).put("events", events).toString()
+    return JSONObject().put("ok", true).put("events", events).put("truncated", truncated).toString()
   }
 
   private fun eventRules(context: Context): Map<Long, String> {

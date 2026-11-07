@@ -663,7 +663,80 @@ fn reminder_value(reminder: &PersonReminder) -> Value {
     })
 }
 
+/// People saved in the app, including dates that stay on the person all year.
+/// Phone numbers stay out of this list so it cannot place a call.
+pub fn saved_people_payload(people: &[Person], query: &str) -> Value {
+    let q = normalize(query);
+    let mut rows: Vec<&Person> = people.iter().filter(|person| person_query_hit(person, &q)).collect();
+    rows.sort_by(|a, b| a.display_name.to_ascii_lowercase().cmp(&b.display_name.to_ascii_lowercase()));
+    let total = rows.len();
+    let truncated = total > 40;
+    let listed: Vec<Value> = rows.into_iter().take(40).map(person_listing).collect();
+    let count = listed.len();
+    let detail = if count == 0 {
+        "No people are saved in the app.".to_string()
+    } else if truncated {
+        format!("Showing {count} of {total} people saved in the app. Dates stay on the person all year. This does not open any app.")
+    } else {
+        format!("{count} people saved in the app. Dates stay on the person all year. This does not open any app.")
+    };
+    json!({
+        "ok": true,
+        "count": count,
+        "total": total,
+        "truncated": truncated,
+        "people": listed,
+        "detail": detail
+    })
+}
+
+fn person_query_hit(person: &Person, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let mut hay = format!("{} {} {} {}", person.display_name, person.nickname, person.aliases.join(" "), person.note);
+    for reminder in &person.reminders {
+        hay.push(' ');
+        hay.push_str(&reminder.label);
+        hay.push(' ');
+        hay.push_str(&reminder.title);
+        hay.push(' ');
+        hay.push_str(&reminder.date);
+    }
+    normalize(&hay).contains(query)
+}
+
+fn person_listing(person: &Person) -> Value {
+    let dates: Vec<Value> = person
+        .reminders
+        .iter()
+        .filter(|reminder| reminder.enabled)
+        .map(|reminder| {
+            json!({
+                "id": reminder.id,
+                "label": reminder.label,
+                "title": reminder.title,
+                "date": reminder.date,
+                "recurrence": reminder.recurrence,
+                "leadDays": reminder.lead_days,
+                "time": reminder.time,
+            })
+        })
+        .collect();
+    json!({
+        "id": person.id,
+        "name": person.display_name,
+        "nickname": person.nickname,
+        "aliases": person.aliases,
+        "note": person.note,
+        "favorite": person.favorite,
+        "preferredChannel": person.preferred_channel,
+        "dates": dates,
+    })
+}
+
 pub fn speak_reminder(person_name: &str, reminder: &PersonReminder) -> String {
+
     let when = recurrence::parse_month_day(&reminder.date)
         .map(|(_, month, day)| recurrence::speak_date(month, day))
         .unwrap_or_else(|| reminder.date.clone());
@@ -1444,5 +1517,24 @@ mod tests {
         let named = query_reminders(std::slice::from_ref(&sam), "visa");
         assert_eq!(named.len(), 1);
         assert_eq!(named[0].reminder.date, "06-01");
+    }
+
+    #[test]
+    fn saved_people_list_keeps_dates_all_year_and_hides_handles() {
+        let mut sam = person("Sam Rivera", "Mom", &["mummy"], "whatsapp", true);
+        birthday(&mut sam, "03-03");
+        sam.note = "call after 5".into();
+        let ana = person("Ana Lopez", "", &[], "", false);
+        let listed = saved_people_payload(&[sam, ana], "mom");
+        assert_eq!(listed["count"], 1);
+        assert_eq!(listed["people"][0]["name"], "Sam Rivera");
+        assert_eq!(listed["people"][0]["dates"][0]["date"], "03-03");
+        assert_eq!(listed["people"][0]["dates"][0]["label"], "birthday");
+        let raw = listed.to_string();
+        assert!(!raw.contains("+1999"));
+        assert!(!raw.contains("open_call"));
+        let all = saved_people_payload(&[person("Ana Lopez", "", &[], "", false)], "");
+        assert_eq!(all["count"], 1);
+        assert!(all["detail"].as_str().unwrap().contains("all year"));
     }
 }
