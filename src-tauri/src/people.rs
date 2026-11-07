@@ -2,8 +2,9 @@
 //! for phone numbers and email. Nicknames, aliases, a preferred channel, handle
 //! overrides, favorites, notes, and dated reminders live in `people.json`.
 //!
-//! Person reminders are birthdays, anniversaries, and custom dates. Scheduling
-//! them onto the Time list happens in `actions`, which reads this store.
+//! Person reminders are birthdays, anniversaries, and custom dates. `actions`
+//! schedules the notification from this store. The date stays on the person
+//! all year and joins the Time list only inside its notify window.
 
 use std::{
     collections::HashMap,

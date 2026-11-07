@@ -547,6 +547,41 @@ fn next_once(after: chrono::DateTime<Local>, spec: &Spec) -> Option<chrono::Date
     next_yearly(after, spec.month, spec.day, spec.hour, spec.minute, spec.lead_days, spec.year)
 }
 
+/// When a person date should ring next.
+///
+/// Inside the heads-up window (the notify day through the event day) this is
+/// the current occurrence, including after that clock time has passed. Outside
+/// the window it is the next future notify time, which is what the alarm uses.
+pub fn notify_anchor(spec: &Spec, now: chrono::DateTime<Local>) -> Option<chrono::DateTime<Local>> {
+    if let Some(current) = open_window_notify(spec, now.date_naive()) {
+        return Some(current);
+    }
+    next_after(spec, now)
+}
+
+fn open_window_notify(spec: &Spec, today: NaiveDate) -> Option<chrono::DateTime<Local>> {
+    let kind = normalize_kind(&spec.kind);
+    if kind != "yearly" && kind != "once" {
+        return None;
+    }
+    let hour = spec.hour.min(23);
+    let minute = spec.minute.min(59);
+    let lead = spec.lead_days as i64;
+    let years = if kind == "once" {
+        vec![spec.year?]
+    } else {
+        vec![today.year() - 1, today.year(), today.year() + 1]
+    };
+    for year in years {
+        let Some(event) = date_in_year(year, spec.month, spec.day) else { continue };
+        let fire_day = event - Duration::days(lead);
+        if today >= fire_day && today <= event {
+            return local_hms(fire_day, hour, minute);
+        }
+    }
+    None
+}
+
 fn date_in_year(year: i32, month: u32, day: u32) -> Option<NaiveDate> {
     if let Some(date) = NaiveDate::from_ymd_opt(year, month, day) {
         return Some(date);
@@ -632,6 +667,9 @@ mod tests {
         };
         assert_eq!(next_after(&birthday, t(2026, 2, 1, 8, 0)).unwrap(), t(2026, 3, 2, 9, 0));
         assert_eq!(next_after(&birthday, t(2026, 3, 2, 10, 0)).unwrap(), t(2027, 3, 2, 9, 0));
+        assert_eq!(notify_anchor(&birthday, t(2026, 3, 2, 8, 0)).unwrap(), t(2026, 3, 2, 9, 0));
+        assert_eq!(notify_anchor(&birthday, t(2026, 3, 3, 10, 0)).unwrap(), t(2026, 3, 2, 9, 0));
+        assert_eq!(notify_anchor(&birthday, t(2026, 3, 4, 10, 0)).unwrap(), t(2027, 3, 2, 9, 0));
         let same_day = Spec { lead_days: 0, ..birthday };
         assert_eq!(next_after(&same_day, t(2026, 3, 3, 10, 0)).unwrap(), t(2027, 3, 3, 9, 0));
 
@@ -648,6 +686,34 @@ mod tests {
         };
         assert_eq!(next_after(&once, t(2026, 3, 3, 10, 0)).unwrap(), t(2026, 3, 3, 15, 0));
         assert!(next_after(&once, t(2026, 3, 3, 16, 0)).is_none());
+        assert_eq!(notify_anchor(&once, t(2026, 3, 3, 10, 0)).unwrap(), t(2026, 3, 3, 15, 0));
+        assert!(notify_anchor(&once, t(2026, 3, 4, 8, 0)).is_none());
+    }
+
+    #[test]
+    fn notify_window_wraps_the_year_and_waits_seven_days() {
+        let birthday = Spec {
+            kind: "yearly".into(),
+            weekdays: vec![],
+            hour: 9,
+            minute: 0,
+            month: 6,
+            day: 15,
+            year: None,
+            lead_days: 7,
+            until: None,
+        };
+        assert_eq!(notify_anchor(&birthday, t(2026, 3, 3, 10, 0)).unwrap(), t(2026, 6, 8, 9, 0));
+        assert_eq!(notify_anchor(&birthday, t(2026, 6, 8, 8, 0)).unwrap(), t(2026, 6, 8, 9, 0));
+        assert_eq!(notify_anchor(&birthday, t(2026, 6, 12, 15, 0)).unwrap(), t(2026, 6, 8, 9, 0));
+        assert_eq!(notify_anchor(&birthday, t(2026, 6, 15, 18, 0)).unwrap(), t(2026, 6, 8, 9, 0));
+        assert_eq!(notify_anchor(&birthday, t(2026, 6, 16, 8, 0)).unwrap(), t(2027, 6, 8, 9, 0));
+
+        let new_year = Spec { month: 1, day: 2, ..birthday };
+        assert_eq!(notify_anchor(&new_year, t(2026, 12, 20, 10, 0)).unwrap(), t(2026, 12, 26, 9, 0));
+        assert_eq!(notify_anchor(&new_year, t(2026, 12, 28, 10, 0)).unwrap(), t(2026, 12, 26, 9, 0));
+        assert_eq!(notify_anchor(&new_year, t(2027, 1, 2, 12, 0)).unwrap(), t(2026, 12, 26, 9, 0));
+        assert_eq!(notify_anchor(&new_year, t(2027, 1, 3, 8, 0)).unwrap(), t(2027, 12, 26, 9, 0));
     }
 
     #[test]

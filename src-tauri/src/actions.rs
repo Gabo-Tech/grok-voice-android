@@ -416,9 +416,10 @@ impl Agenda {
         let (start, end, _) = day_bounds(None).unwrap_or((0, 0, String::new()));
         events.extend(local_in_range(&store.events, start, end));
         events.sort_by_key(|e| e.start_ms);
+        let now = Local::now();
         AgendaSnapshot {
             notes: store.notes.clone(),
-            reminders: store.items.clone(),
+            reminders: store.items.iter().filter(|item| shows_on_time_list(item, now)).cloned().collect(),
             events,
             calendar,
         }
@@ -715,6 +716,13 @@ impl Agenda {
         let mut recent: Option<RecentFire> = None;
         for mut item in store.items.drain(..) {
             if item.at_ms + 60_000 >= now_ms {
+                kept.push(item);
+                continue;
+            }
+            // A person date stays on this occurrence through the event day so
+            // Time can show it for the whole heads-up window. The next year's
+            // alarm is armed once that day has passed.
+            if person_date_still_open(&item, now) {
                 kept.push(item);
                 continue;
             }
@@ -1302,7 +1310,8 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
         }
         "list_reminders" => {
             agenda.sweep(app);
-            let items = agenda.lock().items.clone();
+            let now = Local::now();
+            let items: Vec<Item> = agenda.lock().items.iter().filter(|item| shows_on_time_list(item, now)).cloned().collect();
             Ok(json!({
                 "ok": true,
                 "count": items.len(),
@@ -2184,8 +2193,39 @@ fn item_from_reminder(person: &Person, reminder: &PersonReminder, id: i32, now: 
     item.person_id = person.id.clone();
     item.person_reminder_id = reminder.id.clone();
     let spec = spec_from_item(&item).ok()?;
-    item.at_ms = recurrence::next_after(&spec, now)?.timestamp_millis();
+    item.at_ms = recurrence::notify_anchor(&spec, now)?.timestamp_millis();
     Some(item)
+}
+
+/// Birthdays, anniversaries, and named person dates. Reach-out nudges are not dates.
+fn is_person_date(item: &Item) -> bool {
+    !item.person_id.is_empty() && item.person_reminder_id != "reach"
+}
+
+/// Time and the voice reminder list hide a person date until today is on or
+/// after the notify day, and through the event day. The stored alarm is unchanged.
+fn shows_on_time_list(item: &Item, now: DateTime<Local>) -> bool {
+    if !is_person_date(item) {
+        return true;
+    }
+    let Some(at) = DateTime::from_timestamp_millis(item.at_ms).map(|t| t.with_timezone(&Local)) else {
+        return false;
+    };
+    let today = now.date_naive();
+    let notify = at.date_naive();
+    let event = notify + Duration::days(i64::from(item.lead_days));
+    today >= notify && today <= event
+}
+
+fn person_date_still_open(item: &Item, now: DateTime<Local>) -> bool {
+    if !is_person_date(item) {
+        return false;
+    }
+    let Some(at) = DateTime::from_timestamp_millis(item.at_ms).map(|t| t.with_timezone(&Local)) else {
+        return false;
+    };
+    let event = at.date_naive() + Duration::days(i64::from(item.lead_days));
+    now.date_naive() <= event
 }
 
 fn reminder_title(name: &str, reminder: &PersonReminder) -> String {
@@ -2335,11 +2375,14 @@ mod tests {
         assert_eq!(next, 3);
         let birthday = items.iter().find(|i| i.person_reminder_id == "bday").unwrap();
         assert_eq!(birthday.title, "Sam Rivera's birthday");
-        assert_eq!(
-            DateTime::from_timestamp_millis(birthday.at_ms).unwrap().with_timezone(&Local).format("%Y-%m-%d").to_string(),
-            "2027-03-03"
-        );
+        assert_eq!(day_of(birthday.at_ms), "2026-03-03");
+        assert!(shows_on_time_list(birthday, now));
         assert!(items.iter().any(|i| i.title == "Meds"));
+        let next_year = recurrence::local_on(2026, 3, 4, 10, 0);
+        let (rolled, _, _) = project_people(std::slice::from_ref(&meds), std::slice::from_ref(&person), next_year, 2);
+        let rolled_birthday = rolled.iter().find(|i| i.person_reminder_id == "bday").unwrap();
+        assert_eq!(day_of(rolled_birthday.at_ms), "2027-03-03");
+        assert!(!shows_on_time_list(rolled_birthday, next_year));
 
         person.reminders[0].enabled = false;
         let (_items, _, cancel) = project_people(&items, std::slice::from_ref(&person), now, next);
@@ -2396,6 +2439,120 @@ mod tests {
         let birthday = items.iter().find(|item| item.person_reminder_id == "bday").unwrap();
         assert_eq!(birthday.title, "Ana's birthday");
         assert!(birthday.at_ms != visa.at_ms);
+    }
+
+    #[test]
+    fn person_dates_join_the_time_list_only_inside_the_notify_window() {
+        let march = recurrence::local_on(2026, 3, 3, 10, 0);
+        let mut person = sample_person(vec![
+            dated("bday", "birthday", "", "06-15", "yearly", 7),
+            dated("anniv", "anniversary", "", "11-02", "yearly", 0),
+            dated("visa", "custom", "Visa", "2026-04-01", "once", 3),
+        ]);
+        let meds = Item {
+            recurrence: "daily".into(),
+            time: "08:00".into(),
+            ..Item::basic(9, "reminder", "Meds", "", recurrence::local_on(2026, 3, 4, 8, 0).timestamp_millis())
+        };
+        let (items, _, cancel) = project_people(std::slice::from_ref(&meds), std::slice::from_ref(&person), march, 1);
+        assert!(cancel.is_empty());
+        let birthday = items.iter().find(|item| item.person_reminder_id == "bday").unwrap();
+        let anniversary = items.iter().find(|item| item.person_reminder_id == "anniv").unwrap();
+        let visa = items.iter().find(|item| item.person_reminder_id == "visa").unwrap();
+        assert_eq!(day_of(birthday.at_ms), "2026-06-08");
+        assert_eq!(day_of(anniversary.at_ms), "2026-11-02");
+        assert_eq!(day_of(visa.at_ms), "2026-03-29");
+        assert!(!shows_on_time_list(birthday, march));
+        assert!(!shows_on_time_list(anniversary, march));
+        assert!(!shows_on_time_list(visa, march));
+        assert!(shows_on_time_list(items.iter().find(|item| item.title == "Meds").unwrap(), march));
+
+        let opening = recurrence::local_on(2026, 6, 8, 8, 0);
+        let (open_items, _, _) = project_people(&[], std::slice::from_ref(&person), opening, 1);
+        let open_birthday = open_items.iter().find(|item| item.person_reminder_id == "bday").unwrap();
+        assert_eq!(day_of(open_birthday.at_ms), "2026-06-08");
+        assert!(shows_on_time_list(open_birthday, opening));
+
+        let during = recurrence::local_on(2026, 6, 12, 15, 0);
+        let (during_items, _, _) = project_people(&open_items, std::slice::from_ref(&person), during, 4);
+        let during_birthday = during_items.iter().find(|item| item.person_reminder_id == "bday").unwrap();
+        assert_eq!(day_of(during_birthday.at_ms), "2026-06-08");
+        assert!(shows_on_time_list(during_birthday, during));
+        assert!(person_date_still_open(during_birthday, during));
+        assert_eq!(day_of(during_items.iter().find(|item| item.person_reminder_id == "anniv").unwrap().at_ms), "2026-11-02");
+        assert!(!shows_on_time_list(during_items.iter().find(|item| item.person_reminder_id == "anniv").unwrap(), during));
+
+        let mut dismissed = during_birthday.clone();
+        dismissed.at_ms = recurrence::local_on(2027, 6, 8, 9, 0).timestamp_millis();
+        let mut held = during_items.clone();
+        if let Some(slot) = held.iter_mut().find(|item| item.person_reminder_id == "bday") {
+            *slot = dismissed;
+        }
+        let (after_done, _, _) = project_people(&held, std::slice::from_ref(&person), during, 4);
+        let done = after_done.iter().find(|item| item.person_reminder_id == "bday").unwrap();
+        assert_eq!(day_of(done.at_ms), "2027-06-08");
+        assert!(!shows_on_time_list(done, during));
+
+        let event_day = recurrence::local_on(2026, 6, 15, 20, 0);
+        assert!(shows_on_time_list(during_birthday, event_day));
+        assert!(person_date_still_open(during_birthday, event_day));
+        let passed = recurrence::local_on(2026, 6, 16, 8, 0);
+        assert!(!shows_on_time_list(during_birthday, passed));
+        assert!(!person_date_still_open(during_birthday, passed));
+        let (passed_items, _, _) = project_people(&[], std::slice::from_ref(&person), passed, 1);
+        let passed_birthday = passed_items.iter().find(|item| item.person_reminder_id == "bday").unwrap();
+        assert_eq!(day_of(passed_birthday.at_ms), "2027-06-08");
+        assert!(!shows_on_time_list(passed_birthday, passed));
+
+        let visa_day = recurrence::local_on(2026, 4, 1, 11, 0);
+        let (visa_items, _, _) = project_people(&[], std::slice::from_ref(&person), visa_day, 1);
+        let due_visa = visa_items.iter().find(|item| item.person_reminder_id == "visa").unwrap();
+        assert!(shows_on_time_list(due_visa, visa_day));
+        let after_visa = recurrence::local_on(2026, 4, 2, 8, 0);
+        let (gone, _, visa_cancel) = project_people(&visa_items, std::slice::from_ref(&person), after_visa, 4);
+        assert!(gone.iter().all(|item| item.person_reminder_id != "visa"));
+        assert_eq!(visa_cancel, vec![due_visa.id]);
+
+        person.reminders.clear();
+        person.reach_out_days = 14;
+        let (nudges, _, _) = project_people(&[], std::slice::from_ref(&person), march, 1);
+        let reach = nudges.iter().find(|item| item.person_reminder_id == "reach").unwrap();
+        assert!(shows_on_time_list(reach, march));
+        assert!(!person_date_still_open(reach, march));
+    }
+
+    fn day_of(ms: i64) -> String {
+        DateTime::from_timestamp_millis(ms).unwrap().with_timezone(&Local).format("%Y-%m-%d").to_string()
+    }
+
+    fn sample_person(reminders: Vec<crate::people::PersonReminder>) -> crate::people::Person {
+        crate::people::Person {
+            id: "p1".into(),
+            android_contact_id: None,
+            display_name: "Sam Rivera".into(),
+            nickname: String::new(),
+            aliases: vec![],
+            preferred_channel: String::new(),
+            handles: crate::people::Handles::default(),
+            favorite: false,
+            note: String::new(),
+            reach_out_days: 0,
+            last_contacted_ms: None,
+            reminders,
+        }
+    }
+
+    fn dated(id: &str, label: &str, title: &str, date: &str, recurrence: &str, lead_days: u32) -> crate::people::PersonReminder {
+        crate::people::PersonReminder {
+            id: id.into(),
+            label: label.into(),
+            title: title.into(),
+            date: date.into(),
+            recurrence: recurrence.into(),
+            lead_days,
+            time: "09:00".into(),
+            enabled: true,
+        }
     }
 
     #[test]
