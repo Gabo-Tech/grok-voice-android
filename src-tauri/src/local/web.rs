@@ -233,6 +233,7 @@ mod tests {
             "snooze_reminder",
             "list_calendar_events",
             "create_calendar_event",
+            "list_people",
             "get_person",
             "find_contact",
             "set_person_reminder",
