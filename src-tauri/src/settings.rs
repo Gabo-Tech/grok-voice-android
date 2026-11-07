@@ -111,3 +111,26 @@ impl SettingsStore {
         Ok(s)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_save_cannot_clear_listen() {
+        let stored = Settings { listen_armed: true, ..Settings::default() };
+        let incoming = Settings { listen_armed: false, daily_budget_minutes: 15, ..Settings::default() };
+        let kept = keep_listen_preference(&stored, incoming);
+        assert!(kept.listen_armed);
+        assert_eq!(kept.daily_budget_minutes, 15);
+        let off = Settings { listen_armed: false, ..Settings::default() };
+        assert!(!keep_listen_preference(&off, stored).listen_armed);
+    }
+}
+
+/// The Listen switch is saved by `set_wake_enabled`. Other settings screens must
+/// not clear it when their payload omits the field.
+pub fn keep_listen_preference(stored: &Settings, mut incoming: Settings) -> Settings {
+    incoming.listen_armed = stored.listen_armed;
+    incoming
+}

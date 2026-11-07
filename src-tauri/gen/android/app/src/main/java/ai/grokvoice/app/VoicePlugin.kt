@@ -90,6 +90,7 @@ class EventArgs {
   var startMs: Long = 0
   var endMs: Long = 0
   var location: String = ""
+  var rrule: String = ""
 }
 
 @InvokeArg
@@ -99,6 +100,7 @@ class EventUpdateArgs {
   var startMs: Long = 0
   var endMs: Long = 0
   var location: String = ""
+  var rrule: String = ""
 }
 
 @InvokeArg
@@ -301,7 +303,7 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   fun createCalendarEvent(invoke: Invoke) {
     try {
       val a = invoke.parseArgs(EventArgs::class.java)
-      resolveJson(invoke, PhoneActions.createEvent(activity, a.title, a.startMs, a.endMs, a.location))
+      resolveJson(invoke, PhoneActions.createEvent(activity, a.title, a.startMs, a.endMs, a.location, a.rrule))
     } catch (e: SecurityException) {
       resolveJson(invoke, """{"ok":false,"error":"Calendar permission is not granted."}""")
     } catch (e: Exception) {
@@ -313,7 +315,7 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   fun updateCalendarEvent(invoke: Invoke) {
     try {
       val a = invoke.parseArgs(EventUpdateArgs::class.java)
-      resolveJson(invoke, PhoneActions.updateEvent(activity, a.id, a.title, a.startMs, a.endMs, a.location))
+      resolveJson(invoke, PhoneActions.updateEvent(activity, a.id, a.title, a.startMs, a.endMs, a.location, a.rrule))
     } catch (e: SecurityException) {
       resolveJson(invoke, """{"ok":false,"error":"Calendar permission is not granted."}""")
     } catch (e: Exception) {
@@ -457,6 +459,12 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   fun contactBirthday(invoke: Invoke) {
     val id = invoke.parseArgs(ContactIdArgs::class.java).id
     resolveJson(invoke, DeviceExtras.birthday(activity.applicationContext, id))
+  }
+
+  @Command
+  fun contactDates(invoke: Invoke) {
+    val id = invoke.parseArgs(ContactIdArgs::class.java).id
+    resolveJson(invoke, DeviceExtras.contactDates(activity.applicationContext, id))
   }
 
   @Command

@@ -56,6 +56,66 @@ function blankReminder(): PersonReminder {
   return { id: "", label: "birthday", title: "", date: "", recurrence: "yearly", leadDays: 0, time: "09:00", enabled: true };
 }
 
+function toDateInput(date: string): string {
+  const trimmed = date.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (iso) return trimmed;
+  const md = /^(\d{1,2})-(\d{1,2})$/.exec(trimmed);
+  if (!md) return "";
+  const month = md[1].padStart(2, "0");
+  const day = md[2].padStart(2, "0");
+  const year = new Date().getFullYear();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const candidate = new Date(year, Number(month) - 1, Number(day));
+  const shown = candidate < today ? year + 1 : year;
+  return `${shown}-${month}-${day}`;
+}
+
+function shortDate(date: string): string {
+  const iso = toDateInput(date);
+  if (!iso) return date;
+  const [year, month, day] = iso.split("-").map(Number);
+  const showYear = /^\d{4}-/.test(date.trim());
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: showYear ? "numeric" : undefined,
+  });
+}
+
+function dateTitle(reminder: PersonReminder, t: (text: string) => string): string {
+  if (reminder.label === "custom") return reminder.title.trim() || t("Custom");
+  if (reminder.label === "anniversary") return t("Anniversary");
+  if (reminder.label === "birthday") return t("Birthday");
+  return reminder.title.trim() || t("Custom");
+}
+
+function payloadFrom(draft: Draft): PersonDraft {
+  return {
+    id: draft.id,
+    androidContactId: draft.androidContactId,
+    displayName: draft.displayName.trim(),
+    nickname: draft.nickname.trim(),
+    aliases: draft.aliases
+      .split(/[,\n]/)
+      .map((part) => part.trim())
+      .filter(Boolean),
+    preferredChannel: draft.preferredChannel,
+    handles: {
+      phone: draft.phone.trim(),
+      email: draft.email.trim(),
+      whatsapp: draft.whatsapp.trim(),
+      signal: draft.signal.trim(),
+    },
+    favorite: draft.favorite,
+    note: draft.note.trim(),
+    reminders: draft.reminders.filter((reminder) => reminder.date.trim()),
+    reachOutDays: draft.reachOutDays,
+    lastContactedMs: draft.lastContactedMs,
+  };
+}
+
 function emptyDraft(): Draft {
   return {
     androidContactId: null,
@@ -107,8 +167,10 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
   const t = useT();
   const [people, setPeople] = useState<Person[]>([]);
   const [query, setQuery] = useState("");
-  const [screen, setScreen] = useState<"list" | "edit" | "pick">("list");
+  const [screen, setScreen] = useState<"list" | "edit" | "pick" | "date">("list");
   const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const [dateDraft, setDateDraft] = useState<PersonReminder | null>(null);
+  const [dateIndex, setDateIndex] = useState<number | null>(null);
   const [linked, setLinked] = useState<PhoneContact | null>(null);
   const [adding, setAdding] = useState(false);
   const [pickFor, setPickFor] = useState<"create" | "link">("create");
@@ -245,38 +307,81 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     setScreen("edit");
   };
 
+  const openAddDate = () => {
+    setDateDraft(blankReminder());
+    setDateIndex(null);
+    setError(null);
+    setScreen("date");
+  };
+
+  const openEditDate = (index: number) => {
+    setDateDraft({ ...draft.reminders[index] });
+    setDateIndex(index);
+    setError(null);
+    setScreen("date");
+  };
+
+  const persistReminders = async (reminders: PersonReminder[]) => {
+    const next = { ...draft, reminders };
+    setDraft(next);
+    if (!next.id || !next.displayName.trim()) {
+      setScreen("edit");
+      setError(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      const saved = await api.savePerson(payloadFrom(next));
+      setDraft(draftFrom(saved));
+      reload();
+      setScreen("edit");
+      setError(null);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveDate = async () => {
+    if (!dateDraft) return;
+    if (!dateDraft.date.trim()) {
+      setError(t("Each date needs a day."));
+      return;
+    }
+    if (dateDraft.label === "custom" && !dateDraft.title.trim()) {
+      setError(t("A custom date needs a name."));
+      return;
+    }
+    const reminders = draft.reminders.slice();
+    if (dateIndex == null) reminders.push(dateDraft);
+    else reminders[dateIndex] = dateDraft;
+    await persistReminders(reminders);
+  };
+
+  const removeDate = async () => {
+    if (dateIndex == null) {
+      setScreen("edit");
+      return;
+    }
+    await persistReminders(draft.reminders.filter((_, index) => index !== dateIndex));
+  };
+
   const save = async () => {
     const displayName = draft.displayName.trim();
     if (!displayName) {
       setError("A person needs a name.");
       return;
     }
-    if (draft.reminders.some((reminder) => !reminder.date.trim())) {
-      setError("Each date needs a month and day, like 03-03.");
+    if (draft.reminders.some((reminder) => reminder.label === "custom" && !reminder.title.trim())) {
+      setError(t("A custom date needs a name."));
       return;
     }
-    const payload: PersonDraft = {
-      id: draft.id,
-      androidContactId: draft.androidContactId,
-      displayName,
-      nickname: draft.nickname.trim(),
-      aliases: draft.aliases
-        .split(/[,\n]/)
-        .map((part) => part.trim())
-        .filter(Boolean),
-      preferredChannel: draft.preferredChannel,
-      handles: {
-        phone: draft.phone.trim(),
-        email: draft.email.trim(),
-        whatsapp: draft.whatsapp.trim(),
-        signal: draft.signal.trim(),
-      },
-      favorite: draft.favorite,
-      note: draft.note.trim(),
-      reminders: draft.reminders.filter((reminder) => reminder.date.trim()),
-      reachOutDays: draft.reachOutDays,
-      lastContactedMs: draft.lastContactedMs,
-    };
+    if (draft.reminders.some((reminder) => !reminder.date.trim())) {
+      setError(t("Each date needs a day."));
+      return;
+    }
+    const payload = payloadFrom({ ...draft, displayName });
     setBusy(true);
     try {
       await api.savePerson(payload);
@@ -361,6 +466,24 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     );
   }
 
+  if (screen === "date" && dateDraft) {
+    return (
+      <DateEditor
+        reminder={dateDraft}
+        busy={busy}
+        error={error}
+        isNew={dateIndex == null}
+        onChange={setDateDraft}
+        onSave={() => void saveDate()}
+        onRemove={() => void removeDate()}
+        onBack={() => {
+          setError(null);
+          setScreen("edit");
+        }}
+      />
+    );
+  }
+
   if (screen === "edit") {
     const linkedLine = [linked?.phone, linked?.email].filter(Boolean).join(" · ");
     return (
@@ -373,9 +496,27 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
           </p>
           <div className="mt-6 space-y-4">
             <h3 className="text-base text-foreground">Who</h3>
-            <Field label="Name" error={error}>
+            <Field label="Name" error={screen === "edit" ? error : null}>
               <Input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} placeholder="Ana Lopez" />
             </Field>
+            <DateList
+              reminders={draft.reminders}
+              onAdd={openAddDate}
+              onOpen={openEditDate}
+              onImport={
+                draft.androidContactId && draft.id
+                  ? () => {
+                      void api
+                        .importContactDates(draft.id || "")
+                        .then((person) => {
+                          setDraft(draftFrom(person));
+                          reload();
+                        })
+                        .catch((e) => setError(errorText(e)));
+                    }
+                  : undefined
+              }
+            />
             <Field label="Nickname">
               <Input value={draft.nickname} onChange={(e) => setDraft({ ...draft, nickname: e.target.value })} placeholder="Mom" />
             </Field>
@@ -453,57 +594,11 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
               >
                 {t("Use call and text history")}
               </Button>
-              {draft.androidContactId && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={!draft.id}
-                  onClick={() => {
-                    if (!draft.id) return;
-                    void api
-                      .importContactBirthday(draft.id)
-                      .then((person) => setDraft(draftFrom(person)))
-                      .catch((e) => setError(errorText(e)));
-                  }}
-                >
-                  {t("Import birthday")}
-                </Button>
-              )}
             </div>
             <h3 className="pt-2 text-base text-foreground">{t("Note")}</h3>
             <Field label={t("Note")}>
               <Textarea value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder="Call after 5" className="min-h-28" />
             </Field>
-            <div>
-              <h3 className="text-base text-foreground">Dates</h3>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground">Birthdays and anniversaries</p>
-                <button
-                  type="button"
-                  className="h-12 border border-border px-3 text-sm"
-                  onClick={() => setDraft({ ...draft, reminders: [...draft.reminders, blankReminder()] })}
-                >
-                  Add
-                </button>
-              </div>
-              <p className="mb-3 text-xs leading-5 text-muted-foreground">
-                Birthdays and anniversaries notify on this phone and show on Time. Nothing is opened.
-              </p>
-              <div className="space-y-3">
-                {draft.reminders.map((reminder, index) => (
-                  <ReminderEditor
-                    key={`${reminder.id}-${index}`}
-                    reminder={reminder}
-                    onChange={(next) => {
-                      const reminders = draft.reminders.slice();
-                      reminders[index] = next;
-                      setDraft({ ...draft, reminders });
-                    }}
-                    onRemove={() => setDraft({ ...draft, reminders: draft.reminders.filter((_, i) => i !== index) })}
-                  />
-                ))}
-              </div>
-            </div>
             <div className="border border-border px-3 py-3">
               <p className="text-sm text-muted-foreground">Phone contact</p>
               {draft.androidContactId ? (
@@ -652,6 +747,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
 }
 
 function PersonGroup({ title, people, onOpen }: { title: string; people: Person[]; onOpen: (person: Person) => void }) {
+  const t = useT();
   return (
     <section>
       <p className="mb-2 px-1 text-sm text-muted-foreground">{title}</p>
@@ -659,8 +755,11 @@ function PersonGroup({ title, people, onOpen }: { title: string; people: Person[
         {people.map((person) => {
           const aka = person.nickname || person.aliases[0] || "";
           const channel = channelLabel(person.preferredChannel);
-          const dated = person.reminders?.find((reminder) => reminder.enabled)?.label ?? "";
-          const detail = [aka, channel && channel !== "None" ? channel : "", dated].filter(Boolean).join(" · ");
+          const dated = (person.reminders ?? [])
+            .filter((reminder) => reminder.enabled)
+            .slice(0, 2)
+            .map((reminder) => `${dateTitle(reminder, t)} ${shortDate(reminder.date)}`.trim());
+          const detail = [aka, channel && channel !== "None" ? channel : "", ...dated].filter(Boolean).join(" · ");
           return (
             <RowButton key={person.id} onClick={() => onOpen(person)} className="items-center">
               <span className="grid size-12 shrink-0 place-items-center border border-border text-base text-foreground" aria-hidden>
@@ -680,78 +779,222 @@ function PersonGroup({ title, people, onOpen }: { title: string; people: Person[
   );
 }
 
-function ReminderEditor({
+function DateList({
+  reminders,
+  onAdd,
+  onOpen,
+  onImport,
+}: {
+  reminders: PersonReminder[];
+  onAdd: () => void;
+  onOpen: (index: number) => void;
+  onImport?: () => void;
+}) {
+  const t = useT();
+  return (
+    <section className="border border-border px-3 py-3">
+      <h3 className="text-base text-foreground">{t("Dates")}</h3>
+      <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("Birthday, anniversary, or a date you name.")}</p>
+      {reminders.length === 0 ? (
+        <p className="mt-3 text-sm leading-5 text-muted-foreground">{t("No dates yet")}</p>
+      ) : (
+        <div className="mt-3 divide-y divide-border border-y border-border">
+          {reminders.map((reminder, index) => (
+            <button
+              key={`${reminder.id || "new"}-${index}`}
+              type="button"
+              onClick={() => onOpen(index)}
+              className="flex min-h-14 w-full items-center justify-between gap-3 py-3 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-base text-foreground">{dateTitle(reminder, t)}</span>
+                <span className="mt-1 block text-sm text-muted-foreground">
+                  {shortDate(reminder.date) || t("Date")}
+                  {" · "}
+                  {reminder.recurrence === "once" ? t("Just once") : t("Every year")}
+                  {reminder.enabled ? "" : ` · ${t("Off")}`}
+                </span>
+              </span>
+              <span className="shrink-0 text-sm text-foreground" aria-hidden>
+                {t("Edit date")}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <button type="button" onClick={onAdd} className="mt-3 h-14 w-full border border-foreground text-base text-foreground">
+        {t("Add a date")}
+      </button>
+      {onImport && (
+        <button type="button" onClick={onImport} className="mt-2 h-12 w-full border border-border text-sm text-foreground">
+          {t("Import dates")}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function DateEditor({
   reminder,
+  busy,
+  error,
+  isNew,
   onChange,
+  onSave,
   onRemove,
+  onBack,
 }: {
   reminder: PersonReminder;
+  busy: boolean;
+  error: string | null;
+  isNew: boolean;
   onChange: (reminder: PersonReminder) => void;
+  onSave: () => void;
   onRemove: () => void;
+  onBack: () => void;
 }) {
+  const t = useT();
+  const lead = [
+    { days: 0, label: t("Day of") },
+    { days: 1, label: t("1 day before") },
+    { days: 3, label: t("3 days before") },
+    { days: 7, label: t("7 days before") },
+  ];
   return (
-    <div className="space-y-3 border border-border p-3">
-      <div className="grid grid-cols-3 gap-2">
-        {LABELS.map((item) => (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <BackButton label={t("Back to person")} onClick={onBack} />
+      <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+        <h2 className="px-1 text-2xl font-medium tracking-tight">{isNew ? t("Add a date") : t("Edit date")}</h2>
+        <p className="mt-1 px-1 text-sm leading-5 text-muted-foreground">
+          {t("Pick a type, then the day. It reminds you on this phone and shows in Time.")}
+        </p>
+        <div className="mt-6 space-y-5">
+          <div>
+            <p className="mb-2 text-sm text-muted-foreground" id="date-type-label">
+              {t("Dates")}
+            </p>
+            <div className="grid grid-cols-3 gap-2" role="group" aria-labelledby="date-type-label">
+              {LABELS.map((item) => {
+                const selected = reminder.label === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onChange({ ...reminder, label: item.id })}
+                    className={cn(
+                      "h-14 border text-sm",
+                      selected ? "border-2 border-foreground font-medium text-foreground" : "border-border text-muted-foreground",
+                    )}
+                  >
+                    {t(item.label)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {reminder.label === "custom" && (
+            <Field label={t("Name this date")} error={error && !reminder.title.trim() ? error : null}>
+              <Input
+                value={reminder.title}
+                aria-label={t("Name this date")}
+                onChange={(e) => onChange({ ...reminder, title: e.target.value })}
+                placeholder={t("Custom")}
+              />
+            </Field>
+          )}
+          {error && reminder.date.trim() && (reminder.label !== "custom" || reminder.title.trim()) && (
+            <p role="alert" className="text-sm leading-5 text-foreground">
+              {error}
+            </p>
+          )}
+          <Field label={t("Date")} error={error && !reminder.date.trim() ? error : null}>
+            <Input
+              type="date"
+              value={toDateInput(reminder.date)}
+              aria-label={t("Date")}
+              onChange={(e) => onChange({ ...reminder, date: e.target.value })}
+            />
+          </Field>
+          <Field label={t("Clock")}>
+            <Input
+              type="time"
+              value={reminder.time || "09:00"}
+              aria-label={t("Clock")}
+              onChange={(e) => onChange({ ...reminder, time: e.target.value })}
+            />
+          </Field>
+          <div>
+            <p className="mb-2 text-sm text-muted-foreground">{t("Repeats")}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["yearly", "once"] as const).map((item) => {
+                const selected = reminder.recurrence === item;
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onChange({ ...reminder, recurrence: item })}
+                    className={cn(
+                      "h-14 border text-sm",
+                      selected ? "border-2 border-foreground font-medium text-foreground" : "border-border text-muted-foreground",
+                    )}
+                  >
+                    {item === "yearly" ? t("Every year") : t("Just once")}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm text-muted-foreground">{t("Notify")}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {lead.map((item) => {
+                const selected = reminder.leadDays === item.days;
+                return (
+                  <button
+                    key={item.days}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onChange({ ...reminder, leadDays: item.days })}
+                    className={cn(
+                      "h-14 border px-2 text-sm",
+                      selected ? "border-2 border-foreground font-medium text-foreground" : "border-border text-muted-foreground",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <button
-            key={item.id}
             type="button"
-            onClick={() => onChange({ ...reminder, label: item.id })}
+            aria-pressed={reminder.enabled}
+            onClick={() => onChange({ ...reminder, enabled: !reminder.enabled })}
             className={cn(
-              "h-12 border text-sm",
-              reminder.label === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+              "flex h-14 w-full items-center justify-between border px-3 text-left text-base",
+              reminder.enabled ? "border-foreground text-foreground" : "border-border text-muted-foreground",
             )}
           >
-            {item.label}
+            <span>{t("Notify")}</span>
+            <span>{reminder.enabled ? t("On") : t("Off")}</span>
           </button>
-        ))}
+        </div>
       </div>
-      {reminder.label === "custom" && (
-        <Input value={reminder.title} onChange={(e) => onChange({ ...reminder, title: e.target.value })} placeholder="Title" />
-      )}
-      <Input value={reminder.date} onChange={(e) => onChange({ ...reminder, date: e.target.value })} placeholder="03-03" aria-label="Month and day" />
-      <div className="grid grid-cols-2 gap-2">
-        {(["yearly", "once"] as const).map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => onChange({ ...reminder, recurrence: item })}
-            className={cn(
-              "h-12 border text-sm",
-              reminder.recurrence === item ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-            )}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-      <Input type="time" value={reminder.time || "09:00"} onChange={(e) => onChange({ ...reminder, time: e.target.value })} aria-label="Time" />
-      <div className="flex gap-2">
-        {[0, 1, 3, 7].map((days) => (
-          <button
-            key={days}
-            type="button"
-            onClick={() => onChange({ ...reminder, leadDays: days })}
-            className={cn(
-              "h-12 flex-1 border text-sm",
-              reminder.leadDays === days ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-            )}
-          >
-            {days === 0 ? "Day of" : `${days}d early`}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          className="min-h-12 px-2 text-sm text-foreground"
-          onClick={() => onChange({ ...reminder, enabled: !reminder.enabled })}
-        >
-          {reminder.enabled ? "On" : "Off"}
-        </button>
-        <button type="button" className="min-h-12 px-2 text-sm" onClick={onRemove}>
-          Remove
-        </button>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border py-3">
+        {!isNew && (
+          <Button variant="ghost" disabled={busy} onClick={onRemove}>
+            {t("Remove date")}
+          </Button>
+        )}
+        <div className="flex-1" />
+        <Button variant="ghost" onClick={onBack}>
+          {t("Cancel")}
+        </Button>
+        <Button disabled={busy} onClick={onSave}>
+          {t("Save date")}
+        </Button>
       </div>
     </div>
   );

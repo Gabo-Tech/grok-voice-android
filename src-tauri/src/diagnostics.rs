@@ -59,6 +59,10 @@ pub struct DebugSnapshot {
     pub screen_interactive: bool,
     /// Why listening last stopped, when it was the user or the notification.
     pub last_stop_reason: Option<String>,
+    /// Saved Listen switch. This survives process death. Distinct from the service.
+    pub listen_preference: bool,
+    /// Kotlin listener flag. True while the user has not tapped Stop.
+    pub service_armed: bool,
     /// Persisted listener lines. These survive the process dying.
     pub listener_history: Vec<String>,
 }

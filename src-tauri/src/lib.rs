@@ -161,6 +161,7 @@ pub fn run() {
             commands::request_history_access,
             commands::refresh_last_contact,
             commands::import_contact_birthday,
+            commands::import_contact_dates,
             commands::local_pack_status,
             commands::download_local_pack,
             commands::delete_local_pack,

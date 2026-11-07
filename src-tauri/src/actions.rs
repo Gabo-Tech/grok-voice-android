@@ -50,6 +50,9 @@ pub struct Item {
     pub person_id: String,
     #[serde(default)]
     pub person_reminder_id: String,
+    /// Last moment the series may fire. 0 means it does not end.
+    #[serde(default)]
+    pub until_ms: i64,
 }
 
 impl Item {
@@ -67,6 +70,7 @@ impl Item {
             lead_days: 0,
             person_id: String::new(),
             person_reminder_id: String::new(),
+            until_ms: 0,
         }
     }
 }
@@ -80,6 +84,7 @@ pub struct ScheduleMeta {
     pub lead_days: u32,
     pub person_id: String,
     pub person_reminder_id: String,
+    pub until_ms: Option<i64>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -108,6 +113,16 @@ pub struct CalEvent {
     pub all_day: bool,
     #[serde(default = "phone_source")]
     pub source: String,
+    /// `daily`, `weekly`, `monthly`, or `yearly`. Empty means it does not repeat.
+    #[serde(default)]
+    pub recurrence: String,
+    #[serde(default)]
+    pub weekdays: Vec<u8>,
+    /// Last moment an occurrence may start. 0 means the series does not end.
+    #[serde(default)]
+    pub until_ms: i64,
+    #[serde(default, skip_serializing)]
+    pub rrule: String,
 }
 
 fn phone_source() -> String {
@@ -399,9 +414,7 @@ impl Agenda {
             Err(_) => (Vec::new(), "denied".into()),
         };
         let (start, end, _) = day_bounds(None).unwrap_or((0, 0, String::new()));
-        for e in store.events.iter().filter(|e| e.start_ms < end && e.end_ms > start) {
-            events.push(e.clone());
-        }
+        events.extend(local_in_range(&store.events, start, end));
         events.sort_by_key(|e| e.start_ms);
         AgendaSnapshot {
             notes: store.notes.clone(),
@@ -419,9 +432,7 @@ impl Agenda {
             Err(_) => (Vec::new(), "unavailable".into()),
         };
         let store = self.lock();
-        for event in store.events.iter().filter(|e| e.start_ms < end && e.end_ms > start) {
-            events.push(event.clone());
-        }
+        events.extend(local_in_range(&store.events, start, end));
         events.sort_by_key(|e| e.start_ms);
         (events, calendar)
     }
@@ -1384,7 +1395,7 @@ fn create_or_local(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
     if ensure_calendar_permission(app).is_ok() {
         let raw = app
             .state::<NativeBridge>()
-            .create_event(&title, start.timestamp_millis(), end.timestamp_millis(), &location)
+            .create_event(&title, start.timestamp_millis(), end.timestamp_millis(), &location, &recurrence::to_rrule(args["recurrence"].as_str().unwrap_or(""), &weekday_args(args), until_end_ms(args["until"].as_str().unwrap_or(""))))
             .map_err(|e| e.to_string())?;
         let v: Value = serde_json::from_str(&raw).unwrap_or(json!({ "ok": false }));
         if v["ok"] == true {
@@ -1407,6 +1418,13 @@ fn create_or_local(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
         location,
         all_day: false,
         source: "local".into(),
+        recurrence: {
+            let kind = recurrence::normalize_kind(args["recurrence"].as_str().unwrap_or(""));
+            if kind == "none" { String::new() } else { kind }
+        },
+        weekdays: weekday_args(args),
+        until_ms: until_end_ms(args["until"].as_str().unwrap_or("")),
+        rrule: String::new(),
     };
     agenda.upsert_local_event(app, event.clone())?;
     Ok(json!({
@@ -1456,7 +1474,7 @@ fn update_event(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value,
     };
     let raw = app
         .state::<NativeBridge>()
-        .update_event(id, title, start_ms, end_ms, location)
+        .update_event(id, title, start_ms, end_ms, location, &recurrence::to_rrule(args["recurrence"].as_str().unwrap_or(""), &weekday_args(args), until_end_ms(args["until"].as_str().unwrap_or(""))))
         .map_err(|e| e.to_string())?;
     let v: Value = serde_json::from_str(&raw).unwrap_or(json!({ "ok": false, "error": "bad calendar response" }));
     if v["ok"] == true {
@@ -1564,7 +1582,87 @@ fn read_events(bridge: &NativeBridge, start: i64, end: i64) -> Result<Vec<CalEve
     if v["ok"] != true {
         return Err(v["error"].as_str().unwrap_or("Could not read the calendar.").into());
     }
-    serde_json::from_value(v["events"].clone()).map_err(|e| e.to_string())
+    let mut events: Vec<CalEvent> = serde_json::from_value(v["events"].clone()).map_err(|e| e.to_string())?;
+    for event in &mut events {
+        if event.recurrence.is_empty() && !event.rrule.is_empty() {
+            let (kind, days, until) = recurrence::from_rrule(&event.rrule);
+            event.recurrence = kind;
+            event.weekdays = days;
+            event.until_ms = until;
+        }
+    }
+    Ok(events)
+}
+
+fn local_in_range(events: &[CalEvent], start: i64, end: i64) -> Vec<CalEvent> {
+    let mut out = Vec::new();
+    for event in events {
+        if recurrence::is_repeating(&event.recurrence) {
+            out.extend(expand_event(event, start, end));
+        } else if event.start_ms < end && event.end_ms > start {
+            out.push(event.clone());
+        }
+    }
+    out
+}
+
+fn expand_event(event: &CalEvent, start: i64, end: i64) -> Vec<CalEvent> {
+    let span = (event.end_ms - event.start_ms).max(60_000);
+    let mut cursor = if event.end_ms <= start {
+        next_event_start(event, start.saturating_sub(span)).unwrap_or(event.start_ms)
+    } else {
+        event.start_ms
+    };
+    let mut out = Vec::new();
+    for _ in 0..400 {
+        if cursor >= end {
+            break;
+        }
+        if event.until_ms > 0 && cursor > event.until_ms {
+            break;
+        }
+        let instance_end = cursor + span;
+        if instance_end > start && cursor < end {
+            let mut copy = event.clone();
+            copy.start_ms = cursor;
+            copy.end_ms = instance_end;
+            out.push(copy);
+        }
+        let Some(next) = next_event_start(event, cursor) else { break };
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+    }
+    out
+}
+
+fn next_event_start(event: &CalEvent, after_ms: i64) -> Option<i64> {
+    let after = DateTime::from_timestamp_millis(after_ms)?.with_timezone(&Local);
+    let spec = event_spec(event)?;
+    Some(recurrence::next_after(&spec, after)?.timestamp_millis())
+}
+
+fn event_spec(event: &CalEvent) -> Option<recurrence::Spec> {
+    let start = DateTime::from_timestamp_millis(event.start_ms)?.with_timezone(&Local);
+    let until = (event.until_ms > 0)
+        .then(|| DateTime::from_timestamp_millis(event.until_ms).map(|when| when.with_timezone(&Local).date_naive()))
+        .flatten();
+    let mut weekdays = event.weekdays.clone();
+    if weekdays.is_empty() && recurrence::normalize_kind(&event.recurrence) == "weekly" {
+        weekdays.push(start.weekday().number_from_monday() as u8);
+    }
+    Some(recurrence::Spec {
+        kind: event.recurrence.clone(),
+        weekdays,
+        hour: start.hour(),
+        minute: start.minute(),
+        month: start.month(),
+        day: start.day(),
+        year: Some(start.year()),
+        lead_days: 0,
+        until,
+    })
 }
 
 fn touch(app: &AppHandle) {
@@ -1675,6 +1773,9 @@ fn apply_schedule(item: &mut Item, meta: &ScheduleMeta, requested_at: i64) -> Re
     if meta.lead_days > 0 || !meta.date.is_empty() {
         item.lead_days = meta.lead_days.min(30);
     }
+    if let Some(until) = meta.until_ms {
+        item.until_ms = until.max(0);
+    }
     if item.kind == "alarm" || item.kind == "timer" {
         item.recurrence.clear();
         item.at_ms = requested_at;
@@ -1709,7 +1810,8 @@ fn spec_from_item(item: &Item) -> Result<recurrence::Spec, String> {
         (None, 0, 0)
     };
     let kind = if item.recurrence.is_empty() { "none".into() } else { item.recurrence.clone() };
-    Ok(recurrence::Spec { kind, weekdays: item.weekdays.clone(), hour, minute, month, day, year, lead_days: item.lead_days })
+    let until = (item.until_ms > 0).then(|| DateTime::from_timestamp_millis(item.until_ms).map(|t| t.with_timezone(&Local).date_naive())).flatten();
+    Ok(recurrence::Spec { kind, weekdays: item.weekdays.clone(), hour, minute, month, day, year, lead_days: item.lead_days, until })
 }
 
 fn schedule_from_args(args: &Value) -> Result<ScheduleMeta, String> {
@@ -1725,8 +1827,17 @@ fn schedule_from_args(args: &Value) -> Result<ScheduleMeta, String> {
         time: args["time"].as_str().unwrap_or("").trim().to_string(),
         date: args["date"].as_str().unwrap_or("").trim().to_string(),
         lead_days: args["leadDays"].as_u64().unwrap_or(0) as u32,
+        until_ms: args.get("until").and_then(|value| value.as_str()).map(str::trim).filter(|value| !value.is_empty()).and_then(|value| recurrence::parse_month_day(value).map(|(_, _, _)| value.to_string())).map(|value| until_end_ms(&value)).or_else(|| args.get("untilMs").and_then(|value| value.as_i64())),
         ..ScheduleMeta::default()
     })
+}
+
+fn until_end_ms(value: &str) -> i64 {
+    let Some((year, month, day)) = recurrence::parse_month_day(value) else { return 0 };
+    let Some(year) = year else { return 0 };
+    let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, day) else { return 0 };
+    let Some(naive) = date.and_hms_opt(23, 59, 0) else { return 0 };
+    naive.and_local_timezone(Local).earliest().map(|when| when.timestamp_millis()).unwrap_or(0)
 }
 
 fn weekday_args(args: &Value) -> Vec<u8> {
@@ -1773,6 +1884,7 @@ fn recurrence_phrase(item: &Item) -> String {
                 format!(" Repeats {} at {}.", days.join(" "), display_clock(&item.time))
             }
         }
+        "monthly" => " Repeats every month.".into(),
         "yearly" => " Repeats every year.".into(),
         _ => String::new(),
     }
@@ -2232,6 +2344,58 @@ mod tests {
         person.reminders[0].enabled = false;
         let (_items, _, cancel) = project_people(&items, std::slice::from_ref(&person), now, next);
         assert_eq!(cancel, vec![birthday.id]);
+    }
+
+    #[test]
+    fn custom_person_date_is_scheduled_like_a_birthday() {
+        let now = recurrence::local_on(2026, 1, 1, 8, 0);
+        let person = crate::people::Person {
+            id: "p1".into(),
+            android_contact_id: None,
+            display_name: "Ana".into(),
+            nickname: String::new(),
+            aliases: vec![],
+            preferred_channel: String::new(),
+            handles: crate::people::Handles::default(),
+            favorite: false,
+            note: String::new(),
+            reach_out_days: 0,
+            last_contacted_ms: None,
+            reminders: vec![
+                crate::people::PersonReminder {
+                    id: "bday".into(),
+                    label: "birthday".into(),
+                    title: String::new(),
+                    date: "03-03".into(),
+                    recurrence: "yearly".into(),
+                    lead_days: 0,
+                    time: "09:00".into(),
+                    enabled: true,
+                },
+                crate::people::PersonReminder {
+                    id: "visa".into(),
+                    label: "custom".into(),
+                    title: "Visa".into(),
+                    date: "06-01".into(),
+                    recurrence: "yearly".into(),
+                    lead_days: 0,
+                    time: "09:00".into(),
+                    enabled: true,
+                },
+            ],
+        };
+        let (items, _, cancel) = project_people(&[], std::slice::from_ref(&person), now, 1);
+        assert!(cancel.is_empty());
+        let visa = items.iter().find(|item| item.person_reminder_id == "visa").unwrap();
+        assert_eq!(visa.title, "Visa");
+        assert_eq!(visa.recurrence, "yearly");
+        assert_eq!(
+            DateTime::from_timestamp_millis(visa.at_ms).unwrap().with_timezone(&Local).format("%Y-%m-%d").to_string(),
+            "2026-06-01"
+        );
+        let birthday = items.iter().find(|item| item.person_reminder_id == "bday").unwrap();
+        assert_eq!(birthday.title, "Ana's birthday");
+        assert!(birthday.at_ms != visa.at_ms);
     }
 
     #[test]

@@ -107,6 +107,7 @@ export interface ScheduledItem {
   leadDays?: number;
   personId?: string;
   personReminderId?: string;
+  untilMs?: number;
 }
 
 export interface CalEvent {
@@ -117,6 +118,9 @@ export interface CalEvent {
   location: string;
   allDay: boolean;
   source?: string;
+  recurrence?: string;
+  weekdays?: number[];
+  untilMs?: number;
 }
 
 export interface Agenda {
@@ -173,6 +177,8 @@ export interface Settings {
   localSpeech: string;
   /** Empty follows the phone. */
   locale: string;
+  /** Hands-free Listen. Saved on the phone and restored after the app is cleared. */
+  listenArmed?: boolean;
 }
 
 export interface UsageStatus {
@@ -277,6 +283,8 @@ export interface DebugInfo {
   activityResumed?: boolean;
   screenInteractive?: boolean;
   lastStopReason?: string | null;
+  listenPreference?: boolean;
+  serviceArmed?: boolean;
   listenerHistory?: string[];
   vaultSecurityLevel: string | null;
   keyHint: string | null;
@@ -345,6 +353,7 @@ export const api = {
     time?: string;
     date?: string;
     leadDays?: number;
+    untilMs?: number;
   }) =>
     invoke<Agenda>("save_scheduled", {
       title: args.title,
@@ -357,6 +366,7 @@ export const api = {
       time: args.time ?? null,
       date: args.date ?? null,
       leadDays: args.leadDays ?? null,
+      untilMs: args.untilMs ?? null,
     }),
   cancelScheduled: (id: number) => invoke<Agenda>("cancel_scheduled", { id }),
   completeScheduled: (id: number) => invoke<Agenda>("complete_scheduled", { id }),
@@ -373,6 +383,9 @@ export const api = {
     endMs: number;
     location?: string;
     id?: string;
+    recurrence?: string;
+    weekdays?: number[];
+    untilMs?: number;
   }) =>
     invoke<Agenda>("save_event", {
       title: args.title,
@@ -380,6 +393,9 @@ export const api = {
       endMs: args.endMs,
       location: args.location ?? null,
       id: args.id ?? null,
+      recurrence: args.recurrence ?? null,
+      weekdays: args.weekdays ?? null,
+      untilMs: args.untilMs ?? null,
     }),
   deleteEvent: (id: string) => invoke<Agenda>("delete_event", { id }),
   requestCalendar: () => invoke<PermissionStatus>("request_calendar"),
@@ -405,6 +421,7 @@ export const api = {
   requestHistoryAccess: () => invoke<PermissionStatus>("request_history_access"),
   refreshLastContact: (id: string) => invoke<Person>("refresh_last_contact", { id }),
   importContactBirthday: (id: string) => invoke<Person>("import_contact_birthday", { id }),
+  importContactDates: (id: string) => invoke<Person>("import_contact_dates", { id }),
   localPacks: () => invoke<LocalPack[]>("local_pack_status"),
   downloadLocalPack: (id: string) => invoke<LocalPack[]>("download_local_pack", { id }),
   deleteLocalPack: (id: string) => invoke<LocalPack[]>("delete_local_pack", { id }),

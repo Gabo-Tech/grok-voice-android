@@ -261,6 +261,12 @@ impl EngineThread {
     }
 
     fn run(mut self) {
+        if self.wake_enabled {
+            self.hub.update(|s| s.wake_enabled = true);
+            self.hub.emit("voice://wake_enabled", true);
+            self.hub.info("Listen stayed on. The saved preference is still on.");
+            KEEP_ALIVE.store(true, Ordering::Release);
+        }
         self.reload_wakeword();
         loop {
             if !self.drain_control() {

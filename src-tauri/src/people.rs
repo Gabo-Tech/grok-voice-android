@@ -12,6 +12,7 @@ use std::{
     sync::Mutex,
 };
 
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
@@ -70,6 +71,7 @@ pub struct Person {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonReminder {
+    #[serde(default)]
     pub id: String,
     /// `birthday`, `anniversary`, or `custom`.
     #[serde(default = "custom_label")]
@@ -89,6 +91,12 @@ pub struct PersonReminder {
     pub time: String,
     #[serde(default = "enabled_default")]
     pub enabled: bool,
+}
+
+fn upcoming_year(month: u32, day: u32) -> i32 {
+    let today = chrono::Local::now().date_naive();
+    let this_year = chrono::NaiveDate::from_ymd_opt(today.year(), month, day.min(28)).unwrap_or(today);
+    if this_year >= today { today.year() } else { today.year() + 1 }
 }
 
 fn custom_label() -> String {
@@ -157,7 +165,11 @@ pub struct People {
 
 impl People {
     pub fn load(path: PathBuf) -> Self {
-        let inner = fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        let bytes = fs::read(&path).unwrap_or_default();
+        let (inner, dirty) = load_store(&bytes);
+        if dirty {
+            let _ = Self::persist(&path, &inner);
+        }
         Self { path, inner: Mutex::new(inner) }
     }
 
@@ -252,6 +264,38 @@ impl People {
         let saved = person.clone();
         Self::persist(&self.path, &store)?;
         Ok(saved)
+    }
+
+    /// Add phone-contact dates that are not already stored. Birthdays stay unique.
+    pub fn merge_imported_dates(&self, id: &str, incoming: Vec<PersonReminder>) -> Result<(Person, usize), String> {
+        let mut store = self.lock();
+        let Some(person) = store.people.iter_mut().find(|person| person.id == id) else {
+            return Err("No person with that id.".into());
+        };
+        if incoming.is_empty() {
+            return Err("No dates on that contact.".into());
+        }
+        let mut reminders = person.reminders.clone();
+        let before = reminders.len();
+        for reminder in incoming {
+            let duplicate = reminders.iter().any(|existing| {
+                same_date(&existing.date, &reminder.date)
+                    && existing.label == reminder.label
+                    && (reminder.label != "custom" || same_title(&existing.title, &reminder.title))
+            });
+            if reminder.label == "birthday" && reminders.iter().any(|existing| existing.label == "birthday") {
+                continue;
+            }
+            if duplicate {
+                continue;
+            }
+            reminders.push(reminder);
+        }
+        let added = reminders.len().saturating_sub(before);
+        person.reminders = clean_reminders(&reminders)?;
+        let saved = person.clone();
+        Self::persist(&self.path, &store)?;
+        Ok((saved, added))
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
@@ -656,14 +700,15 @@ pub struct ReminderHit {
 }
 
 /// Rank people the same way as contact lookup, then keep reminders that match
-/// words such as "birthday" or "anniversary".
+/// words such as "birthday", "anniversary", or a custom date's name.
 pub fn query_reminders(people: &[Person], query: &str) -> Vec<ReminderHit> {
     let q = normalize(query);
     let want_birthday = q.contains("birthday") || q.contains("born");
     let want_anniversary = q.contains("anniversary");
     let name_query = name_part(&q);
-    let ranked = if name_query.chars().count() >= 2 {
-        let hits = rank_people(people, &name_query);
+    let person_query = strip_reminder_titles(people, &name_query);
+    let by_name = if person_query.chars().count() >= 2 {
+        let hits = rank_people(people, &person_query);
         if !hits.is_empty() {
             hits
         } else if want_birthday || want_anniversary {
@@ -676,10 +721,21 @@ pub fn query_reminders(people: &[Person], query: &str) -> Vec<ReminderHit> {
     } else {
         rank_people(people, &q)
     };
+    let title_people = people_with_title(people, &q);
+    let title_only = by_name.is_empty();
+    let ranked = if title_only { title_people } else { by_name };
     let mut hits = Vec::new();
     for person in ranked {
         for reminder in &person.reminders {
             if !reminder.enabled {
+                continue;
+            }
+            let titled = title_matches(reminder, &q);
+            if title_only && !titled {
+                continue;
+            }
+            if !title_only && titled {
+                hits.push(hit(&person, reminder));
                 continue;
             }
             if want_birthday && !want_anniversary && reminder.label != "birthday" {
@@ -688,15 +744,22 @@ pub fn query_reminders(people: &[Person], query: &str) -> Vec<ReminderHit> {
             if want_anniversary && !want_birthday && reminder.label != "anniversary" {
                 continue;
             }
-            hits.push(ReminderHit {
-                person_id: person.id.clone(),
-                person_name: person.display_name.clone(),
-                nickname: person.nickname.clone(),
-                reminder: reminder.clone(),
-            });
+            if !want_birthday && !want_anniversary && query_names_a_title(people, &q) && !titled {
+                continue;
+            }
+            hits.push(hit(&person, reminder));
         }
     }
     hits
+}
+
+fn hit(person: &Person, reminder: &PersonReminder) -> ReminderHit {
+    ReminderHit {
+        person_id: person.id.clone(),
+        person_name: person.display_name.clone(),
+        nickname: person.nickname.clone(),
+        reminder: reminder.clone(),
+    }
 }
 
 pub fn add_person_reminder(app: &AppHandle, name: &str, reminder: PersonReminder) -> Result<Value, String> {
@@ -835,11 +898,15 @@ pub fn normalize_reminder(reminder: &PersonReminder, index: usize) -> Result<Per
         "anniversary" => "anniversary",
         _ => "custom",
     };
+    if label == "custom" && reminder.title.trim().is_empty() {
+        return Err("A custom date needs a name.".into());
+    }
     let recurrence = if recurrence::normalize_kind(&reminder.recurrence) == "once" { "once" } else { "yearly" };
     let clock = if reminder.time.trim().is_empty() { "09:00" } else { reminder.time.trim() };
     let (hour, minute) = recurrence::parse_clock(clock).ok_or_else(|| "Time should look like 09:00.".to_string())?;
     let date = if recurrence == "once" {
-        recurrence::format_month_day(year, month, day)
+        let year = year.unwrap_or_else(|| upcoming_year(month, day));
+        recurrence::format_month_day(Some(year), month, day)
     } else {
         recurrence::format_month_day(None, month, day)
     };
@@ -847,7 +914,7 @@ pub fn normalize_reminder(reminder: &PersonReminder, index: usize) -> Result<Per
     Ok(PersonReminder {
         id: if id.is_empty() { format!("r{}{index}", chrono::Local::now().timestamp_millis()) } else { id.to_string() },
         label: label.into(),
-        title: clamp(&reminder.title, 80),
+        title: if label == "custom" { clamp(&reminder.title, 80) } else { String::new() },
         date,
         recurrence: recurrence.into(),
         lead_days: reminder.lead_days.min(30),
@@ -902,6 +969,148 @@ fn clamp(value: &str, max: usize) -> String {
 
 fn normalize(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+fn load_store(bytes: &[u8]) -> (Store, bool) {
+    if bytes.is_empty() {
+        return (Store::default(), false);
+    }
+    let raw: Value = match serde_json::from_slice(bytes) {
+        Ok(value) => value,
+        Err(_) => return (Store::default(), false),
+    };
+    let mut store = serde_json::from_slice::<Store>(bytes).unwrap_or_else(|_| store_from_loose(&raw));
+    let dirty = migrate_legacy_birthdays(&mut store, &raw) | fill_reminder_ids(&mut store);
+    (store, dirty)
+}
+
+fn store_from_loose(raw: &Value) -> Store {
+    let Some(people) = raw.get("people").and_then(|value| value.as_array()) else {
+        return Store::default();
+    };
+    let mut store = Store::default();
+    for raw_person in people {
+        let Some(mut clone) = raw_person.as_object().cloned() else { continue };
+        if let Some(reminders) = clone.get_mut("reminders").and_then(|value| value.as_array_mut()) {
+            reminders.retain(|reminder| reminder.get("date").and_then(|date| date.as_str()).is_some_and(|date| !date.trim().is_empty()));
+            for (index, reminder) in reminders.iter_mut().enumerate() {
+                let Some(object) = reminder.as_object_mut() else { continue };
+                let missing = object.get("id").and_then(|id| id.as_str()).is_none_or(|id| id.trim().is_empty());
+                if missing {
+                    object.insert("id".into(), json!(format!("m{index}")));
+                }
+            }
+        } else {
+            clone.insert("reminders".into(), json!([]));
+        }
+        clone.remove("birthday");
+        let Ok(person) = serde_json::from_value::<Person>(Value::Object(clone)) else { continue };
+        if person.display_name.trim().is_empty() {
+            continue;
+        }
+        store.people.push(person);
+    }
+    store
+}
+
+fn migrate_legacy_birthdays(store: &mut Store, raw: &Value) -> bool {
+    let Some(people) = raw.get("people").and_then(|value| value.as_array()) else {
+        return false;
+    };
+    let mut dirty = false;
+    for raw_person in people {
+        let Some(date) = raw_person.get("birthday").and_then(|value| value.as_str()).map(str::trim).filter(|date| !date.is_empty()) else {
+            continue;
+        };
+        let id = raw_person.get("id").and_then(|value| value.as_str()).unwrap_or("").trim();
+        let name = raw_person.get("displayName").and_then(|value| value.as_str()).unwrap_or("").trim();
+        let Some(person) = store.people.iter_mut().find(|person| {
+            (!id.is_empty() && person.id == id) || (id.is_empty() && !name.is_empty() && person.display_name == name)
+        }) else {
+            continue;
+        };
+        if person.reminders.iter().any(|reminder| reminder.label == "birthday") {
+            continue;
+        }
+        person.reminders.push(PersonReminder {
+            id: format!("bday-{}", person.id),
+            label: "birthday".into(),
+            title: String::new(),
+            date: date.to_string(),
+            recurrence: "yearly".into(),
+            lead_days: 0,
+            time: "09:00".into(),
+            enabled: true,
+        });
+        dirty = true;
+    }
+    dirty
+}
+
+fn fill_reminder_ids(store: &mut Store) -> bool {
+    let mut dirty = false;
+    for person in &mut store.people {
+        for (index, reminder) in person.reminders.iter_mut().enumerate() {
+            if reminder.id.trim().is_empty() {
+                reminder.id = format!("r-{}-{index}", person.id);
+                dirty = true;
+            }
+        }
+    }
+    dirty
+}
+
+fn same_date(left: &str, right: &str) -> bool {
+    let (Some((year_left, month_left, day_left)), Some((year_right, month_right, day_right))) =
+        (recurrence::parse_month_day(left), recurrence::parse_month_day(right))
+    else {
+        return left.trim().eq_ignore_ascii_case(right.trim());
+    };
+    if month_left != month_right || day_left != day_right {
+        return false;
+    }
+    match (year_left, year_right) {
+        (Some(left), Some(right)) => left == right,
+        _ => true,
+    }
+}
+
+fn same_title(left: &str, right: &str) -> bool {
+    normalize(left) == normalize(right)
+}
+
+fn title_matches(reminder: &PersonReminder, query: &str) -> bool {
+    let title = normalize(&reminder.title);
+    let title_words: Vec<&str> = title.split_whitespace().filter(|word| word.chars().count() >= 3).collect();
+    if title_words.is_empty() {
+        return false;
+    }
+    let words: Vec<&str> = query.split_whitespace().collect();
+    words.windows(title_words.len()).any(|window| window == title_words.as_slice())
+}
+
+fn people_with_title(people: &[Person], query: &str) -> Vec<Person> {
+    people.iter().filter(|person| person.reminders.iter().any(|reminder| reminder.enabled && title_matches(reminder, query))).cloned().collect()
+}
+
+fn query_names_a_title(people: &[Person], query: &str) -> bool {
+    people.iter().any(|person| person.reminders.iter().any(|reminder| title_matches(reminder, query)))
+}
+
+fn strip_reminder_titles(people: &[Person], query: &str) -> String {
+    let mut words: Vec<&str> = query.split_whitespace().collect();
+    for person in people {
+        for reminder in &person.reminders {
+            let title = normalize(&reminder.title);
+            if title.chars().count() < 3 {
+                continue;
+            }
+            for part in title.split_whitespace() {
+                words.retain(|word| *word != part);
+            }
+        }
+    }
+    words.join(" ")
 }
 
 fn name_part(query: &str) -> String {
@@ -1098,5 +1307,141 @@ mod tests {
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"date\": \"03-03\""));
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn custom_dates_save_beside_a_birthday_and_round_trip() {
+        let path = std::env::temp_dir().join(format!("grok-people-custom-{}.json", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let people = People::load(path.clone());
+        let saved = people
+            .save(PersonDraft {
+                id: "ana".into(),
+                android_contact_id: None,
+                display_name: "Ana".into(),
+                nickname: String::new(),
+                aliases: vec![],
+                preferred_channel: String::new(),
+                handles: Handles::default(),
+                favorite: false,
+                note: String::new(),
+                reach_out_days: 0,
+                last_contacted_ms: None,
+                reminders: vec![
+                    PersonReminder {
+                        id: "b".into(),
+                        label: "birthday".into(),
+                        title: String::new(),
+                        date: "03-03".into(),
+                        recurrence: "yearly".into(),
+                        lead_days: 0,
+                        time: "09:00".into(),
+                        enabled: true,
+                    },
+                    PersonReminder {
+                        id: String::new(),
+                        label: "custom".into(),
+                        title: "Visa".into(),
+                        date: "2026-06-01".into(),
+                        recurrence: "once".into(),
+                        lead_days: 1,
+                        time: "9:30".into(),
+                        enabled: true,
+                    },
+                    PersonReminder {
+                        id: "ann".into(),
+                        label: "anniversary".into(),
+                        title: String::new(),
+                        date: "June 12".into(),
+                        recurrence: "every year".into(),
+                        lead_days: 0,
+                        time: "09:00".into(),
+                        enabled: true,
+                    },
+                ],
+            })
+            .unwrap();
+        assert_eq!(saved.reminders.len(), 3);
+        let visa = saved.reminders.iter().find(|reminder| reminder.title == "Visa").unwrap();
+        assert_eq!(visa.date, "2026-06-01");
+        assert_eq!(visa.recurrence, "once");
+        assert_eq!(visa.time, "09:30");
+        let anniversary = saved.reminders.iter().find(|reminder| reminder.label == "anniversary").unwrap();
+        assert_eq!(anniversary.date, "06-12");
+        assert!(people.save(PersonDraft {
+            id: "ana".into(),
+            android_contact_id: None,
+            display_name: "Ana".into(),
+            nickname: String::new(),
+            aliases: vec![],
+            preferred_channel: String::new(),
+            handles: Handles::default(),
+            favorite: false,
+            note: String::new(),
+            reach_out_days: 0,
+            last_contacted_ms: None,
+            reminders: vec![PersonReminder {
+                id: String::new(),
+                label: "custom".into(),
+                title: "  ".into(),
+                date: "01-02".into(),
+                recurrence: "yearly".into(),
+                lead_days: 0,
+                time: "09:00".into(),
+                enabled: true,
+            }],
+        }).is_err());
+        let again = People::load(path.clone());
+        assert_eq!(again.list()[0].reminders.len(), 3);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn legacy_birthday_and_unnamed_custom_date_survive_load() {
+        let path = std::env::temp_dir().join(format!("grok-people-legacy-{}.json", std::process::id()));
+        let raw = r#"{
+            "people": [{
+                "id": "p1",
+                "displayName": "Ana",
+                "birthday": "04-04",
+                "reminders": [{ "label": "custom", "title": "Visa", "date": "06-01", "recurrence": "yearly" }]
+            }]
+        }"#;
+        fs::write(&path, raw).unwrap();
+        let people = People::load(path.clone());
+        let person = &people.list()[0];
+        assert!(person.reminders.iter().any(|reminder| reminder.label == "birthday" && reminder.date == "04-04"));
+        let visa = person.reminders.iter().find(|reminder| reminder.title == "Visa").unwrap();
+        assert!(!visa.id.is_empty());
+        assert_eq!(visa.label, "custom");
+        let stored = fs::read_to_string(&path).unwrap();
+        assert!(stored.contains("Visa"));
+        assert!(stored.contains("04-04"));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn custom_title_is_found_without_hiding_the_birthday() {
+        let mut sam = person("Sam Rivera", "Mom", &[], "", false);
+        birthday(&mut sam, "03-03");
+        sam.reminders.push(PersonReminder {
+            id: "visa".into(),
+            label: "custom".into(),
+            title: "Visa".into(),
+            date: "06-01".into(),
+            recurrence: "yearly".into(),
+            lead_days: 0,
+            time: "09:00".into(),
+            enabled: true,
+        });
+        let visa = query_reminders(std::slice::from_ref(&sam), "when's Sam's visa");
+        assert_eq!(visa.len(), 1);
+        assert_eq!(visa[0].reminder.title, "Visa");
+        let birthday = query_reminders(std::slice::from_ref(&sam), "when's Sam's birthday");
+        assert_eq!(birthday.len(), 1);
+        assert_eq!(birthday[0].reminder.label, "birthday");
+        let named = query_reminders(std::slice::from_ref(&sam), "visa");
+        assert_eq!(named.len(), 1);
+        assert_eq!(named[0].reminder.date, "06-01");
     }
 }

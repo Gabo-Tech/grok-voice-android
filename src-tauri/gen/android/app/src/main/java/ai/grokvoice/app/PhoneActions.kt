@@ -153,38 +153,37 @@ object PhoneActions {
 
   fun listEvents(context: Context, startMs: Long, endMs: Long): String {
     val cr = context.contentResolver
-    val uri = CalendarContract.Events.CONTENT_URI
+    val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
+    android.content.ContentUris.appendId(builder, startMs)
+    android.content.ContentUris.appendId(builder, endMs)
+    val uri = builder.build()
     val proj = arrayOf(
-      CalendarContract.Events._ID,
-      CalendarContract.Events.TITLE,
-      CalendarContract.Events.DTSTART,
-      CalendarContract.Events.DTEND,
-      CalendarContract.Events.EVENT_LOCATION,
-      CalendarContract.Events.ALL_DAY
+      CalendarContract.Instances.EVENT_ID,
+      CalendarContract.Instances.TITLE,
+      CalendarContract.Instances.BEGIN,
+      CalendarContract.Instances.END,
+      CalendarContract.Instances.EVENT_LOCATION,
+      CalendarContract.Instances.ALL_DAY
     )
-    val sel = "(${CalendarContract.Events.DTSTART} < ? AND " +
-      "(${CalendarContract.Events.DTEND} > ? OR (${CalendarContract.Events.DTEND} = 0 AND ${CalendarContract.Events.DTSTART} >= ?)))"
+    val rules = eventRules(context)
     val events = JSONArray()
     try {
-      cr.query(
-        uri, proj, sel,
-        arrayOf(endMs.toString(), startMs.toString(), startMs.toString()),
-        "${CalendarContract.Events.DTSTART} ASC"
-      )?.use { c ->
+      cr.query(uri, proj, null, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { c ->
         var n = 0
-        while (c.moveToNext() && n < 40) {
+        while (c.moveToNext() && n < 80) {
           n++
+          val id = c.getLong(0)
           val end = c.getLong(3).let { if (it == 0L) c.getLong(2) + 3_600_000L else it }
-          events.put(
-            JSONObject()
-              .put("id", c.getLong(0).toString())
-              .put("title", c.getString(1) ?: "(untitled)")
-              .put("startMs", c.getLong(2))
-              .put("endMs", end)
-              .put("location", c.getString(4) ?: "")
-              .put("allDay", c.getInt(5) == 1)
-              .put("source", "phone")
-          )
+          val row = JSONObject()
+            .put("id", id.toString())
+            .put("title", c.getString(1) ?: "(untitled)")
+            .put("startMs", c.getLong(2))
+            .put("endMs", end)
+            .put("location", c.getString(4) ?: "")
+            .put("allDay", c.getInt(5) == 1)
+            .put("source", "phone")
+          rules[id]?.let { row.put("rrule", it) }
+          events.put(row)
         }
       }
     } catch (e: SecurityException) {
@@ -193,15 +192,43 @@ object PhoneActions {
     return JSONObject().put("ok", true).put("events", events).toString()
   }
 
-  fun createEvent(context: Context, title: String, startMs: Long, endMs: Long, location: String): String {
+  private fun eventRules(context: Context): Map<Long, String> {
+    val out = HashMap<Long, String>()
+    try {
+      context.contentResolver.query(
+        CalendarContract.Events.CONTENT_URI,
+        arrayOf(CalendarContract.Events._ID, CalendarContract.Events.RRULE),
+        "${CalendarContract.Events.RRULE} IS NOT NULL AND ${CalendarContract.Events.RRULE} != ''",
+        null,
+        null
+      )?.use { c ->
+        var n = 0
+        while (c.moveToNext() && n < 300) {
+          val rule = c.getString(1) ?: continue
+          if (rule.isBlank()) continue
+          n++
+          out[c.getLong(0)] = rule
+        }
+      }
+    } catch (_: SecurityException) {
+    }
+    return out
+  }
+
+  fun createEvent(context: Context, title: String, startMs: Long, endMs: Long, location: String, rrule: String): String {
     val calId = writableCalendar(context)
       ?: return """{"ok":false,"error":"No writable calendar on this phone. Add a Google account or allow calendar write."}"""
     val values = android.content.ContentValues().apply {
       put(CalendarContract.Events.CALENDAR_ID, calId)
       put(CalendarContract.Events.TITLE, title)
       put(CalendarContract.Events.DTSTART, startMs)
-      put(CalendarContract.Events.DTEND, endMs)
       put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+      if (rrule.isNotBlank()) {
+        put(CalendarContract.Events.RRULE, rrule)
+        put(CalendarContract.Events.DURATION, duration(startMs, endMs))
+      } else {
+        put(CalendarContract.Events.DTEND, endMs)
+      }
       if (location.isNotBlank()) put(CalendarContract.Events.EVENT_LOCATION, location)
     }
     return try {
@@ -216,15 +243,22 @@ object PhoneActions {
     }
   }
 
-  fun updateEvent(context: Context, id: String, title: String, startMs: Long, endMs: Long, location: String): String {
+  fun updateEvent(context: Context, id: String, title: String, startMs: Long, endMs: Long, location: String, rrule: String): String {
     val eventId = id.toLongOrNull()
       ?: return """{"ok":false,"error":"Bad calendar event id."}"""
     val values = android.content.ContentValues().apply {
       if (title.isNotBlank()) put(CalendarContract.Events.TITLE, title)
       if (startMs > 0) put(CalendarContract.Events.DTSTART, startMs)
-      if (endMs > 0) put(CalendarContract.Events.DTEND, endMs)
       put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
       put(CalendarContract.Events.EVENT_LOCATION, location)
+      if (rrule.isNotBlank()) {
+        put(CalendarContract.Events.RRULE, rrule)
+        put(CalendarContract.Events.DURATION, duration(startMs, endMs))
+        putNull(CalendarContract.Events.DTEND)
+      } else if (endMs > 0) {
+        put(CalendarContract.Events.DTEND, endMs)
+        put(CalendarContract.Events.RRULE, "")
+      }
     }
     return try {
       val uri = android.content.ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
@@ -251,6 +285,11 @@ object PhoneActions {
     } catch (e: Exception) {
       JSONObject().put("ok", false).put("error", e.message ?: "calendar delete failed").toString()
     }
+  }
+
+  private fun duration(startMs: Long, endMs: Long): String {
+    val seconds = ((endMs - startMs).coerceAtLeast(60_000L) / 1000L)
+    return "PT${seconds}S"
   }
 
   private fun writableCalendar(context: Context): Long? {
