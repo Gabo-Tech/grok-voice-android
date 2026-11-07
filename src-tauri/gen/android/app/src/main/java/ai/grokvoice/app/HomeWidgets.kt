@@ -13,6 +13,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.text.DateFormat
+import java.util.Calendar
 import java.util.Date
 
 /**
@@ -143,10 +144,36 @@ object HomeWidgets {
   private fun reminderLines(context: Context): List<Line> {
     val now = System.currentTimeMillis()
     return items(context)
-      .filter { it.kind == "reminder" && it.atMs >= now - 60_000L }
+      .filter { includeReminder(it, now) }
       .sortedBy { it.atMs }
       .map { Line(it.atMs, it.kind, it.title.ifBlank { "Reminder" }, clock(it.atMs)) }
   }
+
+  private fun includeReminder(item: Item, now: Long): Boolean {
+    if (item.kind != "reminder") return false
+    if (item.personId.isNotEmpty() && item.personReminderId != "reach") {
+      return personDateOnTimeList(item, now)
+    }
+    return item.atMs >= now - 60_000L
+  }
+
+  /** Person dates stay off the widget until the notify day, then through the event day. */
+  private fun personDateOnTimeList(item: Item, nowMs: Long): Boolean {
+    if (item.personId.isEmpty() || item.personReminderId == "reach") return true
+    val today = startOfDay(nowMs)
+    val notify = startOfDay(item.atMs)
+    val event = (notify.clone() as Calendar).apply { add(Calendar.DATE, item.leadDays.coerceIn(0, 30)) }
+    return !today.before(notify) && !today.after(event)
+  }
+
+  private fun startOfDay(ms: Long): Calendar =
+    Calendar.getInstance().apply {
+      timeInMillis = ms
+      set(Calendar.HOUR_OF_DAY, 0)
+      set(Calendar.MINUTE, 0)
+      set(Calendar.SECOND, 0)
+      set(Calendar.MILLISECOND, 0)
+    }
 
   private fun scheduleLines(context: Context): List<Line> {
     val now = System.currentTimeMillis()
@@ -212,7 +239,14 @@ object HomeWidgets {
     return if (hours > 0) "${hours}h ${m}m" else "${mins.coerceAtLeast(1)}m"
   }
 
-  data class Item(val kind: String, val title: String, val atMs: Long)
+  data class Item(
+    val kind: String,
+    val title: String,
+    val atMs: Long,
+    val personId: String = "",
+    val personReminderId: String = "",
+    val leadDays: Int = 0,
+  )
   data class Event(val title: String, val startMs: Long, val endMs: Long, val allDay: Boolean)
   data class Line(val whenMs: Long, val kind: String, val title: String, val detail: String)
 }
@@ -257,7 +291,16 @@ object AppData {
     val out = ArrayList<HomeWidgets.Item>()
     for (i in 0 until arr.length()) {
       val o = arr.optJSONObject(i) ?: continue
-      out.add(HomeWidgets.Item(o.optString("kind"), o.optString("title"), o.optLong("atMs")))
+      out.add(
+        HomeWidgets.Item(
+          o.optString("kind"),
+          o.optString("title"),
+          o.optLong("atMs"),
+          o.optString("personId"),
+          o.optString("personReminderId"),
+          o.optInt("leadDays"),
+        ),
+      )
     }
     return out
   }

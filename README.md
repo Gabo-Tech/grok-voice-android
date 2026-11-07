@@ -53,7 +53,7 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 | “Message Ana” | If Ana’s preferred channel is WhatsApp, Signal, text, or email, that app opens after you confirm. |
 | “What’s Ana’s preferred channel?” | Spoken from People. WhatsApp, the dialer, and the other apps stay closed. |
 | “When’s Sam’s birthday?” | Reads the date saved on that person. |
-| “Remind me every year for Mom’s birthday on March 3” | A yearly notification on this phone, also listed under Time. |
+| “Remind me every year for Mom’s birthday on March 3” | A yearly notification on this phone. It stays on the person all year and shows under Time once the heads-up day arrives. |
 | “Remind me every weekday at 9 to take meds” | A repeating reminder. One-off reminders still work. |
 | “Snooze that 10 minutes” | Delays the reminder that just rang, or asks which one. |
 
