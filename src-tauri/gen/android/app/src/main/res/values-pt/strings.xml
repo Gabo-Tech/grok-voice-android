@@ -16,4 +16,9 @@
     <string name="listener_alert_channel_name">Hey Grok</string>
     <string name="listener_alert_title">Hey Grok</string>
     <string name="listener_alert_text">A ouvir</string>
+    <string name="update_channel_name">Atualizações</string>
+    <string name="update_channel_desc">Quando há uma versão mais nova do Grok Voice</string>
+    <string name="update_title">Atualização do Grok Voice</string>
+    <string name="update_text">A versão %1$s está pronta para baixar.</string>
+    <string name="update_action">Baixar</string>
 </resources>

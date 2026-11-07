@@ -302,6 +302,20 @@ pub fn save_settings(store: State<'_, SettingsStore>, engine: State<'_, Engine>,
     Ok(saved)
 }
 
+#[tauri::command]
+pub async fn update_status(app: AppHandle) -> crate::updates::UpdateStatus {
+    blocking(app, |app| Ok(crate::updates::sync_notice(&app)))
+        .await
+        .unwrap_or_else(|_| crate::updates::UpdateStatus::hidden(env!("CARGO_PKG_VERSION")))
+}
+
+#[tauri::command]
+pub async fn dismiss_update(app: AppHandle) -> crate::updates::UpdateStatus {
+    blocking(app, |app| Ok(crate::updates::dismiss(&app)))
+        .await
+        .unwrap_or_else(|_| crate::updates::UpdateStatus::hidden(env!("CARGO_PKG_VERSION")))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DebugInfo {

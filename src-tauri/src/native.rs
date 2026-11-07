@@ -444,6 +444,26 @@ mod imp {
                 .map_err(|e| msg(e.to_string()))?;
             Ok(())
         }
+
+        pub fn notify_update(&self, locale: &str, version: &str, url: &str) -> Result<()> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                locale: &'a str,
+                version: &'a str,
+                url: &'a str,
+            }
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>("notifyUpdate", Args { locale, version, url })
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(())
+        }
+
+        pub fn cancel_update_notice(&self) -> Result<()> {
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>("cancelUpdateNotice", ())
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(())
+        }
     }
 }
 
@@ -643,6 +663,14 @@ mod imp {
         }
 
         pub fn speak_fallback(&self, _text: &str) -> Result<()> {
+            Ok(())
+        }
+
+        pub fn notify_update(&self, _locale: &str, _version: &str, _url: &str) -> Result<()> {
+            Ok(())
+        }
+
+        pub fn cancel_update_notice(&self) -> Result<()> {
             Ok(())
         }
     }

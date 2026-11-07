@@ -61,6 +61,7 @@ export function MorePage({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState("");
   const [usage, setUsage] = useState<UsageStatus | null>(null);
+  const [installed, setInstalled] = useState("");
 
   useEffect(() => {
     setSection(initialSection);
@@ -75,6 +76,7 @@ export function MorePage({
       })
       .catch(() => {});
     void api.usageStatus().then(setUsage).catch(() => {});
+    void api.updateStatus().then((status) => setInstalled(status.installed)).catch(() => {});
   }, []);
 
   const setQuietGap = (seconds: number) => {
@@ -469,6 +471,11 @@ export function MorePage({
       <SettingsGroup title={t("Support")}>
         <MenuRow icon={<Bug className="size-4" />} title={t("Debug")} detail={t("Logs, echo guard, and sign out")} onClick={() => setSection("debug")} />
       </SettingsGroup>
+      {installed ? (
+        <p className="px-1 text-sm text-muted-foreground">
+          {t("Installed version")} {installed}
+        </p>
+      ) : null}
     </PageChrome>
   );
 }
