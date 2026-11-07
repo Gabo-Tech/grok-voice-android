@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { formatClock, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
+import { RepeatFields, endOfDay, untilInput, type RepeatChoice } from "@/components/RepeatFields";
 import { api, type ScheduledItem } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
@@ -23,7 +24,7 @@ const WEEKDAYS = [
   { id: 7, label: "Sun" },
 ] as const;
 
-type Repeat = "none" | "daily" | "weekly" | "yearly" | "once";
+type Repeat = RepeatChoice | "once";
 
 export function RemindersPage({ agenda }: { agenda: AgendaState }) {
   const t = useT();
@@ -42,6 +43,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
   const [date, setDate] = useState("");
   const [leadDays, setLeadDays] = useState(0);
   const [personId, setPersonId] = useState("");
+  const [until, setUntil] = useState("");
 
   const items = agenda.agenda.reminders;
 
@@ -58,6 +60,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
     setDate("");
     setLeadDays(0);
     setPersonId("");
+    setUntil("");
     setOpen(true);
   };
 
@@ -69,12 +72,17 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
     setMinutes(Math.max(1, Math.round((item.atMs - Date.now()) / 60_000)));
     setNote(item.note || "");
     const nextRepeat = (item.recurrence || "none") as Repeat;
-    setRepeat(nextRepeat === "none" || nextRepeat === "daily" || nextRepeat === "weekly" || nextRepeat === "yearly" || nextRepeat === "once" ? nextRepeat : "none");
+    setRepeat(
+      nextRepeat === "none" || nextRepeat === "daily" || nextRepeat === "weekly" || nextRepeat === "monthly" || nextRepeat === "yearly" || nextRepeat === "once"
+        ? nextRepeat
+        : "none",
+    );
     setWeekdays(item.weekdays ?? []);
     setClock(item.time || clockFrom(item.atMs));
     setDate(item.date || "");
     setLeadDays(item.leadDays ?? 0);
     setPersonId(item.personId || "");
+    setUntil(untilInput(item.untilMs));
     setOpen(true);
   };
 
@@ -85,7 +93,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
 
   const whenMs = () => (kind === "timer" ? Date.now() + Math.max(1, minutes) * 60_000 : fromLocalInput(at));
   const linked = Boolean(personId);
-  const repeating = kind === "reminder" && (repeat === "daily" || repeat === "weekly" || repeat === "yearly" || linked);
+  const repeating = kind === "reminder" && (repeat === "daily" || repeat === "weekly" || repeat === "monthly" || repeat === "yearly" || linked);
 
   const save = () => {
     const next = title.trim();
@@ -100,8 +108,9 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
         recurrence: kind === "reminder" ? (repeat === "none" ? "none" : repeat) : "",
         weekdays: repeat === "weekly" ? weekdays : [],
         time: repeating ? clock : "",
-        date: linked || repeat === "yearly" || repeat === "once" ? date : "",
+        date: linked || repeat === "yearly" || repeat === "once" || repeat === "monthly" ? date : "",
         leadDays: linked || repeat === "yearly" ? leadDays : 0,
+        untilMs: repeating && until ? endOfDay(until) : 0,
       });
       close();
       return snap;
@@ -277,53 +286,37 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
               placeholder="Call the clinic"
             />
           </Field>
-          {kind === "reminder" && (
+          {kind === "reminder" && !linked && (
+            <RepeatFields
+              repeat={repeat === "once" ? "none" : repeat}
+              weekdays={weekdays}
+              until={until}
+              onRepeat={setRepeat}
+              onWeekdays={setWeekdays}
+              onUntil={setUntil}
+            />
+          )}
+          {kind === "reminder" && linked && (
             <div>
-              <p className="mb-2 text-sm text-muted-foreground">Repeats</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(linked ? (["yearly", "once"] as Repeat[]) : (["none", "daily", "weekly"] as Repeat[])).map((item) => (
+              <p className="mb-2 text-sm text-muted-foreground">{t("Repeats")}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(["yearly", "once"] as const).map((item) => (
                   <button
                     key={item}
                     type="button"
-                    onClick={() => {
-                      setRepeat(item);
-                      if (item === "weekly" && weekdays.length === 0) {
-                        const day = new Date().getDay();
-                        setWeekdays([day === 0 ? 7 : day]);
-                      }
-                    }}
+                    aria-pressed={repeat === item}
+                    onClick={() => setRepeat(item)}
                     className={
                       repeat === item
-                        ? "h-12 border border-foreground text-sm text-foreground"
-                        : "h-12 border border-border text-sm text-muted-foreground"
+                        ? "h-14 border-2 border-foreground text-sm font-medium text-foreground"
+                        : "h-14 border border-border text-sm text-muted-foreground"
                     }
                   >
-                    {item === "none" ? "Once" : item}
+                    {item === "once" ? t("Just once") : t("Every year")}
                   </button>
                 ))}
               </div>
-              {repeat === "weekly" && !linked && (
-                <div className="mt-2 grid grid-cols-7 gap-1">
-                  {WEEKDAYS.map((day) => {
-                    const on = weekdays.includes(day.id);
-                    return (
-                      <button
-                        key={day.id}
-                        type="button"
-                        onClick={() => setWeekdays(on ? weekdays.filter((value) => value !== day.id) : [...weekdays, day.id].sort())}
-                        className={
-                          on
-                            ? "h-12 border border-foreground text-xs text-foreground"
-                            : "h-12 border border-border text-xs text-muted-foreground"
-                        }
-                      >
-                        {day.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {linked && <p className="mt-2 text-xs leading-5 text-muted-foreground">This date belongs to someone in People.</p>}
+              <p className="mt-2 text-sm leading-5 text-muted-foreground">This date belongs to someone in People.</p>
             </div>
           )}
           {kind === "timer" ? (
@@ -354,9 +347,9 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
             </Field>
           ) : repeating ? (
             <div className="space-y-4">
-              {(linked || repeat === "yearly" || repeat === "once") && (
-                <Field label="Date" hint="Month and day, like 03-03. Add a year only for a one-time date.">
-                  <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="03-03" />
+              {(linked || repeat === "yearly" || repeat === "once" || repeat === "monthly") && (
+                <Field label={t("Date")}>
+                  <Input type="date" aria-label={t("Date")} value={asDateInput(date)} onChange={(e) => setDate(e.target.value)} />
                 </Field>
               )}
               <Field label="Time" hint="Next notification uses this clock.">
@@ -445,6 +438,13 @@ function groupItems(items: ScheduledItem[], query: string) {
   return { sections, overdue: overdue.length, today: today.length, later: later.length, total: filtered.length };
 }
 
+function asDateInput(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const md = /^(\d{2})-(\d{2})$/.exec(value);
+  if (!md) return "";
+  return `${new Date().getFullYear()}-${md[1]}-${md[2]}`;
+}
+
 function clockFrom(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -455,6 +455,7 @@ function patternLabel(item: ScheduledItem): string {
   const days = (item.weekdays ?? []).map((day) => WEEKDAYS.find((item) => item.id === day)?.label).filter(Boolean).join(" ");
   if (item.recurrence === "daily") return "Daily";
   if (item.recurrence === "weekly") return days ? `Weekly ${days}` : "Weekly";
+  if (item.recurrence === "monthly") return "Monthly";
   if (item.recurrence === "yearly") return item.date ? `Yearly ${item.date}` : "Yearly";
   if (item.recurrence === "once" && item.date) return `Once ${item.date}`;
   return "";

@@ -112,19 +112,59 @@ object DeviceExtras {
     if (!granted(context, Manifest.permission.READ_CONTACTS)) {
       return fail("Contacts permission is not granted.")
     }
+    val birthday = readContactDates(context, contactId).firstOrNull { it.label == "birthday" }
+      ?: return fail("That contact has no birthday on this phone.")
+    return JSONObject().put("ok", true).put("date", birthday.date).put("detail", "Birthday is ${birthday.date}.").toString()
+  }
+
+  /** Birthday, anniversary, and custom events stored on the phone contact. */
+  fun contactDates(context: Context, contactId: String): String {
+    if (!granted(context, Manifest.permission.READ_CONTACTS)) {
+      return fail("Contacts permission is not granted.")
+    }
+    val dates = readContactDates(context, contactId)
+    if (dates.isEmpty()) return fail("No dates on that contact.")
+    val arr = org.json.JSONArray()
+    for (date in dates) {
+      arr.put(JSONObject().put("label", date.label).put("title", date.title).put("date", date.date))
+    }
+    return JSONObject().put("ok", true).put("dates", arr).toString()
+  }
+
+  private data class ContactDate(val label: String, val title: String, val date: String)
+
+  private fun readContactDates(context: Context, contactId: String): List<ContactDate> {
+    if (!granted(context, Manifest.permission.READ_CONTACTS)) return emptyList()
     val cursor = context.contentResolver.query(
       ContactsContract.Data.CONTENT_URI,
-      arrayOf(ContactsContract.CommonDataKinds.Event.START_DATE),
-      "${ContactsContract.Data.CONTACT_ID} = ? AND ${ContactsContract.Data.MIMETYPE} = ? AND ${ContactsContract.CommonDataKinds.Event.TYPE} = ?",
-      arrayOf(contactId, ContactsContract.CommonDataKinds.Event.CONTENT_ITEM_TYPE, ContactsContract.CommonDataKinds.Event.TYPE_BIRTHDAY.toString()),
+      arrayOf(
+        ContactsContract.CommonDataKinds.Event.TYPE,
+        ContactsContract.CommonDataKinds.Event.START_DATE,
+        ContactsContract.CommonDataKinds.Event.LABEL
+      ),
+      "${ContactsContract.Data.CONTACT_ID} = ? AND ${ContactsContract.Data.MIMETYPE} = ?",
+      arrayOf(contactId, ContactsContract.CommonDataKinds.Event.CONTENT_ITEM_TYPE),
       null
-    ) ?: return fail("That contact has no birthday on this phone.")
+    ) ?: return emptyList()
+    val out = ArrayList<ContactDate>()
     cursor.use {
-      if (!it.moveToFirst()) return fail("That contact has no birthday on this phone.")
-      val raw = it.getString(0) ?: return fail("That contact has no birthday on this phone.")
-      val date = normalizeBirthday(raw) ?: return fail("That birthday could not be read.")
-      return JSONObject().put("ok", true).put("date", date).put("detail", "Birthday is $date.").toString()
+      val typeIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Event.TYPE)
+      val dateIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Event.START_DATE)
+      val labelIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Event.LABEL)
+      while (it.moveToNext()) {
+        val raw = if (dateIdx >= 0) it.getString(dateIdx) ?: "" else ""
+        val date = normalizeBirthday(raw) ?: continue
+        val type = if (typeIdx >= 0 && !it.isNull(typeIdx)) it.getInt(typeIdx) else ContactsContract.CommonDataKinds.Event.TYPE_CUSTOM
+        val customLabel = if (labelIdx >= 0) it.getString(labelIdx)?.trim().orEmpty() else ""
+        val (label, title) = when (type) {
+          ContactsContract.CommonDataKinds.Event.TYPE_BIRTHDAY -> "birthday" to ""
+          ContactsContract.CommonDataKinds.Event.TYPE_ANNIVERSARY -> "anniversary" to ""
+          else -> "custom" to customLabel.ifBlank { "Custom" }
+        }
+        out.add(ContactDate(label, title, date))
+      }
     }
+    return out
   }
 
   fun lastContact(context: Context, phone: String, name: String): String {
@@ -208,7 +248,20 @@ object DeviceExtras {
 
   private fun normalizeBirthday(raw: String): String? {
     val text = raw.trim()
-    val parts = text.split("-", ".", "/")
+    if (text.length == 8 && text.all { it.isDigit() }) {
+      return normalizeBirthday("${text.substring(0, 4)}-${text.substring(4, 6)}-${text.substring(6, 8)}")
+    }
+    if (text.startsWith("--")) {
+      return normalizeBirthday(text.removePrefix("--"))
+    }
+    val parts = text.split("-", ".", "/").filter { it.isNotBlank() }
+    if (parts.size == 2) {
+      val month = parts[0].toIntOrNull()
+      val day = parts[1].toIntOrNull()
+      if (month != null && day != null && month in 1..12 && day in 1..31) {
+        return "%02d-%02d".format(month, day)
+      }
+    }
     if (parts.size >= 3) {
       val year = parts[0].toIntOrNull()
       val month = parts[parts.size - 2].toIntOrNull()
@@ -217,9 +270,6 @@ object DeviceExtras {
         val md = "%02d-%02d".format(month, day)
         return if (year != null && year > 1800) "%04d-%s".format(year, md) else md
       }
-    }
-    if (text.startsWith("--") && text.length >= 7) {
-      return normalizeBirthday(text.removePrefix("--"))
     }
     return null
   }

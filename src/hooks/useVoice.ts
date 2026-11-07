@@ -96,8 +96,11 @@ export function useVoice() {
     void api.debugSnapshot().then((d) => {
       if (disposed) return;
       setPhase(d.phase);
-      setWakeEnabled(d.wakeEnabled);
+      setWakeEnabled((on) => d.wakeEnabled || on);
       setProvider(d.provider ?? "");
+    });
+    void api.getSettings().then((settings) => {
+      if (!disposed && settings.listenArmed) setWakeEnabled(true);
     });
     void api.debugLogs().then((l) => !disposed && setLogs(l));
 

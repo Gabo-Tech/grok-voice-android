@@ -296,6 +296,7 @@ pub fn get_settings(store: State<'_, SettingsStore>) -> Settings {
 
 #[tauri::command]
 pub fn save_settings(store: State<'_, SettingsStore>, engine: State<'_, Engine>, settings: Settings) -> Result<Settings> {
+    let settings = crate::settings::keep_listen_preference(&store.get(), settings);
     let saved = store.save(settings)?;
     engine.send(Ctl::ReloadSettings);
     Ok(saved)
@@ -315,11 +316,13 @@ pub struct DebugInfo {
 pub async fn debug_snapshot(app: AppHandle) -> Result<DebugInfo> {
     #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
     let mut snapshot = app.state::<Arc<Hub>>().snapshot();
+    snapshot.listen_preference = app.state::<SettingsStore>().get().listen_armed;
     #[cfg(target_os = "android")]
     {
         let bridge = app.state::<NativeBridge>();
         if let Ok(status) = bridge.listener_status() {
             snapshot.foreground_service = status.service_running;
+            snapshot.service_armed = status.armed;
             snapshot.activity_resumed = status.activity_resumed;
             snapshot.screen_interactive = status.screen_interactive;
             if status.mic_open {
@@ -409,6 +412,7 @@ pub fn save_scheduled(
     time: Option<String>,
     date: Option<String>,
     lead_days: Option<u32>,
+    until_ms: Option<i64>,
 ) -> Result<AgendaSnapshot> {
     let schedule = actions::ScheduleMeta {
         recurrence: recurrence.unwrap_or_default(),
@@ -416,6 +420,7 @@ pub fn save_scheduled(
         time: time.unwrap_or_default(),
         date: date.unwrap_or_default(),
         lead_days: lead_days.unwrap_or(0),
+        until_ms,
         ..actions::ScheduleMeta::default()
     };
     let has_schedule = !schedule.recurrence.is_empty() || !schedule.weekdays.is_empty() || !schedule.time.is_empty() || !schedule.date.is_empty();
@@ -453,8 +458,16 @@ pub fn save_event(
     end_ms: i64,
     location: Option<String>,
     id: Option<String>,
+    recurrence: Option<String>,
+    weekdays: Option<Vec<u8>>,
+    until_ms: Option<i64>,
 ) -> Result<AgendaSnapshot> {
     let location = location.unwrap_or_default();
+    let recurrence = crate::recurrence::normalize_kind(recurrence.as_deref().unwrap_or(""));
+    let recurrence = if recurrence == "none" { String::new() } else { recurrence };
+    let weekdays = weekdays.unwrap_or_default();
+    let until_ms = until_ms.unwrap_or(0).max(0);
+    let rrule = crate::recurrence::to_rrule(&recurrence, &weekdays, until_ms);
     let agenda = app.state::<Agenda>();
     if let Some(id) = id.filter(|s| !s.is_empty()) {
         if id.starts_with("local-") || agenda.local_event(&id).is_some() {
@@ -466,17 +479,24 @@ pub fn save_event(
                 location: location.clone(),
                 all_day: false,
                 source: "local".into(),
+                recurrence: String::new(),
+                weekdays: Vec::new(),
+                until_ms: 0,
+                rrule: String::new(),
             });
             event.title = title;
             event.start_ms = start_ms;
             event.end_ms = end_ms.max(start_ms + 60_000);
             event.location = location;
+            event.recurrence = recurrence;
+            event.weekdays = weekdays;
+            event.until_ms = until_ms;
             agenda.upsert_local_event(&app, event).map_err(msg)?;
             return Ok(agenda.snapshot(&app));
         }
         let raw = app
             .state::<NativeBridge>()
-            .update_event(&id, &title, start_ms, end_ms, &location)
+            .update_event(&id, &title, start_ms, end_ms, &location, &rrule)
             .map_err(|e| msg(e.to_string()))?;
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
         if v["ok"] != true {
@@ -488,7 +508,7 @@ pub fn save_event(
     if app.state::<NativeBridge>().check_permissions().ok().is_some_and(|p| p.calendar == "granted") {
         let raw = app
             .state::<NativeBridge>()
-            .create_event(&title, start_ms, end_ms, &location)
+            .create_event(&title, start_ms, end_ms, &location, &rrule)
             .map_err(|e| msg(e.to_string()))?;
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
         if v["ok"] == true {
@@ -504,6 +524,10 @@ pub fn save_event(
         location,
         all_day: false,
         source: "local".into(),
+        recurrence,
+        weekdays,
+        until_ms,
+        rrule: String::new(),
     };
     agenda.upsert_local_event(&app, event).map_err(msg)?;
     Ok(agenda.snapshot(&app))
@@ -785,6 +809,35 @@ pub fn import_contact_birthday(app: AppHandle, id: String) -> Result<crate::peop
     }
     let date = value["date"].as_str().unwrap_or("").trim();
     let saved = app.state::<People>().add_birthday_if_missing(&id, date).map_err(msg)?;
+    actions::sync_person_reminders(&app).map_err(msg)?;
+    Ok(saved)
+}
+
+#[tauri::command]
+pub fn import_contact_dates(app: AppHandle, id: String) -> Result<crate::people::Person> {
+    let people = app.state::<People>().list();
+    let person = people.into_iter().find(|person| person.id == id).ok_or_else(|| msg("No person with that id."))?;
+    let contact = person.android_contact_id.clone().ok_or_else(|| msg("Link a phone contact first."))?;
+    let raw = app.state::<NativeBridge>().contact_dates(&contact).map_err(|e| msg(e.to_string()))?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))?;
+    if value["ok"] == false {
+        return Err(msg(value["error"].as_str().unwrap_or("Could not read dates on that contact.")));
+    }
+    let incoming = value["dates"].as_array().cloned().unwrap_or_default();
+    let mut reminders = Vec::new();
+    for row in incoming {
+        reminders.push(crate::people::PersonReminder {
+            id: String::new(),
+            label: row["label"].as_str().unwrap_or("custom").into(),
+            title: row["title"].as_str().unwrap_or("").into(),
+            date: row["date"].as_str().unwrap_or("").into(),
+            recurrence: "yearly".into(),
+            lead_days: 0,
+            time: "09:00".into(),
+            enabled: true,
+        });
+    }
+    let (saved, _added) = app.state::<People>().merge_imported_dates(&id, reminders).map_err(msg)?;
     actions::sync_person_reminders(&app).map_err(msg)?;
     Ok(saved)
 }

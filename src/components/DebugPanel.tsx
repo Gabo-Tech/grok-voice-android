@@ -165,6 +165,8 @@ export function DebugPanel({
             v={info?.micSource || "closed"}
             tone={info?.micSource === "audiorecord" || info?.micSource === "cpal" ? "ok" : info?.micSource === "starting" ? "warn" : undefined}
           />
+          <Row k="Listen preference" v={info?.listenPreference ? "on" : "off"} tone={info?.listenPreference ? "ok" : undefined} />
+          <Row k="Service armed" v={info?.serviceArmed ? "on" : "off"} tone={info?.serviceArmed ? "ok" : undefined} />
           <Row k="Foreground service" v={info?.foregroundService ? "running" : "stopped"} tone={info?.foregroundService ? "ok" : undefined} />
           <Row k="Screen" v={info?.screenInteractive ? "on" : "off"} />
           <Row k="Activity" v={info?.activityResumed ? "visible" : "background"} />

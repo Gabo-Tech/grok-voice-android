@@ -286,7 +286,7 @@ mod imp {
             self.plugin_json("listCalendarEvents", Args { start_ms, end_ms })
         }
 
-        pub fn create_event(&self, title: &str, start_ms: i64, end_ms: i64, location: &str) -> Result<String> {
+        pub fn create_event(&self, title: &str, start_ms: i64, end_ms: i64, location: &str, rrule: &str) -> Result<String> {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
             struct Args<'a> {
@@ -294,11 +294,12 @@ mod imp {
                 start_ms: i64,
                 end_ms: i64,
                 location: &'a str,
+                rrule: &'a str,
             }
-            self.plugin_json("createCalendarEvent", Args { title, start_ms, end_ms, location })
+            self.plugin_json("createCalendarEvent", Args { title, start_ms, end_ms, location, rrule })
         }
 
-        pub fn update_event(&self, id: &str, title: &str, start_ms: i64, end_ms: i64, location: &str) -> Result<String> {
+        pub fn update_event(&self, id: &str, title: &str, start_ms: i64, end_ms: i64, location: &str, rrule: &str) -> Result<String> {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
             struct Args<'a> {
@@ -307,8 +308,9 @@ mod imp {
                 start_ms: i64,
                 end_ms: i64,
                 location: &'a str,
+                rrule: &'a str,
             }
-            self.plugin_json("updateCalendarEvent", Args { id, title, start_ms, end_ms, location })
+            self.plugin_json("updateCalendarEvent", Args { id, title, start_ms, end_ms, location, rrule })
         }
 
         pub fn delete_event(&self, id: &str) -> Result<String> {
@@ -408,6 +410,14 @@ mod imp {
                 id: &'a str,
             }
             self.plugin_json("contactBirthday", Args { id })
+        }
+
+        pub fn contact_dates(&self, id: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                id: &'a str,
+            }
+            self.plugin_json("contactDates", Args { id })
         }
 
         pub fn last_contact(&self, id: &str, phone: &str, name: &str) -> Result<String> {
@@ -576,11 +586,11 @@ mod imp {
             Ok(r#"{"ok":true,"events":[]}"#.into())
         }
 
-        pub fn create_event(&self, _title: &str, _start_ms: i64, _end_ms: i64, _location: &str) -> Result<String> {
+        pub fn create_event(&self, _title: &str, _start_ms: i64, _end_ms: i64, _location: &str, _rrule: &str) -> Result<String> {
             Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
         }
 
-        pub fn update_event(&self, _id: &str, _title: &str, _start_ms: i64, _end_ms: i64, _location: &str) -> Result<String> {
+        pub fn update_event(&self, _id: &str, _title: &str, _start_ms: i64, _end_ms: i64, _location: &str, _rrule: &str) -> Result<String> {
             Ok(r#"{"ok":false,"error":"The calendar is only on the Android phone."}"#.into())
         }
 
@@ -618,6 +628,10 @@ mod imp {
 
         pub fn contact_birthday(&self, _id: &str) -> Result<String> {
             Ok(r#"{"ok":false,"error":"Contact birthdays are read on the Android phone."}"#.into())
+        }
+
+        pub fn contact_dates(&self, _id: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Contact dates are read on the Android phone."}"#.into())
         }
 
         pub fn last_contact(&self, _id: &str, _phone: &str, _name: &str) -> Result<String> {

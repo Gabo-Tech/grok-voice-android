@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { formatClock, formatDay, formatSpan, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
+import { RepeatFields, endOfDay, untilInput, type RepeatChoice } from "@/components/RepeatFields";
 import { api, type CalEvent } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
@@ -19,6 +20,9 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
   const [start, setStart] = useState(() => toLocalInput(Date.now() + 3_600_000));
   const [end, setEnd] = useState(() => toLocalInput(Date.now() + 7_200_000));
   const [location, setLocation] = useState("");
+  const [repeat, setRepeat] = useState<RepeatChoice>("none");
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [until, setUntil] = useState("");
 
   const events = useMemo(
     () => [...agenda.agenda.events].sort((a, b) => a.startMs - b.startMs),
@@ -66,6 +70,9 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
     setStart(toLocalInput(base.getTime()));
     setEnd(toLocalInput(base.getTime() + 3_600_000));
     setLocation("");
+    setRepeat("none");
+    setWeekdays([]);
+    setUntil("");
     setOpen(true);
   };
 
@@ -75,6 +82,10 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
     setStart(toLocalInput(event.startMs));
     setEnd(toLocalInput(event.endMs || event.startMs + 3_600_000));
     setLocation(event.location || "");
+    const next = (event.recurrence || "none") as RepeatChoice;
+    setRepeat(next === "daily" || next === "weekly" || next === "monthly" || next === "yearly" ? next : "none");
+    setWeekdays(event.weekdays ?? []);
+    setUntil(untilInput(event.untilMs));
     setOpen(true);
   };
 
@@ -95,6 +106,9 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
         endMs,
         location: location.trim(),
         id: editing?.id,
+        recurrence: repeat,
+        weekdays: repeat === "weekly" ? weekdays : [],
+        untilMs: repeat !== "none" && until ? endOfDay(until) : 0,
       });
       close();
       return snap;
@@ -257,6 +271,10 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
           <Field label="Location">
             <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Cafe, or leave blank" />
           </Field>
+          <RepeatFields repeat={repeat} weekdays={weekdays} until={until} onRepeat={setRepeat} onWeekdays={setWeekdays} onUntil={setUntil} />
+          {repeat !== "none" && (
+            <p className="text-sm leading-5 text-muted-foreground">{t("Saving changes the whole series.")}</p>
+          )}
         </div>
       </Sheet>
     </>
@@ -278,6 +296,7 @@ function EventList({ events, onOpen }: { events: CalEvent[]; onOpen: (event: Cal
             <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
               {formatSpan(event.startMs, event.endMs, event.allDay)}
               {event.location ? ` · ${event.location}` : ""}
+              {event.recurrence ? ` · ${event.recurrence}` : ""}
               {event.source === "local" ? " · in app" : ""}
             </p>
           </div>
