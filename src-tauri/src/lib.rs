@@ -18,6 +18,7 @@ mod realtime;
 mod recurrence;
 mod search;
 mod settings;
+mod updates;
 mod usage;
 mod vault;
 mod wakeword;
@@ -82,6 +83,7 @@ pub fn run() {
             app.manage(hub);
             app.manage(Arc::new(Player::new()));
             app.manage(SettingsStore::load(dir.join("settings.json")));
+            app.manage(updates::UpdateStore::load(dir.join("update-check.json")));
             app.manage(Vault::new(dir.join("vault")));
             app.manage(WakewordFiles::new(dir.join("wakeword")));
             app.manage(actions::Agenda::load(dir.join("agenda.json")));
@@ -98,6 +100,10 @@ pub fn run() {
                 actions::reschedule(&handle);
             });
             app.manage(Engine::spawn(app.handle().clone()));
+            let update_app = app.handle().clone();
+            let _ = std::thread::Builder::new()
+                .name("update-check".into())
+                .spawn(move || updates::run(update_app));
             #[cfg(target_os = "android")]
             {
                 let _ = ANDROID_APP.set(app.handle().clone());
@@ -124,6 +130,8 @@ pub fn run() {
             commands::delete_wakeword,
             commands::get_settings,
             commands::save_settings,
+            commands::update_status,
+            commands::dismiss_update,
             commands::debug_snapshot,
             commands::debug_logs,
             commands::agenda_snapshot,

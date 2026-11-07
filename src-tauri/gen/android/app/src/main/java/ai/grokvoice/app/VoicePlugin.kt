@@ -48,6 +48,13 @@ class ServiceArgs {
 }
 
 @InvokeArg
+class UpdateNoticeArgs {
+  var locale: String = ""
+  var version: String = ""
+  var url: String = ""
+}
+
+@InvokeArg
 class AlarmArgs {
   var hour: Int = 0
   var minute: Int = 0
@@ -539,6 +546,23 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
       }
     }
     latch.await(20, TimeUnit.SECONDS)
+    invoke.resolve()
+  }
+
+  @Command
+  fun notifyUpdate(invoke: Invoke) {
+    val args = invoke.parseArgs(UpdateNoticeArgs::class.java)
+    if (!UpdateNotice.allowed(args.url)) {
+      invoke.reject("update link was not a GitHub release")
+      return
+    }
+    UpdateNotice.show(activity.applicationContext, args.locale, args.version, args.url)
+    invoke.resolve()
+  }
+
+  @Command
+  fun cancelUpdateNotice(invoke: Invoke) {
+    UpdateNotice.cancel(activity.applicationContext)
     invoke.resolve()
   }
 

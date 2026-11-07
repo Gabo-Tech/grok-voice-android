@@ -222,6 +222,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "A custom date needs a name.": "Una fecha personalizada necesita un nombre.",
     "Each date needs a day.": "Cada fecha necesita un día.",
     "Back to person": "Volver a la persona",
+    "A newer version is ready.": "Hay una versión más nueva.",
+    "It downloads from GitHub. Nothing installs until you open the file.": "Se descarga desde GitHub. No se instala nada hasta que abras el archivo.",
+    "Download update": "Descargar actualización",
+    "Installed version": "Versión instalada",
   },
   de: {
     Talk: "Sprechen",
@@ -442,6 +446,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "A custom date needs a name.": "Ein eigenes Datum braucht einen Namen.",
     "Each date needs a day.": "Jedes Datum braucht einen Tag.",
     "Back to person": "Zurück zur Person",
+    "A newer version is ready.": "Eine neuere Version ist bereit.",
+    "It downloads from GitHub. Nothing installs until you open the file.": "Der Download kommt von GitHub. Es wird nichts installiert, bis du die Datei öffnest.",
+    "Download update": "Update laden",
+    "Installed version": "Installierte Version",
   },
   pt: {
     Talk: "Falar",
@@ -662,6 +670,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "A custom date needs a name.": "Uma data personalizada precisa de um nome.",
     "Each date needs a day.": "Cada data precisa de um dia.",
     "Back to person": "Voltar à pessoa",
+    "A newer version is ready.": "Há uma versão mais nova.",
+    "It downloads from GitHub. Nothing installs until you open the file.": "O download vem do GitHub. Nada é instalado até você abrir o arquivo.",
+    "Download update": "Baixar atualização",
+    "Installed version": "Versão instalada",
   },
   "ca-ES-valencia": {
     Talk: "Parlar",
@@ -882,6 +894,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "A custom date needs a name.": "Una data personalitzada necessita un nom.",
     "Each date needs a day.": "Cada data necessita un dia.",
     "Back to person": "Torna a la persona",
+    "A newer version is ready.": "Hi ha una versió més nova.",
+    "It downloads from GitHub. Nothing installs until you open the file.": "La descàrrega ve de GitHub. No s'instal·la res fins que obres el fitxer.",
+    "Download update": "Descarrega l'actualització",
+    "Installed version": "Versió instal·lada",
   },
 };
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { Loader2 } from "lucide-react";
 import { AssistantView } from "@/components/AssistantView";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { BottomNav, type AppTab } from "@/components/BottomNav";
 import { CalendarPage } from "@/components/CalendarPage";
 import { MorePage } from "@/components/MorePage";
@@ -85,15 +86,18 @@ export default function App() {
 
   if (!onboarded || !auth.hasKey) {
     return (
-      <main className="safe-area h-full">
-        <Onboarding
-          preview={!inApp}
-          auth={auth}
-          wake={wake}
-          onAuth={setAuth}
-          onWake={setWake}
-          onFinished={() => setOnboarded(true)}
-        />
+      <main className="safe-area flex h-full flex-col">
+        <UpdateBanner />
+        <div className="min-h-0 flex-1">
+          <Onboarding
+            preview={!inApp}
+            auth={auth}
+            wake={wake}
+            onAuth={setAuth}
+            onWake={setWake}
+            onFinished={() => setOnboarded(true)}
+          />
+        </div>
       </main>
     );
   }
@@ -105,6 +109,7 @@ export default function App() {
 
   return (
     <main className="safe-area flex h-full flex-col bg-background">
+      <UpdateBanner />
       {voice.spend && (
         <div className="mx-4 mt-3 flex items-center justify-between gap-3 border border-border px-3 py-2" role="status">
           <p className="text-sm leading-5 text-foreground">{voice.spend}</p>

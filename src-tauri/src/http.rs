@@ -14,6 +14,10 @@ pub fn pack_redirect() -> reqwest::redirect::Policy {
     ])
 }
 
+pub fn github_api_redirect() -> reqwest::redirect::Policy {
+    allow_https(&["api.github.com"])
+}
+
 pub fn search_redirect() -> reqwest::redirect::Policy {
     allow_https(&[
         "api.duckduckgo.com",
@@ -86,6 +90,22 @@ mod tests {
         assert!(!https_url_allowed(
             "https://evil.example/file",
             &["github.com"]
+        ));
+    }
+
+    #[test]
+    fn release_checks_stay_on_the_github_api() {
+        assert!(https_url_allowed(
+            "https://api.github.com/repos/Gabo-Tech/grok-voice-android/releases/latest",
+            &["api.github.com"]
+        ));
+        assert!(!https_url_allowed(
+            "https://github.com/Gabo-Tech/grok-voice-android/releases/latest",
+            &["api.github.com"]
+        ));
+        assert!(!https_url_allowed(
+            "https://api.github.com.evil.test/repos",
+            &["api.github.com"]
         ));
     }
 }

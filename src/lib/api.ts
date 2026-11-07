@@ -312,6 +312,13 @@ export interface Level {
   out: number;
 }
 
+export interface UpdateStatus {
+  installed: string;
+  version: string;
+  tag: string;
+  url: string;
+}
+
 export const api = {
   saveUserToken: (token: string) => invoke<AuthStatus>("save_user_token", { token }),
   addVoiceAccount: (provider: string, secret: string) =>
@@ -427,6 +434,8 @@ export const api = {
   localPacks: () => invoke<LocalPack[]>("local_pack_status"),
   downloadLocalPack: (id: string) => invoke<LocalPack[]>("download_local_pack", { id }),
   deleteLocalPack: (id: string) => invoke<LocalPack[]>("delete_local_pack", { id }),
+  updateStatus: () => invoke<UpdateStatus>("update_status"),
+  dismissUpdate: () => invoke<UpdateStatus>("dismiss_update"),
 };
 
 export function errorText(e: unknown): string {
