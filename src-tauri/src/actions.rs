@@ -168,7 +168,10 @@ pub fn tool_definitions() -> Value {
             "properties": { "title": { "type": "string" }, "text": { "type": "string" } },
             "required": ["text"]
         })),
-        fn_tool("list_notes", "Read the notes saved on this phone.", json!({ "type": "object", "properties": {} })),
+        fn_tool("list_notes", "Read or search the notes saved on this phone. query matches title or text. id returns one note.", json!({
+            "type": "object",
+            "properties": { "query": { "type": "string" }, "id": { "type": "string" } }
+        })),
         fn_tool("update_note", "Change a note. id comes from list_notes. Pass title, text, or both.", json!({
             "type": "object",
             "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "text": { "type": "string" } },
@@ -216,7 +219,18 @@ pub fn tool_definitions() -> Value {
                 "id": { "type": "integer" }
             }
         })),
-        fn_tool("list_reminders", "List upcoming reminders, alarms, and timers this app scheduled.", json!({ "type": "object", "properties": {} })),
+        fn_tool("list_reminders", "List reminders, alarms, and timers, including repeats. Omit dates for every saved reminder. from and to are inclusive YYYY-MM-DD, month is YYYY-MM, span is week, month, or upcoming, and day is one YYYY-MM-DD. A range expands repeating reminders into each time they fire. query searches title and note. Person birthdays and other dates appear only inside their notify window. Each row has an id.", json!({
+            "type": "object",
+            "properties": {
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "month": { "type": "string" },
+                "span": { "type": "string" },
+                "day": { "type": "string" },
+                "query": { "type": "string" },
+                "recurring": { "type": "boolean" }
+            }
+        })),
         fn_tool("update_reminder", "Change a reminder's title, note, or time. id from list_reminders. at is YYYY-MM-DDTHH:MM.", json!({
             "type": "object",
             "properties": {
@@ -232,17 +246,28 @@ pub fn tool_definitions() -> Value {
             "properties": { "id": { "type": "integer" } },
             "required": ["id"]
         })),
-        fn_tool("list_calendar_events", "Read events for a day. day is YYYY-MM-DD; omit it for today. Each event has an id for updates or deletes.", json!({
+        fn_tool("list_calendar_events", "List events for a day, week, month, or date range in one call. Recurring events expand into each occurrence in that range. month is YYYY-MM. span is week, month, or upcoming. from and to are inclusive YYYY-MM-DD. day is one YYYY-MM-DD; omit every date argument for today. recurring true with no dates lists each repeating series once. query matches title or location. Do not call this once per day. Each event has an id.", json!({
             "type": "object",
-            "properties": { "day": { "type": "string" } }
+            "properties": {
+                "day": { "type": "string" },
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "month": { "type": "string" },
+                "span": { "type": "string" },
+                "recurring": { "type": "boolean" },
+                "query": { "type": "string" }
+            }
         })),
-        fn_tool("create_calendar_event", "Add a calendar event. start and end are local YYYY-MM-DDTHH:MM. end may be omitted for one hour.", json!({
+        fn_tool("create_calendar_event", "Add a calendar event. start and end are local YYYY-MM-DDTHH:MM. end may be omitted for one hour. recurrence is daily, weekly, monthly, or yearly. weekdays is mon,wed,fri. until is YYYY-MM-DD.", json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string" },
                 "start": { "type": "string" },
                 "end": { "type": "string" },
-                "location": { "type": "string" }
+                "location": { "type": "string" },
+                "recurrence": { "type": "string" },
+                "weekdays": { "type": "array", "items": { "type": "string" } },
+                "until": { "type": "string" }
             },
             "required": ["title", "start"]
         })),
@@ -279,6 +304,10 @@ pub fn tool_definitions() -> Value {
             "type": "object",
             "properties": { "name": { "type": "string" } },
             "required": ["name"]
+        })),
+        fn_tool("list_people", "List people saved in this app, with birthdays and other dates. query matches a name, nickname, or date. Dates stay on the person all year. Does not open any app. Use get_person for one person's preferred channel.", json!({
+            "type": "object",
+            "properties": { "query": { "type": "string" } }
         })),
         fn_tool("set_person_reminder", "Save a birthday, anniversary, or other dated reminder on a person. name is who. label is birthday, anniversary, or custom. date is MM-DD or YYYY-MM-DD. recurrence is yearly or once. time is HH:MM, default 09:00. leadDays is how many days early to notify. Does not open any app.", json!({
             "type": "object",
@@ -389,6 +418,12 @@ pub fn tool_definitions() -> Value {
 
 fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
     json!({ "type": "function", "name": name, "description": description, "parameters": parameters })
+}
+
+/// Spoken once per cloud session. It tells the model how to read local stores.
+/// It does not include the stores themselves.
+pub fn lookup_hint() -> &'static str {
+    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time."
 }
 
 impl Agenda {
@@ -1214,15 +1249,7 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             let note = agenda.upsert_note(app, None, args["title"].as_str().unwrap_or(""), args["text"].as_str().unwrap_or(""))?;
             Ok(json!({ "ok": true, "id": note.id, "title": note.title, "detail": format!("Saved a note: {}", note.title) }))
         }
-        "list_notes" => {
-            let notes = agenda.lock().notes.clone();
-            Ok(json!({
-                "ok": true,
-                "count": notes.len(),
-                "notes": notes.iter().map(|n| json!({ "id": n.id, "title": note_title(&n.title, &n.text), "text": n.text })).collect::<Vec<_>>(),
-                "detail": if notes.is_empty() { "There are no saved notes.".into() } else { format!("{} saved notes.", notes.len()) }
-            }))
-        }
+        "list_notes" => Ok(notes_payload(&agenda.notes(), args)),
         "update_note" => {
             let id = args["id"].as_str().unwrap_or("").trim();
             let note = agenda.upsert_note(
@@ -1311,24 +1338,13 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
         "list_reminders" => {
             agenda.sweep(app);
             let now = Local::now();
-            let items: Vec<Item> = agenda.lock().items.iter().filter(|item| shows_on_time_list(item, now)).cloned().collect();
-            Ok(json!({
-                "ok": true,
-                "count": items.len(),
-                "reminders": items.iter().map(|i| json!({
-                    "id": i.id,
-                    "kind": i.kind,
-                    "title": i.title,
-                    "note": i.note,
-                    "at": DateTime::from_timestamp_millis(i.at_ms).map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string()).unwrap_or_default(),
-                    "recurrence": i.recurrence,
-                    "weekdays": i.weekdays,
-                    "time": i.time,
-                    "personId": i.person_id,
-                })).collect::<Vec<_>>(),
-                "detail": if items.is_empty() { "Nothing is scheduled.".into() } else { format!("{} things scheduled.", items.len()) }
-            }))
+            let items = agenda.lock().items.clone();
+            reminders_payload(&items, args, now)
         }
+        "list_people" => Ok(crate::people::saved_people_payload(
+            &app.state::<crate::people::People>().list(),
+            args["query"].as_str().unwrap_or(""),
+        )),
         "update_reminder" => {
             let id = args["id"].as_i64().ok_or("id from list_reminders is required")? as i32;
             let existing = agenda.item(id).ok_or("Nothing scheduled with that id.")?;
@@ -1354,31 +1370,7 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             agenda.cancel(app, id)?;
             Ok(json!({ "ok": true, "detail": "Cancelled." }))
         }
-        "list_calendar_events" => {
-            let (start, end, day) = day_bounds(args["day"].as_str())?;
-            let mut events = match ensure_calendar(app, start, end) {
-                Ok(e) => e,
-                Err(err) if err.contains("denied") || err.contains("permission") => Vec::new(),
-                Err(err) => return Err(err),
-            };
-            for e in agenda.lock().events.iter().filter(|e| e.start_ms < end && e.end_ms > start) {
-                events.push(e.clone());
-            }
-            events.sort_by_key(|e| e.start_ms);
-            Ok(json!({
-                "ok": true,
-                "day": day,
-                "count": events.len(),
-                "events": events.iter().map(|e| json!({
-                    "id": e.id,
-                    "title": e.title,
-                    "source": e.source,
-                    "when": if e.all_day { "all day".to_string() } else { format_span(e.start_ms, e.end_ms) },
-                    "location": e.location
-                })).collect::<Vec<_>>(),
-                "detail": if events.is_empty() { format!("Nothing on the calendar for {day}.") } else { format!("{} events on {day}.", events.len()) }
-            }))
-        }
+        "list_calendar_events" => list_calendar_events(app, &agenda, args),
         "create_calendar_event" => create_or_local(app, &agenda, args),
         "update_calendar_event" => update_event(app, &agenda, args),
         "delete_calendar_event" => delete_event(app, &agenda, args),
@@ -1551,7 +1543,7 @@ fn read_phone_range(app: &AppHandle, start: i64, end: i64) -> Result<(Vec<CalEve
     if status.calendar != "granted" {
         return Ok((Vec::new(), status.calendar));
     }
-    let events = read_events(&bridge, start, end)?;
+    let (events, _) = read_events(&bridge, start, end)?;
     Ok((events, "granted".into()))
 }
 
@@ -1562,7 +1554,7 @@ fn calendar_range(app: &AppHandle, day: Option<&str>) -> Result<(Vec<CalEvent>, 
         return Ok((Vec::new(), status.calendar));
     }
     let (start, end, _) = day_bounds(day)?;
-    let events = read_events(&bridge, start, end)?;
+    let (events, _) = read_events(&bridge, start, end)?;
     Ok((events, "granted".into()))
 }
 
@@ -1580,12 +1572,12 @@ fn ensure_calendar_permission(app: &AppHandle) -> Result<(), String> {
     }
 }
 
-fn ensure_calendar(app: &AppHandle, start: i64, end: i64) -> Result<Vec<CalEvent>, String> {
+fn ensure_calendar(app: &AppHandle, start: i64, end: i64) -> Result<(Vec<CalEvent>, bool), String> {
     ensure_calendar_permission(app)?;
     read_events(&app.state::<NativeBridge>(), start, end)
 }
 
-fn read_events(bridge: &NativeBridge, start: i64, end: i64) -> Result<Vec<CalEvent>, String> {
+fn read_events(bridge: &NativeBridge, start: i64, end: i64) -> Result<(Vec<CalEvent>, bool), String> {
     let raw = bridge.list_calendar(start, end).map_err(|e| e.to_string())?;
     let v: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     if v["ok"] != true {
@@ -1600,7 +1592,7 @@ fn read_events(bridge: &NativeBridge, start: i64, end: i64) -> Result<Vec<CalEve
             event.until_ms = until;
         }
     }
-    Ok(events)
+    Ok((events, v["truncated"].as_bool().unwrap_or(false)))
 }
 
 fn local_in_range(events: &[CalEvent], start: i64, end: i64) -> Vec<CalEvent> {
@@ -1748,17 +1740,508 @@ fn next_occurrence(hour: u32, minute: u32) -> Result<DateTime<Local>, String> {
 
 fn day_bounds(day: Option<&str>) -> Result<(i64, i64, String), String> {
     let date = match day.map(str::trim).filter(|d| !d.is_empty()) {
-        Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|_| format!("bad day '{d}'. Use YYYY-MM-DD."))?,
+        Some(d) => parse_day(d)?,
         None => Local::now().date_naive(),
     };
+    let start = start_of_local_day(date)?;
+    let end = start + Duration::days(1);
+    Ok((start.timestamp_millis(), end.timestamp_millis(), date.format("%Y-%m-%d").to_string()))
+}
+
+const LIST_CAP: usize = 400;
+const NOTE_CAP: usize = 40;
+const NOTE_TEXT_CAP: usize = 1200;
+const NOTE_FULL_CAP: usize = 8000;
+const MAX_RANGE_DAYS: i64 = 400;
+
+struct ListWindow {
+    start_ms: i64,
+    end_ms: i64,
+    label: String,
+    series: bool,
+}
+
+fn list_calendar_events(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value, String> {
+    let now = Local::now();
+    let window = list_window(args, now)?;
+    let recurring_only = flag(args, "recurring");
+    let (mut events, phone_truncated) = if window.series {
+        let start = start_of_local_day(now.date_naive())?;
+        let end = start + Duration::days(366);
+        let (phone, truncated) = phone_events(app, start.timestamp_millis(), end.timestamp_millis())?;
+        let local = agenda.lock().events.clone();
+        (series_events(&local, &phone), truncated)
+    } else {
+        let (phone, truncated) = phone_events(app, window.start_ms, window.end_ms)?;
+        let local = agenda.lock().events.clone();
+        (collect_calendar(&phone, &local, window.start_ms, window.end_ms, recurring_only), truncated)
+    };
+    if let Some(query) = arg_text(args, "query") {
+        let query = query.to_ascii_lowercase();
+        events.retain(|event| {
+            event.title.to_ascii_lowercase().contains(&query) || event.location.to_ascii_lowercase().contains(&query)
+        });
+    }
+    events.sort_by(|a, b| a.start_ms.cmp(&b.start_ms).then_with(|| a.title.cmp(&b.title)).then_with(|| a.id.cmp(&b.id)));
+    Ok(events_payload(&events, &window.label, phone_truncated, window.series))
+}
+
+fn phone_events(app: &AppHandle, start: i64, end: i64) -> Result<(Vec<CalEvent>, bool), String> {
+    match ensure_calendar(app, start, end) {
+        Ok(read) => Ok(read),
+        Err(err) if calendar_unavailable(&err) => Ok((Vec::new(), false)),
+        Err(err) => Err(err),
+    }
+}
+
+fn calendar_unavailable(err: &str) -> bool {
+    let err = err.to_ascii_lowercase();
+    err.contains("denied") || err.contains("permission") || err.contains("only on the android")
+}
+
+fn collect_calendar(phone: &[CalEvent], local: &[CalEvent], start: i64, end: i64, recurring_only: bool) -> Vec<CalEvent> {
+    let mut events = phone.to_vec();
+    events.extend(local_in_range(local, start, end));
+    if recurring_only {
+        events.retain(|event| recurrence::is_repeating(&event.recurrence));
+    }
+    events
+}
+
+fn series_events(local: &[CalEvent], phone: &[CalEvent]) -> Vec<CalEvent> {
+    let mut out: Vec<CalEvent> = local.iter().filter(|event| recurrence::is_repeating(&event.recurrence)).cloned().collect();
+    let mut seen = std::collections::HashSet::new();
+    for event in phone {
+        if !recurrence::is_repeating(&event.recurrence) || !seen.insert(event.id.clone()) {
+            continue;
+        }
+        out.push(event.clone());
+    }
+    out
+}
+
+fn events_payload(events: &[CalEvent], label: &str, phone_truncated: bool, series: bool) -> Value {
+    let total = events.len();
+    let truncated = phone_truncated || total > LIST_CAP;
+    let shown: Vec<&CalEvent> = events.iter().take(LIST_CAP).collect();
+    let multi = !series && label.contains("through");
+    let repeating = shown.iter().filter(|event| recurrence::is_repeating(&event.recurrence)).count();
+    let rows: Vec<Value> = shown.iter().map(|event| event_row(event, multi || series)).collect();
+    json!({
+        "ok": true,
+        "range": label,
+        "count": rows.len(),
+        "total": total,
+        "truncated": truncated,
+        "events": rows,
+        "detail": event_detail(rows.len(), total, label, truncated, phone_truncated, repeating)
+    })
+}
+
+fn event_row(event: &CalEvent, with_date: bool) -> Value {
+    let date = date_of(event.start_ms);
+    let clock = if event.all_day { "all day".to_string() } else { format_span(event.start_ms, event.end_ms) };
+    let when = if with_date && !date.is_empty() {
+        if event.all_day { format!("{date} all day") } else { format!("{date} {clock}") }
+    } else {
+        clock
+    };
+    json!({
+        "id": event.id,
+        "title": event.title,
+        "source": event.source,
+        "date": date,
+        "start": local_stamp(event.start_ms),
+        "end": local_stamp(event.end_ms),
+        "when": when,
+        "location": event.location,
+        "allDay": event.all_day,
+        "recurrence": event.recurrence,
+    })
+}
+
+fn event_detail(shown: usize, total: usize, label: &str, truncated: bool, phone_truncated: bool, repeating: usize) -> String {
+    if total == 0 {
+        return format!("No calendar events for {label}.");
+    }
+    let mut detail = if truncated && shown < total {
+        format!("Showing {shown} of {total} events for {label}.")
+    } else {
+        format!("{shown} events for {label}.")
+    };
+    if repeating > 0 {
+        detail.push_str(&format!(" {repeating} of them repeat."));
+    }
+    if phone_truncated {
+        detail.push_str(" The phone calendar returned a partial list.");
+    }
+    if truncated {
+        detail.push_str(" Ask for a shorter range for the rest.");
+    }
+    detail
+}
+
+fn reminders_payload(items: &[Item], args: &Value, now: DateTime<Local>) -> Result<Value, String> {
+    let query = arg_text(args, "query").unwrap_or("").to_ascii_lowercase();
+    let recurring_only = flag(args, "recurring");
+    let bounded = has_range(args);
+    let (rows, label) = if bounded {
+        let window = list_window(args, now)?;
+        if window.series {
+            (upcoming_reminders(items, now, &query, true), "repeating reminders".into())
+        } else {
+            (ranged_reminders(items, window.start_ms, window.end_ms, now, &query, recurring_only), window.label)
+        }
+    } else {
+        let label = if recurring_only { "repeating reminders" } else { "saved reminders" };
+        (upcoming_reminders(items, now, &query, recurring_only), label.into())
+    };
+    let total = rows.len();
+    let truncated = total > LIST_CAP;
+    let shown: Vec<Value> = rows.into_iter().take(LIST_CAP).collect();
+    let count = shown.len();
+    let detail = if count == 0 {
+        format!("Nothing is scheduled for {label}.")
+    } else if truncated {
+        format!("Showing {count} of {total} for {label}. Ask for a shorter range for the rest.")
+    } else {
+        format!("{count} scheduled for {label}.")
+    };
+    Ok(json!({
+        "ok": true,
+        "range": label,
+        "count": count,
+        "total": total,
+        "truncated": truncated,
+        "reminders": shown,
+        "detail": detail
+    }))
+}
+
+fn upcoming_reminders(items: &[Item], now: DateTime<Local>, query: &str, recurring_only: bool) -> Vec<Value> {
+    let mut rows: Vec<Value> = items
+        .iter()
+        .filter(|item| shows_on_time_list(item, now))
+        .filter(|item| !recurring_only || recurrence::is_repeating(&item.recurrence))
+        .filter(|item| text_hit(&item.title, &item.note, query))
+        .map(|item| reminder_row(item, item.at_ms))
+        .collect();
+    rows.sort_by_key(|row| row["at"].as_str().unwrap_or("").to_string());
+    rows
+}
+
+fn ranged_reminders(
+    items: &[Item],
+    start: i64,
+    end: i64,
+    now: DateTime<Local>,
+    query: &str,
+    recurring_only: bool,
+) -> Vec<Value> {
+    let mut rows = Vec::new();
+    for item in items {
+        if !text_hit(&item.title, &item.note, query) {
+            continue;
+        }
+        if recurring_only && !recurrence::is_repeating(&item.recurrence) {
+            continue;
+        }
+        if is_person_date(item) {
+            if shows_on_time_list(item, now) && person_window_overlaps(item, start, end) {
+                rows.push(reminder_row(item, item.at_ms));
+            }
+            continue;
+        }
+        if recurrence::is_repeating(&item.recurrence) {
+            for at_ms in expand_item(item, start, end) {
+                rows.push(reminder_row(item, at_ms));
+            }
+        } else if item.at_ms >= start && item.at_ms < end {
+            rows.push(reminder_row(item, item.at_ms));
+        }
+    }
+    rows.sort_by_key(|row| row["at"].as_str().unwrap_or("").to_string());
+    rows
+}
+
+fn reminder_row(item: &Item, at_ms: i64) -> Value {
+    let at = DateTime::from_timestamp_millis(at_ms)
+        .map(|when| when.with_timezone(&Local).format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_default();
+    json!({
+        "id": item.id,
+        "kind": item.kind,
+        "title": item.title,
+        "note": item.note,
+        "at": at,
+        "recurrence": item.recurrence,
+        "weekdays": item.weekdays,
+        "time": item.time,
+        "date": item.date,
+        "leadDays": item.lead_days,
+        "personId": item.person_id,
+    })
+}
+
+fn expand_item(item: &Item, start: i64, end: i64) -> Vec<i64> {
+    let Ok(mut spec) = spec_from_item(item) else { return Vec::new() };
+    if spec.weekdays.is_empty() && recurrence::normalize_kind(&spec.kind) == "weekly" {
+        if let Some(at) = DateTime::from_timestamp_millis(item.at_ms).map(|when| when.with_timezone(&Local)) {
+            spec.weekdays.push(at.weekday().number_from_monday() as u8);
+        }
+    }
+    let mut cursor = start.saturating_sub(60_000);
+    let mut out = Vec::new();
+    for _ in 0..LIST_CAP {
+        let Some(after) = DateTime::from_timestamp_millis(cursor).map(|when| when.with_timezone(&Local)) else { break };
+        let Some(next) = recurrence::next_after(&spec, after) else { break };
+        let ms = next.timestamp_millis();
+        if ms >= end || (item.until_ms > 0 && ms > item.until_ms) {
+            break;
+        }
+        if ms <= cursor {
+            break;
+        }
+        if ms >= start {
+            out.push(ms);
+        }
+        cursor = ms;
+    }
+    out
+}
+
+fn person_window_overlaps(item: &Item, start: i64, end: i64) -> bool {
+    let Some(at) = DateTime::from_timestamp_millis(item.at_ms).map(|when| when.with_timezone(&Local)) else {
+        return false;
+    };
+    let notify = at.date_naive();
+    let event = notify + Duration::days(i64::from(item.lead_days));
+    let Ok(win_start) = start_of_local_day(notify) else { return false };
+    let Ok(win_end) = start_of_local_day(event + Duration::days(1)) else { return false };
+    win_start.timestamp_millis() < end && win_end.timestamp_millis() > start
+}
+
+fn notes_payload(notes: &[Note], args: &Value) -> Value {
+    let query = arg_text(args, "query").unwrap_or("").to_ascii_lowercase();
+    let id = arg_text(args, "id").unwrap_or("");
+    let mut matched: Vec<&Note> = notes
+        .iter()
+        .filter(|note| {
+            if !id.is_empty() {
+                return note.id == id;
+            }
+            if query.is_empty() {
+                return true;
+            }
+            note_title(&note.title, &note.text).to_ascii_lowercase().contains(&query) || note.text.to_ascii_lowercase().contains(&query)
+        })
+        .collect();
+    matched.sort_by_key(|note| std::cmp::Reverse(note.created_ms));
+    let total = matched.len();
+    let truncated = id.is_empty() && total > NOTE_CAP;
+    let cap = if id.is_empty() { NOTE_TEXT_CAP } else { NOTE_FULL_CAP };
+    let rows: Vec<Value> = matched
+        .into_iter()
+        .take(if id.is_empty() { NOTE_CAP } else { 1 })
+        .map(|note| {
+            let chars = note.text.chars().count();
+            json!({
+                "id": note.id,
+                "title": note_title(&note.title, &note.text),
+                "text": clip_text(&note.text, cap),
+                "clipped": chars > cap,
+                "createdMs": note.created_ms,
+            })
+        })
+        .collect();
+    let count = rows.len();
+    let clipped = rows.iter().any(|row| row["clipped"] == true);
+    let detail = if count == 0 {
+        "There are no saved notes.".to_string()
+    } else if truncated {
+        format!("Showing {count} of {total} saved notes. Pass query to narrow them.")
+    } else if clipped {
+        format!("{count} saved notes. Some text was shortened. Pass id for one note.")
+    } else if id.is_empty() {
+        format!("{count} saved notes.")
+    } else {
+        format!("Note {}.", rows.first().and_then(|row| row["title"].as_str()).unwrap_or("saved"))
+    };
+    json!({
+        "ok": true,
+        "count": count,
+        "total": total,
+        "truncated": truncated,
+        "notes": rows,
+        "detail": detail
+    })
+}
+
+fn list_window(args: &Value, now: DateTime<Local>) -> Result<ListWindow, String> {
+    let recurring = flag(args, "recurring");
+    if recurring && !has_range(args) {
+        return Ok(ListWindow { start_ms: 0, end_ms: 0, label: "repeating series".into(), series: true });
+    }
+    if let Some(month) = arg_text(args, "month") {
+        let (start, end, label) = month_window(month)?;
+        return Ok(ListWindow { start_ms: start, end_ms: end, label, series: false });
+    }
+    if arg_text(args, "from").is_some() || arg_text(args, "to").is_some() {
+        return from_to_window(args, now);
+    }
+    if let Some(span) = arg_text(args, "span") {
+        return span_window(span, arg_text(args, "day"), now);
+    }
+    let (start, end, day) = day_bounds(arg_text(args, "day"))?;
+    Ok(ListWindow { start_ms: start, end_ms: end, label: day, series: false })
+}
+
+fn has_range(args: &Value) -> bool {
+    arg_text(args, "from").is_some()
+        || arg_text(args, "to").is_some()
+        || arg_text(args, "month").is_some()
+        || arg_text(args, "span").is_some()
+        || arg_text(args, "day").is_some()
+}
+
+fn month_window(value: &str) -> Result<(i64, i64, String), String> {
+    let (year, month) = parse_month(value)?;
+    let start = start_of_local_day(NaiveDate::from_ymd_opt(year, month, 1).ok_or_else(|| format!("bad month '{value}'."))?)?;
+    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let end = start_of_local_day(NaiveDate::from_ymd_opt(next_year, next_month, 1).ok_or_else(|| "bad month".to_string())?)?;
+    check_span(start, end)?;
+    let label = range_label(start, end);
+    Ok((start.timestamp_millis(), end.timestamp_millis(), label))
+}
+
+fn from_to_window(args: &Value, now: DateTime<Local>) -> Result<ListWindow, String> {
+    let from = match arg_text(args, "from") {
+        Some(day) => parse_day(day)?,
+        None => now.date_naive(),
+    };
+    let to = match arg_text(args, "to") {
+        Some(day) => parse_day(day)?,
+        None => {
+            let (year, month) = (from.year(), from.month());
+            let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+            NaiveDate::from_ymd_opt(next_year, next_month, 1).ok_or_else(|| "bad month".to_string())? - Duration::days(1)
+        }
+    };
+    let start = start_of_local_day(from)?;
+    let end = start_of_local_day(to)? + Duration::days(1);
+    check_span(start, end)?;
+    Ok(ListWindow { start_ms: start.timestamp_millis(), end_ms: end.timestamp_millis(), label: range_label(start, end), series: false })
+}
+
+fn span_window(span: &str, day: Option<&str>, now: DateTime<Local>) -> Result<ListWindow, String> {
+    let today = match day {
+        Some(day) => parse_day(day)?,
+        None => now.date_naive(),
+    };
+    match span.trim().to_ascii_lowercase().as_str() {
+        "day" | "today" => {
+            let label_day = today.format("%Y-%m-%d").to_string();
+            let (start, end, label) = day_bounds(Some(&label_day))?;
+            Ok(ListWindow { start_ms: start, end_ms: end, label, series: false })
+        }
+        "week" => {
+            let start = start_of_local_day(today)?;
+            let end = start + Duration::days(7);
+            Ok(ListWindow { start_ms: start.timestamp_millis(), end_ms: end.timestamp_millis(), label: range_label(start, end), series: false })
+        }
+        "month" => {
+            let (start, end, label) = month_window(&format!("{:04}-{:02}", today.year(), today.month()))?;
+            Ok(ListWindow { start_ms: start, end_ms: end, label, series: false })
+        }
+        "upcoming" => {
+            let start = start_of_local_day(today)?;
+            let end = start + Duration::days(31);
+            Ok(ListWindow { start_ms: start.timestamp_millis(), end_ms: end.timestamp_millis(), label: range_label(start, end), series: false })
+        }
+        _ => Err("span is day, week, month, or upcoming.".into()),
+    }
+}
+
+fn parse_month(value: &str) -> Result<(i32, u32), String> {
+    let value = value.trim();
+    let ym = if value.len() >= 7 { &value[..7] } else { value };
+    let date = NaiveDate::parse_from_str(&format!("{ym}-01"), "%Y-%m-%d")
+        .map_err(|_| format!("bad month '{value}'. Use YYYY-MM."))?;
+    Ok((date.year(), date.month()))
+}
+
+fn parse_day(value: &str) -> Result<NaiveDate, String> {
+    NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").map_err(|_| format!("bad day '{value}'. Use YYYY-MM-DD."))
+}
+
+fn start_of_local_day(date: NaiveDate) -> Result<DateTime<Local>, String> {
     let start_naive = date.and_hms_opt(0, 0, 0).ok_or_else(|| "bad day".to_string())?;
-    let start = start_naive
+    start_naive
         .and_local_timezone(Local)
         .earliest()
         .or_else(|| start_naive.and_local_timezone(Local).latest())
-        .ok_or_else(|| "bad day".to_string())?;
-    let end = start + Duration::days(1);
-    Ok((start.timestamp_millis(), end.timestamp_millis(), date.format("%Y-%m-%d").to_string()))
+        .ok_or_else(|| "bad day".to_string())
+}
+
+fn check_span(start: DateTime<Local>, end: DateTime<Local>) -> Result<(), String> {
+    if end <= start {
+        return Err("The end date is before the start.".into());
+    }
+    if (end - start).num_days() > MAX_RANGE_DAYS {
+        return Err(format!("Ask for {MAX_RANGE_DAYS} days or fewer."));
+    }
+    Ok(())
+}
+
+fn range_label(start: DateTime<Local>, end_exclusive: DateTime<Local>) -> String {
+    let first = start.date_naive();
+    let last = (end_exclusive - Duration::days(1)).date_naive();
+    if first == last {
+        first.format("%Y-%m-%d").to_string()
+    } else {
+        format!("{} through {}", first.format("%Y-%m-%d"), last.format("%Y-%m-%d"))
+    }
+}
+
+fn arg_text<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args.get(key).and_then(|value| value.as_str()).map(str::trim).filter(|text| !text.is_empty())
+}
+
+fn flag(args: &Value, key: &str) -> bool {
+    match args.get(key) {
+        Some(Value::Bool(value)) => *value,
+        Some(Value::String(value)) => matches!(value.trim().to_ascii_lowercase().as_str(), "true" | "yes" | "1"),
+        Some(Value::Number(value)) => value.as_i64() == Some(1),
+        _ => false,
+    }
+}
+
+fn text_hit(title: &str, note: &str, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    format!("{title} {note}").to_ascii_lowercase().contains(query)
+}
+
+fn clip_text(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
+fn date_of(ms: i64) -> String {
+    DateTime::from_timestamp_millis(ms)
+        .map(|when| when.with_timezone(&Local).format("%Y-%m-%d").to_string())
+        .unwrap_or_default()
+}
+
+fn local_stamp(ms: i64) -> String {
+    DateTime::from_timestamp_millis(ms)
+        .map(|when| when.with_timezone(&Local).format("%Y-%m-%dT%H:%M").to_string())
+        .unwrap_or_default()
 }
 
 fn apply_schedule(item: &mut Item, meta: &ScheduleMeta, requested_at: i64) -> Result<(), String> {
@@ -2593,5 +3076,175 @@ mod tests {
         let again = Agenda::load(path.clone());
         assert_eq!(again.lock().notes[0].text, "buy milk");
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn calendar_and_reminder_tools_cover_a_range_in_one_call() {
+        let tools = tool_definitions().to_string();
+        assert!(tools.contains("date range in one call"));
+        assert!(tools.contains("list_people"));
+        assert!(!tools.contains("Read events for a day"));
+        assert!(!tools.to_ascii_lowercase().contains("only look up one day"));
+        let hint = lookup_hint();
+        assert!(hint.contains("Do not look up one day at a time"));
+        assert!(hint.contains("list_notes"));
+        assert!(hint.contains("list_reminders"));
+        assert!(hint.contains("list_people"));
+    }
+
+    #[test]
+    fn month_range_lists_a_recurring_event_and_a_one_off() {
+        let now = recurrence::local_on(2026, 11, 7, 12, 0);
+        let window = list_window(&json!({ "month": "2026-11" }), now).unwrap();
+        assert!(!window.series);
+        assert_eq!(day_of(window.start_ms), "2026-11-01");
+        assert_eq!(day_of(window.end_ms), "2026-12-01");
+        assert_eq!(window.label, "2026-11-01 through 2026-11-30");
+
+        let rest = list_window(&json!({ "from": "2026-11-07" }), now).unwrap();
+        assert_eq!(rest.label, "2026-11-07 through 2026-11-30");
+        assert!(list_window(&json!({ "recurring": true }), now).unwrap().series);
+        assert!(list_window(&json!({ "from": "2026-01-01", "to": "2027-06-01" }), now).is_err());
+
+        let renew = ev("local-renew", "Renew travel card", recurrence::local_on(2026, 11, 7, 7, 0), recurrence::local_on(2026, 11, 7, 18, 0), "monthly");
+        let rent = ev("local-rent", "Rent", recurrence::local_on(2026, 10, 15, 9, 0), recurrence::local_on(2026, 10, 15, 10, 0), "monthly");
+        let dentist = ev("local-dentist", "Dentist", recurrence::local_on(2026, 11, 20, 14, 0), recurrence::local_on(2026, 11, 20, 15, 0), "");
+        let later = ev("local-later", "December trip", recurrence::local_on(2026, 12, 3, 11, 0), recurrence::local_on(2026, 12, 3, 12, 0), "");
+        let stretch = ev("local-stretch", "Stretch", recurrence::local_on(2026, 10, 1, 21, 0), recurrence::local_on(2026, 10, 1, 21, 30), "daily");
+        let mut flight = ev("42", "Flight", recurrence::local_on(2026, 11, 18, 7, 0), recurrence::local_on(2026, 11, 18, 8, 0), "");
+        flight.source = "phone".into();
+        let local = [renew.clone(), rent, dentist.clone(), later, stretch];
+        let events = collect_calendar(std::slice::from_ref(&flight), &local, window.start_ms, window.end_ms, false);
+        let on = |title: &str| -> Vec<String> {
+            events.iter().filter(|event| event.title == title).map(|event| day_of(event.start_ms)).collect()
+        };
+        assert_eq!(on("Renew travel card"), vec!["2026-11-07".to_string()]);
+        assert_eq!(on("Rent"), vec!["2026-11-15".to_string()]);
+        assert_eq!(on("Dentist"), vec!["2026-11-20".to_string()]);
+        assert_eq!(on("Flight"), vec!["2026-11-18".to_string()]);
+        assert!(on("December trip").is_empty());
+        assert_eq!(on("Stretch").len(), 30, "daily stretch should fill November and leave other days empty of extra events");
+        assert_eq!(events.iter().filter(|event| day_of(event.start_ms) == "2026-11-03").map(|event| event.title.as_str()).collect::<Vec<_>>(), vec!["Stretch"]);
+        let repeating = collect_calendar(&[], &local, window.start_ms, window.end_ms, true);
+        assert!(repeating.iter().all(|event| event.title != "Dentist" && event.title != "December trip"));
+        assert!(repeating.iter().any(|event| event.title == "Renew travel card"));
+        let series = series_events(&[renew, dentist], &[]);
+        assert_eq!(series.len(), 1);
+        assert_eq!(series[0].title, "Renew travel card");
+        assert_eq!(series[0].recurrence, "monthly");
+    }
+
+    #[test]
+    fn reminder_range_expands_repeats_and_hides_person_dates_outside_the_window() {
+        let now = recurrence::local_on(2026, 11, 7, 12, 0);
+        let meds = Item {
+            recurrence: "daily".into(),
+            time: "08:00".into(),
+            ..Item::basic(1, "reminder", "Meds", "", recurrence::local_on(2026, 11, 8, 8, 0).timestamp_millis())
+        };
+        let dentist = Item::basic(2, "reminder", "Dentist", "checkup", recurrence::local_on(2026, 11, 20, 14, 0).timestamp_millis());
+        let old = Item::basic(3, "reminder", "Old bill", "", recurrence::local_on(2026, 10, 2, 9, 0).timestamp_millis());
+        let mut open = Item::basic(4, "reminder", "Sam's birthday", "", recurrence::local_on(2026, 11, 6, 9, 0).timestamp_millis());
+        open.recurrence = "yearly".into();
+        open.date = "11-09".into();
+        open.lead_days = 3;
+        open.time = "09:00".into();
+        open.person_id = "p1".into();
+        open.person_reminder_id = "bday".into();
+        let mut june = Item::basic(5, "reminder", "Ana's birthday", "", recurrence::local_on(2026, 6, 8, 9, 0).timestamp_millis());
+        june.recurrence = "yearly".into();
+        june.date = "06-15".into();
+        june.lead_days = 7;
+        june.time = "09:00".into();
+        june.person_id = "p2".into();
+        june.person_reminder_id = "bday".into();
+        let mut visa = Item::basic(6, "reminder", "Visa", "", recurrence::local_on(2026, 11, 20, 9, 0).timestamp_millis());
+        visa.recurrence = "once".into();
+        visa.date = "2026-11-20".into();
+        visa.time = "09:00".into();
+        visa.person_id = "p2".into();
+        visa.person_reminder_id = "visa".into();
+        let mut reach = Item::basic(7, "reminder", "Reach out to Sam", "", recurrence::local_on(2026, 11, 12, 10, 0).timestamp_millis());
+        reach.person_id = "p1".into();
+        reach.person_reminder_id = "reach".into();
+        let items = [meds, dentist, old, open, june, visa, reach];
+
+        assert!(shows_on_time_list(items.iter().find(|item| item.title == "Sam's birthday").unwrap(), now));
+        assert!(!shows_on_time_list(items.iter().find(|item| item.title == "Ana's birthday").unwrap(), now));
+        assert!(!shows_on_time_list(items.iter().find(|item| item.title == "Visa").unwrap(), now));
+        assert!(shows_on_time_list(items.iter().find(|item| item.title == "Reach out to Sam").unwrap(), now));
+
+        let month = reminders_payload(&items, &json!({ "month": "2026-11" }), now).unwrap();
+        let rows = reminder_rows(&month);
+        let meds_days: Vec<_> = rows.iter().filter(|(title, _)| title == "Meds").map(|(_, day)| day.clone()).collect();
+        assert_eq!(meds_days.len(), 30, "{meds_days:?}");
+        assert_eq!(meds_days.first().map(String::as_str), Some("2026-11-01"));
+        assert_eq!(meds_days.last().map(String::as_str), Some("2026-11-30"));
+        assert!(rows.iter().any(|(title, day)| title == "Dentist" && day == "2026-11-20"));
+        assert!(rows.iter().any(|(title, day)| title == "Sam's birthday" && day == "2026-11-06"));
+        assert!(rows.iter().any(|(title, _)| title == "Reach out to Sam"));
+        assert!(rows.iter().all(|(title, _)| title != "Visa" && title != "Ana's birthday" && title != "Old bill"));
+        assert_eq!(rows.iter().filter(|(_, day)| day == "2026-11-03").count(), 1);
+
+        let day = reminders_payload(&items, &json!({ "day": "2026-11-20" }), now).unwrap();
+        let day_rows = reminder_rows(&day);
+        assert!(day_rows.iter().any(|(title, _)| title == "Dentist"));
+        assert!(day_rows.iter().any(|(title, _)| title == "Meds"));
+        assert!(day_rows.iter().all(|(title, _)| title != "Visa"));
+
+        let upcoming = reminders_payload(&items, &json!({}), now).unwrap();
+        let upcoming_rows = reminder_rows(&upcoming);
+        assert_eq!(upcoming_rows.iter().filter(|(title, _)| title == "Meds").count(), 1);
+        assert!(upcoming_rows.iter().any(|(title, _)| title == "Old bill"));
+        assert!(upcoming_rows.iter().any(|(title, _)| title == "Sam's birthday"));
+        assert!(upcoming_rows.iter().all(|(title, _)| title != "Visa" && title != "Ana's birthday"));
+
+        let found = reminders_payload(&items, &json!({ "month": "2026-11", "query": "check" }), now).unwrap();
+        assert_eq!(reminder_rows(&found), vec![("Dentist".into(), "2026-11-20".into())]);
+    }
+
+    #[test]
+    fn notes_can_be_searched_without_listing_every_store_in_the_prompt() {
+        let notes = [
+            Note { id: "a".into(), title: "Milk".into(), text: "buy oat milk".into(), created_ms: 2 },
+            Note { id: "b".into(), title: "Keys".into(), text: "spare key".into(), created_ms: 1 },
+        ];
+        let all = notes_payload(&notes, &json!({}));
+        assert_eq!(all["count"], 2);
+        let milk = notes_payload(&notes, &json!({ "query": "oat" }));
+        assert_eq!(milk["count"], 1);
+        assert_eq!(milk["notes"][0]["title"], "Milk");
+        let one = notes_payload(&notes, &json!({ "id": "b" }));
+        assert_eq!(one["notes"][0]["text"], "spare key");
+        assert!(!lookup_hint().contains("buy oat milk"));
+    }
+
+    fn ev(id: &str, title: &str, start: DateTime<Local>, end: DateTime<Local>, recurrence: &str) -> CalEvent {
+        CalEvent {
+            id: id.into(),
+            title: title.into(),
+            start_ms: start.timestamp_millis(),
+            end_ms: end.timestamp_millis(),
+            location: String::new(),
+            all_day: false,
+            source: "local".into(),
+            recurrence: recurrence.into(),
+            weekdays: Vec::new(),
+            until_ms: 0,
+            rrule: String::new(),
+        }
+    }
+
+    fn reminder_rows(payload: &Value) -> Vec<(String, String)> {
+        payload["reminders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                let at = row["at"].as_str().unwrap_or("");
+                let date = at.split(' ').next().unwrap_or("").to_string();
+                (row["title"].as_str().unwrap_or("").to_string(), date)
+            })
+            .collect()
     }
 }
