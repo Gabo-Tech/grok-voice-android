@@ -153,7 +153,7 @@ object PhoneActions {
     }
     if (posted) {
       val category = if (alarm) "alarm" else "reminder"
-      SpokenAlerts.enqueue(context, kind, title.ifBlank { "Grok" }, text, channel, category)
+      SpokenAlerts.enqueue(context, id, kind, title.ifBlank { "Grok" }, text, channel, category)
     }
   }
 

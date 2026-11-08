@@ -49,6 +49,7 @@ object UpdateNotice {
       nm.notify(NOTICE_ID, notification)
       SpokenAlerts.enqueue(
         context,
+        -1,
         "update",
         localized.getString(R.string.update_title),
         text,

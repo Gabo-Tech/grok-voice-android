@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.PowerManager
 import android.os.SystemClock
+import java.util.Calendar
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -36,12 +37,12 @@ object SpokenAlerts {
   private val ttsThread = HandlerThread("spoken-tts").apply { start() }
   private val ttsHandler = Handler(ttsThread.looper)
 
-  fun enqueue(context: Context, kind: String, title: String, body: String, channelId: String, category: String) {
+  fun enqueue(context: Context, id: Int, kind: String, title: String, body: String, channelId: String, category: String) {
     val app = context.applicationContext
     worker.execute {
       val wake = wakeLock(app)
       try {
-        speak(app, kind, title, body, channelId, category)
+        speak(app, id, kind, title, body, channelId, category)
       } catch (t: Throwable) {
         Log.w(TAG, "spoken notice failed", t)
       } finally {
@@ -61,9 +62,9 @@ object SpokenAlerts {
     }
   }
 
-  private fun speak(context: Context, kind: String, title: String, body: String, channelId: String, category: String) {
+  private fun speak(context: Context, id: Int, kind: String, title: String, body: String, channelId: String, category: String) {
     if (!RustBridge.loadCore()) return
-    val line = RustBridge.planSpokenNotice(spec(context, kind, channelId, category), title, body).orEmpty()
+    val line = RustBridge.planSpokenNotice(spec(context, id, kind, channelId, category), title, body).orEmpty()
     if (line.isEmpty()) return
     waitForTalk()
     if (RustBridge.talkOutputBusy()) return
@@ -81,8 +82,9 @@ object SpokenAlerts {
     }
   }
 
-  private fun spec(context: Context, kind: String, channelId: String, category: String): String {
+  private fun spec(context: Context, id: Int, kind: String, channelId: String, category: String): String {
     val settings = readSettings(context)
+    val due = dueOf(context, id)
     val nm = context.getSystemService(NotificationManager::class.java)
     val enabled = nm?.areNotificationsEnabled() ?: true
     var blocked = false
@@ -112,6 +114,10 @@ object SpokenAlerts {
     }
     return JSONObject()
       .put("delivery", settings.optString("notificationDelivery", ""))
+      .put("locale", settings.optString("locale", ""))
+      .put("phoneLang", Locale.getDefault().toLanguageTag())
+      .put("dueInMinutes", due.first)
+      .put("dueHour", due.second)
       .put("kind", kind)
       .put("category", category)
       .put("enabled", enabled)
@@ -132,6 +138,38 @@ object SpokenAlerts {
     val files = context.filesDir
     if (File(files, "settings.json").isFile || File(files, "local-models").isDirectory) return files
     return data
+  }
+
+  /** Minutes until the real event, and its local hour. Lead days stay on the saved item. */
+  private fun dueOf(context: Context, id: Int): Pair<Int, Int> {
+    if (id <= 0) return 0 to -1
+    val file = File(appRoot(context), "agenda.json")
+    if (!file.isFile) return 0 to -1
+    return try {
+      val items = JSONObject(file.readText()).optJSONArray("items") ?: return 0 to -1
+      var found: JSONObject? = null
+      for (i in 0 until items.length()) {
+        val row = items.optJSONObject(i) ?: continue
+        if (row.optInt("id") == id) {
+          found = row
+          break
+        }
+      }
+      val item = found ?: return 0 to -1
+      val lead = item.optInt("leadDays", 0).coerceIn(0, 30)
+      val at = item.optLong("atMs", 0L)
+      val event = if (lead > 0 && at > 0L) at + lead * 86_400_000L else at
+      val now = System.currentTimeMillis()
+      val minutes = if (event > now + 60_000L) ((event - now) / 60_000L).toInt().coerceAtLeast(0) else 0
+      val hour = if (event > 0L) {
+        Calendar.getInstance().apply { timeInMillis = event }.get(Calendar.HOUR_OF_DAY)
+      } else {
+        -1
+      }
+      minutes to hour
+    } catch (_: Exception) {
+      0 to -1
+    }
   }
 
   private fun readSettings(context: Context): JSONObject {
