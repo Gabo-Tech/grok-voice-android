@@ -39,6 +39,15 @@ pub fn line(locale: &str, key: &str) -> String {
         })
 }
 
+/// Replace `{name}` style holes in a spoken line.
+pub fn fill(locale: &str, key: &str, pairs: &[(&str, &str)]) -> String {
+    let mut text = line(locale, key);
+    for (hole, value) in pairs {
+        text = text.replace(&format!("{{{hole}}}"), value);
+    }
+    text
+}
+
 const EN: &[(&str, &str, &str)] = &[
     ("fact-empty", "", "Say the fact to remember."),
     ("fact-missing", "", "That pinned fact is not on this phone."),
@@ -58,6 +67,11 @@ const EN: &[(&str, &str, &str)] = &[
     ("share-note", "", "Share this note"),
     ("share-reminder", "", "Share this reminder"),
     ("share-event", "", "Share this event"),
+    ("person-delete-ask", "", "Delete {name} from People? This does not change the phone's Contacts app. Say yes to delete them."),
+    ("listen-off-ask", "", "Turn Listen off? Hey Grok stops until you turn it back on. Say yes to turn it off."),
+    ("wipe-ask", "", "Wipe pinned facts and recent on-device notes? Notes, People, and voice keys stay. Say yes to wipe them."),
+    ("secret-refused", "", "Voice cannot save or read a key or a backup password. Open Settings and add it there."),
+    ("keys-refused", "", "Voice cannot reorder or delete saved voice keys. Change that in Settings."),
 ];
 
 const ES: &[(&str, &str, &str)] = &[
@@ -79,6 +93,11 @@ const ES: &[(&str, &str, &str)] = &[
     ("share-note", "", "Compartir esta nota"),
     ("share-reminder", "", "Compartir este recordatorio"),
     ("share-event", "", "Compartir este evento"),
+    ("person-delete-ask", "", "¿Borrar a {name} de Personas? Esto no cambia los contactos del teléfono. Di que sí para borrarlo."),
+    ("listen-off-ask", "", "¿Apagar Escuchar? Hey Grok se detiene hasta que lo actives. Di que sí para apagarlo."),
+    ("wipe-ask", "", "¿Borrar los datos fijados y las notas recientes del teléfono? Las notas, Personas y las claves de voz se quedan. Di que sí para borrarlos."),
+    ("secret-refused", "", "La voz no puede guardar ni leer una clave ni una contraseña de copia. Ábrelo en Ajustes."),
+    ("keys-refused", "", "La voz no puede reordenar ni borrar las claves de voz. Cámbialo en Ajustes."),
 ];
 
 const DE: &[(&str, &str, &str)] = &[
@@ -100,6 +119,11 @@ const DE: &[(&str, &str, &str)] = &[
     ("share-note", "", "Diese Notiz teilen"),
     ("share-reminder", "", "Diese Erinnerung teilen"),
     ("share-event", "", "Diesen Termin teilen"),
+    ("person-delete-ask", "", "{name} aus Personen löschen? Das ändert nicht die Kontakte des Telefons. Sag ja, um zu löschen."),
+    ("listen-off-ask", "", "Hören ausschalten? Hey Grok pausiert, bis du es wieder einschaltest. Sag ja zum Ausschalten."),
+    ("wipe-ask", "", "Gemerkte Sätze und kurze Notizen der letzten Sitzungen löschen? Notizen, Personen und Sprachschlüssel bleiben. Sag ja zum Löschen."),
+    ("secret-refused", "", "Sprache kann keinen Schlüssel und kein Backup-Passwort speichern oder vorlesen. Trag ihn in den Einstellungen ein."),
+    ("keys-refused", "", "Sprache kann gespeicherte Sprachschlüssel nicht sortieren oder löschen. Das geht in den Einstellungen."),
 ];
 
 const PT: &[(&str, &str, &str)] = &[
@@ -121,6 +145,11 @@ const PT: &[(&str, &str, &str)] = &[
     ("share-note", "", "Compartilhar esta nota"),
     ("share-reminder", "", "Compartilhar este lembrete"),
     ("share-event", "", "Compartilhar este evento"),
+    ("person-delete-ask", "", "Apagar {name} de Pessoas? Isto não muda os contatos do telefone. Diga sim para apagar."),
+    ("listen-off-ask", "", "Desligar Ouvir? Hey Grok para até você ligar de novo. Diga sim para desligar."),
+    ("wipe-ask", "", "Apagar os fatos fixados e as notas recentes do telefone? Notas, Pessoas e chaves de voz ficam. Diga sim para apagar."),
+    ("secret-refused", "", "A voz não pode guardar nem ler uma chave ou senha de backup. Adicione em Ajustes."),
+    ("keys-refused", "", "A voz não pode reordenar nem apagar as chaves de voz. Mude isso em Ajustes."),
 ];
 
 const CA: &[(&str, &str, &str)] = &[
@@ -142,6 +171,11 @@ const CA: &[(&str, &str, &str)] = &[
     ("share-note", "", "Compartir esta nota"),
     ("share-reminder", "", "Compartir este recordatori"),
     ("share-event", "", "Compartir este esdeveniment"),
+    ("person-delete-ask", "", "Esborrar {name} de Persones? Això no canvia els contactes del telèfon. Digues que sí per esborrar-lo."),
+    ("listen-off-ask", "", "Apagar Escolta? Hey Grok s'atura fins que ho tornes a activar. Digues que sí per apagar-ho."),
+    ("wipe-ask", "", "Esborrar les dades fixades i les notes recents del telèfon? Les notes, Persones i les claus de veu es queden. Digues que sí per esborrar-les."),
+    ("secret-refused", "", "La veu no pot guardar ni llegir una clau ni una contrasenya de còpia. Obri Ajustos i afig-la allà."),
+    ("keys-refused", "", "La veu no pot reordenar ni esborrar les claus de veu. Canvia-ho en Ajustos."),
 ];
 
 #[cfg(test)]
@@ -156,5 +190,11 @@ mod tests {
         assert!(line("ca-ES-valencia", "budget-stop").contains("hui"));
         assert!(line("es", "fact-full").contains("10"));
         assert!(!line("en", "handoff-wait").contains("hui"));
+        assert!(line("en", "secret-refused").contains("Settings"));
+        assert!(line("es", "secret-refused").contains("Ajustes"));
+        assert!(line("de", "listen-off-ask").contains("Hören"));
+        assert!(line("pt", "keys-refused").contains("Ajustes"));
+        assert!(fill("ca-ES-valencia", "person-delete-ask", &[("name", "Ana")]).contains("Ana"));
+        assert!(fill("ca-ES-valencia", "listen-off-ask", &[]).contains("s'atura"));
     }
 }

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Archive, AudioLines, Bell, Brain, Bug, ChevronLeft, ChevronRight, Hourglass, KeyRound, Languages, Package, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { LocalPacks } from "@/components/LocalPacks";
@@ -77,6 +79,16 @@ export function MorePage({
       .catch(() => {});
     void api.usageStatus().then(setUsage).catch(() => {});
     void api.updateStatus().then((status) => setInstalled(status.installed)).catch(() => {});
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen<Settings>("voice://settings", (event) => {
+      setSettings(event.payload);
+      setQuiet(event.payload.idleTimeoutSecs);
+      setAppLocale(event.payload.locale || "");
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
   }, []);
 
   const setQuietGap = (seconds: number) => {
@@ -786,6 +798,12 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
 
   useEffect(() => {
     void api.getSettings().then(setSettings).catch(() => {});
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen<Settings>("voice://settings", (event) => setSettings(event.payload)).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
   }, []);
 
   const save = async () => {

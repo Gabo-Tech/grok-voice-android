@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Trash2 } from "lucide-react";
 import { BackButton, EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
@@ -192,6 +194,12 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     reload();
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen("voice://people", () => reload()).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
   }, []);
 
   useEffect(() => {
