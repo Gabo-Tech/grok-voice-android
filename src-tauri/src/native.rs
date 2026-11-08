@@ -464,6 +464,22 @@ mod imp {
                 .map_err(|e| msg(e.to_string()))?;
             Ok(())
         }
+
+        pub fn pick_gguf(&self, dest: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                dest: &'a str,
+            }
+            #[derive(Deserialize)]
+            struct Picked {
+                path: String,
+            }
+            let picked: Picked = self.handle.run_mobile_plugin("pickGguf", Args { dest }).map_err(|e| msg(e.to_string()))?;
+            if picked.path.trim().is_empty() {
+                return Err(msg("No file was chosen."));
+            }
+            Ok(picked.path)
+        }
     }
 }
 
@@ -672,6 +688,10 @@ mod imp {
 
         pub fn cancel_update_notice(&self) -> Result<()> {
             Ok(())
+        }
+
+        pub fn pick_gguf(&self, _dest: &str) -> Result<String> {
+            Err(crate::error::msg("Choosing a file works on the Android phone."))
         }
     }
 }

@@ -171,7 +171,7 @@ export function MorePage({
         <Back onClick={() => setSection("menu")} />
         <h2 className="px-1 text-2xl font-medium tracking-tight">{t("On-device packs")}</h2>
         <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
-          {t("Speech, the language model, and the voice. They stay on this phone.")}
+          {t("Speech, the language model you choose, and the voice. They stay on this phone.")}
         </p>
         <LocalPacks showHeading={false} />
       </div>

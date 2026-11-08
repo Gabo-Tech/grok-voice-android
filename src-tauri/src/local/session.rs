@@ -73,14 +73,16 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
         return Err("This phone is offline, and it is too low on memory to run the on-device voice.".into());
     }
     let paths = model_paths_for(&dir, &speech);
+    let family = super::packs::active_model(&dir).family;
     let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
     let mut engines = Engines::load(&paths, threads)?;
     let system = local_system(app);
     let mut history = Vec::new();
-    let spoken = turn::run_turns(
+    let spoken = turn::run_turns_with(
         &system,
         &mut history,
         text,
+        &family,
         |prompt, grammar| engines.complete(prompt, grammar),
         |name, args| call_tool(app, name, args),
     )?;
@@ -99,9 +101,11 @@ pub async fn run_session(
 ) -> Result<String, String> {
     let _guard = SearchGuard;
     set_public_search(true);
+    let dir = model_dir(app)?;
+    let chosen = super::packs::active_model(&dir);
     hub.update(|state| {
         state.ws_state = "on device".into();
-        state.model = Some(super::packs::llm_model_id().into());
+        state.model = Some(chosen.name.clone());
         state.token_minted_at_ms = None;
         state.token_expires_at = None;
     });
@@ -117,7 +121,6 @@ pub async fn run_session(
         };
         return Err(why);
     }
-    let dir = model_dir(app)?;
     let speech = settings.local_speech.as_str();
     if !packs_ready_for(&dir, speech) {
         return Err(if speech == "de" {
@@ -127,6 +130,7 @@ pub async fn run_session(
         });
     }
     let paths = model_paths_for(&dir, speech);
+    let family = chosen.family;
     let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
     hub.info("loading on-device speech, language model, and voice");
     let engines = tokio::task::spawn_blocking(move || Engines::load(&paths, threads))
@@ -152,7 +156,7 @@ pub async fn run_session(
                     break Ok("ended by user".into());
                 }
                 if let Some(utterance) = vad.push(&frame) {
-                    if let Err(err) = handle_audio(app, hub, player, active, &engines, &system, &mut history, &utterance).await {
+                    if let Err(err) = handle_audio(app, hub, player, active, &engines, &system, &family, &mut history, &utterance).await {
                         hub.error(format!("on-device turn failed: {err}"));
                         speak_line(app, hub, player, active, &engines, &format!("I couldn't finish that. {err}")).await;
                     }
@@ -169,7 +173,7 @@ pub async fn run_session(
                 }
                 for note in crate::search::take_context_notes() {
                     let text = format!("Typed just now. Use this and do not answer it by itself. {note}");
-                    if let Err(err) = handle_text(app, hub, player, active, &engines, &system, &mut history, &text, false).await {
+                    if let Err(err) = handle_text(app, hub, player, active, &engines, &system, &family, &mut history, &text, false).await {
                         hub.warn(format!("typed context skipped: {err}"));
                     }
                     last = Instant::now();
@@ -220,6 +224,7 @@ async fn handle_audio(
     active: &AtomicBool,
     engines: &Arc<Mutex<Engines>>,
     system: &str,
+    family: &str,
     history: &mut Vec<ChatTurn>,
     utterance: &[i16],
 ) -> Result<(), String> {
@@ -239,7 +244,7 @@ async fn handle_audio(
     }
     hub.info(format!("heard: {text}"));
     remember(app, hub, "user", &text);
-    handle_text(app, hub, player, active, engines, system, history, &text, true).await
+    handle_text(app, hub, player, active, engines, system, family, history, &text, true).await
 }
 
 async fn handle_text(
@@ -249,6 +254,7 @@ async fn handle_text(
     active: &AtomicBool,
     engines: &Arc<Mutex<Engines>>,
     system: &str,
+    family: &str,
     history: &mut Vec<ChatTurn>,
     text: &str,
     already_recorded: bool,
@@ -262,13 +268,15 @@ async fn handle_text(
     let engines_bg = engines.clone();
     let app_bg = app.clone();
     let system = system.to_string();
+    let family = family.to_string();
     let text = text.to_string();
     let mut history_owned = std::mem::take(history);
     let outcome = tokio::task::spawn_blocking(move || {
-        let result = turn::run_turns(
+        let result = turn::run_turns_with(
             &system,
             &mut history_owned,
             &text,
+            &family,
             |prompt, grammar| {
                 let mut engine = engines_bg.lock().unwrap_or_else(|err| err.into_inner());
                 engine.complete(prompt, grammar)

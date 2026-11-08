@@ -82,7 +82,22 @@ fn clip_chars(text: &str, max: usize) -> String {
     out
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn prompt(system: &str, history: &[ChatTurn]) -> String {
+    prompt_for("chatml", system, history)
+}
+
+/// ChatML for SmolLM and Qwen, Gemma's turn markers, or Llama 3 headers.
+/// The family comes from the pack, or from the GGUF chat template for a custom model.
+pub fn prompt_for(family: &str, system: &str, history: &[ChatTurn]) -> String {
+    match family {
+        "gemma" => prompt_gemma(system, history),
+        "llama3" => prompt_llama3(system, history),
+        _ => prompt_chatml(system, history),
+    }
+}
+
+fn prompt_chatml(system: &str, history: &[ChatTurn]) -> String {
     let mut out = String::new();
     out.push_str("<|im_start|>system\n");
     out.push_str(system.trim());
@@ -96,6 +111,48 @@ pub fn prompt(system: &str, history: &[ChatTurn]) -> String {
         out.push_str("<|im_end|>\n");
     }
     out.push_str("<|im_start|>assistant\n");
+    out
+}
+
+fn prompt_gemma(system: &str, history: &[ChatTurn]) -> String {
+    let mut out = String::from("<bos>");
+    let mut first_user = true;
+    for turn in history {
+        if turn.role == "assistant" {
+            out.push_str("<start_of_turn>model\n");
+            out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
+            out.push_str("<end_of_turn>\n");
+            continue;
+        }
+        out.push_str("<start_of_turn>user\n");
+        if first_user {
+            let system = system.trim();
+            if !system.is_empty() {
+                out.push_str(system);
+                out.push_str("\n\n");
+            }
+            first_user = false;
+        }
+        out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
+        out.push_str("<end_of_turn>\n");
+    }
+    out.push_str("<start_of_turn>model\n");
+    out
+}
+
+fn prompt_llama3(system: &str, history: &[ChatTurn]) -> String {
+    let mut out = String::from("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n");
+    out.push_str(system.trim());
+    out.push_str("<|eot_id|>");
+    for turn in history {
+        let role = if turn.role == "assistant" { "assistant" } else { "user" };
+        out.push_str("<|start_header_id|>");
+        out.push_str(role);
+        out.push_str("<|end_header_id|>\n\n");
+        out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
+        out.push_str("<|eot_id|>");
+    }
+    out.push_str("<|start_header_id|>assistant<|end_header_id|>\n\n");
     out
 }
 
@@ -177,10 +234,22 @@ fn looks_like_broken_json(raw: &str) -> bool {
 
 /// One user turn. `complete` sees the chat prompt and an empty grammar.
 /// `call_tool` runs the phone action.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn run_turns(
     system: &str,
     history: &mut Vec<ChatTurn>,
     user_text: &str,
+    complete: impl FnMut(&str, &str) -> Result<String, String>,
+    call_tool: impl FnMut(&str, &Value) -> String,
+) -> Result<String, String> {
+    run_turns_with(system, history, user_text, "chatml", complete, call_tool)
+}
+
+pub fn run_turns_with(
+    system: &str,
+    history: &mut Vec<ChatTurn>,
+    user_text: &str,
+    family: &str,
     mut complete: impl FnMut(&str, &str) -> Result<String, String>,
     mut call_tool: impl FnMut(&str, &Value) -> String,
 ) -> Result<String, String> {
@@ -191,7 +260,7 @@ pub fn run_turns(
     let mut last_say = String::new();
     for _ in 0..4 {
         trim_history(history);
-        let prompt = prompt(system, history);
+        let prompt = prompt_for(family, system, history);
         let raw = match complete(&prompt, "") {
             Ok(raw) => raw,
             Err(err) if is_grammar_engine_failure(&err) => {
@@ -510,6 +579,13 @@ mod tests {
         let chat = super::prompt(&prompt, &[ChatTurn { role: "user", text: "hello".into() }]);
         assert!(chat.contains("<|im_start|>system\n"));
         assert!(chat.ends_with("<|im_start|>assistant\n"));
+        let gemma = super::prompt_for("gemma", "be brief", &[ChatTurn { role: "user", text: "hello".into() }]);
+        assert!(gemma.starts_with("<bos><start_of_turn>user\nbe brief\n\nhello<end_of_turn>\n"));
+        assert!(gemma.ends_with("<start_of_turn>model\n"));
+        let llama = super::prompt_for("llama3", "be brief", &[ChatTurn { role: "user", text: "hello".into() }]);
+        assert!(llama.starts_with("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nbe brief<|eot_id|>"));
+        assert!(llama.contains("<|start_header_id|>user<|end_header_id|>\n\nhello<|eot_id|>"));
+        assert!(llama.ends_with("<|start_header_id|>assistant<|end_header_id|>\n\n"));
         let mut history = vec![
             ChatTurn { role: "user", text: "a".repeat(2000) },
             ChatTurn { role: "assistant", text: "b".repeat(2000) },

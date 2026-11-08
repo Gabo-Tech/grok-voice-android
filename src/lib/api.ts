@@ -150,6 +150,10 @@ export interface LocalPack {
   ready: boolean;
   /** Set when an older pack is installed and this one still needs a download. */
   note?: string;
+  /** `speech`, `llm`, or `custom`. */
+  kind?: string;
+  /** The language model Talk will load. */
+  selected?: boolean;
 }
 
 export interface PackProgress {
@@ -434,6 +438,10 @@ export const api = {
   localPacks: () => invoke<LocalPack[]>("local_pack_status"),
   downloadLocalPack: (id: string) => invoke<LocalPack[]>("download_local_pack", { id }),
   deleteLocalPack: (id: string) => invoke<LocalPack[]>("delete_local_pack", { id }),
+  selectLocalModel: (id: string) => invoke<LocalPack[]>("select_local_model", { id }),
+  importLocalModel: (name: string, family: string) => invoke<LocalPack[]>("import_local_model", { name, family }),
+  downloadCustomModel: (url: string, sha256: string, name: string, family: string) =>
+    invoke<LocalPack[]>("download_custom_local_model", { url, sha256, name, family }),
   updateStatus: () => invoke<UpdateStatus>("update_status"),
   dismissUpdate: () => invoke<UpdateStatus>("dismiss_update"),
 };

@@ -19,7 +19,9 @@ import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import androidx.activity.result.ActivityResult
 import androidx.core.content.ContextCompat
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import java.io.File
 import app.tauri.annotation.InvokeArg
@@ -130,6 +132,8 @@ class EventIdArgs {
   ]
 )
 class VoicePlugin(private val activity: Activity) : Plugin(activity) {
+
+  private var pendingGguf: File? = null
 
   private fun b64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
 
@@ -564,6 +568,84 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   fun cancelUpdateNotice(invoke: Invoke) {
     UpdateNotice.cancel(activity.applicationContext)
     invoke.resolve()
+  }
+
+  @InvokeArg
+  class GgufDestArgs {
+    var dest: String = ""
+  }
+
+  @Command
+  fun pickGguf(invoke: Invoke) {
+    try {
+      val args = invoke.parseArgs(GgufDestArgs::class.java)
+      val dest = File(args.dest)
+      val files = activity.filesDir.canonicalFile
+      val parent = dest.parentFile ?: throw IllegalArgumentException("That save location is not in app storage.")
+      parent.mkdirs()
+      val canon = dest.canonicalFile
+      val root = files.path + File.separator
+      if (!canon.path.startsWith(root)) {
+        invoke.reject("That save location is not in app storage.")
+        return
+      }
+      pendingGguf = dest
+      val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+      intent.addCategory(Intent.CATEGORY_OPENABLE)
+      intent.type = "*/*"
+      intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      startActivityForResult(invoke, intent, "ggufPickerResult")
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not open the file picker.", e)
+    }
+  }
+
+  @ActivityCallback
+  fun ggufPickerResult(invoke: Invoke, result: ActivityResult) {
+    if (result.resultCode != Activity.RESULT_OK) {
+      invoke.reject("No file was chosen.")
+      return
+    }
+    val uri = result.data?.data
+    if (uri == null) {
+      invoke.reject("No file was chosen.")
+      return
+    }
+    val dest = pendingGguf
+    pendingGguf = null
+    if (dest == null) {
+      invoke.reject("No file was chosen.")
+      return
+    }
+    Thread {
+      try {
+        val input = activity.contentResolver.openInputStream(uri)
+          ?: throw IllegalStateException("Could not read that file.")
+        input.use { stream ->
+          dest.outputStream().use { output ->
+            val buf = ByteArray(1024 * 1024)
+            var total = 0L
+            val max = 2L * 1024 * 1024 * 1024
+            while (true) {
+              val n = stream.read(buf)
+              if (n < 0) break
+              total += n.toLong()
+              if (total > max) {
+                dest.delete()
+                throw IllegalStateException("That file is larger than 2 GB, which is too big for a phone chat model.")
+              }
+              output.write(buf, 0, n)
+            }
+          }
+        }
+        val ret = JSObject()
+        ret.put("path", dest.absolutePath)
+        invoke.resolve(ret)
+      } catch (e: Exception) {
+        dest.delete()
+        invoke.reject(e.message ?: "Could not copy that file.")
+      }
+    }.start()
   }
 
   private fun online(): Boolean {
