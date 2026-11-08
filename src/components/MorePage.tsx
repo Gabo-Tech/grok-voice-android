@@ -30,7 +30,8 @@ type Section =
   | "spend"
   | "quiet"
   | "model"
-  | "language";
+  | "language"
+  | "alerts";
 
 const PROVIDERS = [
   { id: "xai", label: "xAI" },
@@ -329,6 +330,53 @@ export function MorePage({
     );
   }
 
+  if (section === "alerts") {
+    const mode = settings?.notificationDelivery === "spoken" ? "spoken" : "normal";
+    const choose = (next: "normal" | "spoken") => {
+      if (!settings) return;
+      const savedSettings = { ...settings, notificationDelivery: next };
+      setSettings(savedSettings);
+      void api.saveSettings(savedSettings).then(setSettings).catch(() => {});
+    };
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
+        <Back onClick={() => setSection("menu")} />
+        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Notification alerts")}</h2>
+        <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
+          {t("Normal shows the notification as it does today. Spoken also reads a short sentence when it fires. The listening notification and downloads stay quiet.")}
+        </p>
+        {settings ? (
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => choose("normal")}
+              className={cn(
+                "min-h-14 w-full border px-3 py-3 text-left",
+                mode === "normal" ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+              )}
+            >
+              <span className="block text-base">{t("Normal")}</span>
+              <span className="mt-1 block text-sm leading-5">{t("Show the notification. Grok stays quiet.")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => choose("spoken")}
+              className={cn(
+                "min-h-14 w-full border px-3 py-3 text-left",
+                mode === "spoken" ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+              )}
+            >
+              <span className="block text-base">{t("Spoken out loud")}</span>
+              <span className="mt-1 block text-sm leading-5">{t("Show the notification and read it out loud.")}</span>
+            </button>
+          </div>
+        ) : (
+          <p className="mt-4 px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
+        )}
+      </div>
+    );
+  }
+
   if (section === "language") {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
@@ -474,6 +522,12 @@ export function MorePage({
       <SettingsGroup title={t("This phone")}>
         <MenuRow icon={<Users className="size-4" />} title={t("People")} detail={t("Nicknames and how to reach them")} onClick={() => setSection("people")} />
         <MenuRow icon={<Brain className="size-4" />} title={t("Memory")} detail={t("Pinned facts for on-device Talk")} onClick={() => setSection("memory")} />
+        <MenuRow
+          icon={<Bell className="size-4" />}
+          title={t("Notification alerts")}
+          detail={settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("Normal")}
+          onClick={() => setSection("alerts")}
+        />
         <MenuRow icon={<Bell className="size-4" />} title={t("Phone access")} detail={t("Notifications, Do Not Disturb, history")} onClick={() => setSection("access")} />
         <MenuRow icon={<AudioLines className="size-4" />} title={t("Voice and model")} detail={t("Names sent with the xAI key")} onClick={() => setSection("model")} />
       </SettingsGroup>

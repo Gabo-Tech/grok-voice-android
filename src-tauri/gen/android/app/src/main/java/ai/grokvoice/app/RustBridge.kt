@@ -72,4 +72,32 @@ object RustBridge {
       Log.w("GrokVoice", "Rust core not loaded; listener will retry after the window opens", e)
     }
   }
+
+  @JvmStatic
+  external fun planSpokenNotice(specJson: String, title: String, body: String): String?
+
+  @JvmStatic
+  external fun noticePiperPack(locale: String, phoneLang: String): String?
+
+  @JvmStatic
+  external fun synthesizeNotice(model: String, tokens: String, dataDir: String, text: String): ShortArray?
+
+  @JvmStatic
+  external fun noticeSampleRate(): Int
+
+  @JvmStatic
+  external fun talkOutputBusy(): Boolean
+
+  @JvmStatic
+  external fun setNoticeSpeaking(on: Boolean)
+
+  fun loadCore(): Boolean {
+    return try {
+      System.loadLibrary("grok_voice_lib")
+      true
+    } catch (e: UnsatisfiedLinkError) {
+      Log.w("GrokVoice", "Rust core not loaded", e)
+      false
+    }
+  }
 }

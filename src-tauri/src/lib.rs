@@ -1,6 +1,8 @@
 mod actions;
 #[cfg(target_os = "android")]
 mod android_mic;
+#[cfg(target_os = "android")]
+mod android_notice;
 mod audio;
 mod backup;
 mod commands;
@@ -13,6 +15,7 @@ mod local;
 mod local_memory;
 mod memory;
 mod native;
+mod notices;
 mod people;
 mod realtime;
 mod recurrence;

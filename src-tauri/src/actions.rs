@@ -380,11 +380,11 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["confirmed"]
         })),
-        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, and voice order.", json!({
+        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, voice order, and whether notifications are normal or spoken out loud.", json!({
             "type": "object",
             "properties": {}
         })),
-        fn_tool("update_settings", "Change language, Listen, budgets in minutes, or Prefer on device. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. Also voice, model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
+        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. Also voice, model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
             "type": "object",
             "properties": {
                 "language": { "type": "string" },
@@ -401,6 +401,8 @@ pub fn tool_definitions() -> Value {
                 "instructions": { "type": "string" },
                 "echoGuard": { "type": "boolean" },
                 "wakeThreshold": { "type": "number" },
+                "notificationDelivery": { "type": "string" },
+                "speakNotifications": { "type": "boolean" },
                 "notifyDays": { "type": "integer" },
                 "birthdayLeadDays": { "type": "integer" },
                 "wipeMemory": { "type": "boolean" },
@@ -508,7 +510,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, and the daily or monthly voice budget in minutes. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed."
+    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed."
 }
 
 impl Agenda {
@@ -3336,6 +3338,9 @@ mod tests {
         assert!(tools.contains("delete_person"));
         assert!(tools.contains("get_settings"));
         assert!(tools.contains("update_settings"));
+        assert!(tools.contains("notificationDelivery"));
+        assert!(tools.contains("does not need confirmation"));
+        assert!(hint.contains("notificationDelivery"));
         assert!(tools.contains("confirmed true"));
         assert!(tools.contains("Never") || tools.contains("Refuse API keys"));
     }

@@ -5,12 +5,30 @@ use std::{
     collections::VecDeque,
     sync::{
         LazyLock, Mutex,
-        atomic::{AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 
 static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+static TALK_OUTPUT_BUSY: AtomicBool = AtomicBool::new(false);
+static NOTICE_SPEAKING: AtomicBool = AtomicBool::new(false);
+
+/// True while a Talk session still has samples in the speaker queue.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn talk_output_busy() -> bool {
+    TALK_OUTPUT_BUSY.load(Ordering::Relaxed)
+}
+
+/// Spoken alerts set this so Talk does not hear its own reminder.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn set_notice_speaking(on: bool) {
+    NOTICE_SPEAKING.store(on, Ordering::Relaxed);
+}
+
+pub fn notice_speaking() -> bool {
+    NOTICE_SPEAKING.load(Ordering::Relaxed)
+}
 
 /// Keep the echo guard engaged briefly after the last sample leaves the speaker so the
 /// room's reverb tail doesn't trigger server VAD.
@@ -50,11 +68,15 @@ impl Player {
             q.drain(..drop);
         }
         q.extend(samples.iter().copied());
+        if !samples.is_empty() {
+            TALK_OUTPUT_BUSY.store(true, Ordering::Relaxed);
+        }
     }
 
     pub fn clear(&self) {
         self.queue.lock().unwrap().clear();
         self.level_bits.store(0, Ordering::Relaxed);
+        TALK_OUTPUT_BUSY.store(false, Ordering::Relaxed);
     }
 
     pub fn queued(&self) -> usize {
@@ -102,5 +124,6 @@ impl Player {
         } else {
             self.level_bits.store(0, Ordering::Relaxed);
         }
+        TALK_OUTPUT_BUSY.store(self.is_active(), Ordering::Relaxed);
     }
 }
