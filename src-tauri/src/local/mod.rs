@@ -2,6 +2,7 @@
 //! Utterance mode, not full duplex. The phone tools stay on `actions::run`.
 
 mod engine;
+mod gguf;
 mod mode;
 mod packs;
 mod session;
@@ -10,7 +11,9 @@ mod vad;
 mod web;
 
 pub use mode::public_search_enabled;
-pub use packs::{delete_pack, download_pack, model_dir, pack_status, packs_ready, PackInfo};
+pub use packs::{
+    delete_pack, download_custom_model, download_pack, import_custom_file, model_dir, pack_status, packs_ready, select_model, PackInfo,
+};
 pub use session::{answer_text, run_session};
 pub use web::lookup as public_search;
 pub use web::{network_block, OFFLINE};
@@ -123,6 +126,8 @@ pub fn exhausted_message(labels: &[String], last: &str) -> String {
 
 /// About 1.4 GB free. Moonshine Base weighs more than Tiny, and SmolLM2 135M Q8
 /// weighs less than 360M Q8, so the same headroom still covers speech, chat, and Piper.
+/// A larger language model needs more free memory, about the size of its file on top
+/// of speech and voice. The floor stays here so the default model is not blocked.
 pub const MIN_FREE_MB: u64 = 1400;
 
 pub fn memory_enough(avail_mb: u64, low_memory: bool) -> bool {

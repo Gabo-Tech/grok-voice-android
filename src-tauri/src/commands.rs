@@ -887,3 +887,48 @@ pub async fn delete_local_pack(app: AppHandle, id: String) -> Result<Vec<crate::
     })
     .await
 }
+
+#[tauri::command]
+pub async fn select_local_model(app: AppHandle, id: String) -> Result<Vec<crate::local::PackInfo>> {
+    blocking(app, move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        crate::local::select_model(&dir, &id).map_err(msg)?;
+        Ok(crate::local::pack_status(&dir))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn import_local_model(app: AppHandle, name: String, family: String) -> Result<Vec<crate::local::PackInfo>> {
+    blocking(app, move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        let incoming = dir.join("llm-custom").join("incoming.gguf");
+        if let Some(parent) = incoming.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| msg(err.to_string()))?;
+        }
+        let dest = incoming.to_string_lossy().to_string();
+        let picked = app.state::<crate::native::NativeBridge>().pick_gguf(&dest)?;
+        crate::local::import_custom_file(&dir, std::path::Path::new(&picked), &name, &family).map_err(msg)?;
+        Ok(crate::local::pack_status(&dir))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn download_custom_local_model(
+    app: AppHandle,
+    url: String,
+    sha256: String,
+    name: String,
+    family: String,
+) -> Result<Vec<crate::local::PackInfo>> {
+    let hub = app.state::<Arc<Hub>>().inner().clone();
+    let dir = crate::local::model_dir(&app).map_err(msg)?;
+    tokio::task::spawn_blocking(move || {
+        crate::local::download_custom_model(&dir, &url, &sha256, &name, &family, |progress| hub.emit("voice://pack", progress))
+    })
+    .await
+    .map_err(|e| msg(e.to_string()))?
+    .map_err(msg)?;
+    local_pack_status(app).await
+}

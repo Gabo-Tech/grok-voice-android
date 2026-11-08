@@ -173,6 +173,9 @@ pub fn run() {
             commands::local_pack_status,
             commands::download_local_pack,
             commands::delete_local_pack,
+            commands::select_local_model,
+            commands::import_local_model,
+            commands::download_custom_local_model,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
