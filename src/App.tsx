@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Loader2 } from "lucide-react";
 import { AssistantView } from "@/components/AssistantView";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -11,7 +12,7 @@ import { Onboarding } from "@/components/Onboarding";
 import { RemindersPage } from "@/components/RemindersPage";
 import { useAgenda } from "@/hooks/useAgenda";
 import { useVoice } from "@/hooks/useVoice";
-import { api, errorText, type AuthStatus, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AuthStatus, type Settings, type WakewordStatus } from "@/lib/api";
 import type { SettingsDestination } from "@/lib/flow";
 import { setAppLocale, useT } from "@/lib/i18n";
 
@@ -60,6 +61,13 @@ export default function App() {
         setOnboarded(s.onboarded);
       })
       .catch(() => setOnboarded(false));
+    let unlisten: (() => void) | undefined;
+    void listen<Settings>("voice://settings", (event) => {
+      setAppLocale(event.payload.locale || "");
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
   }, [inApp]);
 
   if (bootError) {

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Activity, Compass, LogOut, Save, ShieldCheck, Terminal, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,9 +67,16 @@ export function DebugPanel({
     void poll();
     const t = window.setInterval(poll, 1000);
     void api.getSettings().then(setSettings);
+    let unlisten: (() => void) | undefined;
+    if (isTauri()) {
+      void listen<Settings>("voice://settings", (event) => setSettings(event.payload)).then((fn) => {
+        unlisten = fn;
+      });
+    }
     return () => {
       alive = false;
       window.clearInterval(t);
+      unlisten?.();
     };
   }, []);
 

@@ -309,7 +309,7 @@ pub fn tool_definitions() -> Value {
             "type": "object",
             "properties": { "query": { "type": "string" } }
         })),
-        fn_tool("set_person_reminder", "Save a birthday, anniversary, or other dated reminder on a person. name is who. label is birthday, anniversary, or custom. date is MM-DD or YYYY-MM-DD. recurrence is yearly or once. time is HH:MM, default 09:00. leadDays is how many days early to notify. Does not open any app.", json!({
+        fn_tool("set_person_reminder", "Add or change a birthday, anniversary, or custom date on a person. name is who. label is birthday, anniversary, or a custom title such as visa renewal. date accepts June 15, 6/15, MM-DD, YYYY-MM-DD, or --MM-DD. An existing birthday, anniversary, or same custom title is updated. Creates the person in this app when they are not saved yet. Does not write the phone address book.", json!({
             "type": "object",
             "properties": {
                 "name": { "type": "string" },
@@ -321,6 +321,91 @@ pub fn tool_definitions() -> Value {
                 "leadDays": { "type": "integer" }
             },
             "required": ["name", "date"]
+        })),
+        fn_tool("create_person", "Add a person saved in this app, with a birthday or other date. name is required. Also nickname, aliases, note, favorite, channel, phone, email, whatsapp, signal, reachOutDays, label, title, date, recurrence, and leadDays. Dates accept June 15, 6/15, MM-DD, and --MM-DD. Does not write the phone address book.", json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "nickname": { "type": "string" },
+                "aliases": { "type": "string" },
+                "note": { "type": "string" },
+                "favorite": { "type": "boolean" },
+                "channel": { "type": "string" },
+                "phone": { "type": "string" },
+                "email": { "type": "string" },
+                "whatsapp": { "type": "string" },
+                "signal": { "type": "string" },
+                "reachOutDays": { "type": "integer" },
+                "label": { "type": "string" },
+                "title": { "type": "string" },
+                "date": { "type": "string" },
+                "recurrence": { "type": "string" },
+                "time": { "type": "string" },
+                "leadDays": { "type": "integer" }
+            },
+            "required": ["name"]
+        })),
+        fn_tool("update_person", "Change a saved person's name, note, channel, or a date. name finds them. rename or displayName changes the name. note, nickname, aliases, favorite, channel, phone, email, whatsapp, signal, and reachOutDays edit those fields. label, title, and date add or replace a birthday, anniversary, or custom date. removeDate true deletes that date. leadDays is how many days early to notify. Omit name and pass label birthday with leadDays to update every birthday. Does not write the phone address book.", json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "id": { "type": "string" },
+                "rename": { "type": "string" },
+                "displayName": { "type": "string" },
+                "nickname": { "type": "string" },
+                "aliases": { "type": "string" },
+                "note": { "type": "string" },
+                "favorite": { "type": "boolean" },
+                "channel": { "type": "string" },
+                "phone": { "type": "string" },
+                "email": { "type": "string" },
+                "whatsapp": { "type": "string" },
+                "signal": { "type": "string" },
+                "reachOutDays": { "type": "integer" },
+                "label": { "type": "string" },
+                "title": { "type": "string" },
+                "date": { "type": "string" },
+                "recurrence": { "type": "string" },
+                "time": { "type": "string" },
+                "leadDays": { "type": "integer" },
+                "removeDate": { "type": "boolean" }
+            }
+        })),
+        fn_tool("delete_person", "Delete one saved person. Pass confirmed true only after a yes. Say who will be deleted and call first with confirmed false. This does not change the phone address book.", json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "id": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["confirmed"]
+        })),
+        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, and voice order.", json!({
+            "type": "object",
+            "properties": {}
+        })),
+        fn_tool("update_settings", "Change language, Listen, budgets in minutes, or Prefer on device. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. Also voice, model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
+            "type": "object",
+            "properties": {
+                "language": { "type": "string" },
+                "localSpeech": { "type": "string" },
+                "preferOnDevice": { "type": "boolean" },
+                "listen": { "type": "boolean" },
+                "quietGapSeconds": { "type": "integer" },
+                "dailyBudgetMinutes": { "type": "integer" },
+                "dailyHardStop": { "type": "boolean" },
+                "monthlyBudgetMinutes": { "type": "integer" },
+                "monthlyHardStop": { "type": "boolean" },
+                "voice": { "type": "string" },
+                "model": { "type": "string" },
+                "instructions": { "type": "string" },
+                "echoGuard": { "type": "boolean" },
+                "wakeThreshold": { "type": "number" },
+                "notifyDays": { "type": "integer" },
+                "birthdayLeadDays": { "type": "integer" },
+                "wipeMemory": { "type": "boolean" },
+                "confirmed": { "type": "boolean" }
+            }
         })),
         fn_tool("open_browser", "Open the phone browser on a website or a web search. Speak the site or search and wait for a clear yes, then call with confirmed true.", json!({
             "type": "object",
@@ -423,7 +508,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time."
+    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, and the daily or monthly voice budget in minutes. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed."
 }
 
 impl Agenda {
@@ -967,6 +1052,10 @@ pub fn confirm_pending(app: &AppHandle) -> Result<Value, String> {
     let Some(draft) = handoffs.take() else {
         return Err("Nothing is waiting to send.".into());
     };
+    if let Some(done) = confirm_local(app, &draft) {
+        clear_handoff(app);
+        return done;
+    }
     let prepared = prepare_handoff(
         &draft.kind,
         &json!({
@@ -998,6 +1087,158 @@ pub fn confirm_pending(app: &AppHandle) -> Result<Value, String> {
 
 fn locale_of(app: &AppHandle) -> String {
     app.try_state::<crate::settings::SettingsStore>().map(|store| store.get().locale).unwrap_or_default()
+}
+
+fn confirm_local(app: &AppHandle, draft: &HandoffDraft) -> Option<Result<Value, String>> {
+    match draft.kind.as_str() {
+        "delete_person" => Some(commit_people(app, crate::people::delete_from_tool(&app.state::<crate::people::People>(), &json!({"id": draft.query, "confirmed": true})))),
+        "listen_off" => Some(apply_settings(app, &json!({"listen": false, "confirmed": true}))),
+        "wipe_memory" => Some(apply_settings(app, &json!({"wipeMemory": true, "confirmed": true}))),
+        _ => None,
+    }
+}
+
+fn stage_confirm(app: &AppHandle, kind: &str, summary: &str, id: &str) {
+    let draft = HandoffDraft {
+        id: format!("h{}", crate::diagnostics::now_ms()),
+        summary: summary.to_string(),
+        kind: kind.to_string(),
+        query: id.to_string(),
+        url: String::new(),
+        phone: String::new(),
+        text: String::new(),
+        to: String::new(),
+        subject: String::new(),
+        body: String::new(),
+    };
+    if let Some(handoffs) = app.try_state::<Handoffs>() {
+        handoffs.stage(draft.clone());
+    }
+    if let Some(hub) = app.try_state::<Arc<Hub>>() {
+        hub.emit("voice://handoff", &draft);
+    }
+}
+
+fn commit_people(app: &AppHandle, result: Result<Value, String>) -> Result<Value, String> {
+    let mut value = result?;
+    if value["changed"] == true {
+        sync_person_reminders(app)?;
+        emit_people(app);
+    }
+    if value["needsConfirm"] == true {
+        let name = value["name"].as_str().unwrap_or("this person").to_string();
+        let detail = crate::i18n::fill(&locale_of(app), "person-delete-ask", &[("name", &name)]);
+        value["detail"] = json!(detail.clone());
+        stage_confirm(app, "delete_person", &detail, value["personId"].as_str().unwrap_or(""));
+    }
+    Ok(value)
+}
+
+fn emit_people(app: &AppHandle) {
+    if let Some(hub) = app.try_state::<Arc<Hub>>() {
+        hub.emit("voice://people", json!({}));
+    }
+}
+
+fn read_settings(app: &AppHandle) -> Result<Value, String> {
+    let settings = app.state::<crate::settings::SettingsStore>().get();
+    Ok(crate::settings::describe_settings(&settings, &voice_order(app)))
+}
+
+fn voice_order(app: &AppHandle) -> Vec<String> {
+    let Some(vault) = app.try_state::<crate::vault::Vault>() else {
+        return Vec::new();
+    };
+    let Some(bridge) = app.try_state::<NativeBridge>() else {
+        return Vec::new();
+    };
+    match vault.status(&bridge) {
+        Ok(status) => status
+            .accounts
+            .into_iter()
+            .map(|account| match account.provider.as_str() {
+                "xai" => "xAI".into(),
+                "openai" => "OpenAI".into(),
+                "local" => "On device".into(),
+                other => other.to_string(),
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn apply_settings(app: &AppHandle, args: &Value) -> Result<Value, String> {
+    let store = app.state::<crate::settings::SettingsStore>();
+    let edit = match crate::settings::edit_settings(&store.get(), args) {
+        Ok(edit) => edit,
+        Err(err) => return Err(localize_tool_error(app, err)),
+    };
+    let mut detail = edit.detail;
+    if let Some(next) = edit.settings {
+        let saved = store.save(next).map_err(|err| err.to_string())?;
+        publish_settings(app, &saved, edit.listen);
+    }
+    if let Some(lead) = edit.person_lead.clone() {
+        let value = crate::people::set_lead_days(&app.state::<crate::people::People>(), &lead.label, lead.days)?;
+        if value["changed"] == true {
+            sync_person_reminders(app)?;
+            emit_people(app);
+        }
+        let lead_detail = value["detail"].as_str().unwrap_or("").to_string();
+        if !lead_detail.is_empty() {
+            if !detail.is_empty() {
+                detail.push(' ');
+            }
+            detail.push_str(&lead_detail);
+        }
+    }
+    if edit.wipe_memory {
+        let _ = app.state::<crate::local_memory::LocalMemory>().wipe();
+    }
+    if let Some(key) = edit.pending {
+        let ask = crate::i18n::line(&locale_of(app), key);
+        if !detail.is_empty() {
+            detail.push(' ');
+        }
+        detail.push_str(&ask);
+        let kind = match key {
+            "listen-off-ask" => "listen_off",
+            "wipe-ask" => "wipe_memory",
+            _ => "confirm",
+        };
+        stage_confirm(app, kind, &ask, "");
+        return Ok(json!({ "ok": true, "needsConfirm": true, "changed": false, "detail": detail }));
+    }
+    if detail.is_empty() {
+        detail = "Saved.".into();
+    }
+    Ok(json!({ "ok": true, "changed": true, "needsConfirm": false, "detail": detail }))
+}
+
+fn publish_settings(app: &AppHandle, saved: &crate::settings::Settings, listen: Option<bool>) {
+    if let Some(engine) = app.try_state::<crate::audio::engine::Engine>() {
+        engine.send(crate::audio::engine::Ctl::ReloadSettings);
+        if let Some(on) = listen {
+            engine.send(crate::audio::engine::Ctl::SetWakeEnabled {
+                enabled: on,
+                reason: if on { "voice turned Listen on" } else { "voice turned Listen off" },
+            });
+        }
+    }
+    if let Some(hub) = app.try_state::<Arc<Hub>>() {
+        hub.emit("voice://settings", saved);
+        if let Some(on) = listen {
+            hub.emit("voice://wake_enabled", on);
+        }
+    }
+}
+
+fn localize_tool_error(app: &AppHandle, err: String) -> String {
+    if err == crate::settings::SECRET_REFUSAL || err == crate::settings::KEYS_REFUSAL {
+        crate::i18n::line(&locale_of(app), &err)
+    } else {
+        err
+    }
 }
 
 struct Handoff {
@@ -1318,23 +1559,20 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
         }
         "snooze_reminder" => snooze_reminder(app, &agenda, args),
         "get_person" => crate::people::describe_person(app, args["name"].as_str().unwrap_or("")),
-        "set_person_reminder" => {
-            let reminder = PersonReminder {
-                id: String::new(),
-                label: args["label"].as_str().unwrap_or("custom").into(),
-                title: args["title"].as_str().unwrap_or("").into(),
-                date: args["date"].as_str().unwrap_or("").into(),
-                recurrence: args["recurrence"].as_str().unwrap_or("yearly").into(),
-                lead_days: args["leadDays"].as_u64().unwrap_or(0) as u32,
-                time: args["time"].as_str().unwrap_or("").into(),
-                enabled: true,
+        "set_person_reminder" | "create_person" | "update_person" | "delete_person" => {
+            let result = {
+                let people = app.state::<crate::people::People>();
+                match name {
+                    "create_person" => crate::people::create_from_tool(&people, args),
+                    "update_person" => crate::people::update_from_tool(&people, args),
+                    "delete_person" => crate::people::delete_from_tool(&people, args),
+                    _ => crate::people::write_person_date(&people, args),
+                }
             };
-            let value = crate::people::add_person_reminder(app, args["name"].as_str().unwrap_or(""), reminder)?;
-            if value["saved"] == true {
-                sync_person_reminders(app)?;
-            }
-            Ok(value)
+            commit_people(app, result)
         }
+        "get_settings" => read_settings(app),
+        "update_settings" => apply_settings(app, args),
         "list_reminders" => {
             agenda.sweep(app);
             let now = Local::now();
@@ -3090,6 +3328,47 @@ mod tests {
         assert!(hint.contains("list_notes"));
         assert!(hint.contains("list_reminders"));
         assert!(hint.contains("list_people"));
+        assert!(hint.contains("create_person"));
+        assert!(hint.contains("update_settings"));
+        assert!(hint.contains("API key"));
+        assert!(tools.contains("create_person"));
+        assert!(tools.contains("update_person"));
+        assert!(tools.contains("delete_person"));
+        assert!(tools.contains("get_settings"));
+        assert!(tools.contains("update_settings"));
+        assert!(tools.contains("confirmed true"));
+        assert!(tools.contains("Never") || tools.contains("Refuse API keys"));
+    }
+
+    #[test]
+    fn voice_edited_person_dates_keep_the_notify_window() {
+        let path = std::env::temp_dir().join(format!("grok-people-window-{}.json", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let people = crate::people::People::load(path.clone());
+        crate::people::create_from_tool(&people, &json!({"name": "Ana", "label": "birthday", "date": "June 15"})).unwrap();
+        let lead = crate::settings::edit_settings(&crate::settings::Settings::default(), &json!({"notifyDays": 7})).unwrap();
+        assert!(lead.settings.is_none());
+        let days = lead.person_lead.unwrap().days;
+        crate::people::set_lead_days(&people, "birthday", days).unwrap();
+        let person = people.list().pop().unwrap();
+        assert_eq!(person.reminders[0].date, "06-15");
+        assert_eq!(person.reminders[0].lead_days, 7);
+        let march = recurrence::local_on(2026, 3, 3, 10, 0);
+        let (items, _, _) = project_people(&[], std::slice::from_ref(&person), march, 1);
+        let birthday = items.iter().find(|item| item.person_reminder_id == person.reminders[0].id).unwrap();
+        assert_eq!(day_of(birthday.at_ms), "2026-06-08");
+        assert!(!shows_on_time_list(birthday, march));
+        let opening = recurrence::local_on(2026, 6, 8, 9, 0);
+        assert!(shows_on_time_list(birthday, opening));
+        let event_day = recurrence::local_on(2026, 6, 15, 18, 0);
+        assert!(shows_on_time_list(birthday, event_day));
+        let after = recurrence::local_on(2026, 6, 16, 8, 0);
+        assert!(!shows_on_time_list(birthday, after));
+        assert_eq!(person.reminders[0].date, "06-15");
+        let listed = crate::people::saved_people_payload(std::slice::from_ref(&person), "");
+        assert_eq!(listed["people"][0]["dates"][0]["date"], "06-15");
+        assert!(!listed.to_string().contains("phone"));
+        let _ = fs::remove_file(&path);
     }
 
     #[test]

@@ -481,6 +481,8 @@ fn person_match(person: &Person, system: Option<&PhoneContact>) -> Value {
         "channelHandle": channel_handle,
         "note": clamp(&person.note, 280),
         "linkedName": system.map(|s| s.name.clone()).unwrap_or_default(),
+        "reachOutDays": person.reach_out_days,
+        "lastContactedMs": person.last_contacted_ms,
         "reminders": person.reminders.iter().map(reminder_value).collect::<Vec<_>>(),
     })
 }
@@ -633,6 +635,15 @@ fn speak_one(match_: &Value) -> String {
     } else {
         parts.push(format!("Note: {note}."));
     }
+    let reach = match_["reachOutDays"].as_u64().unwrap_or(0);
+    if reach > 0 {
+        parts.push(format!("Reach out every {reach} days."));
+    }
+    if let Some(ms) = match_["lastContactedMs"].as_i64().filter(|ms| *ms > 0) {
+        if let Some(when) = chrono::DateTime::from_timestamp_millis(ms) {
+            parts.push(format!("Last call or text {}.", when.with_timezone(&chrono::Local).format("%Y-%m-%d")));
+        }
+    }
     let linked = match_["linkedName"].as_str().unwrap_or("").trim();
     if !linked.is_empty() {
         parts.push(format!("Linked contact {linked}."));
@@ -731,6 +742,7 @@ fn person_listing(person: &Person) -> Value {
         "note": person.note,
         "favorite": person.favorite,
         "preferredChannel": person.preferred_channel,
+        "reachOutDays": person.reach_out_days,
         "dates": dates,
     })
 }
@@ -834,43 +846,6 @@ fn hit(person: &Person, reminder: &PersonReminder) -> ReminderHit {
         nickname: person.nickname.clone(),
         reminder: reminder.clone(),
     }
-}
-
-pub fn add_person_reminder(app: &AppHandle, name: &str, reminder: PersonReminder) -> Result<Value, String> {
-    let found = find_contact(app, name)?;
-    let matches = found["matches"].as_array().cloned().unwrap_or_default();
-    let people_hits: Vec<Value> = matches.iter().filter(|m| m["source"] == "people" && m["personId"].is_string()).cloned().collect();
-    let pool = if people_hits.is_empty() { matches } else { people_hits };
-    if pool.len() != 1 {
-        let detail = if pool.is_empty() {
-            format!("No person matched {}. Add them in People first. Nothing was opened.", name.trim())
-        } else {
-            format!("{} Nothing was saved or opened.", facts_detail(&pool))
-        };
-        return Ok(json!({ "ok": true, "saved": false, "detail": detail }));
-    }
-    let Some(id) = pool[0]["personId"].as_str() else {
-        return Ok(json!({
-            "ok": true,
-            "saved": false,
-            "detail": "That match is only in phone contacts. Add them in People, then the date can be saved. Nothing was opened."
-        }));
-    };
-    let people = app.state::<People>();
-    let Some(mut person) = people.list().into_iter().find(|p| p.id == id) else {
-        return Err("No person with that id.".into());
-    };
-    person.reminders.push(reminder);
-    let saved = people.set_reminders(&person.id, person.reminders)?;
-    let last = saved.reminders.last();
-    let spoken = last.map(|r| speak_reminder(&saved.display_name, r)).unwrap_or_else(|| "Saved.".into());
-    Ok(json!({
-        "ok": true,
-        "saved": true,
-        "personId": saved.id,
-        "reminderId": last.map(|r| r.id.clone()).unwrap_or_default(),
-        "detail": format!("{spoken} Nothing was opened.")
-    }))
 }
 
 pub fn channel_tool(channel: &str) -> &'static str {
@@ -1201,6 +1176,574 @@ fn name_part(query: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Create or, when that exact name is already saved, update the People record.
+/// This writes `people.json` only. It does not touch the phone address book.
+pub fn create_from_tool(store: &People, args: &Value) -> Result<Value, String> {
+    let name = required_name(args)?;
+    let people = store.list();
+    match resolve_saved(&people, &name) {
+        SavedHit::Many(names) => return Err(many_message(&names)),
+        SavedHit::One(existing) if exact_identity(existing, &name) => {
+            if !has_person_edit(&args) {
+                return Ok(voice_payload(existing, false, false, &format!("{name} is already in People.")));
+            }
+            let mut args = args.clone();
+            if let Some(object) = args.as_object_mut() {
+                object.insert("id".into(), json!(existing.id));
+            }
+            let mut value = update_existing(store, existing, &args)?;
+            let detail = value["detail"].as_str().unwrap_or("").to_string();
+            value["detail"] = json!(format!("{name} is already in People. {detail}"));
+            value["created"] = json!(false);
+            return Ok(value);
+        }
+        SavedHit::One(_) | SavedHit::None => {}
+    }
+    let mut draft = blank_draft(&name);
+    overlay(&mut draft, args)?;
+    draft.display_name = display_from(args).unwrap_or(name);
+    let date_clause = apply_date(&mut draft, args)?;
+    let saved = store.save(draft)?;
+    Ok(voice_payload(&saved, true, true, &ack_added(&saved.display_name, date_clause.as_deref())))
+}
+
+pub fn update_from_tool(store: &People, args: &Value) -> Result<Value, String> {
+    if arg_string(args.get("name")).is_none() && arg_string(args.get("person")).is_none() && arg_string(args.get("id")).is_none() {
+        if let Some(days) = arg_u32(args.get("leadDays")) {
+            let label = arg_string(args.get("label")).unwrap_or_else(|| "birthday".into());
+            return set_lead_days(store, &label, days);
+        }
+        return Err("Say which person to change.".into());
+    }
+    let people = store.list();
+    let person = saved_target(&people, args)?;
+    update_existing(store, &person, args)
+}
+
+pub fn delete_from_tool(store: &People, args: &Value) -> Result<Value, String> {
+    let people = store.list();
+    let person = saved_target(&people, args)?;
+    if arg_bool(args.get("confirmed")) != Some(true) {
+        return Ok(json!({
+            "ok": true,
+            "deleted": false,
+            "changed": false,
+            "needsConfirm": true,
+            "confirmKind": "delete_person",
+            "personId": person.id,
+            "name": person.display_name,
+            "detail": format!("Delete {} from People? This does not change the phone's Contacts app.", person.display_name)
+        }));
+    }
+    store.delete(&person.id)?;
+    Ok(json!({
+        "ok": true,
+        "deleted": true,
+        "changed": true,
+        "needsConfirm": false,
+        "name": person.display_name,
+        "detail": format!("Deleted {} from People. The phone's Contacts app was not changed.", person.display_name)
+    }))
+}
+
+/// Add or replace one date. Creates the person when they are not saved yet.
+pub fn write_person_date(store: &People, args: &Value) -> Result<Value, String> {
+    match update_from_tool(store, args) {
+        Err(err) if err.contains("Call create_person") => create_from_tool(store, args),
+        other => other,
+    }
+}
+
+pub fn set_lead_days(store: &People, label: &str, days: u32) -> Result<Value, String> {
+    let days = days.min(30);
+    let want = canonical_label(label);
+    let title_query = if want.is_empty() { normalize(label) } else { String::new() };
+    let mut matched = 0;
+    let mut changed_people = 0;
+    for person in store.list() {
+        let mut draft = draft_of(&person);
+        let mut touched = false;
+        for reminder in &mut draft.reminders {
+            let matches = if !title_query.is_empty() && title_query != "custom" {
+                reminder.label == "custom" && (normalize(&reminder.title) == title_query || normalize(&reminder.title).contains(&title_query))
+            } else if want.is_empty() {
+                true
+            } else {
+                reminder.label == want
+            };
+            if !matches {
+                continue;
+            }
+            matched += 1;
+            if reminder.lead_days != days {
+                reminder.lead_days = days;
+                touched = true;
+            }
+        }
+        if touched {
+            store.save(draft)?;
+            changed_people += 1;
+        }
+    }
+    let which = if !title_query.is_empty() && title_query != "custom" {
+        label.trim().to_string()
+    } else if want.is_empty() {
+        "Dates".into()
+    } else if want == "birthday" {
+        "Birthdays".into()
+    } else if want == "anniversary" {
+        "Anniversaries".into()
+    } else {
+        want
+    };
+    if matched == 0 {
+        return Ok(json!({
+            "ok": true,
+            "changed": false,
+            "detail": format!("No saved {which} to update. Add the date on a person first.")
+        }));
+    }
+    let when = match days {
+        0 => "on the day".into(),
+        1 => "1 day before".into(),
+        n => format!("{n} days before"),
+    };
+    if changed_people == 0 {
+        return Ok(json!({
+            "ok": true,
+            "changed": false,
+            "detail": format!("{which} already notify {when}. The date stays on the person all year.")
+        }));
+    }
+    Ok(json!({
+        "ok": true,
+        "changed": true,
+        "detail": format!("{which} now notify {when}. The date stays on the person all year.")
+    }))
+}
+
+fn update_existing(store: &People, person: &Person, args: &Value) -> Result<Value, String> {
+    if !has_person_edit(args) {
+        return Err("Say what to change.".into());
+    }
+    let previous = person.display_name.clone();
+    let mut draft = draft_of(person);
+    overlay(&mut draft, args)?;
+    let date_clause = apply_date(&mut draft, args)?;
+    let saved = store.save(draft)?;
+    Ok(voice_payload(&saved, true, false, &ack_updated(&previous, &saved, date_clause.as_deref(), args.get("note").is_some())))
+}
+
+fn saved_target(people: &[Person], args: &Value) -> Result<Person, String> {
+    if let Some(id) = arg_string(args.get("id")).filter(|id| !id.is_empty()) {
+        return people.iter().find(|person| person.id == id).cloned().ok_or_else(|| "No person with that id.".to_string());
+    }
+    let name = required_name(args)?;
+    match resolve_saved(people, &name) {
+        SavedHit::One(person) => Ok(person.clone()),
+        SavedHit::None => Err(format!("No one named {name} is in People. Call create_person to add them.")),
+        SavedHit::Many(names) => Err(many_message(&names)),
+    }
+}
+
+fn blank_draft(name: &str) -> PersonDraft {
+    PersonDraft {
+        id: String::new(),
+        android_contact_id: None,
+        display_name: name.to_string(),
+        nickname: String::new(),
+        aliases: Vec::new(),
+        preferred_channel: String::new(),
+        handles: Handles::default(),
+        favorite: false,
+        note: String::new(),
+        reminders: Vec::new(),
+        reach_out_days: 0,
+        last_contacted_ms: None,
+    }
+}
+
+fn draft_of(person: &Person) -> PersonDraft {
+    PersonDraft {
+        id: person.id.clone(),
+        android_contact_id: person.android_contact_id.clone(),
+        display_name: person.display_name.clone(),
+        nickname: person.nickname.clone(),
+        aliases: person.aliases.clone(),
+        preferred_channel: person.preferred_channel.clone(),
+        handles: person.handles.clone(),
+        favorite: person.favorite,
+        note: person.note.clone(),
+        reminders: person.reminders.clone(),
+        reach_out_days: person.reach_out_days,
+        last_contacted_ms: person.last_contacted_ms,
+    }
+}
+
+fn overlay(draft: &mut PersonDraft, args: &Value) -> Result<(), String> {
+    if args.get("androidContactId").is_some() || args.get("android_contact_id").is_some() {
+        return Err("Phone contacts stay import-only. Say the name, and People keeps its own record.".into());
+    }
+    if args.get("lastContacted").is_some() || args.get("lastContactedMs").is_some() {
+        return Err("Last contacted comes from call and text history in People.".into());
+    }
+    if let Some(name) = display_from(args) {
+        if name.is_empty() {
+            return Err("A person needs a name.".into());
+        }
+        draft.display_name = name;
+    }
+    if let Some(nickname) = arg_string(args.get("nickname")) {
+        draft.nickname = nickname;
+    }
+    if let Some(aliases) = args.get("aliases") {
+        draft.aliases = aliases_from(aliases);
+    }
+    if let Some(note) = arg_string(args.get("note")) {
+        draft.note = note;
+    }
+    if let Some(favorite) = arg_bool(args.get("favorite")) {
+        draft.favorite = favorite;
+    }
+    if let Some(channel) = arg_string(args.get("preferredChannel")).or_else(|| arg_string(args.get("channel"))) {
+        draft.preferred_channel = channel;
+    }
+    if let Some(days) = arg_u32(args.get("reachOutDays")) {
+        draft.reach_out_days = days;
+    }
+    if let Some(phone) = arg_string(args.get("phone")) {
+        draft.handles.phone = phone;
+    }
+    if let Some(email) = arg_string(args.get("email")) {
+        draft.handles.email = email;
+    }
+    if let Some(whatsapp) = arg_string(args.get("whatsapp")) {
+        draft.handles.whatsapp = whatsapp;
+    }
+    if let Some(signal) = arg_string(args.get("signal")) {
+        draft.handles.signal = signal;
+    }
+    Ok(())
+}
+
+fn apply_date(draft: &mut PersonDraft, args: &Value) -> Result<Option<String>, String> {
+    if !date_args(args) {
+        return Ok(None);
+    }
+    let remove = arg_bool(args.get("removeDate")) == Some(true);
+    let id = arg_string(args.get("dateId")).unwrap_or_default();
+    let mut label = arg_string(args.get("label")).unwrap_or_default();
+    let mut title = arg_string(args.get("title")).or_else(|| arg_string(args.get("dateTitle"))).unwrap_or_default();
+    promote_custom(&mut label, &mut title);
+    let date = arg_string(args.get("date")).unwrap_or_default();
+    if date.is_empty() && canonical_label(&label).is_empty() && title.is_empty() && label.is_empty() {
+        if let Some(days) = arg_u32(args.get("leadDays")) {
+            if draft.reminders.is_empty() {
+                return Err("No dates on that person.".into());
+            }
+            for reminder in &mut draft.reminders {
+                reminder.lead_days = days.min(30);
+            }
+            return Ok(Some(format!("Notify {}.", match days.min(30) {
+                0 => "on the day".into(),
+                1 => "1 day before".into(),
+                n => format!("{n} days before"),
+            })));
+        }
+    }
+    let index = reminder_index(&draft.reminders, &id, &label, &title)?;
+    if remove {
+        let Some(index) = index else {
+            return Err("No matching date to remove.".into());
+        };
+        let removed = draft.reminders.remove(index);
+        return Ok(Some(format!("Removed {}.", date_name(&removed))));
+    }
+    if date.is_empty() && index.is_none() && arg_string(args.get("label")).is_some() && args.get("leadDays").is_none() && args.get("title").is_none() {
+        return Err("Say the date, such as June 15 or 6/15.".into());
+    }
+    if date.is_empty() && index.is_none() {
+        return Err("Say the date, such as June 15, 6/15, or --06-15.".into());
+    }
+    let mut reminder = index.map(|index| draft.reminders[index].clone()).unwrap_or_else(|| PersonReminder {
+        id: String::new(),
+        label: if canonical_label(&label).is_empty() { "custom".into() } else { canonical_label(&label) },
+        title: title.clone(),
+        date: String::new(),
+        recurrence: "yearly".into(),
+        lead_days: 0,
+        time: String::new(),
+        enabled: true,
+    });
+    if !canonical_label(&label).is_empty() {
+        reminder.label = canonical_label(&label);
+    } else if !label.is_empty() {
+        reminder.label = "custom".into();
+    }
+    if !title.is_empty() {
+        reminder.title = title;
+    }
+    if !date.is_empty() {
+        reminder.date = date;
+    }
+    if let Some(recurrence) = arg_string(args.get("recurrence")) {
+        reminder.recurrence = recurrence;
+    }
+    if let Some(time) = arg_string(args.get("time")) {
+        reminder.time = time;
+    }
+    if let Some(days) = arg_u32(args.get("leadDays")) {
+        reminder.lead_days = days;
+    }
+    if let Some(enabled) = arg_bool(args.get("enabled")) {
+        reminder.enabled = enabled;
+    }
+    let normalized = normalize_reminder(&reminder, index.unwrap_or(draft.reminders.len()))?;
+    let clause = format!("{} on {}.", date_name(&normalized), spoken_month_day(&normalized.date));
+    if let Some(index) = index {
+        draft.reminders[index] = normalized;
+    } else {
+        draft.reminders.push(normalized);
+    }
+    Ok(Some(clause))
+}
+
+fn date_args(args: &Value) -> bool {
+    ["date", "label", "title", "dateTitle", "recurrence", "time", "leadDays", "removeDate", "enabled", "dateId"]
+        .iter()
+        .any(|key| args.get(*key).is_some())
+}
+
+fn has_person_edit(args: &Value) -> bool {
+    ["displayName", "rename", "nickname", "aliases", "note", "favorite", "preferredChannel", "channel", "reachOutDays", "phone", "email", "whatsapp", "signal"]
+        .iter()
+        .any(|key| args.get(*key).is_some())
+        || date_args(args)
+}
+
+fn reminder_index(reminders: &[PersonReminder], id: &str, label: &str, title: &str) -> Result<Option<usize>, String> {
+    if !id.is_empty() {
+        return reminders.iter().position(|reminder| reminder.id == id).map(Some).ok_or_else(|| "No date with that id.".to_string());
+    }
+    let label_key = canonical_label(label);
+    if label_key == "birthday" || label_key == "anniversary" {
+        return Ok(reminders.iter().position(|reminder| reminder.label == label_key));
+    }
+    if !title.is_empty() {
+        let query = normalize(&title);
+        let exact: Vec<usize> = reminders
+            .iter()
+            .enumerate()
+            .filter(|(_, reminder)| normalize(&reminder.title) == query)
+            .map(|(index, _)| index)
+            .collect();
+        if exact.len() == 1 {
+            return Ok(Some(exact[0]));
+        }
+        if exact.len() > 1 {
+            return Err("Several dates use that name. Say which one.".into());
+        }
+        let partial: Vec<usize> = reminders
+            .iter()
+            .enumerate()
+            .filter(|(_, reminder)| {
+                let stored = normalize(&reminder.title);
+                !stored.is_empty() && (stored.contains(&query) || query.contains(&stored))
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if partial.len() == 1 {
+            return Ok(Some(partial[0]));
+        }
+        if partial.len() > 1 {
+            return Err("Several dates match that name. Say which one.".into());
+        }
+        return Ok(None);
+    }
+    if label_key == "custom" {
+        let custom: Vec<usize> = reminders.iter().enumerate().filter(|(_, reminder)| reminder.label == "custom").map(|(index, _)| index).collect();
+        if custom.len() <= 1 {
+            return Ok(custom.first().copied());
+        }
+        return Err("Say the name of the date, such as visa.".into());
+    }
+    Ok(None)
+}
+
+fn promote_custom(label: &mut String, title: &mut String) {
+    if label.trim().is_empty() || !canonical_label(label).is_empty() {
+        return;
+    }
+    if title.trim().is_empty() {
+        *title = label.trim().to_string();
+    }
+    *label = "custom".into();
+}
+
+fn canonical_label(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "birthday" | "birthdays" | "bday" | "born" => "birthday".into(),
+        "anniversary" | "anniversaries" => "anniversary".into(),
+        "custom" => "custom".into(),
+        _ => String::new(),
+    }
+}
+
+fn date_name(reminder: &PersonReminder) -> String {
+    if reminder.label == "custom" {
+        if reminder.title.trim().is_empty() { "custom date".into() } else { reminder.title.trim().to_string() }
+    } else {
+        reminder.label.clone()
+    }
+}
+
+fn spoken_month_day(date: &str) -> String {
+    recurrence::parse_month_day(date).map(|(_, month, day)| recurrence::speak_date(month, day)).unwrap_or_else(|| date.to_string())
+}
+
+fn ack_added(name: &str, date: Option<&str>) -> String {
+    match date {
+        Some(date) => format!("Added {name}. {date}"),
+        None => format!("Added {name}."),
+    }
+}
+
+fn ack_updated(previous: &str, person: &Person, date: Option<&str>, note_saved: bool) -> String {
+    let mut parts = Vec::new();
+    if !same_name(previous, &person.display_name) {
+        parts.push(format!("Renamed {previous} to {}.", person.display_name));
+    } else {
+        parts.push(format!("Updated {}.", person.display_name));
+    }
+    if let Some(date) = date {
+        parts.push(date.to_string());
+    }
+    if note_saved {
+        parts.push("Note saved.".into());
+    }
+    parts.join(" ")
+}
+
+fn exact_identity(person: &Person, query: &str) -> bool {
+    same_name(&person.display_name, query) || same_name(&person.nickname, query) || person.aliases.iter().any(|alias| same_name(alias, query))
+}
+
+fn voice_payload(person: &Person, changed: bool, created: bool, detail: &str) -> Value {
+    json!({
+        "ok": true,
+        "changed": changed,
+        "created": created,
+        "saved": true,
+        "personId": person.id,
+        "person": person_voice_view(person),
+        "detail": detail
+    })
+}
+
+fn person_voice_view(person: &Person) -> Value {
+    json!({
+        "id": person.id,
+        "name": person.display_name,
+        "nickname": person.nickname,
+        "aliases": person.aliases,
+        "note": person.note,
+        "favorite": person.favorite,
+        "preferredChannel": person.preferred_channel,
+        "reachOutDays": person.reach_out_days,
+        "dates": person.reminders.iter().filter(|reminder| reminder.enabled).map(reminder_value).collect::<Vec<_>>()
+    })
+}
+
+enum SavedHit<'a> {
+    One(&'a Person),
+    None,
+    Many(Vec<String>),
+}
+
+fn resolve_saved<'a>(people: &'a [Person], query: &str) -> SavedHit<'a> {
+    let query = query.trim();
+    if query.chars().count() < 2 {
+        return SavedHit::None;
+    }
+    let folded = normalize(query);
+    let exact: Vec<&Person> = people
+        .iter()
+        .filter(|person| same_name(&person.display_name, query) || same_name(&person.nickname, query) || person.aliases.iter().any(|alias| same_name(alias, query)))
+        .collect();
+    if exact.len() == 1 {
+        return SavedHit::One(exact[0]);
+    }
+    if exact.len() > 1 {
+        return SavedHit::Many(exact.into_iter().map(|person| person.display_name.clone()).collect());
+    }
+    let hits = rank_people(people, &folded);
+    match hits.len() {
+        0 => SavedHit::None,
+        1 => people.iter().find(|person| person.id == hits[0].id).map(SavedHit::One).unwrap_or(SavedHit::None),
+        _ => SavedHit::Many(hits.iter().take(4).map(|person| person.display_name.clone()).collect()),
+    }
+}
+
+fn same_name(label: &str, query: &str) -> bool {
+    normalize(label) == normalize(query)
+}
+
+fn many_message(names: &[String]) -> String {
+    format!("Several people match. Ask which one. {}", names.join(", "))
+}
+
+fn required_name(args: &Value) -> Result<String, String> {
+    arg_string(args.get("name")).or_else(|| arg_string(args.get("person"))).filter(|name| !name.is_empty()).ok_or_else(|| "Say the person's name.".to_string())
+}
+
+fn display_from(args: &Value) -> Option<String> {
+    arg_string(args.get("displayName")).or_else(|| arg_string(args.get("rename")))
+}
+
+fn aliases_from(value: &Value) -> Vec<String> {
+    match value {
+        Value::Array(rows) => rows.iter().filter_map(|row| row.as_str().map(|text| text.to_string())).collect(),
+        Value::String(text) => vec![text.clone()],
+        _ => Vec::new(),
+    }
+}
+
+fn arg_string(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(text) => Some(text.trim().to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(on) => Some(if *on { "true".into() } else { "false".into() }),
+        _ => None,
+    }
+}
+
+fn arg_bool(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Bool(on) => Some(*on),
+        Value::Number(number) => number.as_i64().map(|n| n != 0),
+        Value::String(text) => match text.trim().to_ascii_lowercase().as_str() {
+            "true" | "yes" | "on" | "1" => Some(true),
+            "false" | "no" | "off" | "0" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn arg_u32(value: Option<&Value>) -> Option<u32> {
+    match value? {
+        Value::Number(number) => number.as_u64().map(|n| n.min(u32::MAX as u64) as u32),
+        Value::String(text) => {
+            if text.trim().eq_ignore_ascii_case("off") {
+                return Some(0);
+            }
+            let digits: String = text.chars().skip_while(|c| !c.is_ascii_digit()).take_while(|c| c.is_ascii_digit()).collect();
+            digits.parse().ok()
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1536,5 +2079,93 @@ mod tests {
         let all = saved_people_payload(&[person("Ana Lopez", "", &[], "", false)], "");
         assert_eq!(all["count"], 1);
         assert!(all["detail"].as_str().unwrap().contains("all year"));
+    }
+
+    fn temp_people(name: &str) -> (People, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("grok-people-{name}-{}.json", std::process::id()));
+        let _ = fs::remove_file(&path);
+        (People::load(path.clone()), path)
+    }
+
+    #[test]
+    fn voice_create_and_edit_person_dates_notes_and_rename() {
+        let (store, path) = temp_people("voice");
+        let created = create_from_tool(
+            &store,
+            &json!({"name": "Ana", "label": "birthday", "date": "June 15", "note": "college friend", "phone": "+15551212", "preferredChannel": "whatsapp", "reachOutDays": 14}),
+        )
+        .unwrap();
+        assert_eq!(created["changed"], true);
+        assert!(created["detail"].as_str().unwrap().contains("Added Ana"));
+        assert!(created["detail"].as_str().unwrap().contains("June 15"));
+        assert!(!created.to_string().contains("+15551212"));
+        let ana = &store.list()[0];
+        assert_eq!(ana.display_name, "Ana");
+        assert_eq!(ana.note, "college friend");
+        assert_eq!(ana.preferred_channel, "whatsapp");
+        assert_eq!(ana.reach_out_days, 14);
+        assert_eq!(ana.handles.phone, "+15551212");
+        assert!(ana.android_contact_id.is_none());
+        assert_eq!(ana.reminders[0].label, "birthday");
+        assert_eq!(ana.reminders[0].date, "06-15");
+        assert_eq!(ana.reminders[0].recurrence, "yearly");
+
+        let anniversary = update_from_tool(&store, &json!({"name": "Ana", "label": "anniversary", "date": "March 3"})).unwrap();
+        assert!(anniversary["detail"].as_str().unwrap().contains("March 3"));
+        let visa = update_from_tool(&store, &json!({"name": "Ana", "label": "visa renewal", "date": "April 10"})).unwrap();
+        assert!(visa["detail"].as_str().unwrap().contains("visa renewal"));
+        let slash = update_from_tool(&store, &json!({"name": "Ana", "title": "visa renewal", "date": "6/1"})).unwrap();
+        assert!(slash["changed"] == true);
+        let yearless = update_from_tool(&store, &json!({"name": "Ana", "label": "birthday", "date": "--06-15"})).unwrap();
+        assert!(yearless["detail"].as_str().unwrap().contains("June 15"));
+        let once = update_from_tool(&store, &json!({"name": "Ana", "title": "visa renewal", "date": "2026-04-10", "recurrence": "once"})).unwrap();
+        assert!(once["changed"] == true);
+
+        let renamed = update_from_tool(&store, &json!({"name": "Ana", "rename": "Ana C.", "note": "lives in Zurich"})).unwrap();
+        assert!(renamed["detail"].as_str().unwrap().contains("Renamed Ana to Ana C."));
+        assert!(renamed["detail"].as_str().unwrap().contains("Note saved"));
+        let saved = &store.list()[0];
+        assert_eq!(saved.display_name, "Ana C.");
+        assert_eq!(saved.note, "lives in Zurich");
+        let birthday = saved.reminders.iter().find(|reminder| reminder.label == "birthday").unwrap();
+        assert_eq!(birthday.date, "06-15");
+        let anniversary = saved.reminders.iter().find(|reminder| reminder.label == "anniversary").unwrap();
+        assert_eq!(anniversary.date, "03-03");
+        let visa = saved.reminders.iter().find(|reminder| reminder.title == "visa renewal").unwrap();
+        assert_eq!(visa.label, "custom");
+        assert_eq!(visa.date, "2026-04-10");
+        assert_eq!(visa.recurrence, "once");
+        assert_eq!(saved.reminders.len(), 3);
+
+        let listed = saved_people_payload(&store.list(), "");
+        let raw = listed.to_string();
+        assert!(!raw.contains("+15551212"));
+        assert!(raw.contains("06-15"));
+        assert!(raw.contains("visa renewal"));
+
+        let held = delete_from_tool(&store, &json!({"name": "Ana C."})).unwrap();
+        assert_eq!(held["needsConfirm"], true);
+        assert_eq!(held["deleted"], false);
+        assert_eq!(store.list().len(), 1);
+        let removed = delete_from_tool(&store, &json!({"name": "Ana C.", "confirmed": true})).unwrap();
+        assert_eq!(removed["deleted"], true);
+        assert!(store.list().is_empty());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn voice_birthday_lead_stays_on_the_person_all_year() {
+        let (store, path) = temp_people("lead");
+        create_from_tool(&store, &json!({"name": "Ana", "label": "birthday", "date": "June 15"})).unwrap();
+        let updated = set_lead_days(&store, "birthday", 7).unwrap();
+        assert_eq!(updated["changed"], true);
+        assert!(updated["detail"].as_str().unwrap().contains("7 days before"));
+        let ana = &store.list()[0];
+        assert_eq!(ana.reminders[0].date, "06-15");
+        assert_eq!(ana.reminders[0].lead_days, 7);
+        assert_eq!(ana.reminders[0].recurrence, "yearly");
+        let again = set_lead_days(&store, "birthday", 7).unwrap();
+        assert_eq!(again["changed"], false);
+        let _ = fs::remove_file(&path);
     }
 }

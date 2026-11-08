@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Send, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
 import { Notice } from "@/components/PageChrome";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { VoiceState } from "@/hooks/useVoice";
-import { api, type VoiceAccount } from "@/lib/api";
+import { api, type Settings, type VoiceAccount } from "@/lib/api";
 import { packsReadyForTalk, readyProvider, recoveryFor, settingsLabel, type SettingsDestination } from "@/lib/flow";
 import { useT } from "@/lib/i18n";
 import { safeHttps } from "@/lib/links";
@@ -72,6 +73,11 @@ export function AssistantView({
     if (!isTauri()) return;
     void api.getSettings().then((settings) => setPreferLocal(settings.preferLocalOnWake)).catch(() => {});
     void api.localPacks().then((packs) => setPacksReady(packsReadyForTalk(packs))).catch(() => {});
+    let unlisten: (() => void) | undefined;
+    void listen<Settings>("voice://settings", (event) => setPreferLocal(event.payload.preferLocalOnWake)).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
   }, []);
   useEffect(() => {
     const el = draftBox.current;
@@ -173,10 +179,20 @@ export function AssistantView({
       {voice.handoff && (
         <div className="mb-3 border border-border px-3 py-3">
           <p className="text-sm leading-6 text-foreground">{voice.handoff.summary}</p>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("Nothing is sent until you confirm in the other app.")}</p>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+            {voice.handoff.kind === "delete_person" || voice.handoff.kind === "listen_off" || voice.handoff.kind === "wipe_memory"
+              ? t("Say yes to finish this.")
+              : t("Nothing is sent until you confirm in the other app.")}
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button type="button" onClick={voice.confirmHandoff}>
-              {t("Send the draft")}
+              {voice.handoff.kind === "delete_person"
+                ? t("Delete")
+                : voice.handoff.kind === "wipe_memory"
+                  ? t("Wipe memory")
+                  : voice.handoff.kind === "listen_off"
+                    ? t("Turn Listen off")
+                    : t("Send the draft")}
             </Button>
             <Button type="button" variant="outline" onClick={voice.dismissHandoff}>
               {t("Not now")}
