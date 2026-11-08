@@ -1,6 +1,6 @@
 [package]
 name = "grok-voice"
-version = "0.1.27"
+version = "0.1.28"
 description = "BYOK Hey Grok voice assistant"
 authors = ["you"]
 edition = "2024"
