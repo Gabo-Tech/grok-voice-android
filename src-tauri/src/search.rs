@@ -154,6 +154,25 @@ fn chat_tools() -> Value {
     json!(tools)
 }
 
+fn text_uses_local(app: &AppHandle) -> bool {
+    let settings = app.state::<crate::settings::SettingsStore>().get();
+    let ready = crate::local::model_dir(app)
+        .map(|dir| crate::local::packs_ready(&dir))
+        .unwrap_or(false);
+    let Ok(accounts) = app.state::<Vault>().accounts(&app.state::<NativeBridge>()) else {
+        return false;
+    };
+    let providers: Vec<&str> = accounts.iter().map(|account| account.provider.as_str()).collect();
+    crate::local::text_uses_local(&providers, settings.prefer_local_on_wake, ready)
+}
+
+fn has_xai(app: &AppHandle) -> bool {
+    app.state::<Vault>()
+        .accounts(&app.state::<NativeBridge>())
+        .map(|accounts| accounts.iter().any(|account| account.provider == "xai"))
+        .unwrap_or(false)
+}
+
 fn system_prompt() -> String {
     let mut prompt = "You are Grok on the user's phone. The messages below are the shared memory of spoken and typed talk from the last 12 hours. Use them when the user refers to something already said. Use live web results for news, weather, scores, prices, and anything that changes. Summarize in a few short paragraphs. For notes, reminders, alarms, timers, and calendar, call the matching tool before saying it is done. media_control and set_volume act immediately. Questions about a person's preferred channel, birthday, anniversary, note, or nickname use get_person. Speak that answer and do not open any app. find_contact is only for reaching someone. It checks People nicknames, aliases, and favorites before phone contacts. If a match has preferredChannel, use that channel. set_person_reminder saves a birthday or anniversary. set_reminder repeats when recurrence is daily or weekly. snooze_reminder delays the one that just rang. For the browser, YouTube, WhatsApp, Signal, email, a call, and a text, ask for a clear yes before calling the open tool with confirmed true. Nothing is sent, and a call is not placed, until the user confirms in that app. Times are local YYYY-MM-DDTHH:MM. share_item shares a note, reminder, or event as a draft after a clear yes. read_notifications, set_dnd, go_home, and phone_status run on this phone. Do not guess the battery or the next alarm.".to_string();
     prompt.push_str(crate::actions::lookup_hint());
@@ -168,18 +187,22 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
     }
     let hub = app.state::<std::sync::Arc<Hub>>();
     let user_id = format!("text-{}", crate::diagnostics::now_ms());
+    let outbound = crate::memory::for_model(text);
     hub.emit("voice://busy", "Searching the web…");
     hub.emit(
         "voice://transcript",
-        json!({ "id": user_id, "role": "user", "text": text, "delta": null, "isFinal": true }),
+        json!({ "id": user_id, "role": "user", "text": outbound, "delta": null, "isFinal": true }),
     );
-    remember_for_voice(format!("user: {text}"));
     let memory = app.state::<crate::memory::Memory>();
-    memory.remember("user", text);
+    memory.remember("user", &outbound);
     let mut messages = vec![json!({ "role": "system", "content": system_prompt() })];
     for turn in memory.recent() {
         let role = if turn.role == "assistant" { "assistant" } else { "user" };
         messages.push(json!({ "role": role, "content": turn.text }));
+    }
+    match messages.last_mut() {
+        Some(last) if last["role"] == "user" => last["content"] = json!(outbound),
+        _ => messages.push(json!({ "role": "user", "content": outbound })),
     }
 
     let online = app
@@ -188,11 +211,39 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
         .map(|facts| facts.online)
         .unwrap_or(true);
     if crate::local::public_search_enabled() {
+        remember_for_voice(format!("pending: {outbound}"));
         hub.emit("voice://busy", "");
         return Ok("sent to the on-device session".into());
     }
+    remember_for_voice(format!("user: {outbound}"));
+    if text_uses_local(app) {
+        hub.emit("voice://busy", "On this phone…");
+        match crate::local::answer_text(app, &outbound) {
+            Ok(answer) => {
+                remember_for_voice(format!("assistant: {}", answer.chars().take(2_000).collect::<String>()));
+                app.state::<crate::memory::Memory>().remember("assistant", &answer);
+                hub.emit("voice://busy", "");
+                let id = format!("text-a-{}", crate::diagnostics::now_ms());
+                hub.emit(
+                    "voice://transcript",
+                    json!({ "id": id, "role": "assistant", "text": answer, "delta": null, "isFinal": true }),
+                );
+                return Ok(answer);
+            }
+            Err(err) => {
+                hub.error(err.clone());
+                if !has_xai(app) {
+                    hub.emit("voice://busy", "");
+                    let _ = app.state::<NativeBridge>().speak_fallback(&err);
+                    return Err(err);
+                }
+                hub.warn(format!("on device failed, trying the next key: {err}"));
+                hub.emit("voice://busy", "Searching the web…");
+            }
+        }
+    }
     if !online {
-        return ask_offline(app, text);
+        return ask_offline(app, &outbound);
     }
 
     let tools = chat_tools();

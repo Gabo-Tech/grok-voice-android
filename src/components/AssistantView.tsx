@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Send, Trash2 } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
 import { Notice } from "@/components/PageChrome";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { VoiceState } from "@/hooks/useVoice";
-import type { VoiceAccount } from "@/lib/api";
-import { readyProvider, recoveryFor, settingsLabel, type SettingsDestination } from "@/lib/flow";
+import { api, type VoiceAccount } from "@/lib/api";
+import { packsReadyForTalk, readyProvider, recoveryFor, settingsLabel, type SettingsDestination } from "@/lib/flow";
 import { useT } from "@/lib/i18n";
 import { safeHttps } from "@/lib/links";
 import { cn } from "@/lib/utils";
@@ -62,8 +63,22 @@ export function AssistantView({
 }) {
   const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
+  const draftBox = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState("");
+  const [preferLocal, setPreferLocal] = useState(false);
+  const [packsReady, setPacksReady] = useState(false);
   const clock = sessionClock(voice.usage?.openSinceMs);
+  useEffect(() => {
+    if (!isTauri()) return;
+    void api.getSettings().then((settings) => setPreferLocal(settings.preferLocalOnWake)).catch(() => {});
+    void api.localPacks().then((packs) => setPacksReady(packsReadyForTalk(packs))).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const el = draftBox.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [draft]);
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -71,7 +86,7 @@ export function AssistantView({
   }, [voice.rows, voice.busy, voice.sending]);
 
   const recovery = voice.lastError ? recoveryFor(voice.lastError) : null;
-  const provider = readyProvider(voice.provider, accounts);
+  const provider = readyProvider(voice.provider, accounts, preferLocal, packsReady);
   const inCall = voice.provider.length > 0;
 
   return (
@@ -150,7 +165,7 @@ export function AssistantView({
         {(voice.sending || voice.busy) && (
           <div className="mr-auto py-1 text-base leading-6">
             <p className="mb-1 text-xs text-muted-foreground">{t("grok")}</p>
-            <p className="text-muted-foreground">{voice.busy || t("Searching the web…")}</p>
+            <p className="text-muted-foreground">{voice.busy ? t(voice.busy) : t("Searching the web…")}</p>
           </div>
         )}
       </div>
@@ -171,7 +186,7 @@ export function AssistantView({
       )}
 
       <form
-        className="mt-auto flex shrink-0 items-center gap-2 border-t border-border pt-3"
+        className="mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
         onSubmit={(e) => {
           e.preventDefault();
           const text = draft;
@@ -179,13 +194,14 @@ export function AssistantView({
           void voice.sendText(text);
         }}
       >
-        <input
+        <textarea
+          ref={draftBox}
           value={draft}
+          rows={1}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t("Type a message")}
           aria-label={t("Type a message")}
-          enterKeyHint="send"
-          className="h-12 min-w-0 flex-1 rounded-[16px] border border-border bg-transparent px-4 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
+          className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto rounded-[16px] border border-border bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
         />
         <button
           type="submit"

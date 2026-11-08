@@ -16,11 +16,24 @@ export function chainPlace(index: number, total: number): string {
   return "Then this";
 }
 
-export function readyProvider(live: string, accounts: VoiceAccount[]): string {
+export function readyProvider(
+  live: string,
+  accounts: VoiceAccount[],
+  preferLocal = false,
+  packsReady = false,
+): string {
   if (live) return providerLabel(live);
-  const first = accounts[0];
+  const providers = accounts.map((account) => account.provider);
+  const preferred = preferLocal && packsReady ? providers.find((provider) => provider === "local") : undefined;
+  const first = preferred ?? providers[0];
   if (!first) return "No voice yet";
-  return `${providerLabel(first.provider)} first`;
+  return `${providerLabel(first)} first`;
+}
+
+export function packsReadyForTalk(packs: { id: string; ready: boolean; selected?: boolean; kind?: string }[]): boolean {
+  const ready = (id: string) => packs.some((pack) => pack.id === id && pack.ready);
+  const selected = packs.find((pack) => pack.selected && (pack.kind === "llm" || pack.kind === "custom"));
+  return ready("stt") && ready("tts") && Boolean(selected?.ready);
 }
 
 export function recoveryFor(message: string): { hint: string; go?: SettingsDestination } | null {

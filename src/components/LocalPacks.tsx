@@ -26,7 +26,7 @@ const FAMILIES = [
   ["llama3", "Llama 3"],
 ] as const;
 
-export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
+export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: boolean; onChanged?: () => void }) {
   const t = useT();
   const [packs, setPacks] = useState<LocalPack[]>([]);
   const [progress, setProgress] = useState<PackProgress | null>(null);
@@ -90,6 +90,7 @@ export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
     setError(null);
     try {
       setPacks(await api.selectLocalModel(id));
+      onChanged?.();
     } catch (err) {
       setError(shownError(err, t));
     } finally {
@@ -103,6 +104,7 @@ export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
     try {
       setPacks(await api.importLocalModel(name.trim(), family));
       setName("");
+      onChanged?.();
     } catch (err) {
       setError(shownError(err, t));
     } finally {
@@ -119,6 +121,7 @@ export function LocalPacks({ showHeading = true }: { showHeading?: boolean }) {
       setName("");
       setUrl("");
       setSha("");
+      onChanged?.();
     } catch (err) {
       setError(shownError(err, t));
     } finally {

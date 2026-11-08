@@ -26,12 +26,11 @@ use crate::{
 
 use super::{
     engine::Engines,
-    memory_enough,
+    memory_enough_for, required_free_mb,
     mode::set_public_search,
     packs::{model_dir, model_paths_for, packs_ready_for},
     turn::{self, ChatTurn},
     vad::Vad,
-    MIN_FREE_MB,
 };
 
 struct SearchGuard;
@@ -69,11 +68,11 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
         low_memory: false,
         online: false,
     });
-    if !memory_enough(facts.avail_mb, facts.low_memory) {
-        return Err("This phone is offline, and it is too low on memory to run the on-device voice.".into());
-    }
     let paths = model_paths_for(&dir, &speech);
     let family = super::packs::active_model(&dir).family;
+    if let Err(why) = memory_gate(facts.avail_mb, facts.low_memory, model_file_bytes(&paths.llm)) {
+        return Err(why);
+    }
     let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
     let mut engines = Engines::load(&paths, threads)?;
     let system = local_system(app);
@@ -113,14 +112,6 @@ pub async fn run_session(
         hub.set_phase(Phase::Connecting);
     }
     let facts = device_facts(app).await;
-    if !memory_enough(facts.avail_mb, facts.low_memory) {
-        let why = if facts.low_memory {
-            "This phone is low on memory, so the on-device voice cannot load.".to_string()
-        } else {
-            format!("On-device voice needs about {MIN_FREE_MB} MB free, and this phone has {} MB free.", facts.avail_mb)
-        };
-        return Err(why);
-    }
     let speech = settings.local_speech.as_str();
     if !packs_ready_for(&dir, speech) {
         return Err(if speech == "de" {
@@ -131,8 +122,11 @@ pub async fn run_session(
     }
     let paths = model_paths_for(&dir, speech);
     let family = chosen.family;
+    if let Err(why) = memory_gate(facts.avail_mb, facts.low_memory, model_file_bytes(&paths.llm)) {
+        return Err(why);
+    }
     let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
-    hub.info("loading on-device speech, language model, and voice");
+    hub.info(format!("loading on-device speech, {}, and voice", chosen.name));
     let engines = tokio::task::spawn_blocking(move || Engines::load(&paths, threads))
         .await
         .map_err(|err| err.to_string())??;
@@ -172,9 +166,9 @@ pub async fn run_session(
                     break Ok("ended by user".into());
                 }
                 for note in crate::search::take_context_notes() {
-                    let text = format!("Typed just now. Use this and do not answer it by itself. {note}");
-                    if let Err(err) = handle_text(app, hub, player, active, &engines, &system, &family, &mut history, &text, false).await {
-                        hub.warn(format!("typed context skipped: {err}"));
+                    let Some(text) = typed_user_note(&note) else { continue };
+                    if let Err(err) = handle_text(app, hub, player, active, &engines, &system, &family, &mut history, &text, true).await {
+                        hub.error(format!("typed message failed: {err}"));
                     }
                     last = Instant::now();
                 }
@@ -189,6 +183,34 @@ pub async fn run_session(
     };
     record_exchange(app, &history);
     outcome
+}
+
+fn model_file_bytes(path: &std::path::Path) -> u64 {
+    std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
+}
+
+fn memory_gate(avail_mb: u64, low_memory: bool, model_bytes: u64) -> Result<(), String> {
+    if memory_enough_for(avail_mb, low_memory, model_bytes) {
+        return Ok(());
+    }
+    if low_memory {
+        return Err("This phone is low on memory, so the on-device voice cannot load.".into());
+    }
+    Err(format!(
+        "This language model could not load. On-device voice needs about {} MB free, and this phone has {avail_mb} MB free.",
+        required_free_mb(model_bytes)
+    ))
+}
+
+/// A typed Talk message queued while On device is already listening.
+/// Assistant notes are context only. The user note is the message to answer.
+fn typed_user_note(note: &str) -> Option<String> {
+    let note = note.trim();
+    let text = note
+        .strip_prefix("pending:")
+        .or_else(|| note.strip_prefix("user:"))?
+        .trim();
+    if text.is_empty() { None } else { Some(text.to_string()) }
 }
 
 fn local_system(app: &AppHandle) -> String {

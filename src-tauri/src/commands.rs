@@ -888,11 +888,22 @@ pub async fn delete_local_pack(app: AppHandle, id: String) -> Result<Vec<crate::
     .await
 }
 
+fn use_local_for_talk(app: &AppHandle) {
+    let store = app.state::<crate::settings::SettingsStore>();
+    let mut settings = store.get();
+    if settings.prefer_local_on_wake {
+        return;
+    }
+    settings.prefer_local_on_wake = true;
+    let _ = store.save(settings);
+}
+
 #[tauri::command]
 pub async fn select_local_model(app: AppHandle, id: String) -> Result<Vec<crate::local::PackInfo>> {
     blocking(app, move |app| {
         let dir = crate::local::model_dir(&app).map_err(msg)?;
         crate::local::select_model(&dir, &id).map_err(msg)?;
+        use_local_for_talk(&app);
         Ok(crate::local::pack_status(&dir))
     })
     .await
@@ -909,6 +920,7 @@ pub async fn import_local_model(app: AppHandle, name: String, family: String) ->
         let dest = incoming.to_string_lossy().to_string();
         let picked = app.state::<crate::native::NativeBridge>().pick_gguf(&dest)?;
         crate::local::import_custom_file(&dir, std::path::Path::new(&picked), &name, &family).map_err(msg)?;
+        use_local_for_talk(&app);
         Ok(crate::local::pack_status(&dir))
     })
     .await
@@ -930,5 +942,6 @@ pub async fn download_custom_local_model(
     .await
     .map_err(|e| msg(e.to_string()))?
     .map_err(msg)?;
+    use_local_for_talk(&app);
     local_pack_status(app).await
 }

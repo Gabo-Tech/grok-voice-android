@@ -174,7 +174,7 @@ export interface Settings {
   dailyBudgetMinutes: number;
   /** End the session at the budget. Off unless the user opts in. */
   dailyBudgetHardStop: boolean;
-  /** Wake sessions try a saved on-device account first when packs are ready. */
+  /** Talk tries a saved on-device account first when packs are ready. */
   preferLocalOnWake: boolean;
   /** Soft monthly voice budget in minutes. 0 is off. */
   monthlyBudgetMinutes: number;

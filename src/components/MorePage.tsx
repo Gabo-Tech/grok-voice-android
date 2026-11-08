@@ -899,14 +899,14 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
           settings?.preferLocalOnWake ? "border-foreground text-foreground" : "border-border text-muted-foreground",
         )}
       >
-        <span>{t("Prefer On device for Hey Grok")}</span>
+        <span>{t("Prefer On device when packs are ready")}</span>
         <span>{settings?.preferLocalOnWake ? t("On") : t("Off")}</span>
       </button>
       <p className="text-sm leading-6 text-muted-foreground">
-        Off follows the list for every session. On uses On device first for the wake word, when the packs are downloaded and On device is in this list. Talk still follows the order above.
+        {t("Off follows the list. On uses On device first for Talk when its packs are on this phone and On device is in this list.")}
       </p>
       {error && <p className="text-sm text-foreground">{error}</p>}
-      <LocalPacks />
+      <LocalPacks onChanged={() => void api.getSettings().then(setSettings).catch(() => {})} />
       <VoiceOrder
         accounts={accounts}
         onReorder={async (ids) => {

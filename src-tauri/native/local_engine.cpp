@@ -353,6 +353,30 @@ GvLlm *gv_llm_load(const char *model, int n_ctx, int threads, char *err, int err
     return llm;
 }
 
+/* ChatML, Gemma, and Llama 3 do not share one end-of-turn string.
+   SmolLM and Qwen emit <|im_end|>, Gemma emits <end_of_turn>, Llama 3
+   emits <|eot_id|>. Stopping on only the ChatML marker let the other
+   packs run out the token cap and look like a dead turn. */
+static int gv_is_stop_text(const char *text) {
+    if (!text || !text[0]) {
+        return 0;
+    }
+    return strstr(text, "<|im_end|>") != NULL || strstr(text, "<end_of_turn>") != NULL || strstr(text, "<|eot_id|>") != NULL;
+}
+
+static void gv_strip_stop(char *text) {
+    if (!text) {
+        return;
+    }
+    const char *stops[] = {"<|im_end|>", "<end_of_turn>", "<|eot_id|>"};
+    for (int i = 0; i < 3; i++) {
+        char *hit = strstr(text, stops[i]);
+        if (hit) {
+            *hit = '\0';
+        }
+    }
+}
+
 /* Stop once the spoken JSON object is closed, or the chat turn ends.
    The caller's token cap is only the backstop. Waiting out a long cap
    is what made a short reply feel hung. */
@@ -360,7 +384,7 @@ static int gv_reply_ready(const char *text) {
     if (!text || !text[0]) {
         return 0;
     }
-    if (strstr(text, "<|im_end|>") != NULL) {
+    if (gv_is_stop_text(text)) {
         return 1;
     }
     int depth = 0;
@@ -533,7 +557,7 @@ static int gv_llm_complete_body(
            piece such as {" used to throw and abort the process. */
         llama_token id = llama_sampler_sample(sampler.chain, llm->ctx, -1);
         llama_sampler_accept(sampler.chain, id);
-        if (llama_vocab_is_eog(llm->vocab, id)) {
+        if (llama_vocab_is_eog(llm->vocab, id) || gv_is_stop_text(llama_vocab_get_text(llm->vocab, id))) {
             break;
         }
         char piece[256];
@@ -551,6 +575,7 @@ static int gv_llm_complete_body(
             break;
         }
     }
+    gv_strip_stop(out);
     return 0;
 }
 

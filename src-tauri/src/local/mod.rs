@@ -53,12 +53,13 @@ pub fn provider_label(provider: &str) -> &'static str {
 
 /// Indexes to try, in order.
 ///
-/// The saved list is the order. A wake session can move a saved local account
-/// to the front when packs are ready and the user asked for that. A local
-/// account that is not in the list is never inserted.
-pub fn attempt_order(providers: &[&str], wake: bool, prefer_local: bool, packs_ready: bool) -> Vec<usize> {
+/// The saved list is the order. When packs are ready and the user asked to
+/// prefer On device, a saved local account moves to the front for every Talk
+/// start, including a tap, a typed message, and the wake word. A local account
+/// that is not in the list is never inserted.
+pub fn attempt_order(providers: &[&str], prefer_local: bool, packs_ready: bool) -> Vec<usize> {
     let mut order: Vec<usize> = (0..providers.len()).collect();
-    if !(wake && prefer_local && packs_ready) {
+    if !(prefer_local && packs_ready) {
         return order;
     }
     let Some(local_at) = providers.iter().position(|provider| *provider == "local") else {
@@ -67,6 +68,15 @@ pub fn attempt_order(providers: &[&str], wake: bool, prefer_local: bool, packs_r
     order.retain(|index| *index != local_at);
     order.insert(0, local_at);
     order
+}
+
+/// Typed Talk uses the same first provider as a voice session.
+pub fn text_uses_local(providers: &[&str], prefer_local: bool, packs_ready: bool) -> bool {
+    if !packs_ready {
+        return false;
+    }
+    let order = attempt_order(providers, prefer_local, packs_ready);
+    order.first().is_some_and(|index| providers[*index] == "local")
 }
 
 /// Auth, network, rate-limit, and model failures that should try the next key
@@ -131,7 +141,26 @@ pub fn exhausted_message(labels: &[String], last: &str) -> String {
 pub const MIN_FREE_MB: u64 = 1400;
 
 pub fn memory_enough(avail_mb: u64, low_memory: bool) -> bool {
-    !low_memory && (avail_mb == 0 || avail_mb >= MIN_FREE_MB)
+    memory_enough_for(avail_mb, low_memory, 0)
+}
+
+/// Free MB required before llama.cpp loads `model_bytes`.
+///
+/// `MIN_FREE_MB` already covers speech, Piper, and the default SmolLM2 135M
+/// Q8_0 file (144_811_360 bytes). A larger chosen GGUF needs the extra file
+/// size on top, so the load fails with a message instead of being killed.
+pub fn required_free_mb(model_bytes: u64) -> u64 {
+    const COVERED_BYTES: u64 = 144_811_360;
+    let extra = mb(model_bytes).saturating_sub(mb(COVERED_BYTES));
+    MIN_FREE_MB + extra
+}
+
+pub fn memory_enough_for(avail_mb: u64, low_memory: bool, model_bytes: u64) -> bool {
+    !low_memory && (avail_mb == 0 || avail_mb >= required_free_mb(model_bytes))
+}
+
+fn mb(bytes: u64) -> u64 {
+    bytes / (1024 * 1024)
 }
 
 #[cfg(test)]
@@ -166,26 +195,30 @@ mod tests {
     #[test]
     fn failover_follows_the_saved_order() {
         let providers = ["openai", "xai", "local"];
-        assert_eq!(attempt_order(&providers, false, false, true), vec![0, 1, 2]);
+        assert_eq!(attempt_order(&providers, false, true), vec![0, 1, 2]);
         assert_eq!(provider_label("openai"), "OpenAI");
         assert_eq!(provider_label("xai"), "xAI");
         assert_eq!(provider_label("local"), "Local");
     }
 
     #[test]
-    fn wake_preference_moves_a_saved_local_account_first() {
+    fn prefer_local_moves_a_saved_local_account_first_for_every_talk_start() {
         let providers = ["openai", "xai", "local"];
-        assert_eq!(attempt_order(&providers, true, true, true), vec![2, 0, 1]);
+        assert_eq!(attempt_order(&providers, true, true), vec![2, 0, 1]);
+        assert!(text_uses_local(&providers, true, true));
+        assert!(!text_uses_local(&providers, false, true));
+        assert!(text_uses_local(&["local", "xai"], false, true));
     }
 
     #[test]
-    fn wake_preference_does_not_invent_a_local_account() {
+    fn prefer_local_does_not_invent_a_local_account() {
         let providers = ["openai", "xai"];
-        assert_eq!(attempt_order(&providers, true, true, true), vec![0, 1]);
+        assert_eq!(attempt_order(&providers, true, true), vec![0, 1]);
+        assert!(!text_uses_local(&providers, true, true));
         let with_local = ["openai", "local", "xai"];
-        assert_eq!(attempt_order(&with_local, false, true, true), vec![0, 1, 2]);
-        assert_eq!(attempt_order(&with_local, true, false, true), vec![0, 1, 2]);
-        assert_eq!(attempt_order(&with_local, true, true, false), vec![0, 1, 2]);
+        assert_eq!(attempt_order(&with_local, false, true), vec![0, 1, 2]);
+        assert_eq!(attempt_order(&with_local, true, false), vec![0, 1, 2]);
+        assert!(!text_uses_local(&with_local, true, false));
     }
 
     #[test]
@@ -223,5 +256,17 @@ mod tests {
         assert!(memory_enough(1600, false));
         assert!(!memory_enough(900, false));
         assert!(!memory_enough(4000, true));
+    }
+
+    #[test]
+    fn a_larger_language_model_needs_its_extra_file_size() {
+        assert_eq!(required_free_mb(0), MIN_FREE_MB);
+        assert_eq!(required_free_mb(144_811_360), MIN_FREE_MB);
+        let gemma = required_free_mb(806_058_240);
+        assert!(gemma > MIN_FREE_MB);
+        assert!(memory_enough_for(gemma, false, 806_058_240));
+        assert!(!memory_enough_for(MIN_FREE_MB, false, 806_058_240));
+        assert!(memory_enough_for(0, false, 806_058_240));
+        assert!(!memory_enough_for(8_000, true, 144_811_360));
     }
 }
