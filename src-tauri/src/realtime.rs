@@ -200,6 +200,9 @@ struct Session<'a> {
     player: &'a Player,
     active: &'a AtomicBool,
     settings: &'a Settings,
+    /// Kept so a wake start and a tap still share this session type.
+    /// Provider order no longer depends on it: prefer-on-device applies to both.
+    #[allow(dead_code)]
     wake: bool,
 }
 
@@ -235,7 +238,7 @@ impl Session<'_> {
 
         let ready = crate::local::model_dir(self.app).map(|dir| crate::local::packs_ready(&dir)).unwrap_or(false);
         let providers: Vec<&str> = accounts.iter().map(|account| account.provider.as_str()).collect();
-        let order = crate::local::attempt_order(&providers, self.wake, self.settings.prefer_local_on_wake, ready);
+        let order = crate::local::attempt_order(&providers, self.settings.prefer_local_on_wake, ready);
         let http = http_client();
         let mut last_error = String::from("No voice provider connected.");
         let mut tried: Vec<String> = Vec::new();
@@ -255,6 +258,7 @@ impl Session<'_> {
                         Ok(reason) => return Ok(reason),
                         Err(err) => {
                             last_error = err;
+                            self.hub.error(format!("On-device voice failed: {last_error}"));
                             self.hub.warn(format!("on device failed, trying the next key: {last_error}"));
                         }
                     }
@@ -291,7 +295,10 @@ impl Session<'_> {
                 crate::local::Route::Skip(reason) => {
                     self.hub.warn(format!("{label} skipped: {reason}"));
                     if tried.is_empty() {
-                        last_error = reason;
+                        last_error = reason.clone();
+                        if account.provider == "local" {
+                            self.hub.error(reason);
+                        }
                     }
                 }
             }
@@ -564,18 +571,34 @@ impl Session<'_> {
                         last_activity = Instant::now();
                         self.phase(Phase::Listening);
                     }
+                    let mut pending_reply = false;
                     for note in crate::search::take_context_notes() {
+                        let pending = note.trim().strip_prefix("pending:").map(str::trim).filter(|text| !text.is_empty());
+                        let body = if let Some(text) = pending {
+                            pending_reply = true;
+                            text.to_string()
+                        } else {
+                            format!("Typed just now. Use this and do not answer it by itself. {note}")
+                        };
                         let item = json!({
                             "type": "conversation.item.create",
                             "item": {
                                 "type": "message",
                                 "role": "user",
-                                "content": [{ "type": "input_text", "text": format!("Typed just now. Use this and do not answer it by itself. {note}") }]
+                                "content": [{ "type": "input_text", "text": body }]
                             }
                         });
                         if tx.send(Message::Text(item.to_string())).await.is_err() {
                             return self.retry_connect(heard_audio, "connection closed");
                         }
+                    }
+                    if pending_reply && !response_active && !playing {
+                        if tx.send(Message::Text(json!({ "type": "response.create" }).to_string())).await.is_err() {
+                            return self.retry_connect(heard_audio, "connection closed");
+                        }
+                        response_active = true;
+                        last_activity = Instant::now();
+                        self.phase(Phase::Thinking);
                     }
                     if tool_followup && !response_active && !playing {
                         let mut searched = false;

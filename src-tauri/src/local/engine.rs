@@ -339,6 +339,11 @@ mod tests {
         assert!(typed < unknown);
         assert!(src.contains("grammar failed:"));
         assert!(src.contains("gv_reply_ready"));
+        assert!(src.contains("gv_is_stop_text"));
+        assert!(src.contains("<|im_end|>"));
+        assert!(src.contains("<end_of_turn>"));
+        assert!(src.contains("<|eot_id|>"));
+        assert!(src.contains("llama_vocab_get_text"));
         assert!(src.contains("llama_n_ctx"));
         assert!(src.contains("modified_beam_search"));
         assert!(src.contains("max_active_paths = 4"));

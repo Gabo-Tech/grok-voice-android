@@ -53,6 +53,8 @@ const TOOL_BLURB_CHARS: usize = 72;
 const MEMORY_CLIP_CHARS: usize = 600;
 const HISTORY_CHAR_BUDGET: usize = 1600;
 const HISTORY_TURN_CHARS: usize = 500;
+/// The turn the user just sent. Older turns stay short so the 2048 context still prefills.
+const CURRENT_TURN_CHARS: usize = 8_000;
 
 /// First sentence, capped. The long tool essays were most of the prefill.
 fn brief_tool(desc: &str) -> String {
@@ -71,6 +73,24 @@ fn brief_tool(desc: &str) -> String {
         }
     }
     out.trim().trim_end_matches(',').trim().to_string()
+}
+
+/// ChatML, Gemma, and Llama 3 end a turn with different markers. Drop the
+/// marker so it is not spoken and does not sit inside the JSON object.
+fn strip_turn_markers(raw: &str) -> String {
+    let mut end = raw.len();
+    for marker in ["<|im_end|>", "<end_of_turn>", "<|eot_id|>"] {
+        if let Some(at) = raw.find(marker) {
+            end = end.min(at);
+        }
+    }
+    raw[..end].to_string()
+}
+
+fn turn_body(history: &[ChatTurn], index: usize) -> String {
+    let last = history.len().saturating_sub(1);
+    let max = if index == last { CURRENT_TURN_CHARS } else { HISTORY_TURN_CHARS };
+    clip_chars(history[index].text.trim(), max)
 }
 
 fn clip_chars(text: &str, max: usize) -> String {
@@ -102,12 +122,12 @@ fn prompt_chatml(system: &str, history: &[ChatTurn]) -> String {
     out.push_str("<|im_start|>system\n");
     out.push_str(system.trim());
     out.push_str("<|im_end|>\n");
-    for turn in history {
+    for (index, turn) in history.iter().enumerate() {
         let role = if turn.role == "assistant" { "assistant" } else { "user" };
         out.push_str("<|im_start|>");
         out.push_str(role);
         out.push('\n');
-        out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
+        out.push_str(&turn_body(history, index));
         out.push_str("<|im_end|>\n");
     }
     out.push_str("<|im_start|>assistant\n");
@@ -117,10 +137,10 @@ fn prompt_chatml(system: &str, history: &[ChatTurn]) -> String {
 fn prompt_gemma(system: &str, history: &[ChatTurn]) -> String {
     let mut out = String::from("<bos>");
     let mut first_user = true;
-    for turn in history {
+    for (index, turn) in history.iter().enumerate() {
         if turn.role == "assistant" {
             out.push_str("<start_of_turn>model\n");
-            out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
+            out.push_str(&turn_body(history, index));
             out.push_str("<end_of_turn>\n");
             continue;
         }
@@ -133,7 +153,7 @@ fn prompt_gemma(system: &str, history: &[ChatTurn]) -> String {
             }
             first_user = false;
         }
-        out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
+        out.push_str(&turn_body(history, index));
         out.push_str("<end_of_turn>\n");
     }
     out.push_str("<start_of_turn>model\n");
@@ -144,12 +164,12 @@ fn prompt_llama3(system: &str, history: &[ChatTurn]) -> String {
     let mut out = String::from("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n");
     out.push_str(system.trim());
     out.push_str("<|eot_id|>");
-    for turn in history {
+    for (index, turn) in history.iter().enumerate() {
         let role = if turn.role == "assistant" { "assistant" } else { "user" };
         out.push_str("<|start_header_id|>");
         out.push_str(role);
         out.push_str("<|end_header_id|>\n\n");
-        out.push_str(&clip_chars(turn.text.trim(), HISTORY_TURN_CHARS));
+        out.push_str(&turn_body(history, index));
         out.push_str("<|eot_id|>");
     }
     out.push_str("<|start_header_id|>assistant<|end_header_id|>\n\n");
@@ -262,7 +282,7 @@ pub fn run_turns_with(
         trim_history(history);
         let prompt = prompt_for(family, system, history);
         let raw = match complete(&prompt, "") {
-            Ok(raw) => raw,
+            Ok(raw) => strip_turn_markers(&raw),
             Err(err) if is_grammar_engine_failure(&err) => {
                 log::warn!("on-device grammar failed ({err}); continuing this turn without a grammar");
                 if retried_engine {
@@ -270,7 +290,7 @@ pub fn run_turns_with(
                 }
                 retried_engine = true;
                 match complete(&prompt, "") {
-                    Ok(raw) => raw,
+                    Ok(raw) => strip_turn_markers(&raw),
                     Err(retry) => {
                         log::warn!("on-device reply failed after dropping the grammar: {retry}");
                         return finish_say(history, &last_say);
@@ -586,6 +606,26 @@ mod tests {
         assert!(llama.starts_with("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nbe brief<|eot_id|>"));
         assert!(llama.contains("<|start_header_id|>user<|end_header_id|>\n\nhello<|eot_id|>"));
         assert!(llama.ends_with("<|start_header_id|>assistant<|end_header_id|>\n\n"));
+        let long = format!(
+            "Can you create these recurring monthly events? {} On the 29th, the ZKB credit bill from 7:00 to 19:00.",
+            "detail ".repeat(80)
+        );
+        assert!(long.chars().count() > HISTORY_TURN_CHARS);
+        for family in ["chatml", "gemma", "llama3"] {
+            let prompt = super::prompt_for(
+                family,
+                "be brief",
+                &[
+                    ChatTurn { role: "user", text: "a".repeat(800) },
+                    ChatTurn { role: "assistant", text: "ok".into() },
+                    ChatTurn { role: "user", text: long.clone() },
+                ],
+            );
+            assert!(prompt.contains("On the 29th, the ZKB credit bill"), "{family}");
+            assert!(!prompt.contains(&"a".repeat(HISTORY_TURN_CHARS + 1)), "{family}");
+        }
+        let marked = super::strip_turn_markers("{\"say\":\"Hi.\",\"tool\":null,\"args\":{}}<end_of_turn><|eot_id|>");
+        assert_eq!(marked, "{\"say\":\"Hi.\",\"tool\":null,\"args\":{}}");
         let mut history = vec![
             ChatTurn { role: "user", text: "a".repeat(2000) },
             ChatTurn { role: "assistant", text: "b".repeat(2000) },
