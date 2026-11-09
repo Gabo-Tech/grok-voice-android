@@ -142,8 +142,14 @@ object PhoneActions {
           else -> Notification.CATEGORY_REMINDER
         }
       )
-    if (spoken && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      builder.setSilent(true)
+    if (spoken) {
+      // The SDK stubs omit Notification.Builder.setSilent. This is the same
+      // override NotificationCompat uses: the post does not chime, and a sound
+      // the user later sets on the channel is left in place for speech to wait out.
+      builder.setSound(null)
+      builder.setVibrate(null)
+      builder.setGroup("silent")
+      builder.setGroupAlertBehavior(Notification.GROUP_ALERT_SUMMARY)
     }
     val n = builder.build()
     val posted = try {
