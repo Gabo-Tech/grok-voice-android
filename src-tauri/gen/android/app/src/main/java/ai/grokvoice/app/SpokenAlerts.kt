@@ -2,6 +2,7 @@ package ai.grokvoice.app
 
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
@@ -10,44 +11,57 @@ import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.os.HandlerThread
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
-import java.util.Calendar
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.File
+import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * Reads a notification that was already posted. Normal mode returns immediately.
+ * Speaks a notification that was already posted. Normal mode returns immediately.
  * Spoken mode uses Piper when that language pack is on the phone, then Android
- * text-to-speech. A failure leaves the notification on screen.
+ * text-to-speech. It does not start a Talk session and does not touch the
+ * voice-minute budget.
+ *
+ * Playback uses the alarm stream from a short foreground service. A background
+ * receiver that plays on the media or notification stream is silenced on
+ * Android 17 (this app targets SDK 37), which leaves only the notification
+ * sound. A failure is written to logcat under GrokVoice.
  */
 object SpokenAlerts {
   private const val TAG = "GrokVoice"
   private val worker = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "spoken-notice")
   }
-  private val ttsThread = HandlerThread("spoken-tts").apply { start() }
-  private val ttsHandler = Handler(ttsThread.looper)
 
   fun enqueue(context: Context, id: Int, kind: String, title: String, body: String, channelId: String, category: String) {
     val app = context.applicationContext
-    worker.execute {
-      val wake = wakeLock(app)
-      try {
-        speak(app, id, kind, title, body, channelId, category)
-      } catch (t: Throwable) {
-        Log.w(TAG, "spoken notice failed", t)
-      } finally {
-        if (wake?.isHeld == true) wake.release()
-      }
+    val file = File(appRoot(app), "settings.json")
+    if (!file.isFile) {
+      val tried = roots(app).joinToString { it.absolutePath }
+      Log.w(TAG, "spoken notice settings.json not found; tried $tried")
+    }
+    val delivery = readSettings(app).optString("notificationDelivery", "")
+    if (delivery != "spoken") {
+      Log.i(TAG, "spoken notice quiet: notificationDelivery=${delivery.ifEmpty { "missing" }} kind=$kind settings=${file.path} exists=${file.isFile}")
+      return
+    }
+    Log.i(TAG, "spoken notice delivery=spoken kind=$kind settings=${file.path}")
+    val intent = SpokenNoticeService.intent(app, id, kind, title, body, channelId, category)
+    try {
+      ContextCompat.startForegroundService(app, intent)
+    } catch (t: Throwable) {
+      Log.w(TAG, "spoken notice foreground service was blocked; speaking on the alarm stream from the receiver", t)
+      speakQueued(app, intent) {}
     }
   }
 
@@ -62,23 +76,76 @@ object SpokenAlerts {
     }
   }
 
+  fun speakQueued(context: Context, intent: Intent, done: () -> Unit) {
+    val app = context.applicationContext
+    val id = intent.getIntExtra("id", 0)
+    val kind = intent.getStringExtra("kind") ?: "reminder"
+    val title = intent.getStringExtra("title") ?: ""
+    val body = intent.getStringExtra("body") ?: ""
+    val channelId = intent.getStringExtra("channelId") ?: ""
+    val category = intent.getStringExtra("category") ?: "reminder"
+    worker.execute {
+      val wake = wakeLock(app)
+      try {
+        speak(app, id, kind, title, body, channelId, category)
+      } catch (t: Throwable) {
+        Log.w(TAG, "spoken notice failed", t)
+      } finally {
+        if (wake?.isHeld == true) wake.release()
+        done()
+      }
+    }
+  }
+
   private fun speak(context: Context, id: Int, kind: String, title: String, body: String, channelId: String, category: String) {
-    if (!RustBridge.loadCore()) return
-    val line = RustBridge.planSpokenNotice(spec(context, id, kind, channelId, category), title, body).orEmpty()
-    if (line.isEmpty()) return
+    if (!RustBridge.loadCore()) {
+      Log.w(TAG, "spoken notice skipped: Rust core failed to load")
+      return
+    }
+    val specJson = spec(context, id, kind, channelId, category)
+    val line = RustBridge.planSpokenNotice(specJson, title, body).orEmpty()
+    if (line.isEmpty()) {
+      Log.w(TAG, "spoken notice produced no line for kind=$kind; spec=$specJson")
+      return
+    }
+    Log.i(TAG, "spoken notice saying: $line")
+    // The notification tone starts as the banner is posted. Give it a moment so
+    // the sentence is not covered by that sound.
+    try {
+      Thread.sleep(600)
+    } catch (_: InterruptedException) {
+    }
     waitForTalk()
-    if (RustBridge.talkOutputBusy()) return
-    val am = context.getSystemService(AudioManager::class.java) ?: return
-    if (inCall(am)) return
-    val focus = requestFocus(am, category) ?: return
+    if (RustBridge.talkOutputBusy()) {
+      Log.w(TAG, "spoken notice skipped: Talk is still speaking")
+      return
+    }
+    val am = context.getSystemService(AudioManager::class.java)
+    if (am == null) {
+      Log.w(TAG, "spoken notice skipped: no AudioManager")
+      return
+    }
+    if (inCall(am)) {
+      Log.w(TAG, "spoken notice skipped: phone call in progress")
+      return
+    }
+    if (am.getStreamVolume(AudioManager.STREAM_ALARM) == 0) {
+      Log.w(TAG, "spoken notice alarm stream volume is 0, so the sentence will be silent")
+    }
+    val focus = requestFocus(am)
+    if (focus == null) {
+      Log.w(TAG, "spoken notice audio focus denied; speaking on the alarm stream anyway")
+    }
     RustBridge.setNoticeSpeaking(true)
     try {
-      if (!playPiper(context, line, category) && !playAndroid(context, line)) {
+      if (!playPiper(context, line) && !playAndroid(context, line)) {
         Log.w(TAG, "could not speak the notice")
+      } else {
+        Log.i(TAG, "spoken notice finished")
       }
     } finally {
       RustBridge.setNoticeSpeaking(false)
-      abandonFocus(am, focus)
+      if (focus != null) abandonFocus(am, focus)
     }
   }
 
@@ -131,13 +198,23 @@ object SpokenAlerts {
       .toString()
   }
 
-  /** Tauri stores settings and packs in `dataDir`, which is the parent of `filesDir`. */
-  private fun appRoot(context: Context): File {
+  /**
+   * Tauri 2 `app_data_dir` is `Context.dataDir`. Older builds and the home
+   * widgets also look under `filesDir/ai.grokvoice.app`.
+   */
+  private fun roots(context: Context): List<File> {
     val data = context.dataDir
-    if (File(data, "settings.json").isFile || File(data, "local-models").isDirectory) return data
     val files = context.filesDir
-    if (File(files, "settings.json").isFile || File(files, "local-models").isDirectory) return files
-    return data
+    return listOf(
+      data,
+      File(files, "ai.grokvoice.app"),
+      files,
+      File(data, "ai.grokvoice.app"),
+    ).distinctBy { it.absolutePath }
+  }
+
+  private fun appRoot(context: Context): File {
+    return roots(context).firstOrNull { File(it, "settings.json").isFile } ?: roots(context).first()
   }
 
   /** Minutes until the real event, and its local hour. Lead days stay on the saved item. */
@@ -177,7 +254,8 @@ object SpokenAlerts {
     if (!file.isFile) return JSONObject()
     return try {
       JSONObject(file.readText())
-    } catch (_: Exception) {
+    } catch (t: Exception) {
+      Log.w(TAG, "spoken notice could not read ${file.path}", t)
       JSONObject()
     }
   }
@@ -204,14 +282,17 @@ object SpokenAlerts {
     }
   }
 
-  private fun requestFocus(am: AudioManager, category: String): AudioFocusRequest? {
-    val usage = if (category == "alarm") AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION
-    val attrs = AudioAttributes.Builder()
-      .setUsage(usage)
+  /** Alarm-stream attributes. Android 17 keeps this audible from an exact alarm. */
+  private fun alarmAttributes(): AudioAttributes {
+    return AudioAttributes.Builder()
+      .setUsage(AudioAttributes.USAGE_ALARM)
       .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
       .build()
+  }
+
+  private fun requestFocus(am: AudioManager): AudioFocusRequest? {
     val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-      .setAudioAttributes(attrs)
+      .setAudioAttributes(alarmAttributes())
       .setOnAudioFocusChangeListener { }
       .build()
     return if (am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) request else null
@@ -224,15 +305,21 @@ object SpokenAlerts {
     }
   }
 
-  private fun playPiper(context: Context, line: String, category: String): Boolean {
+  private fun playPiper(context: Context, line: String): Boolean {
     val settings = readSettings(context)
     val pack = RustBridge.noticePiperPack(settings.optString("locale", ""), Locale.getDefault().language ?: "").orEmpty()
-    val files = piperFiles(context, pack) ?: return false
-    val pcm = RustBridge.synthesizeNotice(files.model, files.tokens, files.data, line) ?: return false
-    if (pcm.isEmpty()) return false
+    val files = piperFiles(context, pack)
+    if (files == null) {
+      Log.i(TAG, "spoken notice piper pack not on the phone; using Android TTS")
+      return false
+    }
+    val pcm = RustBridge.synthesizeNotice(files.model, files.tokens, files.data, line)
+    if (pcm == null || pcm.isEmpty()) {
+      Log.w(TAG, "spoken notice piper synthesis failed; using Android TTS")
+      return false
+    }
     val rate = RustBridge.noticeSampleRate().takeIf { it > 0 } ?: 22050
-    val usage = if (category == "alarm") AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION
-    return playPcm(pcm, rate, usage)
+    return playPcm(pcm, rate)
   }
 
   private data class PiperFiles(val model: String, val tokens: String, val data: String)
@@ -256,17 +343,15 @@ object SpokenAlerts {
     return PiperFiles(model.absolutePath, tokens.absolutePath, data.absolutePath)
   }
 
-  private fun playPcm(pcm: ShortArray, rate: Int, usage: Int): Boolean {
+  private fun playPcm(pcm: ShortArray, rate: Int): Boolean {
     val min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-    if (min <= 0) return false
+    if (min <= 0) {
+      Log.w(TAG, "spoken notice audio track buffer failed code=$min")
+      return false
+    }
     val track = try {
       AudioTrack.Builder()
-        .setAudioAttributes(
-          AudioAttributes.Builder()
-            .setUsage(usage)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
-        )
+        .setAudioAttributes(alarmAttributes())
         .setAudioFormat(
           AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -282,16 +367,30 @@ object SpokenAlerts {
       return false
     }
     return try {
-      if (track.state != AudioTrack.STATE_INITIALIZED) return false
+      if (track.state != AudioTrack.STATE_INITIALIZED) {
+        Log.w(TAG, "spoken notice audio track was not initialized")
+        return false
+      }
       track.play()
+      if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
+        Log.w(TAG, "spoken notice playback did not start state=${track.playState}")
+        return false
+      }
       var offset = 0
       while (offset < pcm.size) {
         val wrote = track.write(pcm, offset, pcm.size - offset)
-        if (wrote <= 0) break
+        if (wrote < 0) {
+          Log.w(TAG, "spoken notice audio write failed code=$wrote")
+          return false
+        }
+        if (wrote == 0) break
         offset += wrote
       }
       val ms = pcm.size * 1000L / rate.coerceAtLeast(1) + 300L
       Thread.sleep(ms.coerceAtMost(35_000L))
+      if (offset <= 0) {
+        Log.w(TAG, "spoken notice playback wrote no audio")
+      }
       offset > 0
     } catch (t: Throwable) {
       Log.w(TAG, "piper playback failed", t)
@@ -309,42 +408,93 @@ object SpokenAlerts {
     val locale = speechLocale(readSettings(context).optString("locale", ""))
     val latch = CountDownLatch(1)
     val spoke = booleanArrayOf(false)
-    ttsHandler.post {
-      var engine: TextToSpeech? = null
-      engine = TextToSpeech(context.applicationContext) { status ->
-        val tts = engine
-        if (tts == null || status != TextToSpeech.SUCCESS) {
-          latch.countDown()
-          return@TextToSpeech
-        }
-        val lang = tts.setLanguage(locale)
-        if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
-          tts.language = Locale.getDefault()
-        }
-        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-          override fun onStart(utteranceId: String?) {}
-          override fun onDone(utteranceId: String?) {
-            spoke[0] = true
-            tts.shutdown()
-            latch.countDown()
+    Handler(Looper.getMainLooper()).post {
+      val holder = arrayOfNulls<TextToSpeech>(1)
+      val listener = TextToSpeech.OnInitListener { status ->
+        val ready = holder[0]
+        if (ready == null) {
+          Handler(Looper.getMainLooper()).post {
+            val tts = holder[0]
+            if (tts == null) {
+              Log.w(TAG, "spoken notice TTS engine was not created")
+              latch.countDown()
+            } else {
+              onTtsReady(tts, status, locale, line, spoke, latch)
+            }
           }
-          override fun onError(utteranceId: String?) {
-            tts.shutdown()
-            latch.countDown()
-          }
-        })
-        val queued = tts.speak(line, TextToSpeech.QUEUE_FLUSH, Bundle(), "gv-notice")
-        if (queued == TextToSpeech.ERROR) {
-          tts.shutdown()
-          latch.countDown()
+        } else {
+          onTtsReady(ready, status, locale, line, spoke, latch)
         }
       }
+      holder[0] = TextToSpeech(context.applicationContext, listener)
     }
     try {
-      latch.await(30, TimeUnit.SECONDS)
+      if (!latch.await(30, TimeUnit.SECONDS)) {
+        Log.w(TAG, "spoken notice TTS timed out before it finished")
+      }
     } catch (_: InterruptedException) {
+      Log.w(TAG, "spoken notice TTS wait was interrupted")
+    }
+    if (!spoke[0]) {
+      Log.w(TAG, "spoken notice Android TTS did not speak")
     }
     return spoke[0]
+  }
+
+  private fun onTtsReady(
+    tts: TextToSpeech,
+    status: Int,
+    locale: Locale,
+    line: String,
+    spoke: BooleanArray,
+    latch: CountDownLatch,
+  ) {
+    if (status != TextToSpeech.SUCCESS) {
+      Log.w(TAG, "spoken notice TTS init failed status=$status")
+      shutdownTts(tts)
+      latch.countDown()
+      return
+    }
+    val attrs = tts.setAudioAttributes(alarmAttributes())
+    if (attrs == TextToSpeech.ERROR) {
+      Log.w(TAG, "spoken notice could not put TTS on the alarm stream")
+    }
+    val lang = tts.setLanguage(locale)
+    if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
+      Log.w(TAG, "spoken notice TTS missing $locale; falling back to the phone language")
+      tts.language = Locale.getDefault()
+    }
+    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+      override fun onStart(utteranceId: String?) {}
+      override fun onDone(utteranceId: String?) {
+        spoke[0] = true
+        shutdownTts(tts)
+        latch.countDown()
+      }
+      override fun onError(utteranceId: String?) {
+        Log.w(TAG, "spoken notice TTS error id=$utteranceId")
+        shutdownTts(tts)
+        latch.countDown()
+      }
+      override fun onError(utteranceId: String?, errorCode: Int) {
+        Log.w(TAG, "spoken notice TTS error code=$errorCode id=$utteranceId")
+        shutdownTts(tts)
+        latch.countDown()
+      }
+    })
+    val queued = tts.speak(line, TextToSpeech.QUEUE_FLUSH, Bundle(), "gv-notice")
+    if (queued == TextToSpeech.ERROR) {
+      Log.w(TAG, "spoken notice TTS rejected the sentence")
+      shutdownTts(tts)
+      latch.countDown()
+    }
+  }
+
+  private fun shutdownTts(tts: TextToSpeech) {
+    try {
+      tts.shutdown()
+    } catch (_: Exception) {
+    }
   }
 
   private fun speechLocale(tag: String): Locale {

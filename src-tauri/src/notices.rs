@@ -748,6 +748,83 @@ mod tests {
     }
 
     #[test]
+    fn a_fired_spoken_reminder_plans_a_line_and_the_phone_plays_it_on_the_alarm_stream() {
+        let spec = json!({
+            "delivery": "spoken",
+            "locale": "en",
+            "phoneLang": "en",
+            "dueInMinutes": 0,
+            "dueHour": 9,
+            "kind": "reminder",
+            "category": "reminder",
+            "enabled": true,
+            "channelBlocked": false,
+            "bypass": false,
+            "filter": "all",
+            "policyKnown": false,
+            "allowAlarms": false,
+            "allowReminders": false,
+            "allowEvents": false,
+        });
+        assert_eq!(
+            plan_spoken_notice(&spec, "Check EURUSD price", "Reminder"),
+            "Hey, remember you have to Check EURUSD price."
+        );
+        for kind in ["reminder", "alarm", "timer", "countdown", "event"] {
+            let mut fired = spec.clone();
+            fired["kind"] = json!(kind);
+            fired["category"] = json!(if matches!(kind, "alarm" | "timer" | "countdown") {
+                "alarm"
+            } else if kind == "event" {
+                "event"
+            } else {
+                "reminder"
+            });
+            assert!(!plan_spoken_notice(&fired, "Check EURUSD price", kind).is_empty(), "{kind}");
+        }
+        let mut normal = spec.clone();
+        normal["delivery"] = json!("normal");
+        assert_eq!(plan_spoken_notice(&normal, "Check EURUSD price", "Reminder"), "");
+        let mut missing = spec.clone();
+        missing["delivery"] = json!("");
+        assert_eq!(plan_spoken_notice(&missing, "Check EURUSD price", "Reminder"), "");
+
+        let spoken = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/SpokenAlerts.kt");
+        let service = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/SpokenNoticeService.kt");
+        let manifest = include_str!("../gen/android/app/src/main/AndroidManifest.xml");
+        let phone = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/PhoneActions.kt");
+        let notify = phone.split("fun notify").nth(1).unwrap().split("fun listEvents").next().unwrap();
+        let posted = notify.find("nm.notify").unwrap();
+        let enqueued = notify.find("SpokenAlerts.enqueue").unwrap();
+        assert!(posted < enqueued, "the banner is posted before speech is attempted");
+        assert!(spoken.contains("\"notificationDelivery\""));
+        assert!(spoken.contains("ai.grokvoice.app"));
+        assert!(spoken.contains("dataDir"));
+        let quiet = spoken.find("spoken notice quiet").unwrap();
+        let service_start = spoken.find("startForegroundService").unwrap();
+        assert!(quiet < service_start, "normal delivery must not start playback");
+        assert!(spoken.contains("USAGE_ALARM"));
+        assert!(spoken.contains("setAudioAttributes"));
+        assert!(spoken.contains("audio focus denied"));
+        assert!(spoken.contains("speaking on the alarm stream anyway"));
+        assert!(spoken.contains("could not speak the notice"));
+        assert!(spoken.contains("alarm stream volume is 0"));
+        assert!(spoken.contains("settings.json not found"));
+        assert!(!spoken.contains("USAGE_MEDIA"));
+        assert!(!spoken.contains("USAGE_NOTIFICATION"));
+        assert!(!spoken.contains("startSession"));
+        assert!(!spoken.contains("UsageStore"));
+        assert!(service.contains("FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK"));
+        assert!(service.contains("startForeground"));
+        assert!(!service.contains("SHORT_SERVICE"));
+        assert!(!service.contains("startSession"));
+        assert!(manifest.contains("android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"));
+        assert!(manifest.contains("SpokenNoticeService"));
+        assert!(manifest.contains("foregroundServiceType=\"mediaPlayback\""));
+        assert!(!manifest.contains("foregroundServiceType=\"shortService\""));
+    }
+
+    #[test]
     fn callers_leave_status_chrome_alone() {
         let phone = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/PhoneActions.kt");
         let updates = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/UpdateNotice.kt");

@@ -12,6 +12,8 @@
 -keep class ai.grokvoice.app.EventIdArgs { *; }
 -keep class ai.grokvoice.app.PhoneActions { *; }
 -keep class ai.grokvoice.app.ReminderReceiver { *; }
+-keep class ai.grokvoice.app.SpokenNoticeService { *; }
+-keep class ai.grokvoice.app.SpokenAlerts { *; }
 -keep class ai.grokvoice.app.BootReceiver { *; }
 -keep class ai.grokvoice.app.RustBridge {
     native <methods>;
