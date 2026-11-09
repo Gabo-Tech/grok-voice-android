@@ -695,7 +695,8 @@ impl EngineThread {
                 self.update_idle_phase();
             }
         } else if let Some(link) = self.session.as_mut() {
-            let mute = self.settings.echo_guard && self.player.is_active();
+            let mute = crate::audio::playback::notice_speaking()
+                || (self.settings.echo_guard && self.player.is_active());
             let mut up = Vec::new();
             self.uplink.process(&pcm, &mut up);
             let gain = self.uplink_gain;
@@ -722,7 +723,9 @@ impl EngineThread {
                 self.finish_session();
             }
         } else if self.wake_enabled {
-            if let Some(det) = self.detector.as_mut() {
+            if crate::audio::playback::notice_speaking() {
+                self.wake_buf.clear();
+            } else if let Some(det) = self.detector.as_mut() {
                 self.wake_buf.extend_from_slice(&pcm);
                 let n = det.get_samples_per_frame();
                 let mut fired = None;

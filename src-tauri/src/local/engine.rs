@@ -318,6 +318,86 @@ fn c_path(path: &std::path::Path) -> Result<std::ffi::CString, String> {
     std::ffi::CString::new(path.to_string_lossy().as_bytes()).map_err(|_| "model path contained a null".into())
 }
 
+/// Piper only. This does not load the language model or start a Talk session.
+#[cfg(target_os = "android")]
+struct HeldVoice {
+    key: String,
+    tts: *mut (),
+}
+
+#[cfg(target_os = "android")]
+unsafe impl Send for HeldVoice {}
+
+#[cfg(target_os = "android")]
+static PIPER: std::sync::Mutex<Option<HeldVoice>> = std::sync::Mutex::new(None);
+
+#[cfg(target_os = "android")]
+static NOTICE_RATE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(22_050);
+
+#[cfg(target_os = "android")]
+pub fn notice_sample_rate() -> i32 {
+    NOTICE_RATE.load(std::sync::atomic::Ordering::Relaxed) as i32
+}
+
+#[cfg(target_os = "android")]
+pub fn synthesize_notice(model: &str, tokens: &str, data: &str, text: &str) -> Result<Vec<i16>, String> {
+    use ffi::*;
+    use std::os::raw::c_int;
+    let text = text.trim().chars().take(240).collect::<String>();
+    if text.is_empty() {
+        return Err("nothing to say".into());
+    }
+    let key = format!("{model}\n{tokens}\n{data}");
+    let mut guard = PIPER.lock().unwrap_or_else(|err| err.into_inner());
+    if guard.as_ref().map(|held| held.key.as_str()) != Some(key.as_str()) {
+        if let Some(old) = guard.take() {
+            unsafe { gv_tts_free(old.tts) };
+        }
+        let model_c = std::ffi::CString::new(model).map_err(|_| "model path contained a null".to_string())?;
+        let tokens_c = std::ffi::CString::new(tokens).map_err(|_| "tokens path contained a null".to_string())?;
+        let data_c = std::ffi::CString::new(data).map_err(|_| "voice data path contained a null".to_string())?;
+        let mut err = err_buf();
+        let tts = unsafe {
+            gv_tts_load(
+                model_c.as_ptr(),
+                tokens_c.as_ptr(),
+                data_c.as_ptr(),
+                2,
+                err.as_mut_ptr(),
+                err.len() as c_int,
+            )
+        };
+        if tts.is_null() {
+            return Err(read_buf(&err).unwrap_or_else(|| "could not load the voice".into()));
+        }
+        *guard = Some(HeldVoice { key, tts });
+    }
+    let tts = guard.as_ref().map(|held| held.tts).ok_or_else(|| "could not load the voice".to_string())?;
+    let spoken = std::ffi::CString::new(text).map_err(|_| "text contained a null".to_string())?;
+    let mut samples = std::ptr::null_mut();
+    let mut n: c_int = 0;
+    let mut rate: c_int = 0;
+    let mut err = err_buf();
+    let rc = unsafe {
+        gv_tts_synth(tts, spoken.as_ptr(), &mut samples, &mut n, &mut rate, err.as_mut_ptr(), err.len() as c_int)
+    };
+    if rc != 0 || samples.is_null() || n <= 0 {
+        return Err(read_buf(&err).unwrap_or_else(|| "speech synthesis failed".into()));
+    }
+    let cap = (rate.max(16_000) as usize).saturating_mul(30);
+    let count = (n as usize).min(cap);
+    let pcm = unsafe { std::slice::from_raw_parts(samples, count) };
+    let out: Vec<i16> = pcm.iter().copied().map(crate::audio::resample::f32_to_i16).collect();
+    unsafe { gv_free(samples.cast()) };
+    if rate > 0 {
+        NOTICE_RATE.store(rate as u32, std::sync::atomic::Ordering::Relaxed);
+    }
+    if out.is_empty() {
+        return Err("speech synthesis failed".into());
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

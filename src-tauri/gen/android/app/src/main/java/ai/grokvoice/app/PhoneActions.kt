@@ -144,10 +144,16 @@ object PhoneActions {
       .setAutoCancel(true)
       .setCategory(if (alarm) Notification.CATEGORY_ALARM else Notification.CATEGORY_REMINDER)
       .build()
-    try {
+    val posted = try {
       nm.notify(if (id == 0) 1 else id, n)
+      true
     } catch (_: SecurityException) {
       // Notifications not allowed. The schedule itself still happened.
+      false
+    }
+    if (posted) {
+      val category = if (alarm) "alarm" else "reminder"
+      SpokenAlerts.enqueue(context, id, kind, title.ifBlank { "Grok" }, text, channel, category)
     }
   }
 

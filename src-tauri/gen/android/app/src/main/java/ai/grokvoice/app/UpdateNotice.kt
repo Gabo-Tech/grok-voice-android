@@ -47,6 +47,15 @@ object UpdateNotice {
       .build()
     try {
       nm.notify(NOTICE_ID, notification)
+      SpokenAlerts.enqueue(
+        context,
+        -1,
+        "update",
+        localized.getString(R.string.update_title),
+        text,
+        CHANNEL_ID,
+        "status"
+      )
     } catch (_: SecurityException) {
       // Notifications are off. The in-app banner still offers the download.
     }

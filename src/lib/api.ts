@@ -185,6 +185,8 @@ export interface Settings {
   locale: string;
   /** Hands-free Listen. Saved on the phone and restored after the app is cleared. */
   listenArmed?: boolean;
+  /** `normal` shows the notification. `spoken` also reads it out loud. */
+  notificationDelivery?: string;
 }
 
 export interface UsageStatus {

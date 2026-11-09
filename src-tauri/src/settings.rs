@@ -58,6 +58,11 @@ pub struct Settings {
     pub local_speech: String,
     /// UI locale. Empty follows the phone. `ca-ES-valencia` is Valencian.
     pub locale: String,
+    /// `normal` posts the notification. `spoken` also reads it out loud.
+    /// Empty means the payload omitted the field. Load and save treat that as
+    /// Normal, and a save that omits it keeps the stored mode.
+    #[serde(default = "crate::notices::omitted_delivery")]
+    pub notification_delivery: String,
 }
 
 impl Default for Settings {
@@ -81,6 +86,7 @@ impl Default for Settings {
             monthly_budget_hard_stop: false,
             local_speech: "en".into(),
             locale: String::new(),
+            notification_delivery: crate::notices::DELIVERY_NORMAL.into(),
         }
     }
 }
@@ -102,10 +108,11 @@ pub struct SettingsStore {
 
 impl SettingsStore {
     pub fn load(path: PathBuf) -> Self {
-        let inner = fs::read(&path)
+        let mut inner = fs::read(&path)
             .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
+            .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
             .unwrap_or_default();
+        inner.notification_delivery = crate::notices::stored_delivery(&inner.notification_delivery);
         Self { path, inner: RwLock::new(inner) }
     }
 
@@ -127,6 +134,11 @@ impl SettingsStore {
         s.model = safe_model_name(&s.model);
         if s.voice.trim().is_empty() {
             s.voice = Settings::default().voice;
+        }
+        if s.notification_delivery.trim().is_empty() {
+            s.notification_delivery = crate::notices::stored_delivery(&self.get().notification_delivery);
+        } else {
+            s.notification_delivery = crate::notices::stored_delivery(&s.notification_delivery);
         }
         crate::files::write_private(&self.path, &serde_json::to_vec_pretty(&s)?)?;
         *self.inner.write().unwrap() = s.clone();
@@ -242,6 +254,58 @@ mod tests {
         assert!(edit_settings(&armed, &json!({"notASetting": 1})).is_err());
         assert!(edit_settings(&armed, &json!({"language": "Klingon"})).is_err());
     }
+
+    #[test]
+    fn notification_delivery_defaults_to_normal_and_survives_a_partial_save() {
+        let raw = r#"{"listenArmed":true,"locale":"de","dailyBudgetMinutes":4}"#;
+        let parsed: Settings = serde_json::from_str(raw).unwrap();
+        assert!(parsed.notification_delivery.is_empty());
+        assert!(parsed.listen_armed);
+        assert_eq!(parsed.locale, "de");
+        assert_eq!(Settings::default().notification_delivery, "normal");
+
+        let path = std::env::temp_dir().join(format!("grok-settings-alerts-{}.json", std::process::id()));
+        let _ = fs::remove_file(&path);
+        fs::write(&path, raw).unwrap();
+        let store = SettingsStore::load(path.clone());
+        assert_eq!(store.get().notification_delivery, "normal");
+        assert!(store.get().listen_armed);
+        assert_eq!(store.get().locale, "de");
+        assert_eq!(store.get().daily_budget_minutes, 4);
+        assert_eq!(store.get().voice, Settings::default().voice);
+
+        let spoken = edit_settings(&store.get(), &json!({"notificationDelivery": "spoken"})).unwrap();
+        assert!(spoken.pending.is_none());
+        assert!(spoken.listen.is_none());
+        let next = spoken.settings.unwrap();
+        assert_eq!(next.notification_delivery, "spoken");
+        assert!(next.listen_armed);
+        store.save(next).unwrap();
+
+        let partial: Settings = serde_json::from_str(r#"{"dailyBudgetMinutes":9,"locale":"es","listenArmed":false}"#).unwrap();
+        assert!(partial.notification_delivery.is_empty());
+        let kept = keep_listen_preference(&store.get(), partial);
+        let saved = store.save(kept).unwrap();
+        assert_eq!(saved.notification_delivery, "spoken");
+        assert!(saved.listen_armed);
+        assert_eq!(saved.daily_budget_minutes, 9);
+        assert_eq!(saved.locale, "es");
+        let again = SettingsStore::load(path.clone());
+        assert_eq!(again.get().notification_delivery, "spoken");
+        assert!(again.get().listen_armed);
+
+        let quiet = edit_settings(&again.get(), &json!({"speakNotifications": false})).unwrap();
+        assert!(quiet.pending.is_none());
+        assert_eq!(quiet.settings.unwrap().notification_delivery, "normal");
+        let aloud = edit_settings(&again.get(), &json!({"readAloud": true})).unwrap();
+        let described = describe_settings(&aloud.settings.unwrap(), &[]);
+        let text = described.to_string();
+        assert!(text.contains("\"notificationDelivery\":\"spoken\""));
+        assert!(text.contains("spoken out loud"));
+        assert!(!text.contains("password"));
+        assert!(edit_settings(&again.get(), &json!({"notificationDelivery": "sideways"})).is_err());
+        let _ = fs::remove_file(&path);
+    }
 }
 
 /// The Listen switch is saved by `set_wake_enabled`. Other settings screens must
@@ -264,8 +328,13 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
     };
     let prefer = if settings.prefer_local_on_wake { "on" } else { "off" };
     let listen = if settings.listen_armed { "on" } else { "off" };
+    let alerts = if settings.notification_delivery == crate::notices::DELIVERY_SPOKEN {
+        "spoken out loud"
+    } else {
+        "normal"
+    };
     let detail = format!(
-        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. {order} Days before a birthday stay on that person.",
+        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. {order} Days before a birthday stay on that person.",
         settings.idle_timeout_secs
     );
     json!({
@@ -286,6 +355,11 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
         "wakeThreshold": settings.wake_threshold,
         "instructions": clip_text(&settings.instructions, 280),
         "voiceOrder": voice_order,
+        "notificationDelivery": if settings.notification_delivery == crate::notices::DELIVERY_SPOKEN {
+            crate::notices::DELIVERY_SPOKEN
+        } else {
+            crate::notices::DELIVERY_NORMAL
+        },
         "detail": detail
     })
 }
@@ -308,7 +382,7 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     let unknown: Vec<&str> = object.keys().filter(|key| !known_setting(key)).map(|key| key.as_str()).collect();
     if !unknown.is_empty() {
         return Err(format!(
-            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
+            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
             unknown.join(", ")
         ));
     }
@@ -401,6 +475,16 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
         changed = true;
         notes.push(format!("Wake threshold is {threshold:.2}."));
     }
+    if let Some(mode) = notification_mode_from(args)? {
+        next.notification_delivery = mode;
+        changed = true;
+        let alerts = if next.notification_delivery == crate::notices::DELIVERY_SPOKEN {
+            "spoken out loud"
+        } else {
+            "normal"
+        };
+        notes.push(format!("Notifications are {alerts}."));
+    }
 
     let mut pending = None;
     let mut listen = None;
@@ -435,6 +519,23 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
         pending,
         detail: notes.join(" "),
     })
+}
+
+fn notification_mode_from(args: &Value) -> std::result::Result<Option<String>, String> {
+    let mut mode = None;
+    if let Some(text) = first_string(args, &["notificationDelivery", "notificationMode", "notifications"]) {
+        mode = Some(crate::notices::parse_delivery(&text)?);
+    }
+    if let Some(on) = first_bool(args, &["speakNotifications", "readAloud", "spokenNotifications"]) {
+        mode = Some(
+            if on {
+                crate::notices::DELIVERY_SPOKEN.to_string()
+            } else {
+                crate::notices::DELIVERY_NORMAL.to_string()
+            },
+        );
+    }
+    Ok(mode)
 }
 
 fn person_lead_from(args: &Value) -> std::result::Result<Option<PersonLead>, String> {
@@ -492,6 +593,12 @@ fn known_setting(key: &str) -> bool {
             | "dateLabel"
             | "label"
             | "wipeMemory"
+            | "notificationDelivery"
+            | "notificationMode"
+            | "notifications"
+            | "speakNotifications"
+            | "readAloud"
+            | "spokenNotifications"
     )
 }
 
