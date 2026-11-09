@@ -409,6 +409,9 @@ mod tests {
         assert!(prompt.contains("I live in Zurich"));
         assert!(prompt.contains("remember_fact"));
         assert!(prompt.contains("Moonshine"));
+        assert!(prompt.contains("inMinutes"));
+        assert!(prompt.contains("Time list"));
+        assert!(prompt.contains("Calendar"));
         let german = system_prompt("be brief", "", "", "de");
         assert!(german.contains("German"));
         assert!(!german.contains("I live in Zurich"));

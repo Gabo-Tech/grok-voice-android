@@ -121,6 +121,9 @@ pub struct CalEvent {
     /// Last moment an occurrence may start. 0 means the series does not end.
     #[serde(default)]
     pub until_ms: i64,
+    /// AlarmManager id for this app's own notification. 0 means it is not armed yet.
+    #[serde(default)]
+    pub alarm_id: i32,
     #[serde(default, skip_serializing)]
     pub rrule: String,
 }
@@ -182,7 +185,7 @@ pub fn tool_definitions() -> Value {
             "properties": { "id": { "type": "string" } },
             "required": ["id"]
         })),
-        fn_tool("set_alarm", "Set a clock alarm for the next time this hour and minute occurs. Hour is 0-23.", json!({
+        fn_tool("set_alarm", "Save an alarm in this app's Time list. Hour is 0-23 and minute is 0-59, for the next time that clock time occurs. A delay such as in 5 minutes is set_reminder with inMinutes, or set_timer with seconds. It is not the phone Clock.", json!({
             "type": "object",
             "properties": {
                 "hour": { "type": "integer" },
@@ -191,19 +194,26 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["hour", "minute"]
         })),
-        fn_tool("set_timer", "Start a countdown timer. seconds is the length, such as 300 for five minutes.", json!({
+        fn_tool("set_timer", "Start in-app countdown in Time. seconds is the length, such as 300 for five minutes. inMinutes and inHours work too. label or title is what it is for, such as Check EURUSD price. It shows on the Time list under Countdowns and in list_reminders, and this app notifies when it finishes. A request to remind them uses set_reminder with inMinutes.", json!({
             "type": "object",
             "properties": {
                 "seconds": { "type": "integer" },
-                "label": { "type": "string" }
-            },
-            "required": ["seconds"]
+                "inMinutes": { "type": "integer" },
+                "inHours": { "type": "integer" },
+                "label": { "type": "string" },
+                "title": { "type": "string" }
+            }
         })),
-        fn_tool("set_reminder", "Schedule a notification. For a one-off, at is YYYY-MM-DDTHH:MM. For a repeating reminder, recurrence is daily or weekly, time is HH:MM, and weekdays is mon,wed,fri for a custom weekly pattern. Omit recurrence for a one-off.", json!({
+        fn_tool("set_reminder", "Save a reminder, including inMinutes. For 'in 5 minutes' or 'in 2 hours', pass inMinutes or inHours and omit at. The app computes the fire time. A clock time uses at as YYYY-MM-DDTHH:MM, 7pm, or tomorrow at 9. The reminder shows on the Time screen and in list_reminders until it fires, and this app posts the notification. For a repeating reminder, recurrence is daily or weekly, time is HH:MM, and weekdays is mon,wed,fri. Omit recurrence for a one-off.", json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string" },
+                "label": { "type": "string" },
                 "at": { "type": "string" },
+                "in": { "type": "string" },
+                "inMinutes": { "type": "integer" },
+                "inHours": { "type": "integer" },
+                "seconds": { "type": "integer" },
                 "note": { "type": "string" },
                 "recurrence": { "type": "string" },
                 "time": { "type": "string" },
@@ -258,7 +268,7 @@ pub fn tool_definitions() -> Value {
                 "query": { "type": "string" }
             }
         })),
-        fn_tool("create_calendar_event", "Add a calendar event. start and end are local YYYY-MM-DDTHH:MM. end may be omitted for one hour. recurrence is daily, weekly, monthly, or yearly. weekdays is mon,wed,fri. until is YYYY-MM-DD.", json!({
+        fn_tool("create_calendar_event", "Save an event in this app's Calendar. start and end are local YYYY-MM-DDTHH:MM, or a phrase such as tomorrow at 9. end may be omitted for one hour. recurrence is daily, weekly, monthly, or yearly. weekdays is mon,wed,fri. until is YYYY-MM-DD. It shows on the Calendar screen and this app notifies when it starts.", json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string" },
@@ -510,7 +520,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed."
+    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app."
 }
 
 impl Agenda {
@@ -789,8 +799,16 @@ impl Agenda {
         Ok(())
     }
 
-    pub fn upsert_local_event(&self, app: &AppHandle, event: CalEvent) -> Result<CalEvent, String> {
+    pub fn upsert_local_event(&self, app: &AppHandle, mut event: CalEvent) -> Result<CalEvent, String> {
         let mut store = self.lock();
+        if let Some(existing) = store.events.iter().find(|e| e.id == event.id) {
+            if event.alarm_id <= 0 {
+                event.alarm_id = existing.alarm_id;
+            }
+        }
+        if event.alarm_id <= 0 {
+            event.alarm_id = Self::alloc_id(&mut store);
+        }
         if let Some(existing) = store.events.iter_mut().find(|e| e.id == event.id) {
             *existing = event.clone();
         } else {
@@ -799,12 +817,14 @@ impl Agenda {
         store.events.sort_by_key(|e| e.start_ms);
         Self::persist(&self.path, &store)?;
         drop(store);
+        arm_local_event(app, &event);
         touch(app);
         Ok(event)
     }
 
     pub fn delete_local_event(&self, app: &AppHandle, id: &str) -> Result<(), String> {
         let mut store = self.lock();
+        let alarm_id = store.events.iter().find(|e| e.id == id).map(|e| e.alarm_id).unwrap_or(0);
         let before = store.events.len();
         store.events.retain(|e| e.id != id);
         if store.events.len() == before {
@@ -812,6 +832,9 @@ impl Agenda {
         }
         Self::persist(&self.path, &store)?;
         drop(store);
+        if alarm_id > 0 {
+            let _ = app.state::<NativeBridge>().cancel_item(alarm_id);
+        }
         touch(app);
         Ok(())
     }
@@ -910,6 +933,7 @@ pub fn reschedule(app: &AppHandle) {
     for item in items {
         let _ = bridge.schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
     }
+    rearm_events(app);
 }
 
 pub fn run(app: &AppHandle, name: &str, arguments: &str) -> String {
@@ -1527,12 +1551,12 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             finish_schedule(app, &agenda, id, "alarm", &label, "", when, &raw)
         }
         "set_timer" => {
-            let seconds = arg_u32(args, "seconds").ok_or("seconds is required")?;
+            let seconds = timer_seconds(args)?;
             if !(1..=86_400).contains(&seconds) {
                 return Err("A timer has to be between 1 second and 24 hours.".into());
             }
-            let label = label_or(args, "label", "Timer");
-            let when = Local::now() + Duration::seconds(seconds as i64);
+            let label = timer_label(args);
+            let when = Local::now() + Duration::seconds(i64::from(seconds));
             let id = agenda.take_id()?;
             let raw = app
                 .state::<NativeBridge>()
@@ -1541,7 +1565,7 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             finish_schedule(app, &agenda, id, "timer", &label, "", when, &raw)
         }
         "set_reminder" => {
-            let title = label_or(args, "title", "");
+            let title = request_title(args);
             if title.is_empty() {
                 return Err("A reminder needs a title.".into());
             }
@@ -1556,7 +1580,8 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             Ok(json!({
                 "ok": true,
                 "id": item.id,
-                "detail": format!("Reminder set for {when}: {title}.{pattern}")
+                "kind": "reminder",
+                "detail": format!("Reminder saved in this app's Time list for {when}: {title}.{pattern}")
             }))
         }
         "snooze_reminder" => snooze_reminder(app, &agenda, args),
@@ -1623,34 +1648,16 @@ fn create_or_local(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
     if title.is_empty() {
         return Err("The event needs a title.".into());
     }
-    let start = parse_local_when(args["start"].as_str().unwrap_or(""))?;
+    let start = parse_flexible_when(args["start"].as_str().unwrap_or(""))?;
     let end = match args["end"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(s) => parse_local_when(s)?,
+        Some(s) => parse_flexible_when(s)?,
         None => start + Duration::hours(1),
     };
     if end <= start {
         return Err("The event ends before it starts.".into());
     }
     let location = args["location"].as_str().unwrap_or("").trim().chars().take(200).collect::<String>();
-
-    if ensure_calendar_permission(app).is_ok() {
-        let raw = app
-            .state::<NativeBridge>()
-            .create_event(&title, start.timestamp_millis(), end.timestamp_millis(), &location, &recurrence::to_rrule(args["recurrence"].as_str().unwrap_or(""), &weekday_args(args), until_end_ms(args["until"].as_str().unwrap_or(""))))
-            .map_err(|e| e.to_string())?;
-        let v: Value = serde_json::from_str(&raw).unwrap_or(json!({ "ok": false }));
-        if v["ok"] == true {
-            touch(app);
-            let id = v["id"].as_str().unwrap_or("").to_string();
-            return Ok(json!({
-                "ok": true,
-                "id": id,
-                "source": "phone",
-                "detail": format!("Added \"{title}\" on {}.", start.format("%a %-d %b %-H:%M"))
-            }));
-        }
-    }
-
+    let kind = recurrence::normalize_kind(args["recurrence"].as_str().unwrap_or(""));
     let event = CalEvent {
         id: format!("local-{}", Local::now().timestamp_millis()),
         title: title.clone(),
@@ -1659,20 +1666,23 @@ fn create_or_local(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
         location,
         all_day: false,
         source: "local".into(),
-        recurrence: {
-            let kind = recurrence::normalize_kind(args["recurrence"].as_str().unwrap_or(""));
-            if kind == "none" { String::new() } else { kind }
-        },
+        recurrence: if kind == "none" { String::new() } else { kind },
         weekdays: weekday_args(args),
         until_ms: until_end_ms(args["until"].as_str().unwrap_or("")),
+        alarm_id: 0,
         rrule: String::new(),
     };
-    agenda.upsert_local_event(app, event.clone())?;
+    let event = agenda.upsert_local_event(app, event)?;
+    let pattern = if recurrence::is_repeating(&event.recurrence) {
+        format!(" Repeats {}.", event.recurrence)
+    } else {
+        String::new()
+    };
     Ok(json!({
         "ok": true,
         "id": event.id,
         "source": "local",
-        "detail": format!("Saved \"{title}\" on {} in the Plan tab.", start.format("%a %-d %b %-H:%M"))
+        "detail": format!("Saved \"{title}\" on {} in this app's Calendar.{pattern}", start.format("%a %-d %b %-H:%M"))
     }))
 }
 
@@ -1691,10 +1701,10 @@ fn update_event(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value,
             event.location = loc.trim().chars().take(200).collect();
         }
         if let Some(s) = args["start"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
-            event.start_ms = parse_local_when(s)?.timestamp_millis();
+            event.start_ms = parse_flexible_when(s)?.timestamp_millis();
         }
         if let Some(s) = args["end"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
-            event.end_ms = parse_local_when(s)?.timestamp_millis();
+            event.end_ms = parse_flexible_when(s)?.timestamp_millis();
         } else if event.end_ms <= event.start_ms {
             event.end_ms = event.start_ms + 3_600_000;
         }
@@ -1760,19 +1770,23 @@ fn finish_schedule(
     if v["ok"] != true {
         return Ok(v);
     }
-        if v["via"] == "local" {
-        let mut store = agenda.lock();
-        store.items.retain(|i| i.id != id);
-        store.items.push(Item::basic(id, kind, title, note, when.timestamp_millis()));
-        store.items.sort_by_key(|i| i.at_ms);
-        Agenda::persist(&agenda.path, &store)?;
-        drop(store);
-        touch(app);
+    if v["via"] == "clock" {
+        return Ok(json!({
+            "ok": false,
+            "error": "That was not saved in this app. It is not on the Time screen."
+        }));
     }
+    let mut store = agenda.lock();
+    store.items.retain(|i| i.id != id);
+    store.items.push(Item::basic(id, kind, title, note, when.timestamp_millis()));
+    store.items.sort_by_key(|i| i.at_ms);
+    Agenda::persist(&agenda.path, &store)?;
+    drop(store);
+    touch(app);
     let spoken = v["detail"].as_str().map(str::to_owned).unwrap_or_else(|| match kind {
-        "alarm" => format!("Alarm set for {}.", when.format("%-H:%M")),
-        "timer" => format!("Timer set for {}.", when.format("%-H:%M")),
-        _ => format!("Set for {}.", when.format("%a %-H:%M")),
+        "alarm" => format!("Alarm saved in this app's Time list for {}.", when.format("%-H:%M")),
+        "timer" => format!("Countdown saved in this app's Time list for {}.", when.format("%-H:%M")),
+        _ => format!("Saved in this app for {}.", when.format("%a %-H:%M")),
     });
     Ok(json!({ "ok": true, "id": id, "detail": spoken }))
 }
@@ -2591,18 +2605,287 @@ fn weekday_args(args: &Value) -> Vec<u8> {
 }
 
 fn reminder_anchor_ms(args: &Value, schedule: &ScheduleMeta) -> Result<i64, String> {
+    let kind = recurrence::normalize_kind(&schedule.recurrence);
+    let repeating = recurrence::is_repeating(&kind) || kind == "once" || !schedule.time.is_empty();
+    if !repeating {
+        if let Some(offset) = relative_delay_ms(args)? {
+            return Ok(Local::now().timestamp_millis().saturating_add(offset));
+        }
+    }
     let at = args["at"].as_str().unwrap_or("").trim();
     if !at.is_empty() {
-        return Ok(parse_local_when(at)?.timestamp_millis());
+        return Ok(parse_flexible_when(at)?.timestamp_millis());
     }
-    let kind = recurrence::normalize_kind(&schedule.recurrence);
-    if recurrence::is_repeating(&kind) || kind == "once" || !schedule.time.is_empty() {
+    if repeating {
         if schedule.time.is_empty() && kind != "once" {
             return Err("A repeating reminder needs a time like 08:00.".into());
         }
         return Ok(Local::now().timestamp_millis() + 120_000);
     }
-    Err("A one-off reminder needs a time as YYYY-MM-DDTHH:MM.".into())
+    Err("A one-off reminder needs inMinutes, inHours, or a time such as 7pm, tomorrow at 9, or YYYY-MM-DDTHH:MM.".into())
+}
+
+fn request_title(args: &Value) -> String {
+    for key in ["title", "label"] {
+        let value = args[key].as_str().unwrap_or("").trim();
+        if !value.is_empty() {
+            return value.chars().take(120).collect();
+        }
+    }
+    String::new()
+}
+
+fn timer_label(args: &Value) -> String {
+    for key in ["label", "title"] {
+        let value = args[key].as_str().unwrap_or("").trim();
+        if !value.is_empty() {
+            return value.chars().take(120).collect();
+        }
+    }
+    "Timer".into()
+}
+
+fn timer_seconds(args: &Value) -> Result<u32, String> {
+    if let Some(seconds) = arg_u32(args, "seconds").filter(|n| *n > 0) {
+        return Ok(seconds);
+    }
+    if let Some(minutes) = arg_u32(args, "inMinutes").or_else(|| arg_u32(args, "minutes")).filter(|n| *n > 0) {
+        return minutes.checked_mul(60).ok_or_else(|| "A timer has to be between 1 second and 24 hours.".into());
+    }
+    if let Some(hours) = arg_u32(args, "inHours").or_else(|| arg_u32(args, "hours")).filter(|n| *n > 0) {
+        return hours.checked_mul(3600).ok_or_else(|| "A timer has to be between 1 second and 24 hours.".into());
+    }
+    Err("seconds is required, such as 300 for five minutes.".into())
+}
+
+fn relative_delay_ms(args: &Value) -> Result<Option<i64>, String> {
+    let minutes = arg_u32(args, "inMinutes").or_else(|| arg_u32(args, "minutes"));
+    let hours = arg_u32(args, "inHours").or_else(|| arg_u32(args, "hours"));
+    let seconds = arg_u32(args, "seconds").or_else(|| arg_u32(args, "inSeconds"));
+    if minutes.is_some() || hours.is_some() || seconds.is_some() {
+        let total = i64::from(seconds.unwrap_or(0)) + i64::from(minutes.unwrap_or(0)) * 60 + i64::from(hours.unwrap_or(0)) * 3600;
+        if total < 1 {
+            return Err("Say how many minutes or hours from now.".into());
+        }
+        if total > 366 * 24 * 3600 {
+            return Err("That delay is too far away.".into());
+        }
+        return Ok(Some(total * 1000));
+    }
+    let phrase = args["in"].as_str().or_else(|| args["delay"].as_str()).unwrap_or("").trim();
+    if phrase.is_empty() {
+        return Ok(None);
+    }
+    relative_phrase_ms(phrase).map(Some).ok_or_else(|| format!("could not read '{phrase}'. Use inMinutes or inHours."))
+}
+
+pub fn parse_flexible_when(s: &str) -> Result<DateTime<Local>, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("Give a time as inMinutes, 7pm, tomorrow at 9, or YYYY-MM-DDTHH:MM.".into());
+    }
+    if let Ok(when) = parse_local_when(s) {
+        return Ok(when);
+    }
+    if let Some(offset) = relative_phrase_ms(s) {
+        return Ok(Local::now() + Duration::milliseconds(offset));
+    }
+    if let Some(when) = parse_clock_phrase(s) {
+        return Ok(when);
+    }
+    Err(format!("could not read '{s}'. Use inMinutes, 7pm, tomorrow at 9, or YYYY-MM-DDTHH:MM."))
+}
+
+fn relative_phrase_ms(raw: &str) -> Option<i64> {
+    let mut folded = raw.trim().trim_matches(|c: char| matches!(c, '.' | '!' | '?' | ',')).to_ascii_lowercase();
+    if let Some(rest) = folded.strip_prefix("in ") {
+        folded = rest.trim().to_string();
+    } else if let Some(rest) = folded.strip_prefix("after ") {
+        folded = rest.trim().to_string();
+    }
+    if let Some(rest) = folded.strip_suffix(" from now") {
+        folded = rest.trim().to_string();
+    }
+    let mut parts = folded.split_whitespace();
+    let first = parts.next()?;
+    let second = parts.next();
+    if parts.next().is_some() {
+        return None;
+    }
+    let (count, unit) = if let Some(unit) = second {
+        let count = if first == "a" || first == "an" { 1 } else { first.parse::<u32>().ok()? };
+        (count, unit)
+    } else {
+        return compact_duration_ms(first);
+    };
+    unit_to_ms(count, unit)
+}
+
+fn compact_duration_ms(token: &str) -> Option<i64> {
+    let split = token.find(|c: char| !c.is_ascii_digit())?;
+    if split == 0 {
+        return None;
+    }
+    let count: u32 = token[..split].parse().ok()?;
+    unit_to_ms(count, &token[split..])
+}
+
+fn unit_to_ms(count: u32, unit: &str) -> Option<i64> {
+    if count == 0 {
+        return None;
+    }
+    let unit = unit.trim().trim_matches('.');
+    let seconds = match unit {
+        "s" | "sec" | "secs" | "second" | "seconds" => i64::from(count),
+        "m" | "min" | "mins" | "minute" | "minutes" => i64::from(count) * 60,
+        "h" | "hr" | "hrs" | "hour" | "hours" => i64::from(count) * 3600,
+        "d" | "day" | "days" => i64::from(count) * 86_400,
+        _ => return None,
+    };
+    if seconds > 366 * 24 * 3600 {
+        return None;
+    }
+    Some(seconds * 1000)
+}
+
+fn parse_clock_phrase(raw: &str) -> Option<DateTime<Local>> {
+    let folded = raw.trim().trim_matches(|c: char| matches!(c, '.' | '!' | '?' | ',')).to_ascii_lowercase();
+    let mut rest = folded.as_str();
+    let mut day_offset = 0i64;
+    let mut forced_day = false;
+    if let Some(after) = rest.strip_prefix("tomorrow") {
+        day_offset = 1;
+        forced_day = true;
+        rest = after.trim();
+    } else if let Some(after) = rest.strip_prefix("today") {
+        forced_day = true;
+        rest = after.trim();
+    }
+    rest = rest.trim_start_matches("at").trim();
+    if rest.is_empty() {
+        return None;
+    }
+    let (hour, minute) = parse_hm_token(rest)?;
+    let now = Local::now();
+    let date = now.date_naive() + Duration::days(day_offset);
+    let when = local_hms(date, hour, minute)?;
+    if !forced_day && when <= now + Duration::seconds(45) {
+        return local_hms(date + Duration::days(1), hour, minute);
+    }
+    if when <= now {
+        return None;
+    }
+    Some(when)
+}
+
+fn parse_hm_token(raw: &str) -> Option<(u32, u32)> {
+    let compact: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
+    let lower = compact.trim_matches(|c: char| matches!(c, '.' | '!' | '?' | ',')).to_ascii_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+    let (body, meridiem) = if let Some(body) = lower.strip_suffix("a.m.") {
+        (body, Some(false))
+    } else if let Some(body) = lower.strip_suffix("p.m.") {
+        (body, Some(true))
+    } else if let Some(body) = lower.strip_suffix("am") {
+        (body, Some(false))
+    } else if let Some(body) = lower.strip_suffix("pm") {
+        (body, Some(true))
+    } else {
+        (lower.as_str(), None)
+    };
+    if body.is_empty() || body.chars().any(|c| !c.is_ascii_digit() && c != ':') {
+        return None;
+    }
+    let (hour, minute) = if let Some((h, m)) = body.split_once(':') {
+        if m.len() != 2 {
+            return None;
+        }
+        (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?)
+    } else {
+        (body.parse::<u32>().ok()?, 0)
+    };
+    if minute > 59 {
+        return None;
+    }
+    let hour = match meridiem {
+        Some(is_pm) => {
+            if !(1..=12).contains(&hour) {
+                return None;
+            }
+            match (hour, is_pm) {
+                (12, false) => 0,
+                (12, true) => 12,
+                (h, true) => h + 12,
+                (h, false) => h,
+            }
+        }
+        None => {
+            if hour > 23 {
+                return None;
+            }
+            hour
+        }
+    };
+    Some((hour, minute))
+}
+
+fn local_hms(date: NaiveDate, hour: u32, minute: u32) -> Option<DateTime<Local>> {
+    let naive = date.and_hms_opt(hour, minute, 0)?;
+    naive.and_local_timezone(Local).earliest().or_else(|| naive.and_local_timezone(Local).latest())
+}
+
+fn event_alarm_at(event: &CalEvent, now: DateTime<Local>) -> Option<i64> {
+    let now_ms = now.timestamp_millis();
+    if event.start_ms > now_ms {
+        return Some(event.start_ms);
+    }
+    if !recurrence::is_repeating(&event.recurrence) {
+        return None;
+    }
+    let spec = event_spec(event)?;
+    let next = recurrence::next_after(&spec, now)?.timestamp_millis();
+    if event.until_ms > 0 && next > event.until_ms {
+        return None;
+    }
+    (next > now_ms).then_some(next)
+}
+
+fn arm_local_event(app: &AppHandle, event: &CalEvent) {
+    if event.alarm_id <= 0 {
+        return;
+    }
+    let bridge = app.state::<NativeBridge>();
+    match event_alarm_at(event, Local::now()) {
+        Some(at) => {
+            let _ = bridge.schedule_item(event.alarm_id, "event", &event.title, &event.location, at);
+        }
+        None => {
+            let _ = bridge.cancel_item(event.alarm_id);
+        }
+    }
+}
+
+fn rearm_events(app: &AppHandle) {
+    let agenda = app.state::<Agenda>();
+    let mut store = agenda.lock();
+    let mut changed = false;
+    for i in 0..store.events.len() {
+        if store.events[i].alarm_id <= 0 {
+            let id = Agenda::alloc_id(&mut store);
+            store.events[i].alarm_id = id;
+            changed = true;
+        }
+    }
+    let events = store.events.clone();
+    if changed {
+        let _ = Agenda::persist(&agenda.path, &store);
+    }
+    drop(store);
+    for event in events {
+        arm_local_event(app, &event);
+    }
 }
 
 fn recurrence_phrase(item: &Item) -> String {
@@ -3028,6 +3311,89 @@ mod tests {
     #[test]
     fn rejects_blank_time() {
         assert!(parse_local_when("  ").is_err());
+    }
+
+    #[test]
+    fn relative_and_clock_phrases_become_a_fire_time() {
+        let schedule = ScheduleMeta::default();
+        let before = Local::now().timestamp_millis();
+        let five = reminder_anchor_ms(&json!({"inMinutes": 5, "title": "Check EURUSD price"}), &schedule).unwrap();
+        let after = Local::now().timestamp_millis();
+        assert!(five >= before + 5 * 60_000 - 1_000, "{five}");
+        assert!(five <= after + 5 * 60_000 + 2_000, "{five}");
+        let phrase = reminder_anchor_ms(&json!({"at": "in 2 hours"}), &schedule).unwrap();
+        assert!(phrase >= before + 2 * 3_600_000 - 1_000);
+        let tomorrow = parse_flexible_when("tomorrow at 9").unwrap();
+        assert_eq!(tomorrow.date_naive(), Local::now().date_naive() + Duration::days(1));
+        assert_eq!((tomorrow.hour(), tomorrow.minute()), (9, 0));
+        let evening = parse_flexible_when("7:30 pm").unwrap();
+        assert_eq!((evening.hour(), evening.minute()), (19, 30));
+        assert!(evening > Local::now());
+        let clock = reminder_anchor_ms(&json!({"at": "2030-01-02T15:04"}), &schedule).unwrap();
+        assert_eq!(parse_local_when("2030-01-02T15:04").unwrap().timestamp_millis(), clock);
+        let err = reminder_anchor_ms(&json!({}), &schedule).unwrap_err();
+        assert!(err.contains("inMinutes"));
+        assert!(!err.to_ascii_lowercase().contains("specific clock"));
+        assert_eq!(timer_seconds(&json!({"inMinutes": 5})).unwrap(), 300);
+        assert_eq!(timer_seconds(&json!({"seconds": 90})).unwrap(), 90);
+        assert_eq!(timer_label(&json!({"title": "Check EURUSD price"})), "Check EURUSD price");
+    }
+
+    #[test]
+    fn reminders_alarms_and_countdowns_stay_on_the_time_list() {
+        let now = Local::now();
+        let reminder = Item::basic(3, "reminder", "Check EURUSD price", "", now.timestamp_millis() + 5 * 60_000);
+        let alarm = Item::basic(4, "alarm", "Wake up", "", now.timestamp_millis() + 3_600_000);
+        let timer = Item::basic(5, "timer", "Pasta", "", now.timestamp_millis() + 600_000);
+        let payload = reminders_payload(&[reminder, alarm, timer], &json!({}), now).unwrap();
+        assert_eq!(payload["count"], 3);
+        let kinds: Vec<_> = payload["reminders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["kind"].as_str().unwrap().to_string())
+            .collect();
+        assert!(kinds.contains(&"reminder".into()));
+        assert!(kinds.contains(&"alarm".into()));
+        assert!(kinds.contains(&"timer".into()));
+    }
+
+    #[test]
+    fn talk_creates_stay_in_the_app() {
+        let tools = tool_definitions();
+        let desc = |name: &str| {
+            tools.as_array().unwrap().iter().find(|tool| tool["name"] == name).unwrap()["description"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert!(desc("set_reminder").contains("inMinutes"));
+        assert!(desc("set_timer").contains("Time list"));
+        assert!(desc("set_alarm").contains("Time list"));
+        assert!(desc("create_calendar_event").contains("this app's Calendar"));
+        assert!(!desc("set_timer").contains("Clock"));
+        assert!(!desc("set_alarm").contains("Clock app"));
+        let hint = lookup_hint();
+        assert!(hint.contains("inMinutes"));
+        assert!(hint.contains("create_calendar_event"));
+        assert!(hint.contains("phone Clock"));
+        let phone = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/PhoneActions.kt");
+        assert!(!phone.contains("ACTION_SET_TIMER"));
+        assert!(!phone.contains("ACTION_SET_ALARM"));
+        assert!(!phone.contains("openClock"));
+        let create = include_str!("actions.rs").split("fn create_or_local").nth(1).unwrap().split("fn update_event").next().unwrap();
+        assert!(!create.contains("create_event"));
+        assert!(create.contains("upsert_local_event"));
+        let now = Local::now();
+        let soon = now + Duration::minutes(5);
+        let event = ev("local-1", "Lunch", soon, soon + Duration::hours(1), "");
+        assert_eq!(event_alarm_at(&event, now), Some(event.start_ms));
+        let past = now - Duration::hours(2);
+        let done = ev("local-2", "Old", past, past + Duration::hours(1), "");
+        assert_eq!(event_alarm_at(&done, now), None);
+        let daily_start = now + Duration::days(2);
+        let daily = ev("local-3", "Standup", daily_start, daily_start + Duration::hours(1), "daily");
+        assert_eq!(event_alarm_at(&daily, now), Some(daily.start_ms));
     }
 
     #[test]
@@ -3515,6 +3881,7 @@ mod tests {
             recurrence: recurrence.into(),
             weekdays: Vec::new(),
             until_ms: 0,
+            alarm_id: 0,
             rrule: String::new(),
         }
     }
