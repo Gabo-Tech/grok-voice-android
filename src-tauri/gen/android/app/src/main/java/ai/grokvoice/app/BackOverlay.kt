@@ -18,8 +18,9 @@ object BackOverlay {
         next
       )
       callback = next
-    } else if (!canGoBack && callback != null) {
-      activity.onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback)
+    } else if (!canGoBack) {
+      val current = callback ?: return
+      activity.onBackInvokedDispatcher.unregisterOnBackInvokedCallback(current)
       callback = null
     }
   }
