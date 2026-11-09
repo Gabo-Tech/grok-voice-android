@@ -4,14 +4,14 @@
 
 A bring-your-own-key voice assistant for Android. The phone talks to the [xAI Realtime API](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) directly. The wake word stays on the device. Speech, transcripts, and search are sent to xAI under your key.
 
-The current sideload build is [Grok Voice 0.1.29](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
+The current sideload build is [Grok Voice 0.1.30](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
 
 ## Install
 
-Download `GrokVoice-0.1.29.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
+Download `GrokVoice-0.1.30.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
 
 ```bash
-adb install -r GrokVoice-0.1.29.apk
+adb install -r GrokVoice-0.1.30.apk
 ```
 
 Allow installs from unknown sources if Android asks. This package is signed with a debug key so it can be installed by hand. It is not a Play Store upload.
@@ -45,10 +45,10 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 | “Make a note: buy milk” | Saved on the phone. |
 | “Set a timer for 10 minutes” | Saved on the Time screen. Grok Voice rings it. |
 | “Set an alarm for 7:30” | Saved on the Time screen for the next 7:30. Grok Voice rings it. |
-| “Remind me in 5 minutes” | A reminder in this app, firing five minutes from now. |
+| “Remind me in 5 minutes” | An in-app reminder five minutes from now, instead of a phone Clock countdown. |
 | “Remind me tomorrow at 9 to call Sam” | A notification at that local time. |
 | “What’s on my calendar today?” | Reads the phone calendar. Android asks for calendar access the first time. |
-| “Add lunch with Ana tomorrow at 1” | Writes an event. If you omit the end time, it lasts one hour. |
+| “Add lunch with Ana tomorrow at 1” | Saved on this app's Calendar. If you omit the end time, it lasts one hour. |
 | “Call Mom” | Looks up that People nickname. A preferred channel wins; otherwise the dialer opens after you say yes. The call is not placed for you. |
 | “Text Sam that I’m late” | Opens the text app with the draft. You tap Send. |
 | “Message Ana” | If Ana’s preferred channel is WhatsApp, Signal, text, or email, that app opens after you confirm. |
@@ -60,9 +60,9 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 
 **People** is under **Settings**. It is an overlay on this phone, not a second contacts app. Phone numbers and email still come from Android contacts. Nicknames, aliases, a favorite, a note, a preferred channel (call, text, WhatsApp, Signal, or email), and dated reminders (birthday, anniversary, or a custom date) stay in Grok Voice. Unlink or delete removes only that overlay. Asking for a fact answers in the conversation. A call, text, or chat still waits for a clear yes, and nothing is sent until you confirm in that app.
 
-The bottom bar is **Talk**, **Notes**, **Calendar**, **Remind**, and **More**. Lists stay quiet by default; tap **+** to add, or open a row to edit. Voice still works for create, edit, and delete (“change that note”, “delete the lunch event”, “move my reminder to 5”). Calendar access is requested from the Calendar tab or the first voice calendar ask. If the phone has no writable calendar account, events are saved in the app instead.
+The bottom bar is **Talk**, **Notes**, **Calendar**, **Remind**, and **More**. Lists stay quiet by default; tap **+** to add, or open a row to edit. Voice still works for create, edit, and delete (“change that note”, “delete the lunch event”, “move my reminder to 5”). Calendar access is requested from the Calendar tab or the first time Talk reads the phone calendar. If the phone has no writable calendar account, an event added on the Calendar screen is saved in the app instead.
 
-Times you say are local. “Remind me tomorrow at 3” and “remind me in 5 minutes” are reminders in this app. “Set an alarm for 7:30” is an alarm in this app for the next time that hour and minute occurs. “Add lunch tomorrow at 1” is an event in this app's Calendar. Daily and weekly reminders, including custom weekdays, keep their next time on the Time tab. Snooze moves that notification; a repeating series still fires on its usual schedule.
+In 0.1.30, reminders, alarms, countdowns, and calendar events created in Talk are saved inside Grok Voice, on Time and Calendar, and fire through this app's notifications, so Spoken mode can talk when they go off. Times you say are local. “Remind me tomorrow at 3” and “remind me in 5 minutes” are reminders in this app. A relative phrase such as “in 5 minutes” creates an in-app reminder instead of a phone Clock countdown. “Set an alarm for 7:30” is an alarm in this app for the next time that hour and minute occurs. “Add lunch tomorrow at 1” is an event on this app's Calendar. Talk does not write these creates to the phone Clock, and Talk-created events go to the app calendar. Reading the phone calendar is unchanged. An event added from the Calendar screen, while calendar access is granted, still goes to the phone calendar. Daily and weekly reminders, including custom weekdays, keep their next time on the Time tab. Snooze moves that notification; a repeating series still fires on its usual schedule. Person-date visibility is unchanged: a date stays on the person all year and shows under Time once the heads-up day arrives. **Settings → Notification alerts** is unchanged. Normal is the default, and Spoken stays opt-in.
 
 **Settings → Daily voice budget** is off until you pick a number of minutes. Around that amount, the app shows a cue once per day and can say it during a call. The call is not cut off unless you also turn on a hard stop. The count is minutes of realtime sessions on this phone and resets at local midnight.
 
