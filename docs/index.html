@@ -57,7 +57,7 @@
         "image": "https://gabo-tech.github.io/grok-voice-android/og.png",
         "operatingSystem": "Android",
         "applicationCategory": "UtilitiesApplication",
-        "softwareVersion": "0.1.32",
+        "softwareVersion": "0.1.33",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -115,7 +115,7 @@
             "name": "What can I ask?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Notes, timers, alarms, reminders, and calendar events. In 0.1.32, Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone's alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example Hey Gabriel, remember to brush your teeth. Normal mode is unchanged and remains the default. Talk-created reminders, events, alarms, and countdowns stay in this app; that shipped in 0.1.30. They fire through this app's notifications. A phrase such as in 5 minutes creates an in-app reminder instead of a phone Clock countdown. Talk does not write these creates to the phone Clock, and Talk-created events go to the app calendar. Reading the phone calendar is unchanged. An event added from the Calendar screen, while calendar access is granted, still goes to the phone calendar. Person-date visibility is unchanged."
+              "text": "Notes, timers, alarms, reminders, and calendar events. In 0.1.33, Settings lists all 28 Grok voices and the 10 OpenAI Realtime voices, each with a preview. System back walks in-app screens. Back and add sit in the bottom bar. A wake-word watchdog restarts listening if the microphone stalls, and Settings shows the background-listening status. Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone's alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example Hey Gabriel, remember to brush your teeth. Normal mode is unchanged and remains the default. Talk-created reminders, events, alarms, and countdowns stay in this app; that shipped in 0.1.30. They fire through this app's notifications. A phrase such as in 5 minutes creates an in-app reminder instead of a phone Clock countdown. Talk does not write these creates to the phone Clock, and Talk-created events go to the app calendar. Reading the phone calendar is unchanged. An event added from the Calendar screen, while calendar access is granted, still goes to the phone calendar. Person-date visibility is unchanged."
             }
           }
         ]
@@ -156,8 +156,8 @@
             stay on the phone. A conversation is sent to xAI.
           </p>
           <div class="actions">
-            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.32/GrokVoice-0.1.32.apk">
-              Download Grok Voice 0.1.32
+            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.33/GrokVoice-0.1.33.apk">
+              Download Grok Voice 0.1.33
             </a>
             <a class="quiet" href="https://github.com/Gabo-Tech/grok-voice-android">Source</a>
           </div>
@@ -171,7 +171,7 @@
           <div class="cards">
             <article class="reveal">
               <h3>Wake word</h3>
-              <p>Listen stays on after you leave. Nothing starts until you say “Hey Grok.”</p>
+              <p>Listen stays on after you leave. A watchdog restarts it if the microphone stalls, and Settings shows that status. Nothing starts until you say “Hey Grok.”</p>
             </article>
             <article class="reveal">
               <h3>Quiet gap</h3>
@@ -195,7 +195,7 @@
             <li><span>Search</span>News, weather, and what is on in town, spoken and written, with sources.</li>
           </ul>
           <p>
-            In 0.1.32, Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone’s alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example “Hey Gabriel, remember to brush your teeth.” Normal mode is unchanged and remains the default. Reminders, alarms, countdowns, and calendar events created in Talk stay inside Grok Voice and fire through this app’s notifications. That in-app schedule shipped in 0.1.30. Talk does not write those creates to the phone Clock. Person-date visibility is unchanged.
+            In 0.1.33, Settings lists all 28 Grok voices and the 10 OpenAI Realtime voices, each with a preview. System back walks in-app screens. Back and add sit in the bottom bar. A wake-word watchdog restarts listening if the microphone stalls, and Settings shows the background-listening status. Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone’s alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example “Hey Gabriel, remember to brush your teeth.” Normal mode is unchanged and remains the default. Reminders, alarms, countdowns, and calendar events created in Talk stay inside Grok Voice and fire through this app’s notifications. That in-app schedule shipped in 0.1.30. Talk does not write those creates to the phone Clock. Person-date visibility is unchanged.
           </p>
         </div>
       </section>
@@ -220,11 +220,11 @@
           <h2>Install</h2>
           <p>Download the APK, then install it from the phone or from a computer.</p>
           <p>
-            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.32/GrokVoice-0.1.32.apk">
-              GrokVoice-0.1.32.apk
+            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.33/GrokVoice-0.1.33.apk">
+              GrokVoice-0.1.33.apk
             </a>
           </p>
-          <pre><code id="install-cmd">adb install -r GrokVoice-0.1.32.apk</code></pre>
+          <pre><code id="install-cmd">adb install -r GrokVoice-0.1.33.apk</code></pre>
           <button type="button" id="copy-cmd">Copy command</button>
           <p class="fine" id="copy-status" role="status"></p>
         </div>
@@ -252,7 +252,7 @@
             </div>
             <div>
               <dt>What can I ask?</dt>
-              <dd>Notes, timers, alarms, reminders, and calendar events. In 0.1.32, Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone’s alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example “Hey Gabriel, remember to brush your teeth.” Normal mode is unchanged and remains the default. Talk-created reminders, events, alarms, and countdowns stay in this app; that shipped in 0.1.30. They fire through this app’s notifications. “In 5 minutes” is an in-app reminder instead of a phone Clock countdown. Talk does not write these creates to the phone Clock, and Talk-created events go to the app calendar. Reading the phone calendar is unchanged. An event added from the Calendar screen, while calendar access is granted, still goes to the phone calendar. Person-date visibility is unchanged.</dd>
+              <dd>Notes, timers, alarms, reminders, and calendar events. In 0.1.33, Settings lists all 28 Grok voices and the 10 OpenAI Realtime voices, each with a preview. System back walks in-app screens. Back and add sit in the bottom bar. A wake-word watchdog restarts listening if the microphone stalls, and Settings shows the background-listening status. Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone’s alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example “Hey Gabriel, remember to brush your teeth.” Normal mode is unchanged and remains the default. Talk-created reminders, events, alarms, and countdowns stay in this app; that shipped in 0.1.30. They fire through this app’s notifications. “In 5 minutes” is an in-app reminder instead of a phone Clock countdown. Talk does not write these creates to the phone Clock, and Talk-created events go to the app calendar. Reading the phone calendar is unchanged. An event added from the Calendar screen, while calendar access is granted, still goes to the phone calendar. Person-date visibility is unchanged.</dd>
             </div>
           </dl>
         </div>
@@ -261,7 +261,7 @@
 
     <footer>
       <div class="wrap">
-        <p>Grok Voice 0.1.32 · <a href="https://github.com/Gabo-Tech/grok-voice-android">Gabo-Tech/grok-voice-android</a></p>
+        <p>Grok Voice 0.1.33 · <a href="https://github.com/Gabo-Tech/grok-voice-android">Gabo-Tech/grok-voice-android</a></p>
         <p>Built by <a href="https://gabo.is-a.dev">Gabriel Clemente</a></p>
         <p>Made with ❤️ by <a href="https://solutions.gabo.rocks/" target="_blank" rel="noopener">GABO</a></p>
         <p class="also">
