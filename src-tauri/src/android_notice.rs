@@ -6,7 +6,11 @@ use jni::{
     sys::{jboolean, jint, jshortArray, jstring},
 };
 
-use crate::{audio::playback, local::engine, notices};
+use crate::{
+    audio::playback,
+    local::{notice_sample_rate, synthesize_notice},
+    notices,
+};
 
 fn java_string(env: &mut JNIEnv, value: &JString) -> String {
     match env.get_string(value) {
@@ -69,7 +73,7 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_synthesizeNotice<'local>
     let tokens = java_string(&mut env, &tokens);
     let data_dir = java_string(&mut env, &data_dir);
     let text = java_string(&mut env, &text);
-    let pcm = match engine::synthesize_notice(&model, &tokens, &data_dir, &text) {
+    let pcm = match synthesize_notice(&model, &tokens, &data_dir, &text) {
         Ok(pcm) => pcm,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -95,7 +99,7 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_noticeSampleRate(
     _env: JNIEnv<'_>,
     _class: JClass<'_>,
 ) -> jint {
-    engine::notice_sample_rate()
+    notice_sample_rate()
 }
 
 #[unsafe(no_mangle)]

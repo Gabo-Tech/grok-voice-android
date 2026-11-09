@@ -2,6 +2,8 @@
 //! Utterance mode, not full duplex. The phone tools stay on `actions::run`.
 
 mod engine;
+#[cfg(target_os = "android")]
+pub(crate) use engine::{notice_sample_rate, synthesize_notice};
 mod gguf;
 mod mode;
 mod packs;
@@ -12,11 +14,12 @@ mod web;
 
 pub use mode::public_search_enabled;
 pub use packs::{
-    delete_pack, download_custom_model, download_pack, import_custom_file, model_dir, pack_status, packs_ready, select_model, PackInfo,
+    PackInfo, delete_pack, download_custom_model, download_pack, import_custom_file, model_dir,
+    pack_status, packs_ready, select_model,
 };
 pub use session::{answer_text, run_session};
 pub use web::lookup as public_search;
-pub use web::{network_block, OFFLINE};
+pub use web::{OFFLINE, network_block};
 
 /// What to do with one vault account when a Talk session starts.
 #[derive(Debug, PartialEq, Eq)]
@@ -76,7 +79,9 @@ pub fn text_uses_local(providers: &[&str], prefer_local: bool, packs_ready: bool
         return false;
     }
     let order = attempt_order(providers, prefer_local, packs_ready);
-    order.first().is_some_and(|index| providers[*index] == "local")
+    order
+        .first()
+        .is_some_and(|index| providers[*index] == "local")
 }
 
 /// Auth, network, rate-limit, and model failures that should try the next key
@@ -223,12 +228,19 @@ mod tests {
 
     #[test]
     fn connect_failures_try_the_next_key() {
-        assert!(retries_on_connect("OpenAI rejected the request (401): invalid api key"));
-        assert!(retries_on_connect("timed out connecting to wss://api.openai.com"));
+        assert!(retries_on_connect(
+            "OpenAI rejected the request (401): invalid api key"
+        ));
+        assert!(retries_on_connect(
+            "timed out connecting to wss://api.openai.com"
+        ));
         assert!(retries_on_connect("HTTP 429 rate limit"));
         assert!(retries_on_connect("model gpt-realtime was not found"));
         assert!(!retries_on_connect("ended by user"));
-        let message = exhausted_message(&["OpenAI".into(), "xAI".into(), "Local".into()], "timed out connecting");
+        let message = exhausted_message(
+            &["OpenAI".into(), "xAI".into(), "Local".into()],
+            "timed out connecting",
+        );
         assert!(message.contains("OpenAI, then xAI, then Local"));
         assert!(message.contains("timed out"));
     }
@@ -236,17 +248,21 @@ mod tests {
     #[test]
     fn fallback_order_prefers_a_ready_local_account() {
         let accounts = [("local", true), ("xai", true)];
-        let chosen = accounts.iter().find(|(provider, ready)| !matches!(route(provider, *ready), Route::Skip(_)));
+        let chosen = accounts
+            .iter()
+            .find(|(provider, ready)| !matches!(route(provider, *ready), Route::Skip(_)));
         assert_eq!(chosen.map(|(provider, _)| *provider), Some("local"));
     }
 
     #[test]
     fn fallback_order_passes_a_missing_local_pack_to_xai() {
         let accounts = [("local", false), ("xai", true)];
-        let chosen = accounts.iter().find_map(|(provider, ready)| match route(provider, *ready) {
-            Route::Skip(_) => None,
-            _ => Some(*provider),
-        });
+        let chosen = accounts
+            .iter()
+            .find_map(|(provider, ready)| match route(provider, *ready) {
+                Route::Skip(_) => None,
+                _ => Some(*provider),
+            });
         assert_eq!(chosen, Some("xai"));
     }
 
