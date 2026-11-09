@@ -1,7 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { installHistory } from "@/lib/history";
 import "./index.css";
+
+installHistory();
 
 document.documentElement.classList.add("dark");
 

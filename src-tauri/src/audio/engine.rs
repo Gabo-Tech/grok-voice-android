@@ -7,7 +7,7 @@ use std::{
     collections::VecDeque,
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError},
     },
     thread,
@@ -87,16 +87,37 @@ static SERVICE_TX: Mutex<Option<SyncSender<Vec<f32>>>> = Mutex::new(None);
 static PRESENT_TALK: AtomicBool = AtomicBool::new(false);
 static REOPEN_MIC: AtomicBool = AtomicBool::new(false);
 static SERVICE_FAILED: AtomicBool = AtomicBool::new(false);
+static MIC_DROPS: AtomicU32 = AtomicU32::new(0);
+static LAST_MIC: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// PCM from the Android foreground service, already at 16 kHz. Drops the chunk
 /// if the engine is not listening yet or has fallen behind.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub fn push_service_mic(pcm: Vec<f32>) -> bool {
     let guard = SERVICE_TX.lock().unwrap_or_else(|e| e.into_inner());
-    match guard.as_ref() {
+    let sent = match guard.as_ref() {
         Some(tx) => tx.try_send(pcm).is_ok(),
         None => false,
+    };
+    if sent {
+        MIC_DROPS.store(0, Ordering::Release);
+        *LAST_MIC.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+    } else {
+        MIC_DROPS.fetch_add(1, Ordering::Release);
     }
+    sent
+}
+
+/// True when the foreground microphone is delivering samples the wake engine is not consuming.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn service_mic_stalled() -> bool {
+    if MIC_DROPS.load(Ordering::Acquire) >= 40 {
+        return true;
+    }
+    LAST_MIC
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some_and(|at| at.elapsed() > Duration::from_secs(15))
 }
 
 pub fn request_present_talk() {
@@ -968,5 +989,31 @@ mod tests {
         assert_eq!(capture_plan(true, true, false), CapturePlan::WaitForService);
         assert_eq!(capture_plan(false, true, true), CapturePlan::Cpal);
         assert_eq!(capture_plan(true, false, false), CapturePlan::Cpal);
+    }
+
+    #[test]
+    fn listener_restarts_after_boot_update_and_a_stalled_microphone() {
+        let manifest = include_str!("../../gen/android/app/src/main/AndroidManifest.xml");
+        let service = include_str!("../../gen/android/app/src/main/java/ai/grokvoice/app/VoiceListenerService.kt");
+        let boot = include_str!("../../gen/android/app/src/main/java/ai/grokvoice/app/BootReceiver.kt");
+        let activity = include_str!("../../gen/android/app/src/main/java/ai/grokvoice/app/MainActivity.kt");
+        assert!(manifest.contains("foregroundServiceType=\"microphone\""));
+        assert!(manifest.contains("FOREGROUND_SERVICE_MICROPHONE"));
+        assert!(manifest.contains("stopWithTask=\"false\""));
+        assert!(manifest.contains("RECEIVE_BOOT_COMPLETED"));
+        assert!(manifest.contains("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"));
+        assert!(manifest.contains("enableOnBackInvokedCallback=\"true\""));
+        assert!(manifest.contains("MY_PACKAGE_REPLACED"));
+        assert!(boot.contains("ACTION_BOOT_COMPLETED"));
+        assert!(boot.contains("ACTION_MY_PACKAGE_REPLACED"));
+        assert!(service.contains("START_STICKY"));
+        assert!(service.contains("onTaskRemoved"));
+        assert!(service.contains("getForegroundService"));
+        assert!(service.contains("watchdog"));
+        assert!(service.contains("pollMicStalledSafe"));
+        assert!(service.contains("isIgnoringBatteryOptimizations"));
+        assert!(!service.contains("SpokenAlerts"));
+        assert!(activity.contains("__grokBack"));
+        assert!(activity.contains("moveTaskToBack"));
     }
 }

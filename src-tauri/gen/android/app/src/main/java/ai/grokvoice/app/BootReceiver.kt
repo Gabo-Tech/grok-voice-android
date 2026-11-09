@@ -8,7 +8,12 @@ import androidx.core.content.ContextCompat
 
 class BootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+    val action = intent.action ?: return
+    val restart = action == Intent.ACTION_BOOT_COMPLETED ||
+      action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+      action == "android.intent.action.QUICKBOOT_POWERON" ||
+      action == "com.htc.intent.action.QUICKBOOT_POWERON"
+    if (!restart) return
     PhoneActions.rescheduleAll(context)
     if (!VoiceListenerService.isArmed(context)) return
     try {

@@ -24,6 +24,7 @@ mod settings;
 mod updates;
 mod usage;
 mod vault;
+mod voices;
 mod wakeword;
 
 use std::sync::Arc;
@@ -131,6 +132,8 @@ pub fn run() {
             commands::train_wakeword,
             commands::wakeword_status,
             commands::delete_wakeword,
+            commands::listen_health,
+            commands::request_battery_exemption,
             commands::get_settings,
             commands::save_settings,
             commands::update_status,

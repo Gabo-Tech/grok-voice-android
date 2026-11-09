@@ -20,6 +20,9 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONObject
+import java.io.File
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -36,6 +39,7 @@ class VoiceListenerService : Service() {
   companion object {
     const val ACTION_START = "ai.grokvoice.app.action.START_LISTENING"
     const val ACTION_STOP = "ai.grokvoice.app.action.STOP_LISTENING"
+    const val ACTION_FOREGROUND = "ai.grokvoice.app.action.LISTENER_FOREGROUND"
     const val EXTRA_TITLE = "title"
     const val EXTRA_TEXT = "text"
     const val EXTRA_REASON = "reason"
@@ -43,6 +47,7 @@ class VoiceListenerService : Service() {
     const val REASON_USER = "user turned Listen off"
     private const val CHANNEL_ID = "grok_listener"
     private const val ALERT_CHANNEL_ID = "grok_wake_alert"
+    private const val HEALTH_CHANNEL_ID = "grok_listen_health"
     private const val NOTIFICATION_ID = 4242
     private const val ALERT_ID = 4243
     private const val REOPEN_REQUEST = 7
@@ -55,6 +60,8 @@ class VoiceListenerService : Service() {
     private val micOpen = AtomicBoolean(false)
     private val uiCreated = AtomicBoolean(false)
     private val uiResumed = AtomicBoolean(false)
+    private val micBlocked = AtomicBoolean(false)
+    private val silenceStreak = AtomicInteger(0)
 
     fun setArmed(context: Context, armed: Boolean) {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ARMED, armed).apply()
@@ -79,6 +86,51 @@ class VoiceListenerService : Service() {
     fun uiIsCreated(): Boolean = uiCreated.get()
 
     fun uiIsResumed(): Boolean = uiResumed.get()
+
+    fun noteHealthyAudio() {
+      silenceStreak.set(0)
+      micBlocked.set(false)
+    }
+
+    fun noteSilenceReopen(context: Context) {
+      val n = silenceStreak.incrementAndGet()
+      if (n >= 4) {
+        micBlocked.set(true)
+        ListenTrace.event(context, "microphone stayed silent in the background")
+      }
+    }
+
+    fun isMicBlocked(): Boolean = micBlocked.get()
+
+    /** off, ok, battery, mic, starting, or needs-app. */
+    fun health(context: Context): String {
+      if (!isArmed(context)) return "off"
+      val pm = context.getSystemService(PowerManager::class.java)
+      if (pm != null && !pm.isIgnoringBatteryOptimizations(context.packageName)) return "battery"
+      if (micBlocked.get()) return "mic"
+      if (!RustBridge.engineAliveSafe() && !uiCreated.get()) return "needs-app"
+      if (!active.get() || !micOpen.get()) return "starting"
+      return "ok"
+    }
+
+    fun batteryUnrestricted(context: Context): Boolean {
+      val pm = context.getSystemService(PowerManager::class.java) ?: return false
+      return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    /** The activity is in front, so the microphone foreground service can be started legally. */
+    fun onAppForeground(context: Context) {
+      if (!isArmed(context)) return
+      if (isActive() && isMicOpen() && !micBlocked.get()) return
+      micBlocked.set(false)
+      silenceStreak.set(0)
+      val start = Intent(context, VoiceListenerService::class.java).setAction(ACTION_FOREGROUND)
+      try {
+        ContextCompat.startForegroundService(context, start)
+      } catch (e: Exception) {
+        ListenTrace.event(context, "could not refresh listening from the foreground (${e.javaClass.simpleName})")
+      }
+    }
 
     fun rememberReopen(context: Context) {
       if (Build.VERSION.SDK_INT < 34) return
@@ -178,6 +230,13 @@ class VoiceListenerService : Service() {
   private var explicitStop = false
   private var capture: MicCapture? = null
   private var screenReceiver: BroadcastReceiver? = null
+  private var lastLockAt = 0L
+  private var lastReopenAt = 0L
+  private var needsPosted = false
+  private val watchdog = Runnable {
+    watchdogTick()
+    mainHandler.postDelayed(watchdog, 15_000)
+  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -206,6 +265,7 @@ class VoiceListenerService : Service() {
       }
     }
     screenReceiver = receiver
+    mainHandler.postDelayed(watchdog, 15_000)
     try {
       if (Build.VERSION.SDK_INT >= 33) {
         registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
@@ -219,6 +279,11 @@ class VoiceListenerService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (intent?.action == ACTION_FOREGROUND && active.get() && micOpen.get() && !micBlocked.get()) {
+      needsPosted = false
+      explicitStop = false
+      return START_STICKY
+    }
     if (intent?.action == ACTION_STOP || (intent == null && !isArmed(this))) {
       val reason = intent?.getStringExtra(EXTRA_REASON) ?: REASON_USER
       explicitStop = true
@@ -255,6 +320,14 @@ class VoiceListenerService : Service() {
     acquireWakeLock()
     ListenTrace.event(this, "foreground service running")
     ensureCapture()
+    if (intent?.action == ACTION_FOREGROUND) {
+      micBlocked.set(false)
+      silenceStreak.set(0)
+      needsPosted = false
+      stopCapture()
+      ensureCapture()
+      ListenTrace.event(this, "refreshed the microphone from the foreground")
+    }
     HomeWidgets.updateAll(this)
     ensureEngine()
     return START_STICKY
@@ -271,6 +344,7 @@ class VoiceListenerService : Service() {
 
   override fun onDestroy() {
     val restart = !explicitStop && isArmed(this)
+    mainHandler.removeCallbacks(watchdog)
     stopCapture()
     releaseWakeLock()
     active.set(false)
@@ -342,7 +416,8 @@ class VoiceListenerService : Service() {
       onStopped = { reopen ->
         micOpen.set(false)
         if (reopen) mainHandler.postDelayed({ ensureCapture() }, 1000)
-      }
+      },
+      onSilence = { noteSilenceReopen(this) },
     ).also { capture = it }
     mic.start()
   }
@@ -366,11 +441,7 @@ class VoiceListenerService : Service() {
 
   private fun scheduleRestart(context: Context) {
     val am = context.getSystemService(AlarmManager::class.java) ?: return
-    val restart = Intent(context, VoiceListenerService::class.java).setAction(ACTION_START)
-    val pi = PendingIntent.getService(
-      context, RESTART_REQUEST, restart,
-      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-    )
+    val pi = restartPending(context, PendingIntent.FLAG_UPDATE_CURRENT) ?: return
     val at = SystemClock.elapsedRealtime() + 1500
     try {
       if (Build.VERSION.SDK_INT >= 23) {
@@ -385,11 +456,7 @@ class VoiceListenerService : Service() {
 
   private fun cancelRestart(context: Context) {
     val am = context.getSystemService(AlarmManager::class.java) ?: return
-    val restart = Intent(context, VoiceListenerService::class.java).setAction(ACTION_START)
-    val pi = PendingIntent.getService(
-      context, RESTART_REQUEST, restart,
-      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
-    ) ?: return
+    val pi = restartPending(context, PendingIntent.FLAG_NO_CREATE) ?: return
     am.cancel(pi)
     pi.cancel()
   }
@@ -436,6 +503,112 @@ class VoiceListenerService : Service() {
       .build()
   }
 
+  private fun restartPending(context: Context, mutability: Int): PendingIntent? {
+    val restart = Intent(context, VoiceListenerService::class.java).setAction(ACTION_START)
+    val flags = PendingIntent.FLAG_IMMUTABLE or mutability
+    return if (Build.VERSION.SDK_INT >= 26) {
+      PendingIntent.getForegroundService(context, RESTART_REQUEST, restart, flags)
+    } else {
+      PendingIntent.getService(context, RESTART_REQUEST, restart, flags)
+    }
+  }
+
+  private fun watchdogTick() {
+    if (explicitStop || !isArmed(this)) return
+    val now = SystemClock.elapsedRealtime()
+    if (wakeLock?.isHeld != true || lastLockAt == 0L || now - lastLockAt > 30 * 60 * 1000) {
+      releaseWakeLock()
+      acquireWakeLock()
+      lastLockAt = now
+    }
+    if (!active.get()) {
+      ListenTrace.event(this, "watchdog found the listener down, starting it")
+      val start = Intent(this, VoiceListenerService::class.java).setAction(ACTION_START)
+      try {
+        ContextCompat.startForegroundService(this, start)
+      } catch (e: Exception) {
+        ListenTrace.event(this, "watchdog could not start the listener (${e.javaClass.simpleName})")
+        postNeedsApp()
+      }
+      return
+    }
+    if (!RustBridge.engineAliveSafe()) {
+      if (now - lastReopenAt > 60_000) {
+        lastReopenAt = now
+        ListenTrace.event(this, "wake engine is not running, reopening")
+        if (!sendReopen()) postNeedsApp()
+      }
+      return
+    }
+    val stalled = RustBridge.pollMicStalledSafe()
+    val readAt = MicCapture.lastReadAt()
+    val readStale = readAt > 0 && now - readAt > 20_000
+    if (!micOpen.get() || readStale || stalled) {
+      ListenTrace.event(this, "watchdog reopened a stalled microphone")
+      stopCapture()
+      ensureCapture()
+    }
+    if (micBlocked.get()) postNeedsApp()
+  }
+
+  private fun postNeedsApp() {
+    if (needsPosted) return
+    needsPosted = true
+    ensureHealthChannel()
+    val copy = needsAppCopy(localeTag())
+    val immutable = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    val open = PendingIntent.getActivity(
+      this, 3,
+      Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+      immutable
+    )
+    val notification = NotificationCompat.Builder(this, HEALTH_CHANNEL_ID)
+      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+      .setContentTitle(copy.first)
+      .setContentText(copy.second)
+      .setContentIntent(open)
+      .setCategory(NotificationCompat.CATEGORY_STATUS)
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setAutoCancel(true)
+      .build()
+    val nm = getSystemService(NotificationManager::class.java) ?: return
+    nm.notify(ALERT_ID + 1, notification)
+  }
+
+  private fun ensureHealthChannel() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val nm = getSystemService(NotificationManager::class.java) ?: return
+    val channel = NotificationChannel(
+      HEALTH_CHANNEL_ID,
+      "Listen",
+      NotificationManager.IMPORTANCE_HIGH
+    ).apply {
+      description = "When background listening needs the app open"
+      setShowBadge(false)
+    }
+    nm.createNotificationChannel(channel)
+  }
+
+  private fun localeTag(): String {
+    val dirs = listOf(File(filesDir, "ai.grokvoice.app"), filesDir)
+    val file = dirs.map { File(it, "settings.json") }.firstOrNull { it.isFile } ?: return ""
+    return try {
+      JSONObject(file.readText()).optString("locale")
+    } catch (_: Exception) {
+      ""
+    }
+  }
+
+  private fun needsAppCopy(locale: String): Pair<String, String> {
+    return when (locale) {
+      "es" -> "Escuchar en segundo plano" to "Abre Grok Voice para que Hey Grok siga escuchando."
+      "de" -> "Im Hintergrund zuhören" to "Öffne Grok Voice, damit Hey Grok weiter zuhören kann."
+      "pt" -> "Ouvir em segundo plano" to "Abra o Grok Voice para o Hey Grok continuar ouvindo."
+      "ca-ES-valencia" -> "Escoltar en segon pla" to "Obri Grok Voice perquè Hey Grok continue escoltant."
+      else -> "Listening in background" to "Open Grok Voice so Hey Grok can keep listening."
+    }
+  }
+
   private fun acquireWakeLock() {
     if (wakeLock?.isHeld == true) return
     val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -443,6 +616,7 @@ class VoiceListenerService : Service() {
       setReferenceCounted(false)
       acquire(WAKE_LOCK_TIMEOUT_MS)
     }
+    lastLockAt = SystemClock.elapsedRealtime()
   }
 
   private fun releaseWakeLock() {

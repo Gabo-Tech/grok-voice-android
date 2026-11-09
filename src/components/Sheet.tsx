@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { pushOverlay } from "@/lib/history";
 
 export function Sheet({
   open,
@@ -15,14 +16,21 @@ export function Sheet({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const release = pushOverlay(() => onCloseRef.current());
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      release();
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -37,7 +45,7 @@ export function Sheet({
           </Button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
-        {footer && <footer className="shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
+        {footer && <footer className="thumb-actions shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
       </div>
     </div>
   );

@@ -26,7 +26,7 @@ const WEEKDAYS = [
 
 type Repeat = RepeatChoice | "once";
 
-export function RemindersPage({ agenda }: { agenda: AgendaState }) {
+export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; active?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduledItem | null>(null);
@@ -137,7 +137,7 @@ export function RemindersPage({ agenda }: { agenda: AgendaState }) {
 
   return (
     <>
-      <PageChrome title={t("Time")} subtitle={subtitle} onAdd={() => openNew("reminder")} addLabel={t("New reminder")}>
+      <PageChrome title={t("Time")} subtitle={subtitle} onAdd={() => openNew("reminder")} addLabel={t("New reminder")} active={active}>
         <div className="mb-4 grid grid-cols-2 gap-2">
           <button type="button" className="h-12 border border-border text-sm" onClick={() => openNew("alarm")}>
             {t("New alarm")}

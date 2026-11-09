@@ -30,7 +30,10 @@ pub struct SettingsEdit {
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub model: String,
+    /// Grok / xAI realtime voice. Unknown stored values become `eve`.
     pub voice: String,
+    /// OpenAI Realtime voice. Unknown stored values become `marin`. Never an xAI id.
+    pub openai_voice: String,
     pub instructions: String,
     /// Mute the mic uplink while assistant audio is playing so a loudspeaker
     /// doesn't make Grok answer itself. Disables barge-in.
@@ -72,7 +75,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             model: "grok-voice-latest".into(),
-            voice: "eve".into(),
+            voice: crate::voices::XAI_DEFAULT.into(),
+            openai_voice: crate::voices::OPENAI_DEFAULT.into(),
             instructions: "You are Grok, a witty, concise voice assistant running on the user's \
                            Android phone. Answer in one to three short spoken sentences unless \
                            asked for more detail."
@@ -117,6 +121,8 @@ impl SettingsStore {
             .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
             .unwrap_or_default();
         inner.notification_delivery = crate::notices::stored_delivery(&inner.notification_delivery);
+        inner.voice = crate::voices::xai_voice(&inner.voice);
+        inner.openai_voice = crate::voices::openai_voice(&inner.openai_voice);
         Self { path, inner: RwLock::new(inner) }
     }
 
@@ -136,9 +142,8 @@ impl SettingsStore {
             crate::i18n::normalize(&s.locale).to_string()
         };
         s.model = safe_model_name(&s.model);
-        if s.voice.trim().is_empty() {
-            s.voice = Settings::default().voice;
-        }
+        s.voice = crate::voices::xai_voice(&s.voice);
+        s.openai_voice = crate::voices::openai_voice(&s.openai_voice);
         if s.notification_delivery.trim().is_empty() {
             s.notification_delivery = crate::notices::stored_delivery(&self.get().notification_delivery);
         } else {
@@ -328,6 +333,35 @@ mod tests {
         assert!(!describe_settings(&Settings::default(), &[]).to_string().contains("Gabriel"));
         let _ = fs::remove_file(&path);
     }
+
+    #[test]
+    fn voice_names_follow_the_provider_and_unknown_values_migrate() {
+        let stale = Settings { voice: "NotAVoice".into(), openai_voice: "fable".into(), ..Settings::default() };
+        let path = std::env::temp_dir().join(format!("grok-settings-voices-{}.json", std::process::id()));
+        let _ = fs::remove_file(&path);
+        fs::write(&path, serde_json::to_vec_pretty(&stale).unwrap()).unwrap();
+        let store = SettingsStore::load(path.clone());
+        assert_eq!(store.get().voice, "eve");
+        assert_eq!(store.get().openai_voice, "marin");
+
+        let named = edit_settings(&store.get(), &json!({"voice": "Ara"})).unwrap();
+        assert_eq!(named.settings.unwrap().voice, "ara");
+        let openai = edit_settings(&store.get(), &json!({"voice": "cedar"})).unwrap();
+        let next = openai.settings.unwrap();
+        assert_eq!(next.voice, "eve");
+        assert_eq!(next.openai_voice, "cedar");
+        assert!(openai.detail.contains("OpenAI voice is cedar"));
+        let explicit = edit_settings(&next, &json!({"openaiVoice": "Ash"})).unwrap();
+        assert_eq!(explicit.settings.unwrap().openai_voice, "ash");
+        assert!(edit_settings(&store.get(), &json!({"voice": "not-a-voice"})).is_err());
+        assert!(edit_settings(&store.get(), &json!({"openaiVoice": "eve"})).is_err());
+        let described = describe_settings(&Settings { voice: "rex".into(), openai_voice: "coral".into(), ..Settings::default() }, &[]);
+        let text = described.to_string();
+        assert!(text.contains("\"voice\":\"rex\""));
+        assert!(text.contains("\"openaiVoice\":\"coral\""));
+        assert!(text.contains("Grok voice is rex"));
+        let _ = fs::remove_file(&path);
+    }
 }
 
 /// The Listen switch is saved by `set_wake_enabled`. Other settings screens must
@@ -361,8 +395,8 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
         format!("Spoken alerts say {}.", settings.spoken_name)
     };
     let detail = format!(
-        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. {order} Days before a birthday stay on that person.",
-        settings.idle_timeout_secs
+        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. Grok voice is {}. OpenAI voice is {}. {order} Days before a birthday stay on that person.",
+        settings.idle_timeout_secs, settings.voice, settings.openai_voice
     );
     json!({
         "ok": true,
@@ -377,6 +411,7 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
         "monthlyBudgetMinutes": settings.monthly_budget_minutes,
         "monthlyHardStop": settings.monthly_budget_hard_stop && settings.monthly_budget_minutes > 0,
         "voice": settings.voice,
+        "openaiVoice": settings.openai_voice,
         "model": settings.model,
         "echoGuard": settings.echo_guard,
         "wakeThreshold": settings.wake_threshold,
@@ -478,10 +513,29 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
         changed = true;
         notes.push(format!("Monthly hard stop is {}.", on_off(next.monthly_budget_hard_stop)));
     }
-    if let Some(voice) = arg_string(args.get("voice")) {
-        next.voice = voice;
+    if let Some(voice) = arg_string(args.get("voice")).filter(|voice| !voice.is_empty()) {
+        match crate::voices::assign_voice(&voice)? {
+            crate::voices::VoiceChoice::Xai(id) => {
+                next.voice = id;
+                notes.push(format!("Voice is {}.", next.voice));
+            }
+            crate::voices::VoiceChoice::OpenAi(id) => {
+                next.openai_voice = id;
+                notes.push(format!("OpenAI voice is {}.", next.openai_voice));
+            }
+        }
         changed = true;
-        notes.push(format!("Voice is {}.", next.voice));
+    }
+    if let Some(voice) = arg_string(args.get("openaiVoice")).filter(|voice| !voice.is_empty()) {
+        let Some(id) = crate::voices::known_openai(&voice) else {
+            return Err(
+                "That OpenAI voice is not available. Use alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, or cedar."
+                    .into(),
+            );
+        };
+        next.openai_voice = id.to_string();
+        changed = true;
+        notes.push(format!("OpenAI voice is {}.", next.openai_voice));
     }
     if let Some(model) = arg_string(args.get("model")) {
         next.model = model;
@@ -621,6 +675,7 @@ fn known_setting(key: &str) -> bool {
             | "monthlyHardStop"
             | "monthlyBudgetHardStop"
             | "voice"
+            | "openaiVoice"
             | "model"
             | "instructions"
             | "echoGuard"

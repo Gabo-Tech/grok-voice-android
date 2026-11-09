@@ -227,6 +227,17 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
     ret.put("screenInteractive", pm?.isInteractive == true)
     ret.put("lastStopReason", ListenTrace.lastStop(activity))
     ret.put("history", ListenTrace.history(activity))
+    ret.put("batteryUnrestricted", VoiceListenerService.batteryUnrestricted(activity))
+    ret.put("health", VoiceListenerService.health(activity))
+    invoke.resolve(ret)
+  }
+
+  @Command
+  fun requestBatteryExemption(invoke: Invoke) {
+    requestUnrestrictedBattery(activity)
+    val ret = JSObject()
+    ret.put("batteryUnrestricted", VoiceListenerService.batteryUnrestricted(activity))
+    ret.put("health", VoiceListenerService.health(activity))
     invoke.resolve(ret)
   }
 

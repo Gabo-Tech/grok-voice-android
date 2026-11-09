@@ -692,7 +692,11 @@ impl Session<'_> {
     }
 
     fn session_update(&self, cloud: Cloud) -> Value {
-        cloud_session(cloud, &self.settings.voice, &self.spoken_instructions(), &actions::tool_definitions())
+        let voice = match cloud {
+            Cloud::Xai => self.settings.voice.as_str(),
+            Cloud::OpenAi => self.settings.openai_voice.as_str(),
+        };
+        cloud_session(cloud, voice, &self.spoken_instructions(), &actions::tool_definitions())
     }
 
     fn spoken_instructions(&self) -> String {
@@ -737,19 +741,12 @@ fn caps_of(settings: &crate::settings::Settings) -> crate::usage::Caps {
     }
 }
 
-fn openai_voice(voice: &str) -> &str {
-    match voice {
-        "alloy" | "ash" | "ballad" | "coral" | "echo" | "sage" | "shimmer" | "verse" | "marin" | "cedar" => voice,
-        _ => "marin",
-    }
-}
-
 fn cloud_session(cloud: Cloud, voice: &str, instructions: &str, tools: &Value) -> Value {
     match cloud {
         Cloud::Xai => json!({
             "type": "session.update",
             "session": {
-                "voice": voice,
+                "voice": crate::voices::xai_voice(voice),
                 "instructions": instructions,
                 "tools": tools,
                 "turn_detection": {
@@ -789,7 +786,7 @@ fn cloud_session(cloud: Cloud, voice: &str, instructions: &str, tools: &Value) -
                     },
                     "output": {
                         "format": { "type": "audio/pcm", "rate": OUTPUT_RATE },
-                        "voice": openai_voice(voice)
+                        "voice": crate::voices::openai_voice(voice)
                     }
                 }
             }
@@ -814,6 +811,8 @@ mod tests {
         assert_eq!(session["session"]["tools"][0]["name"], "create_note");
         let named = cloud_session(Cloud::OpenAi, "cedar", "Be brief.", &tools);
         assert_eq!(named["session"]["audio"]["output"]["voice"], "cedar");
+        let crossed = cloud_session(Cloud::OpenAi, "ara", "Be brief.", &tools);
+        assert_eq!(crossed["session"]["audio"]["output"]["voice"], "marin");
     }
 
     #[test]
@@ -821,6 +820,8 @@ mod tests {
         let tools = json!([]);
         let session = cloud_session(Cloud::Xai, "eve", "Be brief.", &tools);
         assert_eq!(session["session"]["voice"], "eve");
+        assert_eq!(cloud_session(Cloud::Xai, "Ara", "Be brief.", &tools)["session"]["voice"], "ara");
+        assert_eq!(cloud_session(Cloud::Xai, "cedar", "Be brief.", &tools)["session"]["voice"], "eve");
         assert_eq!(session["session"]["audio"]["input"]["transcription"]["model"], "grok-transcribe");
         assert_eq!(session["session"]["audio"]["input"]["format"]["rate"], 24_000);
         assert_eq!(session["session"]["audio"]["output"]["format"]["rate"], 24_000);

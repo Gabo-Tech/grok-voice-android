@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import org.json.JSONObject
@@ -21,6 +22,57 @@ class MainActivity : TauriActivity() {
     const val EXTRA_WIDGET = "widget"
   }
 
+  private val backCallback = object : OnBackPressedCallback(true) {
+    override fun handleOnBackPressed() {
+      dispatchBack()
+    }
+  }
+
+  fun syncBackCallback(canGoBack: Boolean) {
+    val listening = VoiceListenerService.isActive() || VoiceListenerService.isArmed(this)
+    backCallback.isEnabled = canGoBack || listening
+    // Above the WebView's own callback while a screen is open, so the gesture
+    // hits our history. At the root it is removed and predictive back can leave.
+    if (Build.VERSION.SDK_INT >= 33) BackOverlay.sync(this, canGoBack)
+  }
+
+  fun dispatchBack() {
+    val web = findWebView(window?.decorView)
+    if (web == null) {
+      leaveRoot()
+      return
+    }
+    web.evaluateJavascript(
+      "(function(){try{return window.__grokBack?!!window.__grokBack():false}catch(e){return false}})()"
+    ) { raw ->
+      if (raw == "true") return@evaluateJavascript
+      runOnUiThread { leaveRoot() }
+    }
+  }
+
+  private fun leaveRoot() {
+    if (VoiceListenerService.isActive() || VoiceListenerService.isArmed(this)) {
+      moveTaskToBack(true)
+      return
+    }
+    if (!backCallback.isEnabled) return
+    backCallback.isEnabled = false
+    onBackPressedDispatcher.onBackPressed()
+    backCallback.isEnabled = true
+  }
+
+  private fun findWebView(view: View?): WebView? {
+    if (view == null) return null
+    if (view is WebView) return view
+    if (view is ViewGroup) {
+      for (i in 0 until view.childCount) {
+        val found = findWebView(view.getChildAt(i))
+        if (found != null) return found
+      }
+    }
+    return null
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     VoiceListenerService.setUiCreated(true)
     enableEdgeToEdge()
@@ -31,18 +83,9 @@ class MainActivity : TauriActivity() {
       v.setPadding(0, 0, 0, ime.bottom)
       insets
     }
-    // Leaving with the back gesture should not tear down a running listener.
-    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-      override fun handleOnBackPressed() {
-        if (VoiceListenerService.isActive()) {
-          moveTaskToBack(true)
-        } else {
-          isEnabled = false
-          onBackPressedDispatcher.onBackPressed()
-          isEnabled = true
-        }
-      }
-    })
+    // In-app history is handled in the WebView. At the root, back leaves the task
+    // only when Listen is off. Predictive back (Android 13+) uses this callback.
+    onBackPressedDispatcher.addCallback(this, backCallback)
     applyWidget(intent)
   }
 
@@ -145,6 +188,7 @@ class MainActivity : TauriActivity() {
     // A forced hardware layer blanks this page when audio starts. A forced
     // software layer smears icons and flattens text. Leave the default.
     webView.setLayerType(View.LAYER_TYPE_NONE, null)
+    webView.addJavascriptInterface(BackBridge(this), "GrokNav")
   }
 
   override fun onPause() {
@@ -166,6 +210,7 @@ class MainActivity : TauriActivity() {
     VoiceListenerService.setUiResumed(true)
     VoiceListenerService.setUiCreated(true)
     VoiceListenerService.rememberReopen(this)
+    VoiceListenerService.onAppForeground(this)
     VoiceListenerService.cancelAlert(this)
     resumeWebViews()
     // A living process can outlast the activity. If the window was destroyed
@@ -208,6 +253,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onDestroy() {
+    syncBackCallback(false)
     VoiceListenerService.setUiResumed(false)
     if (!isChangingConfigurations) {
       VoiceListenerService.setUiCreated(false)
@@ -216,5 +262,12 @@ class MainActivity : TauriActivity() {
       }
     }
     super.onDestroy()
+  }
+}
+
+private class BackBridge(private val activity: MainActivity) {
+  @JavascriptInterface
+  fun setCanGoBack(can: Boolean) {
+    activity.runOnUiThread { activity.syncBackCallback(can) }
   }
 }
