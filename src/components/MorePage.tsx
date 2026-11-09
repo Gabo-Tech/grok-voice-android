@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Archive, AudioLines, Bell, Brain, Bug, ChevronLeft, ChevronRight, Hourglass, KeyRound, Languages, Package, Users, Wallet, Wand2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Brain, Bug, ChevronRight, Hourglass, KeyRound, Languages, Package, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { LocalPacks } from "@/components/LocalPacks";
 import { Field } from "@/components/Field";
@@ -11,13 +11,16 @@ import { WakeView } from "@/components/WakeView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { VoiceState } from "@/hooks/useVoice";
-import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type LocalMemoryBundle, type Settings, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type ListenHealth, type LocalMemoryBundle, type Settings, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { VoicePicker } from "@/components/VoicePicker";
+import { OPENAI_VOICES, XAI_VOICES } from "@/lib/voices";
 import { providerLabel } from "@/lib/flow";
 import { VoiceOrder } from "@/components/VoiceOrder";
+import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
 import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-type Section =
+export type Section =
   | "menu"
   | "wake"
   | "debug"
@@ -44,6 +47,8 @@ export function MorePage({
   wake,
   auth,
   initialSection = "menu",
+  onSection,
+  active = true,
   onAuth,
   onWake,
   onSignedOut,
@@ -53,22 +58,31 @@ export function MorePage({
   wake: WakewordStatus;
   auth: AuthStatus;
   initialSection?: Section;
+  onSection: (section: Section) => void;
+  active?: boolean;
   onAuth: (auth: AuthStatus) => void;
   onWake: (s: WakewordStatus) => void;
   onSignedOut: () => void;
   onReplayTour: () => void;
 }) {
   const t = useT();
-  const [section, setSection] = useState<Section>(initialSection);
+  const section = initialSection;
+  const setSection = (next: Section) => {
+    if (next === section || isApplyingHistory()) return;
+    if (next === "menu") {
+      popTags(["sheet", "people", "section"]);
+      onSection("menu");
+      return;
+    }
+    const prev = section;
+    pushStep("Back to Settings", () => onSection(prev), "section");
+    onSection(next);
+  };
   const [quiet, setQuiet] = useState(10);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState("");
   const [usage, setUsage] = useState<UsageStatus | null>(null);
   const [installed, setInstalled] = useState("");
-
-  useEffect(() => {
-    setSection(initialSection);
-  }, [initialSection]);
 
   useEffect(() => {
     void api
@@ -77,7 +91,28 @@ export function MorePage({
         setQuiet(s.idleTimeoutSecs);
         setSettings(s);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!isTauri()) {
+          setQuiet(10);
+          setSettings({
+            model: "grok-voice-latest",
+            voice: "eve",
+            openaiVoice: "marin",
+            instructions: "",
+            echoGuard: true,
+            wakeThreshold: 0.5,
+            idleTimeoutSecs: 10,
+            onboarded: true,
+            dailyBudgetMinutes: 0,
+            dailyBudgetHardStop: false,
+            preferLocalOnWake: false,
+            monthlyBudgetMinutes: 0,
+            monthlyBudgetHardStop: false,
+            localSpeech: "en",
+            locale: "",
+          });
+        }
+      });
     void api.usageStatus().then(setUsage).catch(() => {});
     void api.updateStatus().then((status) => setInstalled(status.installed)).catch(() => {});
     if (!isTauri()) return;
@@ -124,6 +159,7 @@ export function MorePage({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Back onClick={() => setSection("menu")} />
+        <ListenStatus />
         <WakeView status={wake} onStatus={onWake} />
       </div>
     );
@@ -139,7 +175,7 @@ export function MorePage({
   }
 
   if (section === "people") {
-    return <PeoplePage onBack={() => setSection("menu")} />;
+    return <PeoplePage active={active} onBack={() => setSection("menu")} />;
   }
 
   if (section === "memory") {
@@ -468,13 +504,20 @@ export function MorePage({
         <Back onClick={() => setSection("menu")} />
         <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Voice and model")}</h2>
         <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
-          {t("These names go out with the xAI key. OpenAI and On device keep their own.")}
+          {t("Pick a Grok voice or an OpenAI voice. Each provider only receives its own list. Eve stays the default.")}
         </p>
         {settings ? (
           <div className="space-y-4">
-            <Field label={t("Voice")}>
-              <Input value={settings.voice} onChange={(e) => setSettings({ ...settings, voice: e.target.value })} />
-            </Field>
+            <VoiceChoices
+              settings={settings}
+              accounts={auth.accounts ?? []}
+              live={voice.provider}
+              onSave={(patch) => {
+                const merged = { ...settings, ...patch };
+                setSettings(merged);
+                void api.saveSettings(merged).then(setSettings).catch(() => setSettings(merged));
+              }}
+            />
             <Field label={t("Model")}>
               <Input value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })} />
             </Field>
@@ -482,7 +525,7 @@ export function MorePage({
               <Button type="button" onClick={saveModel}>
                 {t("Save model")}
               </Button>
-              {saved && <p className="text-sm text-muted-foreground">{saved}</p>}
+              {saved && <p className="text-sm text-muted-foreground">{t("Saved")}</p>}
             </div>
           </div>
         ) : (
@@ -496,7 +539,8 @@ export function MorePage({
   const first = accounts[0];
 
   return (
-    <PageChrome title={t("Settings")} subtitle={t("Voice, people, and this phone")}>
+    <PageChrome title={t("Settings")} subtitle={t("Voice, people, and this phone")} active={active && section === "menu"}>
+      <ListenStatus />
       <div className="mb-6 border border-border px-3 py-3">
         <p className="text-base text-foreground">
           {first ? t("Tried first") + `: ${providerLabel(first.provider)}` : t("No voice yet")}
@@ -1014,18 +1058,115 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
   );
 }
 
-function Back({ onClick }: { onClick: () => void }) {
+function Back(_: { onClick: () => void }) {
+  return null;
+}
+
+function VoiceChoices({
+  settings,
+  accounts,
+  live,
+  onSave,
+}: {
+  settings: Settings;
+  accounts: AuthStatus["accounts"];
+  live: string;
+  onSave: (patch: Partial<Settings>) => void;
+}) {
   const t = useT();
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="mb-2 flex min-h-12 w-full shrink-0 items-center gap-1 px-1 text-left text-base text-foreground"
-    >
-      <ChevronLeft className="size-5 shrink-0" aria-hidden />
-      <span>{t("Back to Settings")}</span>
-    </button>
+  const providers = new Set(accounts.map((account) => account.provider));
+  const lowered = live.toLowerCase();
+  const liveCloud = lowered.includes("openai") ? "openai" : lowered.includes("xai") || lowered.includes("grok") ? "xai" : "";
+  const firstCloud = accounts.find((account) => account.provider === "xai" || account.provider === "openai")?.provider ?? "";
+  const activeCloud = liveCloud || firstCloud;
+  const showXai = activeCloud !== "openai" || providers.has("xai");
+  const showOpenAi = activeCloud === "openai" || providers.has("openai");
+  const xaiFirst = activeCloud !== "openai";
+  const grok = (
+    <div>
+      <p className="mb-2 px-1 text-sm text-muted-foreground">{t("Grok voice")}</p>
+      <p className="mb-2 px-1 text-sm leading-6 text-muted-foreground">{t("Pick a Grok voice. Eve stays the default.")}</p>
+      <VoicePicker
+        voices={XAI_VOICES}
+        value={settings.voice || "eve"}
+        preview
+        onChange={(id) => onSave({ voice: id })}
+      />
+    </div>
   );
+  const openai = (
+    <div>
+      <p className="mb-2 px-1 text-sm text-muted-foreground">{t("OpenAI voice")}</p>
+      <p className="mb-2 px-1 text-sm leading-6 text-muted-foreground">{t("Pick an OpenAI voice. A Grok voice is never sent there.")}</p>
+      <VoicePicker
+        voices={OPENAI_VOICES}
+        value={settings.openaiVoice || "marin"}
+        onChange={(id) => onSave({ openaiVoice: id })}
+      />
+    </div>
+  );
+  return (
+    <div className="space-y-6">
+      {xaiFirst && showXai ? grok : null}
+      {showOpenAi ? openai : null}
+      {!xaiFirst && showXai ? grok : null}
+    </div>
+  );
+}
+
+function ListenStatus() {
+  const t = useT();
+  const [health, setHealth] = useState<ListenHealth | null>(null);
+  useEffect(() => {
+    if (!isTauri()) {
+      if (import.meta.env.DEV) {
+        setHealth({ health: "battery", batteryUnrestricted: false, armed: true, serviceRunning: false, micOpen: false });
+      }
+      return;
+    }
+    let stop = false;
+    const load = () => {
+      void api.listenHealth().then((next) => {
+        if (!stop) setHealth(next);
+      }).catch(() => {});
+    };
+    load();
+    const id = window.setInterval(load, 5000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, []);
+  if (!health) return null;
+  return (
+    <div className="mb-4 border border-border px-3 py-3">
+      <p className="text-base text-foreground">{listenTitle(health.health, t)}</p>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">{listenBody(health.health, t)}</p>
+      {health.health === "battery" ? (
+        <Button className="mt-3 w-full" type="button" onClick={() => void api.requestBatteryExemption().then(setHealth).catch(() => {})}>
+          {t("Allow unrestricted battery")}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function listenTitle(health: string, t: (text: string) => string): string {
+  if (health === "ok") return t("Listening in background: OK");
+  if (health === "battery") return t("Listening in background: blocked by battery optimization");
+  if (health === "mic") return t("Listening in background: microphone blocked until the app is open");
+  if (health === "starting") return t("Listening in background: starting");
+  if (health === "needs-app") return t("Listening in background: needs the app open");
+  return t("Listening in background: off");
+}
+
+function listenBody(health: string, t: (text: string) => string): string {
+  if (health === "ok") return t("Background listening looks healthy.");
+  if (health === "battery") return t("Android can stop Hey Grok when the screen is off. Allow unrestricted battery use.");
+  if (health === "mic") return t("The microphone is silent in the background. Open the app once so listening starts in the foreground.");
+  if (health === "needs-app") return t("Hey Grok needs this app open once to arm listening again.");
+  if (health === "starting") return t("Listen is on. The microphone is still starting.");
+  return t("Turn Listen on to keep Hey Grok available.");
 }
 function MenuRow({
   icon,

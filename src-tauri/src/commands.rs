@@ -289,6 +289,50 @@ pub fn delete_wakeword(files: State<'_, WakewordFiles>, engine: State<'_, Engine
     Ok(files.status())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListenHealth {
+    pub health: String,
+    pub battery_unrestricted: bool,
+    pub armed: bool,
+    pub service_running: bool,
+    pub mic_open: bool,
+}
+
+#[tauri::command]
+pub fn listen_health(app: AppHandle) -> ListenHealth {
+    let bridge = app.state::<crate::native::NativeBridge>();
+    match bridge.listener_status() {
+        Ok(status) => ListenHealth {
+            health: if status.health.is_empty() { "off".into() } else { status.health },
+            battery_unrestricted: status.battery_unrestricted,
+            armed: status.armed,
+            service_running: status.service_running,
+            mic_open: status.mic_open,
+        },
+        Err(_) => ListenHealth {
+            health: "off".into(),
+            battery_unrestricted: false,
+            armed: false,
+            service_running: false,
+            mic_open: false,
+        },
+    }
+}
+
+#[tauri::command]
+pub fn request_battery_exemption(app: AppHandle) -> Result<ListenHealth> {
+    let bridge = app.state::<crate::native::NativeBridge>();
+    let status = bridge.request_battery_exemption()?;
+    Ok(ListenHealth {
+        health: if status.health.is_empty() { "off".into() } else { status.health },
+        battery_unrestricted: status.battery_unrestricted,
+        armed: status.armed,
+        service_running: status.service_running,
+        mic_open: status.mic_open,
+    })
+}
+
 #[tauri::command]
 pub fn get_settings(store: State<'_, SettingsStore>) -> Settings {
     store.get()

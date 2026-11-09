@@ -48,6 +48,10 @@ pub struct ListenerStatus {
     pub last_stop_reason: String,
     #[serde(default)]
     pub history: String,
+    #[serde(default)]
+    pub battery_unrestricted: bool,
+    #[serde(default)]
+    pub health: String,
 }
 
 pub struct NativeBridge {
@@ -137,6 +141,12 @@ mod imp {
 
         pub fn listener_status(&self) -> Result<ListenerStatus> {
             self.handle.run_mobile_plugin("listenerStatus", ()).map_err(|e| msg(e.to_string()))
+        }
+
+        pub fn request_battery_exemption(&self) -> Result<ListenerStatus> {
+            self.handle
+                .run_mobile_plugin("requestBatteryExemption", ())
+                .map_err(|e| msg(e.to_string()))
         }
 
         pub fn drain_listener_events(&self) -> Result<Vec<String>> {
@@ -511,6 +521,14 @@ mod imp {
         #[cfg_attr(not(target_os = "android"), allow(dead_code))]
         pub fn listener_status(&self) -> Result<ListenerStatus> {
             Ok(ListenerStatus::default())
+        }
+
+        pub fn request_battery_exemption(&self) -> Result<ListenerStatus> {
+            Ok(ListenerStatus {
+                battery_unrestricted: true,
+                health: "off".into(),
+                ..ListenerStatus::default()
+            })
         }
 
         #[cfg_attr(not(target_os = "android"), allow(dead_code))]

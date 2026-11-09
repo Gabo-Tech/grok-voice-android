@@ -23,6 +23,9 @@ object RustBridge {
   external fun pollReopenMic(): Boolean
 
   @JvmStatic
+  external fun pollMicStalled(): Boolean
+
+  @JvmStatic
   external fun note(msg: String): Boolean
 
   @JvmStatic
@@ -59,6 +62,15 @@ object RustBridge {
     return try {
       System.loadLibrary("grok_voice_lib")
       note(msg)
+    } catch (e: UnsatisfiedLinkError) {
+      false
+    }
+  }
+
+  fun pollMicStalledSafe(): Boolean {
+    return try {
+      System.loadLibrary("grok_voice_lib")
+      pollMicStalled()
     } catch (e: UnsatisfiedLinkError) {
       false
     }

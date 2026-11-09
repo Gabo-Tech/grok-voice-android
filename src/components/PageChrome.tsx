@@ -1,5 +1,7 @@
-import { ChevronLeft, Plus } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { setBarAction } from "@/lib/history";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +10,7 @@ export function PageChrome({
   subtitle,
   onAdd,
   addLabel,
+  active = true,
   children,
   className,
 }: {
@@ -15,22 +18,25 @@ export function PageChrome({
   subtitle?: string;
   onAdd?: () => void;
   addLabel?: string;
+  /** Only the visible screen owns the bottom add action. */
+  active?: boolean;
   children: React.ReactNode;
   className?: string;
 }) {
+  const addRef = useRef(onAdd);
+  addRef.current = onAdd;
+  const hasAdd = Boolean(onAdd);
+  useEffect(() => {
+    if (!active || !hasAdd) return;
+    return setBarAction({ label: addLabel ?? "Add", run: () => addRef.current?.() });
+  }, [active, addLabel, hasAdd]);
+
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       <header className="shrink-0 px-1 pb-4 pt-1">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl leading-tight font-medium tracking-tight text-foreground">{title}</h1>
-            {subtitle && <p className="mt-1 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
-          </div>
-          {onAdd && (
-            <Button size="icon" variant="outline" className="fab-pulse shrink-0" onClick={onAdd} aria-label={addLabel ?? "Add"}>
-              <Plus />
-            </Button>
-          )}
+        <div className="min-w-0">
+          <h1 className="text-2xl leading-tight font-medium tracking-tight text-foreground">{title}</h1>
+          {subtitle && <p className="mt-1 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">{children}</div>

@@ -162,9 +162,20 @@ export interface PackProgress {
   total: number;
 }
 
+export interface ListenHealth {
+  /** off, ok, battery, mic, starting, or needs-app. */
+  health: string;
+  batteryUnrestricted: boolean;
+  armed: boolean;
+  serviceRunning: boolean;
+  micOpen: boolean;
+}
+
 export interface Settings {
   model: string;
   voice: string;
+  /** OpenAI Realtime voice. A Grok voice is never stored here. */
+  openaiVoice?: string;
   instructions: string;
   echoGuard: boolean;
   wakeThreshold: number;
@@ -349,6 +360,8 @@ export const api = {
   trainWakeword: () => invoke<WakewordStatus>("train_wakeword"),
   wakewordStatus: () => invoke<WakewordStatus>("wakeword_status"),
   deleteWakeword: () => invoke<WakewordStatus>("delete_wakeword"),
+  listenHealth: () => invoke<ListenHealth>("listen_health"),
+  requestBatteryExemption: () => invoke<ListenHealth>("request_battery_exemption"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   debugSnapshot: () => invoke<DebugInfo>("debug_snapshot"),

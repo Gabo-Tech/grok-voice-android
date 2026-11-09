@@ -4,6 +4,8 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Process
+import android.os.SystemClock
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Microphone owned by the foreground service. AAudio (cpal) capture is tied to the
@@ -15,6 +17,7 @@ class MicCapture(
   private val onOpenChanged: (Boolean) -> Unit,
   private val onPresent: () -> Unit,
   private val onStopped: (reopen: Boolean) -> Unit,
+  private val onSilence: () -> Unit = {},
 ) {
   @Volatile private var running = false
   @Volatile private var recorder: AudioRecord? = null
@@ -75,14 +78,17 @@ class MicCapture(
         return true
       }
       if (n == 0) continue
+      markRead()
       if (isSilence(shorts, n)) {
         zeroSamples += n
         if (zeroSamples >= RATE * 8) {
           onEvent("microphone returned silence, reopening")
+          onSilence()
           return true
         }
       } else {
         zeroSamples = 0
+        VoiceListenerService.noteHealthyAudio()
       }
       if (!feed(shorts, n)) continue
       if (pollReopen()) {
@@ -186,5 +192,12 @@ class MicCapture(
   companion object {
     const val RATE = 16_000
     private const val READ_SAMPLES = 640
+    private val lastRead = AtomicLong(0)
+
+    fun lastReadAt(): Long = lastRead.get()
+
+    fun markRead() {
+      lastRead.set(SystemClock.elapsedRealtime())
+    }
   }
 }

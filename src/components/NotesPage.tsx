@@ -14,7 +14,7 @@ import { formatWhen } from "@/hooks/useAgenda";
 import { api, type Note } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
-export function NotesPage({ agenda }: { agenda: AgendaState }) {
+export function NotesPage({ agenda, active = true }: { agenda: AgendaState; active?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
@@ -74,7 +74,7 @@ export function NotesPage({ agenda }: { agenda: AgendaState }) {
 
   return (
     <>
-      <PageChrome title={t("Notes")} subtitle={`${agenda.agenda.notes.length} ${t("saved")}`} onAdd={openNew} addLabel={t("New note")}>
+      <PageChrome title={t("Notes")} subtitle={`${agenda.agenda.notes.length} ${t("saved")}`} onAdd={openNew} addLabel={t("New note")} active={active}>
         {(agenda.agenda.notes.length > 0 || query) && (
         <div className="mb-6">
           <Field label={t("Search")}>

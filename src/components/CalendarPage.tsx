@@ -12,7 +12,7 @@ import { RepeatFields, endOfDay, untilInput, type RepeatChoice } from "@/compone
 import { api, type CalEvent } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
-export function CalendarPage({ agenda }: { agenda: AgendaState }) {
+export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; active?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
@@ -126,7 +126,7 @@ export function CalendarPage({ agenda }: { agenda: AgendaState }) {
 
   return (
     <>
-      <PageChrome title={t("Calendar")} subtitle={formatDay()} onAdd={openNew} addLabel={t("New event")}>
+      <PageChrome title={t("Calendar")} subtitle={formatDay()} onAdd={openNew} addLabel={t("New event")} active={active}>
         {monthCalendar !== "granted" && (
           <Button
             variant="outline"

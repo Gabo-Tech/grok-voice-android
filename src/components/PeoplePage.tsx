@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Trash2 } from "lucide-react";
-import { BackButton, EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
+import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
+import { hasTag, popTags, pushStep, requestBack } from "@/lib/history";
 import { ShareButton } from "@/components/ShareButton";
 import { Field } from "@/components/Field";
 import { Sheet } from "@/components/Sheet";
@@ -165,11 +166,37 @@ function channelLabel(channel: string) {
   return CHANNELS.find((item) => item.id === channel)?.label ?? "";
 }
 
-export function PeoplePage({ onBack }: { onBack: () => void }) {
+export function PeoplePage({ active = true }: { onBack?: () => void; active?: boolean }) {
   const t = useT();
   const [people, setPeople] = useState<Person[]>([]);
   const [query, setQuery] = useState("");
   const [screen, setScreen] = useState<"list" | "edit" | "pick" | "date">("list");
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  const goScreen = (next: typeof screen) => {
+    const prev = screenRef.current;
+    if (prev === next) return;
+    pushStep(prev === "list" ? "Back to People" : "Back", () => {
+      screenRef.current = prev;
+      setScreen(prev);
+    }, "people");
+    screenRef.current = next;
+    setScreen(next);
+  };
+  const backPeople = () => {
+    if (!requestBack()) {
+      screenRef.current = "list";
+      setScreen("list");
+    }
+  };
+  const closePeople = () => {
+    if (hasTag("people")) {
+      popTags(["people"]);
+      return;
+    }
+    screenRef.current = "list";
+    setScreen("list");
+  };
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [dateDraft, setDateDraft] = useState<PersonReminder | null>(null);
   const [dateIndex, setDateIndex] = useState<number | null>(null);
@@ -183,6 +210,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
   const [busy, setBusy] = useState(false);
 
   const reload = () => {
+    if (!isTauri()) return;
     void api
       .listPeople()
       .then((rows) => {
@@ -254,7 +282,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     setDraft(draftFrom(person));
     setLinked(null);
     setError(null);
-    setScreen("edit");
+    goScreen("edit");
     if (person.androidContactId) {
       void api
         .phoneContact(person.androidContactId)
@@ -298,7 +326,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     setPhoneRows([]);
     setAdding(false);
     setContactsAllowed(null);
-    setScreen("pick");
+    goScreen("pick");
     void askContacts("");
   };
 
@@ -312,28 +340,28 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
         displayName: base.displayName.trim() || contact.name,
       };
     });
-    setScreen("edit");
+    goScreen("edit");
   };
 
   const openAddDate = () => {
     setDateDraft(blankReminder());
     setDateIndex(null);
     setError(null);
-    setScreen("date");
+    goScreen("date");
   };
 
   const openEditDate = (index: number) => {
     setDateDraft({ ...draft.reminders[index] });
     setDateIndex(index);
     setError(null);
-    setScreen("date");
+    goScreen("date");
   };
 
   const persistReminders = async (reminders: PersonReminder[]) => {
     const next = { ...draft, reminders };
     setDraft(next);
     if (!next.id || !next.displayName.trim()) {
-      setScreen("edit");
+      backPeople();
       setError(null);
       return;
     }
@@ -342,7 +370,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
       const saved = await api.savePerson(payloadFrom(next));
       setDraft(draftFrom(saved));
       reload();
-      setScreen("edit");
+      backPeople();
       setError(null);
     } catch (e) {
       setError(errorText(e));
@@ -369,7 +397,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
 
   const removeDate = async () => {
     if (dateIndex == null) {
-      setScreen("edit");
+      backPeople();
       return;
     }
     await persistReminders(draft.reminders.filter((_, index) => index !== dateIndex));
@@ -394,7 +422,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     try {
       await api.savePerson(payload);
       reload();
-      setScreen("list");
+      closePeople();
       setError(null);
     } catch (e) {
       setError(errorText(e));
@@ -408,7 +436,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     setBusy(true);
     try {
       setPeople(await api.deletePerson(draft.id));
-      setScreen("list");
+      closePeople();
       setError(null);
     } catch (e) {
       setError(errorText(e));
@@ -420,14 +448,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
   if (screen === "pick") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <BackButton
-          label={draft.displayName || draft.id ? "Back to person" : "Back to People"}
-          onClick={() => {
-            setError(null);
-            setScreen(draft.displayName || draft.id ? "edit" : "list");
-          }}
-        />
-        <PageChrome title="Phone contacts" subtitle="Pick someone. Their number stays in Contacts.">
+        <PageChrome title="Phone contacts" subtitle="Pick someone. Their number stays in Contacts." active={false}>
           <div className="mb-6">
             <Field label="Search">
               <Input
@@ -486,7 +507,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
         onRemove={() => void removeDate()}
         onBack={() => {
           setError(null);
-          setScreen("edit");
+          backPeople();
         }}
       />
     );
@@ -496,7 +517,6 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
     const linkedLine = [linked?.phone, linked?.email].filter(Boolean).join(" · ");
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <BackButton label="Back to People" onClick={() => setScreen("list")} />
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
           <h2 className="px-1 text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || "Person" : "New person"}</h2>
           <p className="mt-1 px-1 text-xs leading-5 text-muted-foreground">
@@ -642,7 +662,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
             </div>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border py-3">
+        <div className="thumb-actions flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-background py-3">
           <ShareButton
             title={draft.displayName}
             text={[draft.nickname, channelLabel(draft.preferredChannel), draft.phone, draft.email, draft.note].filter(Boolean).join("\n")}
@@ -653,7 +673,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
             </Button>
           )}
           <div className="flex-1" />
-          <Button variant="ghost" onClick={() => setScreen("list")}>
+          <Button variant="ghost" onClick={backPeople}>
             Cancel
           </Button>
           <Button disabled={busy || !draft.displayName.trim()} onClick={() => void save()}>
@@ -666,8 +686,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <BackButton label={t("Back to Settings")} onClick={onBack} />
-      <PageChrome title={t("People")} subtitle={`${people.length} ${t("saved on this phone")}`} onAdd={openCreate} addLabel={t("Add person")}>
+      <PageChrome title={t("People")} subtitle={`${people.length} ${t("saved on this phone")}`} onAdd={openCreate} addLabel={t("Add person")} active={active && screen === "list"}>
         <p className="mb-6 px-1 text-sm leading-6 text-muted-foreground">
           Nicknames and how you reach someone. Phone numbers and email still come from Contacts.
         </p>
@@ -740,7 +759,7 @@ export function PeoplePage({ onBack }: { onBack: () => void }) {
               setDraft(emptyDraft());
               setLinked(null);
               setAdding(false);
-              setScreen("edit");
+              goScreen("edit");
             }}
           >
             <div>
@@ -870,7 +889,6 @@ function DateEditor({
   ];
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <BackButton label={t("Back to person")} onClick={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-3">
         <h2 className="px-1 text-2xl font-medium tracking-tight">{isNew ? t("Add a date") : t("Edit date")}</h2>
         <p className="mt-1 px-1 text-sm leading-5 text-muted-foreground">
@@ -990,7 +1008,7 @@ function DateEditor({
           </button>
         </div>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border py-3">
+      <div className="thumb-actions flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-background py-3">
         {!isNew && (
           <Button variant="ghost" disabled={busy} onClick={onRemove}>
             {t("Remove date")}

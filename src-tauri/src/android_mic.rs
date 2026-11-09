@@ -10,7 +10,7 @@ use jni::{
 
 use crate::{
     audio::{
-        engine::{mark_service_failed, poll_present_talk, poll_reopen_mic, push_service_mic},
+        engine::{mark_service_failed, poll_present_talk, poll_reopen_mic, push_service_mic, service_mic_stalled},
         resample::i16_to_f32,
     },
     diagnostics,
@@ -48,6 +48,13 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_pollPresentTalk(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_grokvoice_app_RustBridge_pollMicStalled(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+) -> u8 {
+    u8::from(service_mic_stalled())
+}
+
 pub extern "system" fn Java_ai_grokvoice_app_RustBridge_pollReopenMic(
     _env: JNIEnv<'_>,
     _class: JClass<'_>,
