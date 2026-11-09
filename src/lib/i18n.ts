@@ -198,6 +198,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Spoken out loud": "En voz alta",
     "Show the notification. Grok stays quiet.": "Muestra la notificación. Grok no habla.",
     "Show the notification and read it out loud.": "Muestra la notificación y la lee en voz alta.",
+    "Your name": "Tu nombre",
+    "Optional. Spoken alerts can say it. Leave this empty for a plain hey.":
+      "Opcional. Las alertas en voz alta pueden decirlo. Déjalo vacío para un oye a secas.",
+    "Spoken alerts use the alarm volume.": "Las alertas en voz alta usan el volumen de la alarma.",
     "Normal shows the notification as it does today. Spoken also reads a short sentence when it fires. The listening notification and downloads stay quiet.":
       "Normal muestra la notificación como hasta ahora. En voz alta también lee una frase corta cuando suena. La notificación de escucha y las descargas siguen en silencio.",
     "Off by default. Near the minutes you pick, one short cue appears and can be spoken. The call keeps going unless you also turn on a hard stop.": "Apagado por defecto. Cerca de los minutos que elijas, aparece un aviso y puede decirse. La llamada sigue salvo que actives la parada firme.",
@@ -484,6 +488,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Spoken out loud": "Laut vorgelesen",
     "Show the notification. Grok stays quiet.": "Zeigt die Benachrichtigung. Grok spricht nicht.",
     "Show the notification and read it out loud.": "Zeigt die Benachrichtigung und liest sie laut vor.",
+    "Your name": "Dein Name",
+    "Optional. Spoken alerts can say it. Leave this empty for a plain hey.":
+      "Optional. Gesprochene Hinweise können ihn sagen. Leer lassen für ein einfaches Hey.",
+    "Spoken alerts use the alarm volume.": "Gesprochene Hinweise nutzen die Weckerlautstärke.",
     "Normal shows the notification as it does today. Spoken also reads a short sentence when it fires. The listening notification and downloads stay quiet.":
       "Normal zeigt die Benachrichtigung wie bisher. Laut vorgelesen liest zusätzlich einen kurzen Satz, wenn sie erscheint. Die Zuhör-Benachrichtigung und Downloads bleiben still.",
     "Off by default. Near the minutes you pick, one short cue appears and can be spoken. The call keeps going unless you also turn on a hard stop.": "Standardmäßig aus. Nahe an den Minuten, die du wählst, erscheint ein kurzer Hinweis und kann gesprochen werden. Das Gespräch läuft weiter, außer du schaltest den harten Stopp ein.",
@@ -770,6 +778,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Spoken out loud": "Em voz alta",
     "Show the notification. Grok stays quiet.": "Mostra a notificação. O Grok fica em silêncio.",
     "Show the notification and read it out loud.": "Mostra a notificação e lê em voz alta.",
+    "Your name": "Seu nome",
+    "Optional. Spoken alerts can say it. Leave this empty for a plain hey.":
+      "Opcional. Os alertas falados podem dizer o nome. Deixe vazio para um oi simples.",
+    "Spoken alerts use the alarm volume.": "Os alertas falados usam o volume do alarme.",
     "Normal shows the notification as it does today. Spoken also reads a short sentence when it fires. The listening notification and downloads stay quiet.":
       "Normal mostra a notificação como hoje. Em voz alta também lê uma frase curta quando dispara. A notificação de escuta e as descargas ficam em silêncio.",
     "Off by default. Near the minutes you pick, one short cue appears and can be spoken. The call keeps going unless you also turn on a hard stop.": "Desligado por padrão. Perto dos minutos que você escolhe, aparece um aviso e ele pode ser falado. A chamada continua, a menos que você ligue a parada firme.",
@@ -1056,6 +1068,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Spoken out loud": "En veu alta",
     "Show the notification. Grok stays quiet.": "Mostra la notificació. Grok no parla.",
     "Show the notification and read it out loud.": "Mostra la notificació i la llig en veu alta.",
+    "Your name": "El teu nom",
+    "Optional. Spoken alerts can say it. Leave this empty for a plain hey.":
+      "Opcional. Els avisos en veu alta poden dir-lo. Deixa'l buit per a un ei senzill.",
+    "Spoken alerts use the alarm volume.": "Els avisos en veu alta usen el volum de l'alarma.",
     "Normal shows the notification as it does today. Spoken also reads a short sentence when it fires. The listening notification and downloads stay quiet.":
       "Normal mostra la notificació com fins ara. En veu alta també en llig una frase curta quan sona. La notificació d'escolta i les baixades continuen en silenci.",
     "Off by default. Near the minutes you pick, one short cue appears and can be spoken. The call keeps going unless you also turn on a hard stop.": "Apagat per defecte. Prop dels minuts que tries, apareix un avís i es pot dir. La trucada continua llevat que actives la parada ferma.",

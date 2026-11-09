@@ -20,6 +20,7 @@ import java.util.Locale
  */
 object UpdateNotice {
   private const val CHANNEL_ID = "grok_updates"
+  private const val SPOKEN_CHANNEL_ID = "grok_updates_spoken"
   private const val NOTICE_ID = 91024
   private val versionToken = Regex("""^v?\d{1,6}(?:\.\d{1,6}){0,3}$""")
 
@@ -29,11 +30,13 @@ object UpdateNotice {
     if (safeVersion.isEmpty()) return
     val localized = localeContext(context, localeTag)
     val nm = context.getSystemService(NotificationManager::class.java) ?: return
-    ensureChannel(localized, nm)
+    val spoken = SpokenAlerts.isSpoken(context)
+    val channelId = if (spoken) SPOKEN_CHANNEL_ID else CHANNEL_ID
+    if (spoken) ensureSpokenChannel(localized, nm) else ensureChannel(localized, nm)
     val open = pendingView(context, url, NOTICE_ID) ?: return
     val action = pendingView(context, url, NOTICE_ID + 1) ?: return
     val text = localized.getString(R.string.update_text, safeVersion)
-    val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+    val builder = NotificationCompat.Builder(context, channelId)
       .setSmallIcon(android.R.drawable.stat_sys_download_done)
       .setContentTitle(localized.getString(R.string.update_title))
       .setContentText(text)
@@ -44,17 +47,20 @@ object UpdateNotice {
       .setOnlyAlertOnce(true)
       .setCategory(NotificationCompat.CATEGORY_STATUS)
       .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-      .build()
+    if (spoken) builder.setSilent(true)
+    val notification = builder.build()
     try {
       nm.notify(NOTICE_ID, notification)
+      val audible = spoken && nm.getNotificationChannel(channelId)?.sound != null
       SpokenAlerts.enqueue(
         context,
         -1,
         "update",
         localized.getString(R.string.update_title),
         text,
-        CHANNEL_ID,
-        "status"
+        channelId,
+        "status",
+        audible
       )
     } catch (_: SecurityException) {
       // Notifications are off. The in-app banner still offers the download.
@@ -95,6 +101,20 @@ object UpdateNotice {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     return PendingIntent.getActivity(context, request, intent, flags)
+  }
+
+  private fun ensureSpokenChannel(localized: Context, nm: NotificationManager) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    if (nm.getNotificationChannel(SPOKEN_CHANNEL_ID) != null) return
+    val channel = NotificationChannel(
+      SPOKEN_CHANNEL_ID,
+      localized.getString(R.string.update_channel_name),
+      NotificationManager.IMPORTANCE_DEFAULT
+    )
+    channel.description = localized.getString(R.string.update_channel_desc)
+    channel.setSound(null, null)
+    channel.enableVibration(false)
+    nm.createNotificationChannel(channel)
   }
 
   private fun ensureChannel(localized: Context, nm: NotificationManager) {
