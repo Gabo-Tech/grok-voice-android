@@ -72,6 +72,7 @@ export default function App() {
   const voice = useVoice();
   const agenda = useAgenda();
   const t = useT();
+  const thumb = useThumbBar();
 
   useEffect(() => {
     if (!preview.app || preview.section === "menu") return;
@@ -192,7 +193,6 @@ export default function App() {
     setTab(next);
   };
 
-  const thumb = useThumbBar();
   goTab.current = changeTab;
 
   return (
