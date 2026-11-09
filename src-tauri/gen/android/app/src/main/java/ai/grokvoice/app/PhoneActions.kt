@@ -11,7 +11,6 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
-import android.provider.AlarmClock
 import android.provider.CalendarContract
 import org.json.JSONArray
 import org.json.JSONObject
@@ -24,35 +23,22 @@ object PhoneActions {
   private const val ALARM_CHANNEL = "grok_alarms"
   private const val REMINDER_CHANNEL = "grok_reminders"
 
+  /** Alarms stay in Grok Voice so Time, list_reminders, and spoken alerts can see them. */
   fun setAlarm(activity: Activity, hour: Int, minute: Int, label: String, id: Int, atMs: Long): String {
-    if (activity.hasWindowFocus() && openClock(activity, AlarmClock.ACTION_SET_ALARM) {
-        putExtra(AlarmClock.EXTRA_HOUR, hour)
-        putExtra(AlarmClock.EXTRA_MINUTES, minute)
-        putExtra(AlarmClock.EXTRA_MESSAGE, label)
-        putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-      }
-    ) {
-      return """{"ok":true,"via":"clock","detail":"Alarm set in the Clock app for %02d:%02d."}"""
-        .format(hour, minute)
-    }
-    schedule(activity.applicationContext, id, "alarm", label, "", atMs)
-    return """{"ok":true,"via":"local","detail":"Alarm set for %02d:%02d."}""".format(hour, minute)
+    val scheduled = schedule(activity.applicationContext, id, "alarm", label, "", atMs)
+    if (!JSONObject(scheduled).optBoolean("ok")) return scheduled
+    return """{"ok":true,"via":"local","detail":"Alarm saved in this app's Time list for %02d:%02d."}"""
+      .format(hour, minute)
   }
 
+  /** Countdowns stay in Grok Voice so Time, list_reminders, and spoken alerts can see them. */
   fun setTimer(activity: Activity, seconds: Int, label: String, id: Int, atMs: Long): String {
-    if (activity.hasWindowFocus() && openClock(activity, AlarmClock.ACTION_SET_TIMER) {
-        putExtra(AlarmClock.EXTRA_LENGTH, seconds)
-        putExtra(AlarmClock.EXTRA_MESSAGE, label)
-        putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-      }
-    ) {
-      val mins = seconds / 60
-      val secs = seconds % 60
-      val spoken = if (mins > 0 && secs == 0) "$mins min" else "${seconds}s"
-      return """{"ok":true,"via":"clock","detail":"Timer running in the Clock app for $spoken."}"""
-    }
-    schedule(activity.applicationContext, id, "timer", label, "", atMs)
-    return """{"ok":true,"via":"local","detail":"Timer set for ${seconds}s."}"""
+    val scheduled = schedule(activity.applicationContext, id, "timer", label, "", atMs)
+    if (!JSONObject(scheduled).optBoolean("ok")) return scheduled
+    val mins = seconds / 60
+    val secs = seconds % 60
+    val spoken = if (mins > 0 && secs == 0) "$mins min" else "${seconds}s"
+    return """{"ok":true,"via":"local","detail":"Countdown saved in this app's Time list for $spoken."}"""
   }
 
   fun schedule(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long): String {
@@ -103,7 +89,8 @@ object PhoneActions {
   }
 
   fun notify(context: Context, id: Int, kind: String, title: String, note: String) {
-    val alarm = kind == "alarm" || kind == "timer"
+    val alarm = kind == "alarm" || kind == "timer" || kind == "countdown"
+    val event = kind == "event" || kind == "calendar"
     val channel = if (alarm) ALARM_CHANNEL else REMINDER_CHANNEL
     val nm = context.getSystemService(NotificationManager::class.java)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -142,7 +129,13 @@ object PhoneActions {
       .setContentText(text)
       .setContentIntent(open)
       .setAutoCancel(true)
-      .setCategory(if (alarm) Notification.CATEGORY_ALARM else Notification.CATEGORY_REMINDER)
+      .setCategory(
+        when {
+          alarm -> Notification.CATEGORY_ALARM
+          event -> Notification.CATEGORY_EVENT
+          else -> Notification.CATEGORY_REMINDER
+        }
+      )
       .build()
     val posted = try {
       nm.notify(if (id == 0) 1 else id, n)
@@ -152,7 +145,11 @@ object PhoneActions {
       false
     }
     if (posted) {
-      val category = if (alarm) "alarm" else "reminder"
+      val category = when {
+        alarm -> "alarm"
+        event -> "event"
+        else -> "reminder"
+      }
       SpokenAlerts.enqueue(context, id, kind, title.ifBlank { "Grok" }, text, channel, category)
     }
   }
@@ -331,19 +328,6 @@ object PhoneActions {
       return null
     }
     return primary ?: visible ?: any
-  }
-
-  private fun openClock(activity: Activity, action: String, fill: Intent.() -> Unit): Boolean {
-    val intent = Intent(action).apply {
-      fill()
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    return try {
-      activity.startActivity(intent)
-      true
-    } catch (_: Exception) {
-      false
-    }
   }
 
   private fun arm(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long) {

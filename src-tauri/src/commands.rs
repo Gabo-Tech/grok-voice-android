@@ -496,6 +496,7 @@ pub fn save_event(
                 recurrence: String::new(),
                 weekdays: Vec::new(),
                 until_ms: 0,
+                alarm_id: 0,
                 rrule: String::new(),
             });
             event.title = title;
@@ -541,6 +542,7 @@ pub fn save_event(
         recurrence,
         weekdays,
         until_ms,
+        alarm_id: 0,
         rrule: String::new(),
     };
     agenda.upsert_local_event(&app, event).map_err(msg)?;

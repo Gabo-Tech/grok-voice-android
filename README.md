@@ -43,8 +43,9 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 | Ask | What happens |
 | --- | --- |
 | “Make a note: buy milk” | Saved on the phone. |
-| “Set a timer for 10 minutes” | Starts in the Clock app while Grok Voice is on screen. From the background, the app rings it itself. |
-| “Set an alarm for 7:30” | Same as a timer: Clock app in the foreground, an in-app alarm from the background. |
+| “Set a timer for 10 minutes” | Saved on the Time screen. Grok Voice rings it. |
+| “Set an alarm for 7:30” | Saved on the Time screen for the next 7:30. Grok Voice rings it. |
+| “Remind me in 5 minutes” | A reminder in this app, firing five minutes from now. |
 | “Remind me tomorrow at 9 to call Sam” | A notification at that local time. |
 | “What’s on my calendar today?” | Reads the phone calendar. Android asks for calendar access the first time. |
 | “Add lunch with Ana tomorrow at 1” | Writes an event. If you omit the end time, it lasts one hour. |
@@ -61,7 +62,7 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 
 The bottom bar is **Talk**, **Notes**, **Calendar**, **Remind**, and **More**. Lists stay quiet by default; tap **+** to add, or open a row to edit. Voice still works for create, edit, and delete (“change that note”, “delete the lunch event”, “move my reminder to 5”). Calendar access is requested from the Calendar tab or the first voice calendar ask. If the phone has no writable calendar account, events are saved in the app instead.
 
-Times you say are local. “Remind me tomorrow at 3” is a one-off reminder. “Set an alarm for 7:30” is a clock alarm for the next time that hour and minute occurs. Daily and weekly reminders, including custom weekdays, keep their next time on the Time tab. Snooze moves that notification; a repeating series still fires on its usual schedule.
+Times you say are local. “Remind me tomorrow at 3” and “remind me in 5 minutes” are reminders in this app. “Set an alarm for 7:30” is an alarm in this app for the next time that hour and minute occurs. “Add lunch tomorrow at 1” is an event in this app's Calendar. Daily and weekly reminders, including custom weekdays, keep their next time on the Time tab. Snooze moves that notification; a repeating series still fires on its usual schedule.
 
 **Settings → Daily voice budget** is off until you pick a number of minutes. Around that amount, the app shows a cue once per day and can say it during a call. The call is not cut off unless you also turn on a hard stop. The count is minutes of realtime sessions on this phone and resets at local midnight.
 
@@ -75,7 +76,7 @@ Times you say are local. “Remind me tomorrow at 3” is a one-off reminder. �
 - **Vault.** The key lives in a [Stronghold](https://github.com/iotaledger/stronghold.rs) snapshot. On Android the snapshot key is wrapped by a non-exportable Android Keystore key (StrongBox, then TEE).
 - **Wake word.** [rustpotter](https://github.com/GiviMAD/rustpotter), trained from the three recordings on the phone. The samples are not uploaded.
 - **Background.** The microphone foreground service records, holds a partial wake lock, and keeps the process up when the activity is destroyed. Leaving with the back gesture, locking the screen, or clearing recents does not stop hands-free. Listen off, Stop on the notification, or a force-stop does.
-- **Phone tools.** Notes, reminders, and People preferences are stored in the app. Phone numbers and email are read from `ContactsContract` and are not written back. Alarms and timers prefer the system Clock app when the screen is open, and `AlarmManager` otherwise. Reminders, including repeating ones and person dates, are notifications. Calendar reads and writes use `CalendarContract`. A call opens the dialer, and a text, WhatsApp, Signal, or email opens a draft. Nothing is sent until you confirm in that app. Questions about a person are answered in the session. Backups are encrypted on the phone and do not include vault keys unless you opt in.
+- **Phone tools.** Notes, reminders, alarms, timers, and calendar events Talk creates are stored in the app and scheduled with `AlarmManager`, so a spoken notification can read them. People preferences are stored in the app. Phone numbers and email are read from `ContactsContract` and are not written back. Reminders, including repeating ones and person dates, are notifications. Reading the phone calendar, and an event you add on the Calendar screen while access is granted, uses `CalendarContract`. A call opens the dialer, and a text, WhatsApp, Signal, or email opens a draft. Nothing is sent until you confirm in that app. Questions about a person are answered in the session. Backups are encrypted on the phone and do not include vault keys unless you opt in.
 
 xAI does not offer a public third-party OAuth flow for this API, so sign-in is the API key you paste.
 

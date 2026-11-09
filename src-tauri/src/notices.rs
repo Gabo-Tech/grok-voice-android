@@ -682,6 +682,41 @@ mod tests {
     }
 
     #[test]
+    fn spoken_mode_covers_in_app_timers_reminders_alarms_and_events() {
+        assert_eq!(
+            spoken_notice_line("en", "timer", "Check EURUSD price", "Timer", 0, None),
+            "Hey, the Check EURUSD price timer is done."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "countdown", "Check EURUSD price", "Countdown", 0, None),
+            "Hey, the Check EURUSD price timer is done."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "reminder", "Check EURUSD price", "Reminder", 0, None),
+            "Hey, remember you have to Check EURUSD price."
+        );
+        assert_eq!(spoken_notice_line("en", "alarm", "Wake up", "Alarm", 0, None), "Hey, it's time to wake up.");
+        let event = plan_spoken_notice(&spoken("event"), "Lunch", "");
+        assert!(!event.is_empty());
+        assert_eq!(event, spoken_notice_line("en", "event", "Lunch", "", 0, None));
+        let mut quiet = spoken("timer");
+        quiet["delivery"] = json!("normal");
+        assert_eq!(plan_spoken_notice(&quiet, "Check EURUSD price", "Timer"), "");
+        let mut missing = spoken("reminder");
+        missing["delivery"] = json!("");
+        assert_eq!(plan_spoken_notice(&missing, "Check EURUSD price", "Reminder"), "");
+        assert_eq!(
+            plan_spoken_notice(&spoken("countdown"), "Check EURUSD price", "Countdown"),
+            "Hey, the Check EURUSD price timer is done."
+        );
+        let phone = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/PhoneActions.kt");
+        let notify = phone.split("fun notify").nth(1).unwrap().split("fun listEvents").next().unwrap();
+        assert!(notify.contains("SpokenAlerts.enqueue"));
+        assert!(notify.contains("\"event\""));
+        assert!(notify.contains("countdown"));
+    }
+
+    #[test]
     fn voice_budget_fields_do_not_change_the_plan() {
         let mut spec = spoken("timer");
         spec["dailyBudgetMinutes"] = json!(0);
