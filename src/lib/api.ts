@@ -187,6 +187,8 @@ export interface Settings {
   listenArmed?: boolean;
   /** `normal` shows the notification. `spoken` also reads it out loud. */
   notificationDelivery?: string;
+  /** Optional name spoken alerts may say. Empty keeps a plain hey. */
+  spokenName?: string;
 }
 
 export interface UsageStatus {

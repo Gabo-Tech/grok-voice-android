@@ -104,7 +104,8 @@ pub fn plan_spoken_notice(spec: &Value, title: &str, body: &str) -> String {
         .and_then(|v| v.as_i64().or_else(|| v.as_u64().map(|n| n as i64)))
         .unwrap_or(0);
     let hour = spec.get("dueHour").and_then(|v| v.as_i64()).filter(|h| (0..24).contains(h)).map(|h| h as u32);
-    spoken_notice_line(&locale, kind, title, body, minutes, hour)
+    let user_name = spec.get("userName").and_then(|v| v.as_str()).unwrap_or("");
+    spoken_notice_line(&locale, kind, title, body, minutes, hour, user_name)
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -138,7 +139,21 @@ fn interruption_allows(spec: &Value, category: &str) -> bool {
 }
 
 /// A short nudge in the app's language. Not a readout of the notification banner.
+/// `user_name` is optional. Empty keeps the plain greeting.
 pub fn spoken_notice_line(
+    locale: &str,
+    kind: &str,
+    title: &str,
+    body: &str,
+    due_in_minutes: i64,
+    due_hour: Option<u32>,
+    user_name: &str,
+) -> String {
+    let line = compose_spoken_line(locale, kind, title, body, due_in_minutes, due_hour);
+    personalize(locale, &line, user_name)
+}
+
+fn compose_spoken_line(
     locale: &str,
     kind: &str,
     title: &str,
@@ -170,46 +185,67 @@ pub fn spoken_notice_line(
         };
     }
     if let Some(sentence) = ready_sentence(&subject) {
-        return sentence;
+        if !contains_first_person(locale, &subject) {
+            return sentence;
+        }
     }
     subject = subject.trim_end_matches(['.', '!', '?']).trim().to_string();
     if let Some(name) = strip_prefix_ci(&subject, "Reach out to ") {
-        return say(locale, "say-reach", &[("name", name)]);
+        let name = address_task(locale, name);
+        return say(locale, "say-reach", &[("name", &name)]);
     }
     if let Some(name) = person_name(strip_suffix_ci(&subject, "'s birthday")) {
-        return occasion(locale, "bday", name, due_in_minutes, due_hour);
+        let name = address_task(locale, name);
+        return occasion(locale, "bday", &name, due_in_minutes, due_hour);
     }
     if let Some(name) = person_name(strip_suffix_ci(&subject, "'s anniversary")) {
-        return occasion(locale, "anniv", name, due_in_minutes, due_hour);
+        let name = address_task(locale, name);
+        return occasion(locale, "anniv", &name, due_in_minutes, due_hour);
+    }
+    subject = address_task(locale, &subject);
+    if subject.is_empty() {
+        return match kind_fold.as_str() {
+            "alarm" => say(locale, "say-alarm-plain", &[]),
+            "timer" | "countdown" => say(locale, "say-timer-plain", &[]),
+            _ => String::new(),
+        };
+    }
+    if contains_copula(&subject) {
+        let mut line = subject;
+        if !line.ends_with('.') {
+            line.push('.');
+        }
+        return line;
     }
     let when = when_phrase(locale, due_in_minutes, due_hour);
+    let spoken = if subject.split_whitespace().count() >= 2 { lowercase_task_start(&subject) } else { subject };
     match kind_fold.as_str() {
         "alarm" => {
-            if fold(&subject) == "wake up" && when.is_none() {
+            if fold(&spoken) == "wake up" && when.is_none() {
                 say(locale, "say-alarm-wake", &[])
             } else if let Some(when) = when.as_deref() {
-                say(locale, "say-task-short-later", &[("title", &subject), ("when", when)])
+                say(locale, "say-task-short-later", &[("title", &spoken), ("when", when)])
             } else {
-                say(locale, "say-alarm", &[("title", &subject)])
+                say(locale, "say-alarm", &[("title", &spoken)])
             }
         }
         "timer" | "countdown" => {
             if when.is_some() {
-                say(locale, "say-task-short-later", &[("title", &subject), ("when", when.as_deref().unwrap_or(""))])
-            } else if fold(&subject) == "timer" {
+                say(locale, "say-task-short-later", &[("title", &spoken), ("when", when.as_deref().unwrap_or(""))])
+            } else if fold(&spoken) == "timer" {
                 say(locale, "say-timer-plain", &[])
             } else {
-                say(locale, "say-timer", &[("title", &subject)])
+                say(locale, "say-timer", &[("title", &spoken)])
             }
         }
         "event" | "calendar" => {
             if let Some(when) = when.as_deref() {
-                say(locale, "say-event-later", &[("title", &subject), ("when", when)])
+                say(locale, "say-event-later", &[("title", &spoken), ("when", when)])
             } else {
-                say(locale, "say-event-now", &[("title", &subject)])
+                say(locale, "say-event-now", &[("title", &spoken)])
             }
         }
-        _ => task_line(locale, &subject, when.as_deref()),
+        _ => task_line(locale, &spoken, when.as_deref()),
     }
 }
 
@@ -228,29 +264,527 @@ fn occasion(locale: &str, which: &str, name: &str, minutes: i64, hour: Option<u3
 }
 
 fn task_line(locale: &str, title: &str, when: Option<&str>) -> String {
-    let action = title.split_whitespace().count() >= 3;
-    let softened = if action { soften_task(title) } else { title.to_string() };
+    let action = is_action(locale, title);
+    let title = if action { lowercase_task_start(title) } else { title.to_string() };
     match (action, when) {
-        (true, None) => say(locale, "say-task", &[("title", &softened)]),
-        (true, Some(when)) => say(locale, "say-task-later", &[("title", &softened), ("when", when)]),
-        (false, None) => say(locale, "say-task-short", &[("title", title)]),
-        (false, Some(when)) => say(locale, "say-task-short-later", &[("title", title), ("when", when)]),
+        (true, None) => say(locale, "say-task", &[("title", &title)]),
+        (true, Some(when)) => say(locale, "say-task-later", &[("title", &title), ("when", when)]),
+        (false, None) => say(locale, "say-task-short", &[("title", &title)]),
+        (false, Some(when)) => say(locale, "say-task-short-later", &[("title", &title), ("when", when)]),
     }
 }
 
-fn soften_task(title: &str) -> String {
-    let mut words: Vec<String> = title.split_whitespace().map(|w| w.to_string()).collect();
-    let later_name = words.iter().skip(1).any(|word| word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false));
-    if later_name {
-        return title.to_string();
+fn is_action(locale: &str, title: &str) -> bool {
+    let words: Vec<&str> = title.split_whitespace().collect();
+    if words.len() >= 3 {
+        return true;
     }
-    if let Some(first) = words.first_mut() {
-        let mut chars = first.chars();
-        if let Some(ch) = chars.next() {
-            *first = format!("{}{}", ch.to_lowercase(), chars.as_str());
+    words.len() >= 2 && imperative(locale, &fold_token(words[0]))
+}
+
+fn imperative(locale: &str, word: &str) -> bool {
+    let words: &[&str] = match crate::i18n::normalize(locale) {
+        "es" => &[
+            "llamar",
+            "cepillar",
+            "cepillarme",
+            "cepillarte",
+            "comprar",
+            "revisar",
+            "pagar",
+            "lavar",
+            "lavarme",
+            "tomar",
+            "enviar",
+            "ir",
+            "hacer",
+            "sacar",
+            "recoger",
+            "limpiar",
+            "cerrar",
+            "abrir",
+            "leer",
+            "escribir",
+            "estudiar",
+            "cocinar",
+            "beber",
+            "comer",
+            "caminar",
+            "correr",
+            "visitar",
+            "mirar",
+            "comprobar",
+            "renovar",
+            "coger",
+            "dejar",
+            "poner",
+            "traer",
+            "llevar",
+            "mandar",
+            "reservar",
+            "pedir",
+        ],
+        "de" => &[
+            "anrufen",
+            "putzen",
+            "kaufen",
+            "prüfen",
+            "bezahlen",
+            "waschen",
+            "nehmen",
+            "schicken",
+            "gehen",
+            "machen",
+            "lesen",
+            "schreiben",
+            "lernen",
+            "kochen",
+            "trinken",
+            "essen",
+            "laufen",
+            "treffen",
+            "öffnen",
+            "schließen",
+        ],
+        "pt" => &[
+            "ligar",
+            "escovar",
+            "comprar",
+            "verificar",
+            "pagar",
+            "lavar",
+            "tomar",
+            "enviar",
+            "ir",
+            "fazer",
+            "pegar",
+            "limpar",
+            "fechar",
+            "abrir",
+            "ler",
+            "escrever",
+            "estudar",
+            "cozinhar",
+            "beber",
+            "comer",
+            "caminhar",
+            "correr",
+            "visitar",
+            "checar",
+            "renovar",
+            "deixar",
+            "colocar",
+            "trazer",
+            "mandar",
+            "reservar",
+            "pedir",
+        ],
+        "ca-ES-valencia" => &[
+            "trucar",
+            "raspallar",
+            "comprar",
+            "revisar",
+            "pagar",
+            "llavar",
+            "prendre",
+            "enviar",
+            "anar",
+            "fer",
+            "agafar",
+            "netejar",
+            "tancar",
+            "obrir",
+            "llegir",
+            "escriure",
+            "estudiar",
+            "cuinar",
+            "beure",
+            "menjar",
+            "caminar",
+            "visitar",
+            "mirar",
+            "comprovar",
+            "renovar",
+            "deixar",
+            "posar",
+            "portar",
+            "reservar",
+            "demanar",
+        ],
+        _ => &[
+            "brush", "call", "check", "buy", "take", "send", "email", "text", "pay", "clean",
+            "wash", "walk", "feed", "pick", "get", "go", "make", "do", "finish", "start", "water",
+            "charge", "lock", "close", "open", "book", "cancel", "renew", "review", "read",
+            "write", "submit", "file", "pack", "bring", "drop", "meet", "visit", "drink", "eat",
+            "cook", "prepare", "update", "message", "ask", "tell", "give", "put", "set", "turn",
+            "leave", "return", "refill", "order", "schedule", "study", "practice", "run", "drive",
+            "grab", "fold", "fix", "move", "print", "sign", "floss", "shower", "reply", "answer",
+            "confirm",
+        ],
+    };
+    words.contains(&word)
+}
+
+/// Peak gain for quiet Piper PCM. 1.0 when the clip is already near full scale
+/// or nearly silent. The result never exceeds full scale, so the alarm volume
+/// the user set stays the ceiling.
+pub fn notice_pcm_gain(peak: f32) -> f32 {
+    if !peak.is_finite() || peak < 0.02 {
+        return 1.0;
+    }
+    const TARGET: f32 = 0.97;
+    if peak >= TARGET {
+        return 1.0;
+    }
+    (TARGET / peak).min(8.0)
+}
+
+pub fn amplify_notice_pcm(samples: &mut [f32]) {
+    let peak = samples
+        .iter()
+        .fold(0.0f32, |max, sample| max.max(sample.abs()));
+    let gain = notice_pcm_gain(peak);
+    if (gain - 1.0).abs() < 0.001 {
+        return;
+    }
+    for sample in samples.iter_mut() {
+        *sample = (*sample * gain).clamp(-1.0, 1.0);
+    }
+}
+
+/// Name spoken alerts may say. Empty when the app does not know one.
+pub fn sanitize_spoken_name(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || looks_like_json(trimmed) {
+        return String::new();
+    }
+    if is_secret_token(&fold_token(trimmed)) {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut count = 0usize;
+    let mut spaced = false;
+    for ch in trimmed.chars() {
+        if ch.is_whitespace() {
+            if !out.is_empty() && !spaced {
+                out.push(' ');
+                spaced = true;
+            }
+            continue;
+        }
+        if ch.is_alphabetic() || ch == '\'' || ch == '’' || ch == '-' {
+            out.push(ch);
+            spaced = false;
+            count += 1;
+            if count >= 40 {
+                break;
+            }
         }
     }
-    words.join(" ")
+    let name = out
+        .trim()
+        .trim_matches(|c| c == '-' || c == '\'' || c == '’')
+        .trim()
+        .to_string();
+    if name.chars().any(|c| c.is_alphabetic()) {
+        name
+    } else {
+        String::new()
+    }
+}
+
+fn personalize(locale: &str, line: &str, user_name: &str) -> String {
+    let name = sanitize_spoken_name(user_name);
+    let line = line.trim();
+    if name.is_empty() || line.is_empty() {
+        return line.to_string();
+    }
+    let hello = match crate::i18n::normalize(locale) {
+        "es" => "Oye",
+        "pt" | "ca-ES-valencia" => "Ei",
+        _ => "Hey",
+    };
+    for prefix in [format!("{hello}, "), format!("{hello} ")] {
+        if let Some(rest) = strip_prefix_ci_owned(line, &prefix) {
+            return format!("{hello} {name}, {rest}");
+        }
+    }
+    format!("{hello} {name}, {}", lowercase_task_start(line))
+}
+
+fn address_task(locale: &str, title: &str) -> String {
+    let locale = crate::i18n::normalize(locale);
+    let stripped = strip_preamble(locale, &collapse(title));
+    collapse(&rewrite_pronouns(locale, &stripped))
+}
+
+fn strip_preamble(locale: &str, text: &str) -> String {
+    let mut text = text.to_string();
+    let prefixes = preambles(locale);
+    for _ in 0..4 {
+        let mut next = None;
+        for prefix in prefixes {
+            if let Some(rest) = strip_prefix_ci_owned(&text, prefix) {
+                if !rest.is_empty() {
+                    next = Some(rest);
+                    break;
+                }
+            }
+        }
+        match next {
+            Some(rest) => text = rest,
+            None => break,
+        }
+    }
+    text
+}
+
+fn preambles(locale: &str) -> &'static [&'static str] {
+    match crate::i18n::normalize(locale) {
+        "es" => &[
+            "por favor ",
+            "recuérdame que ",
+            "recuerdame que ",
+            "recuérdame ",
+            "recuerdame ",
+            "tengo que ",
+            "necesito ",
+            "debo ",
+        ],
+        "de" => &[
+            "bitte ",
+            "erinnere mich daran, ",
+            "erinnere mich daran ",
+            "ich muss ",
+            "ich habe ",
+        ],
+        "pt" => &[
+            "por favor ",
+            "lembra-me de ",
+            "lembra me de ",
+            "me lembra de ",
+            "tenho que ",
+            "preciso ",
+            "devo ",
+        ],
+        "ca-ES-valencia" => &[
+            "per favor ",
+            "recorda'm de ",
+            "recorda'm que ",
+            "tinc que ",
+            "he de ",
+            "necessite ",
+        ],
+        _ => &[
+            "please remind me to ",
+            "remind me to ",
+            "remind me that ",
+            "remind me ",
+            "remember to ",
+            "remember that ",
+            "i have to ",
+            "i need to ",
+            "i should ",
+            "i must ",
+            "i want to ",
+            "i'm going to ",
+            "i’m going to ",
+            "i am going to ",
+            "i've got to ",
+            "i’ve got to ",
+            "ive got to ",
+            "i gotta ",
+            "please ",
+        ],
+    }
+}
+
+fn rewrite_pronouns(locale: &str, text: &str) -> String {
+    text.split_whitespace()
+        .map(|token| rewrite_token(locale, token))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn rewrite_token(locale: &str, token: &str) -> String {
+    let (lead, core, trail) = split_affix(token);
+    if core.is_empty() {
+        return token.to_string();
+    }
+    let folded = core.to_lowercase();
+    if let Some(next) = pronoun(locale, &folded) {
+        return format!("{lead}{next}{trail}");
+    }
+    if let Some(next) = rewrite_clitic(locale, &folded) {
+        return format!("{lead}{next}{trail}");
+    }
+    token.to_string()
+}
+
+fn pronoun(locale: &str, word: &str) -> Option<&'static str> {
+    match crate::i18n::normalize(locale) {
+        "es" => match word {
+            "yo" => Some("tú"),
+            "me" => Some("te"),
+            "mí" => Some("ti"),
+            "mi" => Some("tu"),
+            "mis" => Some("tus"),
+            "conmigo" => Some("contigo"),
+            "mío" => Some("tuyo"),
+            "mía" => Some("tuya"),
+            "míos" => Some("tuyos"),
+            "mías" => Some("tuyas"),
+            "nuestro" | "nuestra" => Some("tu"),
+            "nuestros" | "nuestras" => Some("tus"),
+            _ => None,
+        },
+        "de" => match word {
+            "ich" => Some("du"),
+            "mich" => Some("dich"),
+            "mir" => Some("dir"),
+            "mein" => Some("dein"),
+            "meine" => Some("deine"),
+            "meinen" => Some("deinen"),
+            "meinem" => Some("deinem"),
+            "meiner" => Some("deiner"),
+            "meins" => Some("deins"),
+            _ => None,
+        },
+        "pt" => match word {
+            "eu" => Some("você"),
+            "me" => Some("te"),
+            "mim" => Some("você"),
+            "comigo" => Some("com você"),
+            "meu" => Some("seu"),
+            "minha" => Some("sua"),
+            "meus" => Some("seus"),
+            "minhas" => Some("suas"),
+            _ => None,
+        },
+        "ca-ES-valencia" => match word {
+            "jo" => Some("tu"),
+            "em" | "me" => Some("te"),
+            "mi" => Some("tu"),
+            "meu" => Some("teu"),
+            "meua" | "meva" => Some("teua"),
+            "meus" => Some("teus"),
+            "meues" | "meves" => Some("teues"),
+            _ => None,
+        },
+        _ => match word {
+            "i" => Some("you"),
+            "i'm" | "i’m" | "im" => Some("you're"),
+            "me" => Some("you"),
+            "my" => Some("your"),
+            "mine" => Some("yours"),
+            "myself" => Some("yourself"),
+            "we" => Some("you"),
+            "us" => Some("you"),
+            "our" => Some("your"),
+            "ours" => Some("yours"),
+            "ourselves" => Some("yourself"),
+            _ => None,
+        },
+    }
+}
+
+fn rewrite_clitic(locale: &str, word: &str) -> Option<String> {
+    let (stem, ending) = match crate::i18n::normalize(locale) {
+        "es" | "ca-ES-valencia" => {
+            if let Some(stem) = word.strip_suffix("arme") {
+                (stem, "arte")
+            } else if let Some(stem) = word.strip_suffix("erme") {
+                (stem, "erte")
+            } else if let Some(stem) = word.strip_suffix("irme") {
+                (stem, "irte")
+            } else {
+                return None;
+            }
+        }
+        "pt" => {
+            if let Some(stem) = word.strip_suffix("-me") {
+                (stem, "-te")
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+    if stem.chars().count() < 3 {
+        return None;
+    }
+    Some(format!("{stem}{ending}"))
+}
+
+fn contains_first_person(locale: &str, text: &str) -> bool {
+    text.split_whitespace().any(|token| {
+        let (_, core, _) = split_affix(token);
+        let folded = core.to_lowercase();
+        pronoun(locale, &folded).is_some() || rewrite_clitic(locale, &folded).is_some()
+    })
+}
+
+fn contains_copula(text: &str) -> bool {
+    let folded = format!(" {} ", fold(text));
+    [
+        " is ", " es ", " ist ", " está ", " esta ", " são ", " són ", " és ",
+    ]
+    .iter()
+    .any(|mark| folded.contains(mark))
+}
+
+fn lowercase_task_start(text: &str) -> String {
+    let first = text.split_whitespace().next().unwrap_or("");
+    let letters: String = first.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    if letters.len() >= 2 && letters.chars().all(|c| c.is_ascii_uppercase()) {
+        return text.to_string();
+    }
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(ch) => format!("{}{}", ch.to_lowercase(), chars.as_str()),
+        None => String::new(),
+    }
+}
+
+fn split_affix(token: &str) -> (&str, &str, &str) {
+    let chars: Vec<(usize, char)> = token.char_indices().collect();
+    let mut start = 0;
+    while start < chars.len() && is_affix(chars[start].1) {
+        start += 1;
+    }
+    let mut end = chars.len();
+    while end > start && is_affix(chars[end - 1].1) {
+        end -= 1;
+    }
+    if start >= end {
+        return (token, "", "");
+    }
+    let lead_end = chars[start].0;
+    let core_end = chars[end - 1].0 + chars[end - 1].1.len_utf8();
+    (
+        &token[..lead_end],
+        &token[lead_end..core_end],
+        &token[core_end..],
+    )
+}
+
+fn is_affix(ch: char) -> bool {
+    ch.is_ascii_punctuation() && ch != '\''
+}
+
+fn strip_prefix_ci_owned(text: &str, prefix: &str) -> Option<String> {
+    let text_chars: Vec<char> = text.chars().collect();
+    let prefix_chars: Vec<char> = prefix.chars().collect();
+    if text_chars.len() < prefix_chars.len() {
+        return None;
+    }
+    for (left, right) in text_chars.iter().zip(prefix_chars.iter()) {
+        if left.to_lowercase().to_string() != right.to_lowercase().to_string() {
+            return None;
+        }
+    }
+    let rest: String = text_chars[prefix_chars.len()..].iter().collect();
+    Some(rest.trim().to_string())
 }
 
 fn person_name(name: Option<&str>) -> Option<&str> {
@@ -549,7 +1083,7 @@ mod tests {
     fn plan_speaks_a_nudge_only_in_spoken_mode() {
         assert_eq!(
             plan_spoken_notice(&spoken("reminder"), "renew travel card", "Reminder"),
-            "Hey, remember you have to renew travel card."
+            "Hey, remember to renew travel card."
         );
         let mut quiet = spoken("reminder");
         quiet["delivery"] = json!("normal");
@@ -611,9 +1145,9 @@ mod tests {
     #[test]
     fn spoken_lines_are_natural_and_skip_secrets() {
         let line = |kind: &str, title: &str, body: &str, minutes: i64, hour: Option<u32>| {
-            spoken_notice_line("en", kind, title, body, minutes, hour)
+            spoken_notice_line("en", kind, title, body, minutes, hour, "")
         };
-        assert_eq!(line("reminder", "renew travel card", "Reminder", 0, None), "Hey, remember you have to renew travel card.");
+        assert_eq!(line("reminder", "renew travel card", "Reminder", 0, None), "Hey, remember to renew travel card.");
         assert_eq!(line("event", "Dentist", "", 2 * 24 * 60, None), "Remember, you have Dentist in two days.");
         assert_eq!(line("event", "Dentist", "", 20, None), "Remember, you have Dentist in 20 minutes.");
         assert_eq!(line("event", "Dentist", "", 60, None), "Remember, you have Dentist in an hour.");
@@ -647,7 +1181,7 @@ mod tests {
         assert_eq!(line("reminder", "Backup", "password hunter2", 0, None), "Hey, remember Backup.");
         let uuid = "550e8400-e29b-41d4-a716-446655440000";
         let met = line("reminder", "Meet Sam", &format!("note {uuid}"), 0, None);
-        assert_eq!(met, "Hey, remember Meet Sam.");
+        assert_eq!(met, "Hey, remember to meet Sam.");
         assert!(!met.contains(&uuid));
         assert!(!line("reminder", "Meds", "id 42", 0, None).contains("42"));
         assert!(line("reminder", "sk-abcdefghijklmnopqrst", "", 0, None).is_empty());
@@ -656,23 +1190,23 @@ mod tests {
     #[test]
     fn spoken_lines_follow_the_app_language() {
         assert_eq!(
-            spoken_notice_line("es", "reminder", "renovar la tarjeta de viaje", "", 0, None),
+            spoken_notice_line("es", "reminder", "renovar la tarjeta de viaje", "", 0, None, ""),
             "Oye, recuerda que tienes que renovar la tarjeta de viaje."
         );
         assert_eq!(
-            spoken_notice_line("de", "reminder", "Ana's birthday", "", 24 * 60, None),
+            spoken_notice_line("de", "reminder", "Ana's birthday", "", 24 * 60, None, ""),
             "Hey, denk daran, Ana hat morgen Geburtstag."
         );
         assert_eq!(
-            spoken_notice_line("pt", "event", "Dentista", "", 2 * 24 * 60, None),
+            spoken_notice_line("pt", "event", "Dentista", "", 2 * 24 * 60, None, ""),
             "Lembra que você tem Dentista em dois dias."
         );
         assert_eq!(
-            spoken_notice_line("ca-ES-valencia", "reminder", "Ana's birthday", "", 0, None),
+            spoken_notice_line("ca-ES-valencia", "reminder", "Ana's birthday", "", 0, None, ""),
             "Hui és l'aniversari de Ana."
         );
         assert_eq!(
-            spoken_notice_line("ca-ES-valencia", "update", "Actualització", "Versió 1", 0, None),
+            spoken_notice_line("ca-ES-valencia", "update", "Actualització", "Versió 1", 0, None, ""),
             "Ei, hi ha una versió nova de Grok Voice."
         );
         let mut phone = spoken("reminder");
@@ -684,21 +1218,21 @@ mod tests {
     #[test]
     fn spoken_mode_covers_in_app_timers_reminders_alarms_and_events() {
         assert_eq!(
-            spoken_notice_line("en", "timer", "Check EURUSD price", "Timer", 0, None),
-            "Hey, the Check EURUSD price timer is done."
+            spoken_notice_line("en", "timer", "Check EURUSD price", "Timer", 0, None, ""),
+            "Hey, the check EURUSD price timer is done."
         );
         assert_eq!(
-            spoken_notice_line("en", "countdown", "Check EURUSD price", "Countdown", 0, None),
-            "Hey, the Check EURUSD price timer is done."
+            spoken_notice_line("en", "countdown", "Check EURUSD price", "Countdown", 0, None, ""),
+            "Hey, the check EURUSD price timer is done."
         );
         assert_eq!(
-            spoken_notice_line("en", "reminder", "Check EURUSD price", "Reminder", 0, None),
-            "Hey, remember you have to Check EURUSD price."
+            spoken_notice_line("en", "reminder", "Check EURUSD price", "Reminder", 0, None, ""),
+            "Hey, remember to check EURUSD price."
         );
-        assert_eq!(spoken_notice_line("en", "alarm", "Wake up", "Alarm", 0, None), "Hey, it's time to wake up.");
+        assert_eq!(spoken_notice_line("en", "alarm", "Wake up", "Alarm", 0, None, ""), "Hey, it's time to wake up.");
         let event = plan_spoken_notice(&spoken("event"), "Lunch", "");
         assert!(!event.is_empty());
-        assert_eq!(event, spoken_notice_line("en", "event", "Lunch", "", 0, None));
+        assert_eq!(event, spoken_notice_line("en", "event", "Lunch", "", 0, None, ""));
         let mut quiet = spoken("timer");
         quiet["delivery"] = json!("normal");
         assert_eq!(plan_spoken_notice(&quiet, "Check EURUSD price", "Timer"), "");
@@ -707,7 +1241,7 @@ mod tests {
         assert_eq!(plan_spoken_notice(&missing, "Check EURUSD price", "Reminder"), "");
         assert_eq!(
             plan_spoken_notice(&spoken("countdown"), "Check EURUSD price", "Countdown"),
-            "Hey, the Check EURUSD price timer is done."
+            "Hey, the check EURUSD price timer is done."
         );
         let phone = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/PhoneActions.kt");
         let notify = phone.split("fun notify").nth(1).unwrap().split("fun listEvents").next().unwrap();
@@ -768,7 +1302,7 @@ mod tests {
         });
         assert_eq!(
             plan_spoken_notice(&spec, "Check EURUSD price", "Reminder"),
-            "Hey, remember you have to Check EURUSD price."
+            "Hey, remember to check EURUSD price."
         );
         for kind in ["reminder", "alarm", "timer", "countdown", "event"] {
             let mut fired = spec.clone();
@@ -810,6 +1344,19 @@ mod tests {
         assert!(spoken.contains("could not speak the notice"));
         assert!(spoken.contains("alarm stream volume is 0"));
         assert!(spoken.contains("settings.json not found"));
+        assert!(spoken.contains("KEY_PARAM_VOLUME"));
+        assert!(spoken.contains("setVolume(1f)"));
+        assert!(spoken.contains("bannerAudible"));
+        assert!(spoken.contains("waitForBannerSound"));
+        assert!(spoken.contains("\"userName\""));
+        assert!(spoken.contains("spokenName"));
+        assert!(!spoken.contains("setStreamVolume"));
+        assert!(!spoken.contains("Thread.sleep(600)"));
+        assert!(phone.contains("_spoken"));
+        assert!(phone.contains("setSound(null, null)"));
+        assert!(phone.contains("setSilent"));
+        assert!(phone.contains("bannerAudible"));
+        assert!(include_str!("local/engine.rs").contains("amplify_notice_pcm"));
         assert!(!spoken.contains("USAGE_MEDIA"));
         assert!(!spoken.contains("USAGE_NOTIFICATION"));
         assert!(!spoken.contains("startSession"));
@@ -840,5 +1387,166 @@ mod tests {
         assert!(!spoken.contains("gv_llm"));
         assert!(spoken.contains("vits-piper-en_US-lessac-low"));
         assert!(spoken.contains("vits-piper-de_DE-thorsten-low"));
+    }
+    #[test]
+    fn spoken_tasks_turn_first_person_into_a_natural_line() {
+        assert_eq!(address_task("en", "Brush my teeth"), "Brush your teeth");
+        assert_eq!(address_task("en", "call my mom"), "call your mom");
+        assert_eq!(
+            address_task("en", "I have to brush my teeth"),
+            "brush your teeth"
+        );
+        assert_eq!(
+            address_task("en", "Remind me to call my mom"),
+            "call your mom"
+        );
+        assert_eq!(
+            address_task("en", "I need to email myself"),
+            "email yourself"
+        );
+        assert_eq!(
+            address_task("es", "cepillarme los dientes"),
+            "cepillarte los dientes"
+        );
+        assert_eq!(address_task("es", "llamar a mi madre"), "llamar a tu madre");
+        assert_eq!(
+            address_task("de", "meine Zähne putzen"),
+            "deine Zähne putzen"
+        );
+        assert_eq!(
+            address_task("pt", "escovar meus dentes"),
+            "escovar seus dentes"
+        );
+        assert_eq!(
+            address_task("ca-ES-valencia", "raspallar les meues dents"),
+            "raspallar les teues dents"
+        );
+
+        assert_eq!(
+            spoken_notice_line("en", "reminder", "Brush my teeth", "Reminder", 0, None, ""),
+            "Hey, remember to brush your teeth."
+        );
+        assert_eq!(
+            spoken_notice_line(
+                "en",
+                "reminder",
+                "Brush my teeth",
+                "Reminder",
+                0,
+                None,
+                "Gabriel"
+            ),
+            "Hey Gabriel, remember to brush your teeth."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "reminder", "call my mom", "", 0, None, ""),
+            "Hey, remember to call your mom."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "reminder", "Meds", "Reminder", 0, None, "Gabriel"),
+            "Hey Gabriel, remember Meds."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "reminder", "Meds", "Reminder", 0, None, ""),
+            "Hey, remember Meds."
+        );
+        assert_eq!(
+            spoken_notice_line(
+                "es",
+                "reminder",
+                "cepillarme los dientes",
+                "",
+                0,
+                None,
+                "Gabriel"
+            ),
+            "Oye Gabriel, recuerda que tienes que cepillarte los dientes."
+        );
+        assert_eq!(
+            spoken_notice_line(
+                "es",
+                "reminder",
+                "renovar la tarjeta de viaje",
+                "",
+                0,
+                None,
+                ""
+            ),
+            "Oye, recuerda que tienes que renovar la tarjeta de viaje."
+        );
+        assert_eq!(
+            spoken_notice_line(
+                "de",
+                "reminder",
+                "Ana's birthday",
+                "",
+                24 * 60,
+                None,
+                "Gabriel"
+            ),
+            "Hey Gabriel, denk daran, Ana hat morgen Geburtstag."
+        );
+        assert_eq!(
+            spoken_notice_line("pt", "event", "Dentista", "", 2 * 24 * 60, None, ""),
+            "Lembra que você tem Dentista em dois dias."
+        );
+        assert_eq!(
+            spoken_notice_line(
+                "ca-ES-valencia",
+                "reminder",
+                "Ana's birthday",
+                "",
+                0,
+                None,
+                ""
+            ),
+            "Hui és l'aniversari de Ana."
+        );
+
+        let mut named = spoken("reminder");
+        named["userName"] = json!("Gabriel");
+        assert_eq!(
+            plan_spoken_notice(&named, "Brush my teeth", "Reminder"),
+            "Hey Gabriel, remember to brush your teeth."
+        );
+        named["userName"] = json!("");
+        assert_eq!(
+            plan_spoken_notice(&named, "Brush my teeth", "Reminder"),
+            "Hey, remember to brush your teeth."
+        );
+        named["userName"] = json!("   ");
+        assert_eq!(
+            plan_spoken_notice(&named, "Brush my teeth", "Reminder"),
+            "Hey, remember to brush your teeth."
+        );
+        assert!(
+            !plan_spoken_notice(&spoken("reminder"), "Brush my teeth", "Reminder")
+                .contains("Gabriel")
+        );
+        assert_eq!(sanitize_spoken_name("  Gabriel  "), "Gabriel");
+        assert_eq!(sanitize_spoken_name(""), "");
+        assert_eq!(sanitize_spoken_name(r#"{"name":"Gabriel"}"#), "");
+    }
+
+    #[test]
+    fn quiet_piper_pcm_reaches_full_scale_without_passing_it() {
+        assert!((notice_pcm_gain(0.2) - (0.97 / 0.2)).abs() < 0.001);
+        assert_eq!(notice_pcm_gain(0.99), 1.0);
+        assert_eq!(notice_pcm_gain(0.01), 1.0);
+        let mut quiet = vec![0.2f32, -0.1, 0.0];
+        amplify_notice_pcm(&mut quiet);
+        let peak = quiet
+            .iter()
+            .fold(0.0f32, |max, sample| max.max(sample.abs()));
+        assert!((peak - 0.97).abs() < 0.02, "{peak}");
+        let mut loud = vec![0.99f32, -0.4];
+        amplify_notice_pcm(&mut loud);
+        assert!((loud[0] - 0.99).abs() < 0.001);
+        let mut silent = vec![0.001f32, -0.001];
+        amplify_notice_pcm(&mut silent);
+        assert!((silent[0] - 0.001).abs() < 0.0001);
+        let mut samples = vec![0.2f32; 8];
+        amplify_notice_pcm(&mut samples);
+        assert!(samples.iter().all(|sample| sample.abs() <= 1.0));
     }
 }

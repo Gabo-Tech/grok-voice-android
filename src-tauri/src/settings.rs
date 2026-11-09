@@ -63,6 +63,9 @@ pub struct Settings {
     /// Normal, and a save that omits it keeps the stored mode.
     #[serde(default = "crate::notices::omitted_delivery")]
     pub notification_delivery: String,
+    /// Optional name spoken alerts may use. Empty keeps a plain "Hey".
+    #[serde(default)]
+    pub spoken_name: String,
 }
 
 impl Default for Settings {
@@ -87,6 +90,7 @@ impl Default for Settings {
             local_speech: "en".into(),
             locale: String::new(),
             notification_delivery: crate::notices::DELIVERY_NORMAL.into(),
+            spoken_name: String::new(),
         }
     }
 }
@@ -140,6 +144,7 @@ impl SettingsStore {
         } else {
             s.notification_delivery = crate::notices::stored_delivery(&s.notification_delivery);
         }
+        s.spoken_name = crate::notices::sanitize_spoken_name(&s.spoken_name);
         crate::files::write_private(&self.path, &serde_json::to_vec_pretty(&s)?)?;
         *self.inner.write().unwrap() = s.clone();
         Ok(s)
@@ -304,6 +309,23 @@ mod tests {
         assert!(text.contains("spoken out loud"));
         assert!(!text.contains("password"));
         assert!(edit_settings(&again.get(), &json!({"notificationDelivery": "sideways"})).is_err());
+        let named = edit_settings(&again.get(), &json!({"spokenName": "  Gabriel  "})).unwrap();
+        assert_eq!(named.settings.unwrap().spoken_name, "Gabriel");
+        let kept = edit_settings(
+            &Settings { spoken_name: "Gabriel".into(), ..Settings::default() },
+            &json!({"notificationDelivery": "spoken"}),
+        )
+        .unwrap();
+        assert_eq!(kept.settings.unwrap().spoken_name, "Gabriel");
+        let cleared = edit_settings(
+            &Settings { spoken_name: "Gabriel".into(), ..Settings::default() },
+            &json!({"spokenName": ""}),
+        )
+        .unwrap();
+        assert!(cleared.settings.unwrap().spoken_name.is_empty());
+        assert_eq!(crate::notices::sanitize_spoken_name("Gabriel"), "Gabriel");
+        assert!(describe_settings(&Settings { spoken_name: "Gabriel".into(), ..Settings::default() }, &[]).to_string().contains("Gabriel"));
+        assert!(!describe_settings(&Settings::default(), &[]).to_string().contains("Gabriel"));
         let _ = fs::remove_file(&path);
     }
 }
@@ -333,8 +355,13 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
     } else {
         "normal"
     };
+    let named = if settings.spoken_name.is_empty() {
+        "No spoken name is saved.".to_string()
+    } else {
+        format!("Spoken alerts say {}.", settings.spoken_name)
+    };
     let detail = format!(
-        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. {order} Days before a birthday stay on that person.",
+        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. {order} Days before a birthday stay on that person.",
         settings.idle_timeout_secs
     );
     json!({
@@ -360,6 +387,7 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
         } else {
             crate::notices::DELIVERY_NORMAL
         },
+        "spokenName": settings.spoken_name,
         "detail": detail
     })
 }
@@ -382,7 +410,7 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     let unknown: Vec<&str> = object.keys().filter(|key| !known_setting(key)).map(|key| key.as_str()).collect();
     if !unknown.is_empty() {
         return Err(format!(
-            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
+            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, spoken name, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
             unknown.join(", ")
         ));
     }
@@ -484,6 +512,16 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
             "normal"
         };
         notes.push(format!("Notifications are {alerts}."));
+    }
+    if args.get("spokenName").is_some() || args.get("userName").is_some() || args.get("myName").is_some() {
+        let raw = first_string(args, &["spokenName", "userName", "myName"]).unwrap_or_default();
+        next.spoken_name = crate::notices::sanitize_spoken_name(&raw);
+        changed = true;
+        if next.spoken_name.is_empty() {
+            notes.push("Spoken alerts will not use a name.".into());
+        } else {
+            notes.push(format!("Spoken alerts will say {}.", next.spoken_name));
+        }
     }
 
     let mut pending = None;
@@ -599,6 +637,9 @@ fn known_setting(key: &str) -> bool {
             | "speakNotifications"
             | "readAloud"
             | "spokenNotifications"
+            | "spokenName"
+            | "userName"
+            | "myName"
     )
 }
 

@@ -386,7 +386,11 @@ pub fn synthesize_notice(model: &str, tokens: &str, data: &str, text: &str) -> R
     }
     let cap = (rate.max(16_000) as usize).saturating_mul(30);
     let count = (n as usize).min(cap);
-    let pcm = unsafe { std::slice::from_raw_parts(samples, count) };
+    // Piper peaks far below full scale (often around 0.2), so the alarm stream
+    // sounds quiet even when the user has not turned it down. Lift the peak to
+    // just under clipping. The phone then plays that at the alarm volume they set.
+    let mut pcm = unsafe { std::slice::from_raw_parts(samples, count) }.to_vec();
+    crate::notices::amplify_notice_pcm(&mut pcm);
     let out: Vec<i16> = pcm.iter().copied().map(crate::audio::resample::f32_to_i16).collect();
     unsafe { gv_free(samples.cast()) };
     if rate > 0 {

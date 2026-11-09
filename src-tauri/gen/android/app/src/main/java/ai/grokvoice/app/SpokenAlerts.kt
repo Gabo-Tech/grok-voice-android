@@ -8,6 +8,9 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.MediaPlayer
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -43,7 +46,20 @@ object SpokenAlerts {
     Thread(runnable, "spoken-notice")
   }
 
-  fun enqueue(context: Context, id: Int, kind: String, title: String, body: String, channelId: String, category: String) {
+  fun isSpoken(context: Context): Boolean {
+    return readSettings(context).optString("notificationDelivery", "") == "spoken"
+  }
+
+  fun enqueue(
+    context: Context,
+    id: Int,
+    kind: String,
+    title: String,
+    body: String,
+    channelId: String,
+    category: String,
+    bannerAudible: Boolean = false,
+  ) {
     val app = context.applicationContext
     val file = File(appRoot(app), "settings.json")
     if (!file.isFile) {
@@ -56,7 +72,7 @@ object SpokenAlerts {
       return
     }
     Log.i(TAG, "spoken notice delivery=spoken kind=$kind settings=${file.path}")
-    val intent = SpokenNoticeService.intent(app, id, kind, title, body, channelId, category)
+    val intent = SpokenNoticeService.intent(app, id, kind, title, body, channelId, category, bannerAudible)
     try {
       ContextCompat.startForegroundService(app, intent)
     } catch (t: Throwable) {
@@ -84,10 +100,11 @@ object SpokenAlerts {
     val body = intent.getStringExtra("body") ?: ""
     val channelId = intent.getStringExtra("channelId") ?: ""
     val category = intent.getStringExtra("category") ?: "reminder"
+    val bannerAudible = intent.getBooleanExtra("bannerAudible", false)
     worker.execute {
       val wake = wakeLock(app)
       try {
-        speak(app, id, kind, title, body, channelId, category)
+        speak(app, id, kind, title, body, channelId, category, bannerAudible)
       } catch (t: Throwable) {
         Log.w(TAG, "spoken notice failed", t)
       } finally {
@@ -97,7 +114,16 @@ object SpokenAlerts {
     }
   }
 
-  private fun speak(context: Context, id: Int, kind: String, title: String, body: String, channelId: String, category: String) {
+  private fun speak(
+    context: Context,
+    id: Int,
+    kind: String,
+    title: String,
+    body: String,
+    channelId: String,
+    category: String,
+    bannerAudible: Boolean,
+  ) {
     if (!RustBridge.loadCore()) {
       Log.w(TAG, "spoken notice skipped: Rust core failed to load")
       return
@@ -109,11 +135,10 @@ object SpokenAlerts {
       return
     }
     Log.i(TAG, "spoken notice saying: $line")
-    // The notification tone starts as the banner is posted. Give it a moment so
-    // the sentence is not covered by that sound.
-    try {
-      Thread.sleep(600)
-    } catch (_: InterruptedException) {
+    // Spoken delivery posts on a silent channel. If that banner still has a
+    // sound, wait it out so the voice never talks over the chime.
+    if (bannerAudible) {
+      waitForBannerSound(context, channelId)
     }
     waitForTalk()
     if (RustBridge.talkOutputBusy()) {
@@ -158,9 +183,17 @@ object SpokenAlerts {
     var bypass = false
     if (nm != null && channelId.isNotEmpty()) {
       val channel = nm.getNotificationChannel(channelId)
+      val audibleId = channelId.removeSuffix("_spoken")
+      val audible = if (audibleId != channelId) nm.getNotificationChannel(audibleId) else null
       if (channel != null) {
         blocked = channel.importance == NotificationManager.IMPORTANCE_NONE
         bypass = channel.canBypassDnd()
+      }
+      // The audible category channel keeps the user's Do Not Disturb choice.
+      // Spoken delivery posts on a silent sibling, so follow that choice too.
+      if (audible != null) {
+        blocked = blocked || audible.importance == NotificationManager.IMPORTANCE_NONE
+        bypass = bypass || audible.canBypassDnd()
       }
     }
     val filter = when (nm?.currentInterruptionFilter) {
@@ -181,6 +214,7 @@ object SpokenAlerts {
     }
     return JSONObject()
       .put("delivery", settings.optString("notificationDelivery", ""))
+      .put("userName", settings.optString("spokenName", ""))
       .put("locale", settings.optString("locale", ""))
       .put("phoneLang", Locale.getDefault().toLanguageTag())
       .put("dueInMinutes", due.first)
@@ -272,6 +306,41 @@ object SpokenAlerts {
     }
   }
 
+  /** Sleeps for the banner chime when this post could not be silenced. */
+  private fun waitForBannerSound(context: Context, channelId: String) {
+    val nm = context.getSystemService(NotificationManager::class.java)
+    val uri = if (nm != null && channelId.isNotEmpty()) {
+      nm.getNotificationChannel(channelId)?.sound
+    } else {
+      null
+    }
+    val sound = uri ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    val ms = soundDurationMs(context, sound)
+    Log.i(TAG, "spoken notice waiting ${ms}ms for the banner sound to finish")
+    try {
+      Thread.sleep(ms.coerceIn(200L, 8_000L))
+    } catch (_: InterruptedException) {
+    }
+  }
+
+  private fun soundDurationMs(context: Context, uri: Uri): Long {
+    val player = MediaPlayer()
+    return try {
+      player.setDataSource(context, uri)
+      player.prepare()
+      val duration = player.duration.toLong()
+      if (duration > 0L) duration + 150L else 2_500L
+    } catch (t: Exception) {
+      Log.w(TAG, "spoken notice could not time the banner sound", t)
+      2_500L
+    } finally {
+      try {
+        player.release()
+      } catch (_: Exception) {
+      }
+    }
+  }
+
   private fun inCall(am: AudioManager): Boolean {
     return when (am.mode) {
       AudioManager.MODE_IN_CALL,
@@ -293,6 +362,7 @@ object SpokenAlerts {
   private fun requestFocus(am: AudioManager): AudioFocusRequest? {
     val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
       .setAudioAttributes(alarmAttributes())
+      .setWillPauseWhenDucked(false)
       .setOnAudioFocusChangeListener { }
       .build()
     return if (am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) request else null
@@ -371,6 +441,9 @@ object SpokenAlerts {
         Log.w(TAG, "spoken notice audio track was not initialized")
         return false
       }
+      // Full alarm-stream level. Rust already lifted quiet Piper peaks up to
+      // just under clipping. Do not raise the stream; the user's alarm volume is the ceiling.
+      track.setVolume(1f)
       track.play()
       if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
         Log.w(TAG, "spoken notice playback did not start state=${track.playState}")
@@ -482,7 +555,11 @@ object SpokenAlerts {
         latch.countDown()
       }
     })
-    val queued = tts.speak(line, TextToSpeech.QUEUE_FLUSH, Bundle(), "gv-notice")
+    val params = Bundle()
+    // 1.0 is the engine maximum relative to the alarm stream. Some engines play
+    // quieter than the stream when this is left unset.
+    params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+    val queued = tts.speak(line, TextToSpeech.QUEUE_FLUSH, params, "gv-notice")
     if (queued == TextToSpeech.ERROR) {
       Log.w(TAG, "spoken notice TTS rejected the sentence")
       shutdownTts(tts)

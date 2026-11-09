@@ -369,6 +369,24 @@ export function MorePage({
               <span className="block text-base">{t("Spoken out loud")}</span>
               <span className="mt-1 block text-sm leading-5">{t("Show the notification and read it out loud.")}</span>
             </button>
+            <Field
+              label={t("Your name")}
+              hint={t("Optional. Spoken alerts can say it. Leave this empty for a plain hey.")}
+            >
+              <Input
+                key={settings.spokenName ?? ""}
+                defaultValue={settings.spokenName ?? ""}
+                autoComplete="given-name"
+                onBlur={(e) => {
+                  const spokenName = e.target.value.trim();
+                  if ((settings.spokenName ?? "") === spokenName) return;
+                  const savedSettings = { ...settings, spokenName };
+                  setSettings(savedSettings);
+                  void api.saveSettings(savedSettings).then(setSettings).catch(() => {});
+                }}
+              />
+            </Field>
+            <p className="px-1 text-sm leading-6 text-muted-foreground">{t("Spoken alerts use the alarm volume.")}</p>
           </div>
         ) : (
           <p className="mt-4 px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>

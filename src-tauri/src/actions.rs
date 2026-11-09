@@ -390,11 +390,11 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["confirmed"]
         })),
-        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, voice order, and whether notifications are normal or spoken out loud.", json!({
+        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, voice order, whether notifications are normal or spoken out loud, and spokenName when one is saved.", json!({
             "type": "object",
             "properties": {}
         })),
-        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. Also voice, model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
+        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. Also voice, model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
             "type": "object",
             "properties": {
                 "language": { "type": "string" },
@@ -412,6 +412,7 @@ pub fn tool_definitions() -> Value {
                 "echoGuard": { "type": "boolean" },
                 "wakeThreshold": { "type": "number" },
                 "notificationDelivery": { "type": "string" },
+                "spokenName": { "type": "string" },
                 "speakNotifications": { "type": "boolean" },
                 "notifyDays": { "type": "integer" },
                 "birthdayLeadDays": { "type": "integer" },

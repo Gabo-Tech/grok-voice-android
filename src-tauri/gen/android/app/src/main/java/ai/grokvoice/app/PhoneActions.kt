@@ -91,10 +91,16 @@ object PhoneActions {
   fun notify(context: Context, id: Int, kind: String, title: String, note: String) {
     val alarm = kind == "alarm" || kind == "timer" || kind == "countdown"
     val event = kind == "event" || kind == "calendar"
-    val channel = if (alarm) ALARM_CHANNEL else REMINDER_CHANNEL
+    val audibleChannel = if (alarm) ALARM_CHANNEL else REMINDER_CHANNEL
+    val spoken = SpokenAlerts.isSpoken(context)
+    // Spoken posts on a silent sibling so the existing audible channel, and any
+    // sound the user set on it, stays exactly as it is for Normal delivery.
+    val channel = if (spoken) spokenChannelId(audibleChannel) else audibleChannel
     val nm = context.getSystemService(NotificationManager::class.java)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      if (nm.getNotificationChannel(channel) == null) {
+      if (spoken) {
+        ensureSpokenChannel(nm, channel, audibleChannel, alarm)
+      } else if (nm.getNotificationChannel(channel) == null) {
         val importance = NotificationManager.IMPORTANCE_HIGH
         val created = NotificationChannel(
           channel,
@@ -118,7 +124,7 @@ object PhoneActions {
       PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
     val text = if (note.isBlank()) kind.replaceFirstChar { it.uppercase() } else note
-    val n = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       Notification.Builder(context, channel)
     } else {
       @Suppress("DEPRECATION")
@@ -136,7 +142,10 @@ object PhoneActions {
           else -> Notification.CATEGORY_REMINDER
         }
       )
-      .build()
+    if (spoken && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      builder.setSilent(true)
+    }
+    val n = builder.build()
     val posted = try {
       nm.notify(if (id == 0) 1 else id, n)
       true
@@ -150,8 +159,60 @@ object PhoneActions {
         event -> "event"
         else -> "reminder"
       }
-      SpokenAlerts.enqueue(context, id, kind, title.ifBlank { "Grok" }, text, channel, category)
+      val bannerAudible = spoken && channelHasSound(nm, channel)
+      SpokenAlerts.enqueue(context, id, kind, title.ifBlank { "Grok" }, text, channel, category, bannerAudible)
     }
+  }
+
+  private fun spokenChannelId(base: String): String = "${base}_spoken"
+
+  /**
+   * New channel, so creating it with no sound does not rewrite grok_alarms or
+   * grok_reminders. Importance and Do Not Disturb bypass are copied from the
+   * audible channel when that one already exists. A later user sound on this
+   * channel is left in place; speech waits for it.
+   */
+  private fun ensureSpokenChannel(nm: NotificationManager, id: String, audibleId: String, alarm: Boolean) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val audible = nm.getNotificationChannel(audibleId)
+    val existing = nm.getNotificationChannel(id)
+    if (existing != null) {
+      if (audible?.canBypassDnd() == true && !existing.canBypassDnd()) {
+        try {
+          existing.setBypassDnd(true)
+          nm.createNotificationChannel(existing)
+        } catch (_: SecurityException) {
+        }
+      }
+      return
+    }
+    val importance = if (audible?.importance == NotificationManager.IMPORTANCE_NONE) {
+      NotificationManager.IMPORTANCE_NONE
+    } else {
+      NotificationManager.IMPORTANCE_HIGH
+    }
+    val created = NotificationChannel(
+      id,
+      if (alarm) "Alarms and timers, spoken" else "Reminders, spoken",
+      importance
+    )
+    created.setSound(null, null)
+    created.enableVibration(false)
+    created.description = "Visual banner while this alert is spoken. No chime."
+    if (audible?.canBypassDnd() == true) {
+      try {
+        created.setBypassDnd(true)
+      } catch (_: SecurityException) {
+      }
+    }
+    nm.createNotificationChannel(created)
+  }
+
+  private fun channelHasSound(nm: NotificationManager, channelId: String): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+    val channel = nm.getNotificationChannel(channelId) ?: return false
+    if (channel.importance < NotificationManager.IMPORTANCE_DEFAULT) return false
+    return channel.sound != null
   }
 
   fun listEvents(context: Context, startMs: Long, endMs: Long): String {

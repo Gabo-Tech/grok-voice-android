@@ -108,6 +108,7 @@ class SpokenNoticeService : Service() {
       body: String,
       channelId: String,
       category: String,
+      bannerAudible: Boolean,
     ): Intent {
       return Intent(context, SpokenNoticeService::class.java)
         .putExtra("id", id)
@@ -116,6 +117,7 @@ class SpokenNoticeService : Service() {
         .putExtra("body", body)
         .putExtra("channelId", channelId)
         .putExtra("category", category)
+        .putExtra("bannerAudible", bannerAudible)
     }
   }
 }
