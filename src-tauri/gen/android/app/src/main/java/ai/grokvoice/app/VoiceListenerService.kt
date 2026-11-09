@@ -233,9 +233,11 @@ class VoiceListenerService : Service() {
   private var lastLockAt = 0L
   private var lastReopenAt = 0L
   private var needsPosted = false
-  private val watchdog = Runnable {
-    watchdogTick()
-    mainHandler.postDelayed(watchdog, 15_000)
+  private val watchdog: Runnable = object : Runnable {
+    override fun run() {
+      watchdogTick()
+      mainHandler.postDelayed(this, 15_000)
+    }
   }
 
   override fun onBind(intent: Intent?): IBinder? = null
