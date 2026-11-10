@@ -62,15 +62,25 @@ class SpokenNoticeService : Service() {
   private fun speakingNotification(intent: Intent): Notification {
     val channelId = CHANNEL_ID
     val nm = getSystemService(NotificationManager::class.java)
-    if (nm?.getNotificationChannel(channelId) == null && nm != null) {
-      val channel = NotificationChannel(channelId, "Spoken alerts", NotificationManager.IMPORTANCE_DEFAULT)
-      channel.setSound(null, null)
-      channel.enableVibration(false)
-      channel.description = "Stays up while a reminder is spoken aloud"
-      nm.createNotificationChannel(channel)
+    val localized = AppLocale.wrap(this)
+    val channelName = localized.getString(R.string.channel_spoken_alerts)
+    val channelDesc = localized.getString(R.string.channel_spoken_alerts_desc)
+    if (nm != null) {
+      val existing = nm.getNotificationChannel(channelId)
+      if (existing == null) {
+        val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_DEFAULT)
+        channel.setSound(null, null)
+        channel.enableVibration(false)
+        channel.description = channelDesc
+        nm.createNotificationChannel(channel)
+      } else if (existing.name != channelName || existing.description != channelDesc) {
+        existing.name = channelName
+        existing.description = channelDesc
+        nm.createNotificationChannel(existing)
+      }
     }
     val title = intent.getStringExtra("title")?.ifBlank { "Grok" } ?: "Grok"
-    val body = intent.getStringExtra("body").orEmpty().ifBlank { "Speaking" }
+    val body = intent.getStringExtra("body").orEmpty().ifBlank { localized.getString(R.string.spoken_fallback_body) }
     val category = when (intent.getStringExtra("category")) {
       "alarm" -> Notification.CATEGORY_ALARM
       "event" -> Notification.CATEGORY_EVENT

@@ -103,7 +103,7 @@ export function AssistantView({
           {clock ? <p className="pt-1 text-sm tabular-nums text-muted-foreground">{clock}</p> : null}
         </div>
         <p className="mt-2 inline-flex min-h-8 items-center border border-border px-2 text-sm text-foreground">
-          {inCall ? `${t("Using")} ${provider}` : accounts.length === 0 ? t("No voice yet") : provider}
+          {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
         </p>
       </header>
 

@@ -97,14 +97,18 @@ object PhoneActions {
     // sound the user set on it, stays exactly as it is for Normal delivery.
     val channel = if (spoken) spokenChannelId(audibleChannel) else audibleChannel
     val nm = context.getSystemService(NotificationManager::class.java)
+    val localized = AppLocale.wrap(context)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       if (spoken) {
-        ensureSpokenChannel(nm, channel, audibleChannel, alarm)
-      } else if (nm.getNotificationChannel(channel) == null) {
+        ensureSpokenChannel(localized, nm, channel, audibleChannel, alarm)
+      } else {
+        val name = localized.getString(if (alarm) R.string.channel_alarms else R.string.channel_reminders)
+        val existing = nm.getNotificationChannel(channel)
+        if (existing == null) {
         val importance = NotificationManager.IMPORTANCE_HIGH
         val created = NotificationChannel(
           channel,
-          if (alarm) "Alarms and timers" else "Reminders",
+          name,
           importance
         )
         if (alarm) {
@@ -116,6 +120,10 @@ object PhoneActions {
           created.enableVibration(true)
         }
         nm.createNotificationChannel(created)
+        } else if (existing.name != name) {
+          existing.name = name
+          nm.createNotificationChannel(existing)
+        }
       }
     }
     val open = PendingIntent.getActivity(
@@ -123,7 +131,7 @@ object PhoneActions {
       Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
       PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
-    val text = if (note.isBlank()) kind.replaceFirstChar { it.uppercase() } else note
+    val text = if (note.isBlank()) kindLabel(localized, kind) else note
     val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       Notification.Builder(context, channel)
     } else {
@@ -178,11 +186,28 @@ object PhoneActions {
    * audible channel when that one already exists. A later user sound on this
    * channel is left in place; speech waits for it.
    */
-  private fun ensureSpokenChannel(nm: NotificationManager, id: String, audibleId: String, alarm: Boolean) {
+  private fun kindLabel(context: Context, kind: String): String {
+    val id = when (kind) {
+      "alarm" -> R.string.widget_fallback_alarm
+      "timer", "countdown" -> R.string.widget_fallback_countdown
+      "event", "calendar" -> R.string.widget_fallback_event
+      else -> R.string.widget_fallback_reminder
+    }
+    return context.getString(id)
+  }
+
+  private fun ensureSpokenChannel(context: Context, nm: NotificationManager, id: String, audibleId: String, alarm: Boolean) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val audible = nm.getNotificationChannel(audibleId)
     val existing = nm.getNotificationChannel(id)
+    val name = context.getString(if (alarm) R.string.channel_alarms_spoken else R.string.channel_reminders_spoken)
+    val description = context.getString(R.string.channel_spoken_banner_desc)
     if (existing != null) {
+      if (existing.name != name || existing.description != description) {
+        existing.name = name
+        existing.description = description
+        nm.createNotificationChannel(existing)
+      }
       if (audible?.canBypassDnd() == true && !existing.canBypassDnd()) {
         try {
           existing.setBypassDnd(true)
@@ -199,12 +224,12 @@ object PhoneActions {
     }
     val created = NotificationChannel(
       id,
-      if (alarm) "Alarms and timers, spoken" else "Reminders, spoken",
+      name,
       importance
     )
     created.setSound(null, null)
     created.enableVibration(false)
-    created.description = "Visual banner while this alert is spoken. No chime."
+    created.description = description
     if (audible?.canBypassDnd() == true) {
       try {
         created.setBypassDnd(true)

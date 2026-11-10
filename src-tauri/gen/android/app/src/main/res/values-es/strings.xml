@@ -21,4 +21,44 @@
     <string name="update_title">Actualización de Grok Voice</string>
     <string name="update_text">La versión %1$s está lista para descargar.</string>
     <string name="update_action">Descargar</string>
+
+    <string name="widget_brand">Grok</string>
+    <string name="widget_listen_on">La escucha en segundo plano está activa</string>
+    <string name="widget_listen_off">La escucha en segundo plano está apagada</string>
+    <string name="widget_listen_start">Escuchar en segundo plano</string>
+    <string name="widget_listen_now">Escuchar ahora</string>
+    <string name="widget_reminders_title">Recordatorios</string>
+    <string name="widget_reminders_empty">Aún no hay recordatorios</string>
+    <string name="widget_schedule_title">Próximamente</string>
+    <string name="widget_schedule_empty">Nada programado</string>
+    <string name="widget_fallback_reminder">Recordatorio</string>
+    <string name="widget_fallback_countdown">Cuenta atrás</string>
+    <string name="widget_fallback_alarm">Alarma</string>
+    <string name="widget_fallback_event">Evento</string>
+    <string name="widget_all_day">Todo el día</string>
+    <string name="widget_now">ahora</string>
+    <string name="channel_handoff">Abrir otra app</string>
+    <string name="handoff_title_call">Abrir la llamada</string>
+    <string name="handoff_title_text">Abrir el mensaje</string>
+    <string name="handoff_title_share">Abrir para compartir</string>
+    <string name="handoff_title_whatsapp">Abrir WhatsApp</string>
+    <string name="handoff_title_signal">Abrir Signal</string>
+    <string name="handoff_title_email">Abrir el correo</string>
+    <string name="handoff_title_youtube">Abrir YouTube</string>
+    <string name="handoff_title_browser">Abrir el navegador</string>
+    <string name="handoff_open_text">Toca para abrir el borrador</string>
+    <string name="share_title">Compartir</string>
+    <string name="channel_alarms">Alarmas y temporizadores</string>
+    <string name="channel_reminders">Recordatorios</string>
+    <string name="channel_alarms_spoken">Alarmas y temporizadores, en voz alta</string>
+    <string name="channel_reminders_spoken">Recordatorios, en voz alta</string>
+    <string name="channel_spoken_banner_desc">Aviso visual mientras se dice en voz alta. Sin sonido.</string>
+    <string name="channel_spoken_alerts">Alertas en voz alta</string>
+    <string name="channel_spoken_alerts_desc">Sigue visible mientras se dice un recordatorio.</string>
+    <string name="spoken_fallback_body">Hablando</string>
+    <string name="channel_listen_health">Escuchar</string>
+    <string name="channel_listen_health_desc">Cuando la escucha en segundo plano necesita la app abierta</string>
+    <string name="listen_needs_app_title">Escuchar en segundo plano</string>
+    <string name="listen_needs_app_text">Abre Grok Voice para que Hey Grok siga escuchando.</string>
 </resources>
+

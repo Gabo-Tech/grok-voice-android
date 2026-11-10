@@ -13,9 +13,10 @@ import android.service.quicksettings.TileService
 class TalkTile : TileService() {
   override fun onStartListening() {
     val tile = qsTile ?: return
-    tile.label = getString(R.string.tile_talk)
+    val localized = AppLocale.wrap(this)
+    tile.label = localized.getString(R.string.tile_talk)
     if (Build.VERSION.SDK_INT >= 29) {
-      tile.subtitle = HomeWidgets.nextReminder(this).ifBlank { getString(R.string.tile_talk_idle) }
+      tile.subtitle = HomeWidgets.nextReminder(this).ifBlank { localized.getString(R.string.tile_talk_idle) }
     }
     tile.state = Tile.STATE_INACTIVE
     tile.updateTile()

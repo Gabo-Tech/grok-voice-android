@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, errorText, type DebugInfo, type Settings } from "@/lib/api";
+import { fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 function fmtBytes(n: number) {
@@ -57,6 +58,7 @@ export function DebugPanel({
   onSignedOut: () => void;
   onReplayTour: () => void;
 }) {
+  const t = useT();
   const [info, setInfo] = useState<DebugInfo | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -118,26 +120,26 @@ export function DebugPanel({
   return (
     <div className="space-y-4">
       <p className="px-1 text-sm leading-6 text-muted-foreground">
-        Logs, echo guard, and wake sensitivity. Voice keys, packs, and the daily budget are on the Settings screen you just left.
+        {t("Logs, echo guard, and wake sensitivity. Voice keys, packs, and the daily budget are on the Settings screen you just left.")}
       </p>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
-            <ShieldCheck className="size-4 text-primary" /> Token & vault
+            <ShieldCheck className="size-4 text-primary" /> {t("Token & vault")}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Row k="API key" v={info?.keyHint ?? "none"} tone={info?.keyHint ? "ok" : "bad"} />
+          <Row k={t("API key")} v={info?.keyHint ?? t("none")} tone={info?.keyHint ? "ok" : "bad"} />
           <Row
-            k="Vault key protection"
-            v={info?.vaultSecurityLevel ?? "locked"}
+            k={t("Vault key protection")}
+            v={info?.vaultSecurityLevel ?? t("locked")}
             tone={vaultTone(info?.vaultSecurityLevel ?? null)}
           />
-          <Row k="Storage" v="Stronghold snapshot (app-private)" />
-          <Row k="Last ephemeral token" v={fmtTime(info?.tokenMintedAtMs ?? null)} />
+          <Row k={t("Storage")} v={t("Stronghold snapshot (app-private)")} />
+          <Row k={t("Last ephemeral token")} v={fmtTime(info?.tokenMintedAtMs ?? null)} />
           <Row
-            k="Token expiry"
-            v={expiresIn == null ? "—" : expiresIn > 0 ? `${expiresIn}s left` : "expired (re-minted per session)"}
+            k={t("Token expiry")}
+            v={expiresIn == null ? "—" : expiresIn > 0 ? fill("{n}s left", { n: expiresIn }) : t("expired (re-minted per session)")}
             tone={expiresIn != null && expiresIn > 0 ? "ok" : undefined}
           />
         </CardContent>
@@ -146,49 +148,49 @@ export function DebugPanel({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Activity className="size-4 text-primary" /> Realtime link
+            <Activity className="size-4 text-primary" /> {t("Realtime link")}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Row k="Phase" v={<Badge variant="outline">{info?.phase ?? voice.phase}</Badge>} />
+          <Row k={t("Phase")} v={<Badge variant="outline">{info?.phase ?? voice.phase}</Badge>} />
           <Row
-            k="WebSocket"
+            k={t("WebSocket")}
             v={info?.wsState ?? "—"}
             tone={info?.wsState === "open" ? "ok" : info?.wsState === "closed" ? undefined : "warn"}
           />
-          <Row k="Model" v={info?.model ?? settings?.model ?? "—"} />
-          <Row k="Sessions" v={info?.sessions ?? 0} />
-          <Row k="Uplink" v={`${info?.framesSent ?? 0} frames · ${fmtBytes(info?.bytesSent ?? 0)}`} />
+          <Row k={t("Model")} v={info?.model ?? settings?.model ?? "—"} />
+          <Row k={t("Sessions")} v={info?.sessions ?? 0} />
+          <Row k={t("Uplink")} v={`${info?.framesSent ?? 0} ${t("frames")} · ${fmtBytes(info?.bytesSent ?? 0)}`} />
           <Row
-            k="Dropped uplink frames"
+            k={t("Dropped uplink frames")}
             v={info?.framesDropped ?? 0}
             tone={(info?.framesDropped ?? 0) > 0 ? "warn" : undefined}
           />
-          <Row k="Downlink audio" v={`${info?.audioDeltas ?? 0} deltas · ${fmtBytes(info?.bytesReceived ?? 0)}`} />
-          <Row k="Server events" v={info?.eventsReceived ?? 0} />
-          <Row k="Last event" v={info?.lastEvent ?? "—"} />
+          <Row k={t("Downlink audio")} v={`${info?.audioDeltas ?? 0} ${t("deltas")} · ${fmtBytes(info?.bytesReceived ?? 0)}`} />
+          <Row k={t("Server events")} v={info?.eventsReceived ?? 0} />
+          <Row k={t("Last event")} v={info?.lastEvent ?? "—"} />
           <Separator className="my-2" />
-          <Row k="Mic" v={info?.micRate ? `${info.micRate} Hz → 16 kHz` : "closed"} />
+          <Row k={t("Mic")} v={info?.micRate ? `${info.micRate} Hz → 16 kHz` : t("closed")} />
           <Row
-            k="Mic path"
-            v={info?.micSource || "closed"}
+            k={t("Mic path")}
+            v={info?.micSource ? (info.micSource === "starting" ? t("starting") : info.micSource) : t("closed")}
             tone={info?.micSource === "audiorecord" || info?.micSource === "cpal" ? "ok" : info?.micSource === "starting" ? "warn" : undefined}
           />
-          <Row k="Listen preference" v={info?.listenPreference ? "on" : "off"} tone={info?.listenPreference ? "ok" : undefined} />
-          <Row k="Service armed" v={info?.serviceArmed ? "on" : "off"} tone={info?.serviceArmed ? "ok" : undefined} />
-          <Row k="Foreground service" v={info?.foregroundService ? "running" : "stopped"} tone={info?.foregroundService ? "ok" : undefined} />
-          <Row k="Screen" v={info?.screenInteractive ? "on" : "off"} />
-          <Row k="Activity" v={info?.activityResumed ? "visible" : "background"} />
-          <Row k="Last stop" v={info?.lastStopReason || "—"} tone={info?.lastStopReason ? "warn" : undefined} />
-          <Row k="Speaker" v={info?.speakerRate ? `24 kHz → ${info.speakerRate} Hz` : "closed"} />
-          <Row k="Wake word" v={info?.wakewordTrained ? "trained" : "not trained"} tone={info?.wakewordTrained ? "ok" : "warn"} />
-          <Row k="Last wake score" v={info?.lastWakeScore?.toFixed(3) ?? "—"} />
-          <Row k="Platform" v={info?.platform ?? "—"} />
-          {info?.lastError && <Row k="Last error" v={info.lastError} tone="bad" />}
+          <Row k={t("Listen preference")} v={info?.listenPreference ? t("on") : t("off")} tone={info?.listenPreference ? "ok" : undefined} />
+          <Row k={t("Service armed")} v={info?.serviceArmed ? t("on") : t("off")} tone={info?.serviceArmed ? "ok" : undefined} />
+          <Row k={t("Foreground service")} v={info?.foregroundService ? t("running") : t("stopped")} tone={info?.foregroundService ? "ok" : undefined} />
+          <Row k={t("Screen")} v={info?.screenInteractive ? t("on") : t("off")} />
+          <Row k={t("Activity")} v={info?.activityResumed ? t("visible") : t("background")} />
+          <Row k={t("Last stop")} v={info?.lastStopReason || "—"} tone={info?.lastStopReason ? "warn" : undefined} />
+          <Row k={t("Speaker")} v={info?.speakerRate ? `24 kHz → ${info.speakerRate} Hz` : t("closed")} />
+          <Row k={t("Wake word")} v={info?.wakewordTrained ? t("trained") : t("not trained")} tone={info?.wakewordTrained ? "ok" : "warn"} />
+          <Row k={t("Last wake score")} v={info?.lastWakeScore?.toFixed(3) ?? "—"} />
+          <Row k={t("Platform")} v={info?.platform ?? "—"} />
+          {info?.lastError && <Row k={t("Last error")} v={t(info.lastError)} tone="bad" />}
           {(info?.listenerHistory?.length ?? 0) > 0 && (
             <>
               <Separator className="my-2" />
-              <p className="py-1 text-xs text-muted-foreground">Background listener</p>
+              <p className="py-1 text-xs text-muted-foreground">{t("Background listener")}</p>
               <div className="max-h-40 space-y-0.5 overflow-y-auto font-mono text-xs leading-snug">
                 {info?.listenerHistory?.slice(-20).map((line, i) => (
                   <p key={`${line}-${i}`}>{line}</p>
@@ -202,7 +204,7 @@ export function DebugPanel({
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Terminal className="size-4 text-primary" /> Log
+            <Terminal className="size-4 text-primary" /> {t("Log")}
           </CardTitle>
           <Button size="sm" variant="ghost" onClick={voice.clearLogs}>
             <Trash2 />
@@ -211,7 +213,7 @@ export function DebugPanel({
         <CardContent>
           <ScrollArea className="h-56 rounded-md border bg-black/40 p-2">
             <div className="space-y-0.5 font-mono text-xs leading-snug">
-              {voice.logs.length === 0 && <p className="text-muted-foreground">No events yet.</p>}
+              {voice.logs.length === 0 && <p className="text-muted-foreground">{t("No events yet.")}</p>}
               {voice.logs
                 .slice()
                 .reverse()
@@ -235,21 +237,21 @@ export function DebugPanel({
       {settings && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Settings</CardTitle>
+            <CardTitle className="text-sm">{t("Settings")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="voice">Voice</Label>
+                <Label htmlFor="voice">{t("Voice")}</Label>
                 <Input id="voice" value={settings.voice} onChange={(e) => setSettings({ ...settings, voice: e.target.value })} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="model">Model</Label>
+                <Label htmlFor="model">{t("Model")}</Label>
                 <Input id="model" value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })} />
               </div>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="instructions">Instructions</Label>
+              <Label htmlFor="instructions">{t("Instructions")}</Label>
               <textarea
                 id="instructions"
                 rows={4}
@@ -260,7 +262,7 @@ export function DebugPanel({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="threshold">Wake threshold ({settings.wakeThreshold.toFixed(2)})</Label>
+                <Label htmlFor="threshold">{fill("Wake threshold ({n})", { n: settings.wakeThreshold.toFixed(2) })}</Label>
                 <input
                   id="threshold"
                   type="range"
@@ -273,7 +275,7 @@ export function DebugPanel({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="idle">Idle hang-up (s)</Label>
+                <Label htmlFor="idle">{t("Idle hang-up (s)")}</Label>
                 <Input
                   id="idle"
                   type="number"
@@ -286,26 +288,26 @@ export function DebugPanel({
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="echo">Speaker echo guard</Label>
+                <Label htmlFor="echo">{t("Speaker echo guard")}</Label>
                 <p className="text-sm leading-5 text-muted-foreground">
-                  Mutes the mic while Grok talks. Turn off with headphones to allow interrupting.
+                  {t("Mutes the mic while Grok talks. Turn off with headphones to allow interrupting.")}
                 </p>
               </div>
               <Switch id="echo" checked={settings.echoGuard} onCheckedChange={(v) => setSettings({ ...settings, echoGuard: v })} />
             </div>
             <Button className="w-full" onClick={() => void save()}>
-              <Save /> Save settings
+              <Save /> {t("Save settings")}
             </Button>
-            {saved && <p className="text-center text-xs text-muted-foreground">{saved}</p>}
+            {saved && <p className="text-center text-xs text-muted-foreground">{t(saved)}</p>}
           </CardContent>
         </Card>
       )}
 
       <Button variant="outline" className="w-full" onClick={() => void replay()}>
-        <Compass /> Replay setup tour
+        <Compass /> {t("Replay setup tour")}
       </Button>
       <Button variant="destructive" className="w-full" onClick={() => void signOut()}>
-        <LogOut /> Sign out (erase key from device)
+        <LogOut /> {t("Sign out (erase key from device)")}
       </Button>
     </div>
   );

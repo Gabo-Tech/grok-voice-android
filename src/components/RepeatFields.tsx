@@ -89,7 +89,7 @@ export function RepeatFields({
                   on ? "border-2 border-foreground font-medium text-foreground" : "border-border text-muted-foreground",
                 )}
               >
-                {day.label}
+                {t(day.label)}
               </button>
             );
           })}

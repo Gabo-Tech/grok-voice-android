@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { api, errorText, type WakewordStatus } from "@/lib/api";
+import { fill, useT } from "@/lib/i18n";
 
 const SECONDS = 2.2;
 
@@ -18,6 +19,7 @@ export function WakeView({
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const t = useT();
 
   const record = async (index: number) => {
     setMessage(null);
@@ -29,7 +31,7 @@ export function WakeView({
     }, 50);
     try {
       const info = await api.recordWakeSample(index, SECONDS);
-      setMessage({ ok: true, text: `Sample ${index + 1} captured (${info.durationMs} ms of speech).` });
+      setMessage({ ok: true, text: fill("Sample {n} captured ({ms} ms of speech).", { n: index + 1, ms: info.durationMs }) });
       onStatus(await api.wakewordStatus());
     } catch (e) {
       setMessage({ ok: false, text: errorText(e) });
@@ -64,11 +66,10 @@ export function WakeView({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Wand2 className="size-4 text-primary" /> Enroll “Hey Grok”
+          <Wand2 className="size-4 text-primary" /> {t("Enroll “Hey Grok”")}
         </CardTitle>
         <CardDescription>
-          Record yourself saying “Hey Grok” three times, in a quiet room, holding the phone the
-          way you normally would. The recordings stay on this phone.
+          {t("Record yourself saying “Hey Grok” three times, in a quiet room, holding the phone the way you normally would. The recordings stay on this phone.")}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -79,7 +80,7 @@ export function WakeView({
             ) : (
               <Circle className="size-5 text-muted-foreground" />
             )}
-            <span className="flex-1 text-sm">Sample {i + 1}</span>
+            <span className="flex-1 text-sm">{fill("Sample {n}", { n: i + 1 })}</span>
             <Button
               size="sm"
               variant={done ? "outline" : "default"}
@@ -87,7 +88,7 @@ export function WakeView({
               onClick={() => void record(i)}
             >
               {recording === i ? <Loader2 className="animate-spin" /> : <Mic />}
-              {recording === i ? "Speak now" : done ? "Redo" : "Record"}
+              {recording === i ? t("Speak now") : done ? t("Redo") : t("Record")}
             </Button>
           </div>
         ))}
@@ -95,20 +96,22 @@ export function WakeView({
         {recording !== null && <Progress value={progress} />}
 
         {message && (
-          <p className={message.ok ? "text-sm text-primary" : "text-sm text-destructive"}>{message.text}</p>
+          <p className={message.ok ? "text-sm text-primary" : "text-sm text-destructive"}>{t(message.text)}</p>
         )}
 
         <div className="flex gap-2 pt-2">
           <Button className="flex-1" disabled={!allRecorded || busy || recording !== null} onClick={() => void train()}>
             {busy ? <Loader2 className="animate-spin" /> : <Wand2 />}
-            {status.trained ? "Re-train" : "Train wake word"}
+            {status.trained ? t("Re-train") : t("Train wake word")}
           </Button>
           <Button variant="outline" disabled={busy || recording !== null} onClick={() => void reset()}>
-            <RotateCcw /> Reset
+            <RotateCcw /> {t("Reset")}
           </Button>
         </div>
         <p className="text-sm leading-6 text-muted-foreground">
-          Status: {status.trained ? "trained" : "not trained"}. Too many false wakes? Go back to Settings, open Debug, and raise Wake threshold.
+          {fill("Status: {state}. Too many false wakes? Go back to Settings, open Debug, and raise Wake threshold.", {
+            state: status.trained ? t("trained") : t("not trained"),
+          })}
         </p>
       </CardContent>
     </Card>

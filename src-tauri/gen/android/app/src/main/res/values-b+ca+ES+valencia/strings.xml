@@ -21,4 +21,44 @@
     <string name="update_title">Actualització de Grok Voice</string>
     <string name="update_text">"La versió %1$s de l'aplicació està llesta per descarregar."</string>
     <string name="update_action">Descarrega</string>
+
+    <string name="widget_brand">Grok</string>
+    <string name="widget_listen_on">L'escolta en segon pla està encesa</string>
+    <string name="widget_listen_off">L'escolta en segon pla està apagada</string>
+    <string name="widget_listen_start">Escoltar en segon pla</string>
+    <string name="widget_listen_now">Escolta ara</string>
+    <string name="widget_reminders_title">Recordatoris</string>
+    <string name="widget_reminders_empty">Encara no hi ha recordatoris</string>
+    <string name="widget_schedule_title">Tot seguit</string>
+    <string name="widget_schedule_empty">Res programat</string>
+    <string name="widget_fallback_reminder">Recordatori</string>
+    <string name="widget_fallback_countdown">Compte enrere</string>
+    <string name="widget_fallback_alarm">Alarma</string>
+    <string name="widget_fallback_event">Esdeveniment</string>
+    <string name="widget_all_day">Tot el dia</string>
+    <string name="widget_now">ara</string>
+    <string name="channel_handoff">Obri una altra app</string>
+    <string name="handoff_title_call">Obri la trucada</string>
+    <string name="handoff_title_text">Obri el missatge</string>
+    <string name="handoff_title_share">Obri per compartir</string>
+    <string name="handoff_title_whatsapp">Obri WhatsApp</string>
+    <string name="handoff_title_signal">Obri Signal</string>
+    <string name="handoff_title_email">Obri el correu</string>
+    <string name="handoff_title_youtube">Obri YouTube</string>
+    <string name="handoff_title_browser">Obri el navegador</string>
+    <string name="handoff_open_text">Toca per a obrir el borrador</string>
+    <string name="share_title">Compartix</string>
+    <string name="channel_alarms">Alarmes i temporitzadors</string>
+    <string name="channel_reminders">Recordatoris</string>
+    <string name="channel_alarms_spoken">Alarmes i temporitzadors, en veu alta</string>
+    <string name="channel_reminders_spoken">Recordatoris, en veu alta</string>
+    <string name="channel_spoken_banner_desc">Avís visual mentre es diu en veu alta. Sense so.</string>
+    <string name="channel_spoken_alerts">Avisos en veu alta</string>
+    <string name="channel_spoken_alerts_desc">Continua visible mentre es diu un recordatori.</string>
+    <string name="spoken_fallback_body">Parlant</string>
+    <string name="channel_listen_health">Escoltar</string>
+    <string name="channel_listen_health_desc">Quan l'escolta en segon pla necessita l'app oberta</string>
+    <string name="listen_needs_app_title">Escoltar en segon pla</string>
+    <string name="listen_needs_app_text">Obri Grok Voice perquè Hey Grok continue escoltant.</string>
 </resources>
+

@@ -382,11 +382,11 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
   const saveDate = async () => {
     if (!dateDraft) return;
     if (!dateDraft.date.trim()) {
-      setError(t("Each date needs a day."));
+      setError("Each date needs a day.");
       return;
     }
     if (dateDraft.label === "custom" && !dateDraft.title.trim()) {
-      setError(t("A custom date needs a name."));
+      setError("A custom date needs a name.");
       return;
     }
     const reminders = draft.reminders.slice();
@@ -410,11 +410,11 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
       return;
     }
     if (draft.reminders.some((reminder) => reminder.label === "custom" && !reminder.title.trim())) {
-      setError(t("A custom date needs a name."));
+      setError("A custom date needs a name.");
       return;
     }
     if (draft.reminders.some((reminder) => !reminder.date.trim())) {
-      setError(t("Each date needs a day."));
+      setError("Each date needs a day.");
       return;
     }
     const payload = payloadFrom({ ...draft, displayName });
@@ -448,32 +448,32 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
   if (screen === "pick") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageChrome title="Phone contacts" subtitle="Pick someone. Their number stays in Contacts." active={false}>
+        <PageChrome title={t("Phone contacts")} subtitle={t("Pick someone. Their number stays in Contacts.")} active={false}>
           <div className="mb-6">
-            <Field label="Search">
+            <Field label={t("Search")}>
               <Input
                 value={phoneQuery}
                 onChange={(e) => setPhoneQuery(e.target.value)}
-                placeholder="Name in Contacts"
-                aria-label="Search phone contacts"
+                placeholder={t("Name in Contacts")}
+                aria-label={t("Search phone contacts")}
               />
             </Field>
           </div>
-          {error && <Notice title={error} />}
+          {error && <Notice title={t(error)} />}
           {contactsAllowed === false ? (
             <div className="px-1">
-              <EmptyState title="Contacts access is off" body="Allow it to pick a phone contact, or go back and add someone without one." />
+              <EmptyState title={t("Contacts access is off")} body={t("Allow it to pick a phone contact, or go back and add someone without one.")} />
               <Button disabled={busy} onClick={() => void askContacts(phoneQuery)}>
-                Allow contacts
+                {t("Allow contacts")}
               </Button>
             </div>
           ) : phoneRows.length === 0 ? (
             <EmptyState
-              title={contactsAllowed === null || busy ? "Looking up contacts" : phoneQuery ? "No matches" : "No phone contacts"}
+              title={contactsAllowed === null || busy ? t("Looking up contacts") : phoneQuery ? t("No matches") : t("No phone contacts")}
               body={
                 contactsAllowed === null || busy
-                  ? "This stays on the phone."
-                  : "Try another name, or add someone without a phone contact."
+                  ? t("This stays on the phone.")
+                  : t("Try another name, or add someone without a phone contact.")
               }
             />
           ) : (
@@ -481,9 +481,9 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
               {phoneRows.map((contact) => (
                 <RowButton key={contact.id} onClick={() => chooseContact(contact)}>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-base leading-6 text-foreground">{contact.name || "Unnamed"}</p>
+                    <p className="truncate text-base leading-6 text-foreground">{contact.name || t("Unnamed")}</p>
                     <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
-                      {[contact.phone, contact.email].filter(Boolean).join(" · ") || "No phone or email"}
+                      {[contact.phone, contact.email].filter(Boolean).join(" · ") || t("No phone or email")}
                     </p>
                   </div>
                 </RowButton>
@@ -518,14 +518,14 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
-          <h2 className="px-1 text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || "Person" : "New person"}</h2>
+          <h2 className="px-1 text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || t("Person") : t("New person")}</h2>
           <p className="mt-1 px-1 text-xs leading-5 text-muted-foreground">
-            This record stays on the phone. It does not change the Contacts app.
+            {t("This record stays on the phone. It does not change the Contacts app.")}
           </p>
           <div className="mt-6 space-y-4">
-            <h3 className="text-base text-foreground">Who</h3>
-            <Field label="Name" error={screen === "edit" ? error : null}>
-              <Input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} placeholder="Ana Lopez" />
+            <h3 className="text-base text-foreground">{t("Who")}</h3>
+            <Field label={t("Name")} error={screen === "edit" && error ? t(error) : null}>
+              <Input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} placeholder={t("Ana Lopez")} />
             </Field>
             <DateList
               reminders={draft.reminders}
@@ -545,15 +545,15 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
                   : undefined
               }
             />
-            <Field label="Nickname">
-              <Input value={draft.nickname} onChange={(e) => setDraft({ ...draft, nickname: e.target.value })} placeholder="Mom" />
+            <Field label={t("Nickname")}>
+              <Input value={draft.nickname} onChange={(e) => setDraft({ ...draft, nickname: e.target.value })} placeholder={t("Mom")} />
             </Field>
-            <Field label="Aliases" hint="Comma separated. Voice matches these too.">
-              <Input value={draft.aliases} onChange={(e) => setDraft({ ...draft, aliases: e.target.value })} placeholder="mummy, ma" />
+            <Field label={t("Aliases")} hint={t("Comma separated. Voice matches these too.")}>
+              <Input value={draft.aliases} onChange={(e) => setDraft({ ...draft, aliases: e.target.value })} placeholder={t("mummy, ma")} />
             </Field>
             <h3 className="pt-2 text-base text-foreground">{t("How you reach them")}</h3>
             <div>
-              <p className="mb-2 text-sm text-muted-foreground">Preferred channel</p>
+              <p className="mb-2 text-sm text-muted-foreground">{t("Preferred channel")}</p>
               <div className="grid grid-cols-3 gap-2">
                 {CHANNELS.map((item) => (
                   <button
@@ -565,22 +565,22 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
                       draft.preferredChannel === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
                     )}
                   >
-                    {item.label}
+                    {t(item.label)}
                   </button>
                 ))}
               </div>
             </div>
-            <Field label="Phone override" hint="Leave blank to use the phone contact.">
+            <Field label={t("Phone override")} hint={t("Leave blank to use the phone contact.")}>
               <Input value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} placeholder="+1 555 0100" />
             </Field>
-            <Field label="Email override">
+            <Field label={t("Email override")}>
               <Input value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder="ana@example.com" />
             </Field>
-            <Field label="WhatsApp number">
-              <Input value={draft.whatsapp} onChange={(e) => setDraft({ ...draft, whatsapp: e.target.value })} placeholder="Uses the phone number if empty" />
+            <Field label={t("WhatsApp number")}>
+              <Input value={draft.whatsapp} onChange={(e) => setDraft({ ...draft, whatsapp: e.target.value })} placeholder={t("Uses the phone number if empty")} />
             </Field>
-            <Field label="Signal number">
-              <Input value={draft.signal} onChange={(e) => setDraft({ ...draft, signal: e.target.value })} placeholder="Uses the phone number if empty" />
+            <Field label={t("Signal number")}>
+              <Input value={draft.signal} onChange={(e) => setDraft({ ...draft, signal: e.target.value })} placeholder={t("Uses the phone number if empty")} />
             </Field>
             <button
               type="button"
@@ -590,8 +590,8 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
                 draft.favorite ? "border-foreground text-foreground" : "border-border text-muted-foreground",
               )}
             >
-              <span>Favorite</span>
-              <span>{draft.favorite ? "Pinned" : "Off"}</span>
+              <span>{t("Favorite")}</span>
+              <span>{draft.favorite ? t("Pinned") : t("Off")}</span>
             </button>
             <Field label={t("Reach out every")}>
               <Input
@@ -625,20 +625,20 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
             </div>
             <h3 className="pt-2 text-base text-foreground">{t("Note")}</h3>
             <Field label={t("Note")}>
-              <Textarea value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder="Call after 5" className="min-h-28" />
+              <Textarea value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder={t("Call after 5")} className="min-h-28" />
             </Field>
             <div className="border border-border px-3 py-3">
-              <p className="text-sm text-muted-foreground">Phone contact</p>
+              <p className="text-sm text-muted-foreground">{t("Phone contact")}</p>
               {draft.androidContactId ? (
                 <>
-                  <p className="mt-2 text-sm text-foreground">{linked?.name || "Linked"}</p>
+                  <p className="mt-2 text-sm text-foreground">{linked?.name || t("Linked")}</p>
                   {linkedLine && <p className="mt-1 text-sm text-muted-foreground">{linkedLine}</p>}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button
                       variant="outline"
                       onClick={() => void api.openPhoneContact(draft.androidContactId || "").catch((e) => setError(errorText(e)))}
                     >
-                      Open in Contacts
+                      {t("Open in Contacts")}
                     </Button>
                     <Button
                       variant="ghost"
@@ -647,15 +647,15 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
                         setLinked(null);
                       }}
                     >
-                      Unlink
+                      {t("Unlink")}
                     </Button>
                   </div>
                 </>
               ) : (
                 <>
-                  <p className="mt-2 text-sm text-muted-foreground">No phone contact. This person lives only in Grok Voice.</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{t("No phone contact. This person lives only in Grok Voice.")}</p>
                   <Button className="mt-3" variant="outline" onClick={() => openPicker("link")}>
-                    Link a phone contact
+                    {t("Link a phone contact")}
                   </Button>
                 </>
               )}
@@ -665,19 +665,19 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
         <div className="thumb-actions flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-background py-3">
           <ShareButton
             title={draft.displayName}
-            text={[draft.nickname, channelLabel(draft.preferredChannel), draft.phone, draft.email, draft.note].filter(Boolean).join("\n")}
+            text={[draft.nickname, draft.preferredChannel ? t(channelLabel(draft.preferredChannel)) : "", draft.phone, draft.email, draft.note].filter(Boolean).join("\n")}
           />
           {draft.id && (
             <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
-              <Trash2 /> Delete overlay
+              <Trash2 /> {t("Delete")}
             </Button>
           )}
           <div className="flex-1" />
           <Button variant="ghost" onClick={backPeople}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button disabled={busy || !draft.displayName.trim()} onClick={() => void save()}>
-            Save
+            {t("Save")}
           </Button>
         </div>
       </div>
@@ -688,17 +688,17 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
     <div className="flex min-h-0 flex-1 flex-col">
       <PageChrome title={t("People")} subtitle={`${people.length} ${t("saved on this phone")}`} onAdd={openCreate} addLabel={t("Add person")} active={active && screen === "list"}>
         <p className="mb-6 px-1 text-sm leading-6 text-muted-foreground">
-          Nicknames and how you reach someone. Phone numbers and email still come from Contacts.
+          {t("Nicknames and how you reach someone. Phone numbers and email still come from Contacts.")}
         </p>
         {(people.length > 0 || query) && (
         <div className="mb-6">
-          <Field label="Search">
+          <Field label={t("Search")}>
             <div className="relative">
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name, nickname, or alias"
-                aria-label="Search people"
+                placeholder={t("Name, nickname, or alias")}
+                aria-label={t("Search people")}
                 className="pr-16"
               />
               {query && (
@@ -707,40 +707,40 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
                   className="absolute top-0 right-0 h-12 px-3 text-sm text-foreground"
                   onClick={() => setQuery("")}
                 >
-                  Clear
+                  {t("Clear")}
                 </button>
               )}
             </div>
           </Field>
         </div>
         )}
-        {error && <Notice title={error} />}
+        {error && <Notice title={t(error)} />}
         {visible.favorites.length === 0 && visible.rest.length === 0 ? (
           <EmptyState
             title={query ? t("No matches") : t("No people yet")}
-            body={query ? "Try another name." : "Tap + to pick a phone contact, or add someone with only a nickname."}
-            actionLabel={query ? "Clear search" : "Add person"}
+            body={query ? t("Try another name.") : t("Tap + to pick a phone contact, or add someone with only a nickname.")}
+            actionLabel={query ? t("Clear search") : t("Add person")}
             onAction={query ? () => setQuery("") : openCreate}
           />
         ) : (
           <div className="space-y-6">
             {visible.favorites.length > 0 && <PersonGroup title={t("Favorites")} people={visible.favorites} onOpen={openEdit} />}
-            {visible.rest.length > 0 && <PersonGroup title="A–Z" people={visible.rest} onOpen={openEdit} />}
+            {visible.rest.length > 0 && <PersonGroup title={t("A–Z")} people={visible.rest} onOpen={openEdit} />}
           </div>
         )}
       </PageChrome>
       <Sheet
         open={adding}
-        title="Add person"
+        title={t("Add person")}
         onClose={() => setAdding(false)}
         footer={
           <Button variant="ghost" onClick={() => setAdding(false)}>
-            Cancel
+            {t("Cancel")}
           </Button>
         }
       >
         <p className="mb-4 text-sm leading-6 text-muted-foreground">
-          Pick someone from the phone, or keep them only in Grok Voice. Deleting here does not delete the contact.
+          {t("Pick someone from the phone, or keep them only in Grok Voice. Deleting here does not delete the contact.")}
         </p>
         <div className="divide-y divide-border border-y border-border">
           <RowButton
@@ -750,8 +750,8 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
             }}
           >
             <div>
-              <p className="text-base text-foreground">From phone contacts</p>
-              <p className="mt-1 text-sm text-muted-foreground">Asks for contacts access if it is off.</p>
+              <p className="text-base text-foreground">{t("From phone contacts")}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{t("Asks for contacts access if it is off.")}</p>
             </div>
           </RowButton>
           <RowButton
@@ -763,8 +763,8 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
             }}
           >
             <div>
-              <p className="text-base text-foreground">Without a phone contact</p>
-              <p className="mt-1 text-sm text-muted-foreground">A nickname and a number you type here.</p>
+              <p className="text-base text-foreground">{t("Without a phone contact")}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{t("A nickname and a number you type here.")}</p>
             </div>
           </RowButton>
         </div>
@@ -781,12 +781,12 @@ function PersonGroup({ title, people, onOpen }: { title: string; people: Person[
       <div className="divide-y divide-border border-y border-border">
         {people.map((person) => {
           const aka = person.nickname || person.aliases[0] || "";
-          const channel = channelLabel(person.preferredChannel);
+          const channel = person.preferredChannel ? t(channelLabel(person.preferredChannel)) : "";
           const dated = (person.reminders ?? [])
             .filter((reminder) => reminder.enabled)
             .slice(0, 2)
             .map((reminder) => `${dateTitle(reminder, t)} ${shortDate(reminder.date)}`.trim());
-          const detail = [aka, channel && channel !== "None" ? channel : "", ...dated].filter(Boolean).join(" · ");
+          const detail = [aka, channel, ...dated].filter(Boolean).join(" · ");
           return (
             <RowButton key={person.id} onClick={() => onOpen(person)} className="items-center">
               <span className="grid size-12 shrink-0 place-items-center border border-border text-base text-foreground" aria-hidden>
@@ -795,7 +795,7 @@ function PersonGroup({ title, people, onOpen }: { title: string; people: Person[
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base leading-6 text-foreground">{person.displayName}</p>
                 <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
-                  {detail || (person.androidContactId ? "Phone contact" : "App only")}
+                  {detail || (person.androidContactId ? t("Phone contact") : t("App only"))}
                 </p>
               </div>
             </RowButton>
@@ -920,7 +920,7 @@ function DateEditor({
             </div>
           </div>
           {reminder.label === "custom" && (
-            <Field label={t("Name this date")} error={error && !reminder.title.trim() ? error : null}>
+            <Field label={t("Name this date")} error={error && !reminder.title.trim() ? t(error) : null}>
               <Input
                 value={reminder.title}
                 aria-label={t("Name this date")}
@@ -931,10 +931,10 @@ function DateEditor({
           )}
           {error && reminder.date.trim() && (reminder.label !== "custom" || reminder.title.trim()) && (
             <p role="alert" className="text-sm leading-5 text-foreground">
-              {error}
+              {t(error)}
             </p>
           )}
-          <Field label={t("Date")} error={error && !reminder.date.trim() ? error : null}>
+          <Field label={t("Date")} error={error && !reminder.date.trim() ? t(error) : null}>
             <Input
               type="date"
               value={toDateInput(reminder.date)}

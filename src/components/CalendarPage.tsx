@@ -134,17 +134,17 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
             disabled={agenda.busy || !agenda.inApp}
             onClick={() => void agenda.requestCalendar()}
           >
-            Allow calendar access
+            {t("Allow calendar access")}
           </Button>
         )}
         {monthCalendar !== "granted" && (
           <p className="mb-4 px-1 text-xs leading-5 text-muted-foreground">
-            The phone calendar is not connected. Days below still show events saved in the app.
+            {t("The phone calendar is not connected. Days below still show events saved in the app.")}
           </p>
         )}
-        {agenda.error && <Notice title={agenda.error} />}
+        {agenda.error && <Notice title={t(agenda.error)} />}
 
-        <p className="mb-2 px-1 text-sm text-muted-foreground">Today</p>
+        <p className="mb-2 px-1 text-sm text-muted-foreground">{t("Today")}</p>
         {events.length === 0 ? (
           <EmptyState
             title={t("Nothing today")}
@@ -171,7 +171,7 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
                   setSelected(next);
                 }}
               >
-                Previous
+                {t("Previous")}
               </Button>
               <Button
                 size="sm"
@@ -182,13 +182,13 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
                   setSelected(next);
                 }}
               >
-                Next
+                {t("Next")}
               </Button>
             </div>
           </div>
           <div className="grid grid-cols-7 px-1 text-center text-xs text-muted-foreground">
             {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((label) => (
-              <span key={label}>{label}</span>
+              <span key={label}>{t(label)}</span>
             ))}
           </div>
           <div className="mt-1 grid grid-cols-7">
@@ -202,7 +202,7 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
                   key={day.toISOString()}
                   type="button"
                   onClick={() => setSelected(day)}
-                  aria-label={`${day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}, ${count} ${count === 1 ? "event" : "events"}`}
+                  aria-label={`${day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}, ${count} ${count === 1 ? t("event") : t("events")}`}
                   aria-pressed={on}
                   className={`flex h-12 flex-col items-center justify-center text-sm tabular-nums ${
                     on ? "bg-foreground text-background" : "text-foreground"
@@ -232,44 +232,44 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
 
       <Sheet
         open={open}
-        title={editing ? "Edit event" : "New event"}
+        title={editing ? t("Edit event") : t("New event")}
         onClose={close}
         footer={
           <div className="flex flex-wrap items-center gap-2">
             <ShareButton title={title} text={[start, end, location].filter(Boolean).join("\n")} />
             {editing?.id && (
               <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
-                <Trash2 /> Delete
+                <Trash2 /> {t("Delete")}
               </Button>
             )}
             <div className="flex-1" />
             <Button variant="ghost" onClick={close}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button disabled={agenda.busy || !title.trim()} onClick={save}>
-              Save
+              {t("Save")}
             </Button>
           </div>
         }
       >
         <div className="space-y-4">
-          <Field label="Title" error={open ? agenda.error : null}>
+          <Field label={t("Title")} error={open && agenda.error ? t(agenda.error) : null}>
             <Input
               autoFocus
               value={title}
               aria-invalid={Boolean(agenda.error) || undefined}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Zurich meetup"
+              placeholder={t("Zurich meetup")}
             />
           </Field>
-          <Field label="Starts">
+          <Field label={t("Starts")}>
             <Input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
           </Field>
-          <Field label="Ends">
+          <Field label={t("Ends")}>
             <Input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
           </Field>
-          <Field label="Location">
-            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Cafe, or leave blank" />
+          <Field label={t("Location")}>
+            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder={t("Cafe, or leave blank")} />
           </Field>
           <RepeatFields repeat={repeat} weekdays={weekdays} until={until} onRepeat={setRepeat} onWeekdays={setWeekdays} onUntil={setUntil} />
           {repeat !== "none" && (
@@ -282,28 +282,38 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
 }
 
 function EventList({ events, onOpen }: { events: CalEvent[]; onOpen: (event: CalEvent) => void }) {
+  const t = useT();
   return (
     <div className="divide-y divide-border border-y border-border">
       {events.map((event, i) => (
         <RowButton key={`${event.id || event.startMs}-${i}`} onClick={() => onOpen(event)} className="gap-4">
           <div className="w-14 shrink-0 pt-0.5 text-right">
             <p className="text-sm leading-5 tabular-nums text-foreground">
-              {event.allDay ? "All day" : formatClock(event.startMs)}
+              {event.allDay ? t("All day") : formatClock(event.startMs)}
             </p>
           </div>
           <div className="min-w-0 flex-1 border-l border-border pl-4">
-            <p className="truncate text-base leading-6 text-foreground">{event.title || "Untitled"}</p>
+            <p className="truncate text-base leading-6 text-foreground">{event.title || t("Untitled")}</p>
             <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
-              {formatSpan(event.startMs, event.endMs, event.allDay)}
+              {event.allDay ? t("All day") : formatSpan(event.startMs, event.endMs, false)}
               {event.location ? ` · ${event.location}` : ""}
-              {event.recurrence ? ` · ${event.recurrence}` : ""}
-              {event.source === "local" ? " · in app" : ""}
+              {event.recurrence && event.recurrence !== "none" ? ` · ${repeatName(event.recurrence, t)}` : ""}
+              {event.source === "local" ? ` · ${t("in app")}` : ""}
             </p>
           </div>
         </RowButton>
       ))}
     </div>
   );
+}
+
+function repeatName(value: string, t: (english: string) => string) {
+  if (value === "daily") return t("Daily");
+  if (value === "weekly") return t("Weekly");
+  if (value === "monthly") return t("Monthly");
+  if (value === "yearly") return t("Yearly");
+  if (value === "once") return t("Once");
+  return value;
 }
 
 function startOfDay(date: Date): Date {

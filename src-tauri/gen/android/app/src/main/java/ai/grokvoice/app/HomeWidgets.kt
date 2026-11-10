@@ -34,11 +34,12 @@ object HomeWidgets {
   fun updateAll(context: Context) {
     val mgr = AppWidgetManager.getInstance(context)
     push(context, mgr, ListenWidget::class.java) { views, _ -> bindListen(context, views) }
+    val text = AppLocale.wrap(context)
     push(context, mgr, RemindersWidget::class.java) { views, _ ->
-      bindRows(context, views, "Reminders", reminderLines(context), "No reminders yet", "reminders")
+      bindRows(context, views, text.getString(R.string.widget_reminders_title), reminderLines(context), text.getString(R.string.widget_reminders_empty), "reminders")
     }
     push(context, mgr, ScheduleWidget::class.java) { views, _ ->
-      bindRows(context, views, "Coming up", scheduleLines(context), "Nothing scheduled", "events")
+      bindRows(context, views, text.getString(R.string.widget_schedule_title), scheduleLines(context), text.getString(R.string.widget_schedule_empty), "events")
     }
     scheduleTick(context)
   }
@@ -85,9 +86,10 @@ object HomeWidgets {
 
   private fun bindListen(context: Context, views: RemoteViews) {
     val on = VoiceListenerService.isArmed(context)
-    views.setTextViewText(R.id.widget_next, nextReminder(context).ifBlank { context.getString(R.string.widget_next_empty) })
-    views.setTextViewText(R.id.widget_listen_state, if (on) "Background listening is on" else "Background listening is off")
-    views.setTextViewText(R.id.widget_listen_toggle, if (on) "Stop" else "Listen in background")
+    val text = AppLocale.wrap(context)
+    views.setTextViewText(R.id.widget_next, nextReminder(context).ifBlank { text.getString(R.string.widget_next_empty) })
+    views.setTextViewText(R.id.widget_listen_state, text.getString(if (on) R.string.widget_listen_on else R.string.widget_listen_off))
+    views.setTextViewText(R.id.widget_listen_toggle, text.getString(if (on) R.string.listener_stop else R.string.widget_listen_start))
     views.setOnClickPendingIntent(R.id.widget_listen_toggle, broadcast(context, ACTION_TOGGLE, 1))
     views.setOnClickPendingIntent(R.id.widget_listen_now, broadcast(context, ACTION_TALK, 2))
   }
@@ -146,7 +148,7 @@ object HomeWidgets {
     return items(context)
       .filter { includeReminder(it, now) }
       .sortedBy { it.atMs }
-      .map { Line(it.atMs, it.kind, it.title.ifBlank { "Reminder" }, clock(it.atMs)) }
+      .map { Line(it.atMs, it.kind, it.title.ifBlank { AppLocale.wrap(context).getString(R.string.widget_fallback_reminder) }, clock(it.atMs)) }
   }
 
   private fun includeReminder(item: Item, now: Long): Boolean {
@@ -177,14 +179,15 @@ object HomeWidgets {
 
   private fun scheduleLines(context: Context): List<Line> {
     val now = System.currentTimeMillis()
+    val text = AppLocale.wrap(context)
     val timed = items(context).filter { it.kind == "alarm" || it.kind == "timer" }.map {
-      val title = it.title.ifBlank { if (it.kind == "timer") "Countdown" else "Alarm" }
-      val detail = if (it.kind == "timer") remaining(it.atMs, now) else clock(it.atMs)
+      val title = it.title.ifBlank { text.getString(if (it.kind == "timer") R.string.widget_fallback_countdown else R.string.widget_fallback_alarm) }
+      val detail = if (it.kind == "timer") remaining(text, it.atMs, now) else clock(it.atMs)
       Line(it.atMs, it.kind, title, detail)
     }
     val horizon = now + 36L * 60L * 60L * 1000L
     val events = events(context, now - 60_000L, horizon).map {
-      Line(it.startMs, "event", it.title.ifBlank { "Event" }, if (it.allDay) "All day" else clock(it.startMs))
+      Line(it.startMs, "event", it.title.ifBlank { text.getString(R.string.widget_fallback_event) }, if (it.allDay) text.getString(R.string.widget_all_day) else clock(it.startMs))
     }
     return (timed + events).sortedBy { it.whenMs }
   }
@@ -219,7 +222,7 @@ object HomeWidgets {
           val end = c.getLong(2).let { if (it == 0L) start + 3_600_000L else it }
           if (end <= startMs) continue
           n++
-          phone.add(Event(c.getString(0) ?: "Event", start, end, c.getInt(3) == 1))
+          phone.add(Event(c.getString(0) ?: AppLocale.wrap(context).getString(R.string.widget_fallback_event), start, end, c.getInt(3) == 1))
         }
       }
     } catch (_: SecurityException) {
@@ -230,9 +233,9 @@ object HomeWidgets {
   private fun clock(ms: Long): String =
     DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(ms))
 
-  private fun remaining(atMs: Long, now: Long): String {
+  private fun remaining(context: Context, atMs: Long, now: Long): String {
     val left = atMs - now
-    if (left <= 0) return "now"
+    if (left <= 0) return context.getString(R.string.widget_now)
     val mins = left / 60_000L
     val hours = mins / 60
     val m = mins % 60
