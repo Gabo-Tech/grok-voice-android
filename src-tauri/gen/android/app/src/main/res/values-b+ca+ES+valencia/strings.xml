@@ -23,8 +23,8 @@
     <string name="update_action">Descarrega</string>
 
     <string name="widget_brand">Grok</string>
-    <string name="widget_listen_on">L'escolta en segon pla està encesa</string>
-    <string name="widget_listen_off">L'escolta en segon pla està apagada</string>
+    <string name="widget_listen_on">L\'escolta en segon pla està encesa</string>
+    <string name="widget_listen_off">L\'escolta en segon pla està apagada</string>
     <string name="widget_listen_start">Escoltar en segon pla</string>
     <string name="widget_listen_now">Escolta ara</string>
     <string name="widget_reminders_title">Recordatoris</string>
@@ -57,11 +57,11 @@
     <string name="channel_spoken_alerts_desc">Continua visible mentre es diu un recordatori.</string>
     <string name="spoken_fallback_body">Parlant</string>
     <string name="channel_listen_health">Escoltar</string>
-    <string name="channel_listen_health_desc">Quan l'escolta en segon pla necessita l'app oberta</string>
+    <string name="channel_listen_health_desc">Quan l\'escolta en segon pla necessita l\'app oberta</string>
     <string name="listen_needs_app_title">Escoltar en segon pla</string>
     <string name="listen_needs_app_text">Obri Grok Voice perquè Hey Grok continue escoltant.</string>
     <string name="music_channel_name">Música</string>
-    <string name="music_channel_desc">Visible mentre Grok Voice reprodueix música d'este telèfon</string>
+    <string name="music_channel_desc">Visible mentre Grok Voice reprodueix música d\'este telèfon</string>
     <string name="music_playing">Reproduint</string>
     <string name="music_pause">Pausa</string>
     <string name="music_stop">Para</string>
