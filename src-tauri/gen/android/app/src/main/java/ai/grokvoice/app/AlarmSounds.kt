@@ -605,7 +605,7 @@ object AlarmSounds {
   }
 
   private fun resolve(context: Context, relative: String): File? {
-    val cleaned = relative.trim().replace('\\', "/")
+    val cleaned = relative.trim().replace('\\', '/')
     if (!cleaned.startsWith("alarm-sounds/") || cleaned.contains("..")) return null
     val name = cleaned.removePrefix("alarm-sounds/")
     if (name.isBlank() || name.contains('/') || !name.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }) return null
