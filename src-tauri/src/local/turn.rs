@@ -36,16 +36,20 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
     listed.extend(crate::local_memory::tool_definitions());
     for tool in &listed {
         let name = tool["name"].as_str().unwrap_or("");
+        if matches!(name, "log_money" | "save_recurring" | "save_account" | "list_finance" | "delete_finance") {
+            continue;
+        }
         let desc = brief_tool(tool["description"].as_str().unwrap_or(""));
         tools.push_str(&format!("- {name}: {desc}\n"));
     }
+    tools.push_str("- log_money: expense, income, or payment. Do not invent a balance.\n- save_recurring: bill, payday, or investment.\n- save_account: stated balance only.\n- list_finance: read saved money.\n- delete_finance: confirmed true.\n");
     let speech_line = if speech == "de" {
         "The user is speaking German. Put the spoken reply in the say field in German. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
     } else {
         "This session uses the English Moonshine Base speech model. It does not understand German.\n"
     };
     format!(
-        "{custom}\n\nYou are running on this phone. Reply with one JSON object and nothing else, shaped as {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. say is what you speak. tool is null or one name from the list. args is that tool's arguments. Call the tool before saying a note, reminder, person, setting, alarm, timer, calendar change, or pinned fact is done. create_person and update_person edit People on this phone. delete_person and turning Listen off need confirmed true. get_settings and update_settings change language, Prefer on device, Listen, budgets, and notificationDelivery (normal or spoken). Never store an API key. remember_fact and forget_fact change on-device memory only. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item, say what will open and pass confirmed false until the user clearly agrees, then call the same tool with confirmed true. Nothing is sent, and a call is not placed, until they confirm in the other app. media_control, set_volume, set_dnd, go_home, read_notifications, and phone_status act on this phone. Times are local YYYY-MM-DDTHH:MM. If web_search returns an error, speak that error. When they ask what is saved, call list_notes, list_reminders, list_calendar_events, or list_people once. A range uses from and to, month, or span. Do not look up one day at a time.\n{speech_line}\nTools:\n{tools}\n{}\n{}"
+        "{custom}\n\nYou are running on this phone. Reply with one JSON object only: {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. Call the tool before saying a note, reminder, person, setting, alarm, timer, calendar change, or pinned fact is done. create_person and update_person edit People. delete_person and Listen off need confirmed true. get_settings and update_settings change language, Listen, budgets, and notificationDelivery. Never store an API key. remember_fact and forget_fact change on-device memory only. open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item need confirmed true after a clear yes. Nothing is sent until they confirm in that app. media_control, set_volume, set_dnd, go_home, read_notifications, and phone_status act immediately. Times are local YYYY-MM-DDTHH:MM. If web_search errors, speak that error. For saved items call list_notes, list_reminders, list_calendar_events, list_people, or list_finance once, with from and to, month, or span. Do not look up one day at a time.\n{speech_line}\nTools:\n{tools}\n{}\n{}"
     , clip_chars(memory.trim(), MEMORY_CLIP_CHARS), clip_chars(local_memory.trim(), MEMORY_CLIP_CHARS))
 }
 

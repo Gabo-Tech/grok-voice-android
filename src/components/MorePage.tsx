@@ -594,7 +594,7 @@ export function MorePage({
         <MenuRow icon={<AudioLines className="size-4" />} title={t("Voice and model")} detail={t("Names sent with the xAI key")} onClick={() => setSection("model")} />
       </SettingsGroup>
       <SettingsGroup title={t("Your data")}>
-        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, and memory")} onClick={() => setSection("backup")} />
+        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, Finance, and memory")} onClick={() => setSection("backup")} />
       </SettingsGroup>
       <SettingsGroup title={t("Support")}>
         <MenuRow icon={<Bug className="size-4" />} title={t("Debug")} detail={t("Logs, echo guard, and sign out")} onClick={() => setSection("debug")} />
@@ -737,6 +737,7 @@ function AccessSection() {
 }
 
 function BackupPage() {
+  const t = useT();
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
   const [includeKeys, setIncludeKeys] = useState(false);
@@ -805,7 +806,7 @@ function BackupPage() {
     try {
       const next = await api.restoreBackup(fileB64, passphrase, true, restoreKeys);
       setPreview(next);
-      setNotice(`Replaced ${next.notes} notes and ${next.people} people.`);
+      setNotice(t("Replaced notes, people, and Finance on this phone."));
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -817,7 +818,7 @@ function BackupPage() {
     <div className="space-y-4 pb-6">
       <h2 className="text-2xl font-medium tracking-tight">Backup</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.
+        An encrypted file of notes, People, Finance, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. {t("Finance is included. An older backup without Finance leaves the money already on this phone.")} Voice keys stay in the vault unless you include them here. Nothing is uploaded.
       </p>
       <Field label="Passphrase">
         <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
@@ -858,7 +859,7 @@ function BackupPage() {
             Review
           </Button>
           <Button disabled={busy || !preview} onClick={() => void restore()}>
-            Replace notes and people
+            {t("Replace notes, people, and Finance")}
           </Button>
         </div>
         {preview && (
@@ -867,6 +868,7 @@ function BackupPage() {
               {preview.notes} notes · {preview.people} people · {preview.reminders} dates
               {preview.keys ? ` · ${preview.keys} keys in the file` : ""}
               {preview.hasMemory ? ` · ${preview.facts} facts` : " · no memory section"}
+              {preview.hasFinance ? ` · ${t("Includes Finance")}` : ` · ${t("No Finance in this file")}`}
             </p>
             {preview.keys > 0 && (
               <button

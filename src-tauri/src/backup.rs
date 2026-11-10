@@ -41,6 +41,9 @@ pub struct Payload {
     /// Absent in backups written before on-device memory. Restore leaves the phone's memory alone then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<crate::local_memory::Bundle>,
+    /// Absent in backups written before Finance. Restore leaves the phone's money alone then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finance: Option<crate::finance::Bundle>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -57,11 +60,20 @@ pub struct Preview {
     /// False for a backup that has no memory section.
     #[serde(default)]
     pub has_memory: bool,
+    #[serde(default)]
+    pub accounts: usize,
+    #[serde(default)]
+    pub transactions: usize,
+    #[serde(default)]
+    pub rules: usize,
+    /// False for a backup that has no Finance section.
+    #[serde(default)]
+    pub has_finance: bool,
 }
 
 impl Payload {
     pub fn notes_and_people(notes: Vec<Note>, people: Vec<Person>) -> Self {
-        Self { kind: "grok-voice-backup".into(), version: 1, notes, people, keys: Vec::new(), memory: None }
+        Self { kind: "grok-voice-backup".into(), version: 1, notes, people, keys: Vec::new(), memory: None, finance: None }
     }
 
     pub fn preview(&self) -> Preview {
@@ -73,6 +85,10 @@ impl Payload {
             facts: self.memory.as_ref().map(|bundle| bundle.facts.len()).unwrap_or(0),
             sessions: self.memory.as_ref().map(|bundle| bundle.sessions.len()).unwrap_or(0),
             has_memory: self.memory.is_some(),
+            accounts: self.finance.as_ref().map(|bundle| bundle.accounts.len()).unwrap_or(0),
+            transactions: self.finance.as_ref().map(|bundle| bundle.transactions.len()).unwrap_or(0),
+            rules: self.finance.as_ref().map(|bundle| bundle.rules.len()).unwrap_or(0),
+            has_finance: self.finance.is_some(),
         }
     }
 }
@@ -226,6 +242,8 @@ mod tests {
         let payload: Payload = serde_json::from_str(old).unwrap();
         assert!(payload.memory.is_none());
         assert!(!payload.preview().has_memory);
+        assert!(payload.finance.is_none());
+        assert!(!payload.preview().has_finance);
         let bytes = seal(&payload, "correct horse").unwrap();
         let opened = open(&bytes, "correct horse").unwrap();
         assert!(opened.memory.is_none());

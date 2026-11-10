@@ -6,11 +6,13 @@ import { AssistantView } from "@/components/AssistantView";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { BottomNav, useThumbBar, type AppTab } from "@/components/BottomNav";
 import { CalendarPage } from "@/components/CalendarPage";
+import { FinancePage } from "@/components/FinancePage";
 import { MorePage, type Section } from "@/components/MorePage";
 import { NotesPage } from "@/components/NotesPage";
 import { Onboarding } from "@/components/Onboarding";
 import { RemindersPage } from "@/components/RemindersPage";
 import { useAgenda } from "@/hooks/useAgenda";
+import { useFinance } from "@/hooks/useFinance";
 import { useVoice } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type Settings, type WakewordStatus } from "@/lib/api";
 import type { SettingsDestination } from "@/lib/flow";
@@ -27,7 +29,7 @@ function previewRoute(inApp: boolean): { app: boolean; tab: AppTab; section: Sec
   if (inApp || !import.meta.env.DEV || typeof window === "undefined") return fallback;
   const params = new URLSearchParams(window.location.search);
   if (!params.has("app")) return fallback;
-  const tabs: AppTab[] = ["talk", "notes", "calendar", "reminders", "more"];
+  const tabs: AppTab[] = ["talk", "notes", "calendar", "reminders", "finance", "more"];
   const asked = params.get("tab");
   const tab = tabs.includes(asked as AppTab) ? (asked as AppTab) : "talk";
   const sections: Section[] = ["menu", "model", "wake", "people", "spend", "language", "keys"];
@@ -63,6 +65,7 @@ export default function App() {
     notes: preview.tab === "notes",
     calendar: preview.tab === "calendar",
     reminders: preview.tab === "reminders",
+    finance: preview.tab === "finance",
     more: preview.tab === "more",
   });
   const goTab = useRef<(next: AppTab) => void>(() => {});
@@ -71,6 +74,7 @@ export default function App() {
   };
   const voice = useVoice();
   const agenda = useAgenda();
+  const finance = useFinance();
   const t = useT();
   const thumb = useThumbBar();
 
@@ -229,6 +233,11 @@ export default function App() {
         {seen.reminders ? (
         <div className={tab === "reminders" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
           <RemindersPage agenda={agenda} active={tab === "reminders"} />
+        </div>
+        ) : null}
+        {seen.finance ? (
+        <div className={tab === "finance" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+          <FinancePage finance={finance} active={tab === "finance"} />
         </div>
         ) : null}
         {seen.more ? (
