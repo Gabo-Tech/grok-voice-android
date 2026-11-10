@@ -170,7 +170,7 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{summary}</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
           {t(
-            "Speech to text is Moonshine Base. Choose a language model below. SmolLM2 135M Instruct stays the default until you switch. German speech and the Piper voices stay as they are.",
+            "Speech to text is Moonshine Base. Choose a language model below. SmolLM2 135M Instruct stays the default until you switch. Spanish speech, German speech, and the Piper voices stay as they are.",
           )}
         </p>
       </div>

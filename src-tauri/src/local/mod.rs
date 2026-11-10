@@ -1,4 +1,4 @@
-//! On-device Talk: Moonshine STT, a small GGUF chat model, and Piper TTS.
+//! On-device Talk: Moonshine or a NeMo transducer for speech, a small GGUF chat model, and Piper TTS.
 //! Utterance mode, not full duplex. The phone tools stay on `actions::run`.
 
 mod engine;

@@ -128,7 +128,7 @@ export function AssistantView({
 
       {voice.lastError && (
         <Notice
-          title={voice.lastError}
+          title={t(voice.lastError)}
           body={recovery ? t(recovery.hint) : t("Try again. If it keeps happening, open Settings, then Debug.")}
           actionLabel={recovery?.go ? t(settingsLabel(recovery.go)) : undefined}
           onAction={recovery?.go ? () => onOpenSettings(recovery.go!) : undefined}
