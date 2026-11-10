@@ -48,12 +48,12 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                 onClick={() => onChange(id)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-h-12 w-full flex-col items-center justify-center px-0.5 py-1.5 text-[11px] leading-4",
+                  "flex min-h-14 w-full flex-col items-center justify-center px-0.5 py-1.5",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
                 <Icon className="size-5 shrink-0" strokeWidth={1.5} />
-                <span className="mt-1 w-full truncate text-center">{t(label)}</span>
+                <span className="mt-0.5 line-clamp-2 w-full hyphens-auto text-center text-[10px] leading-3 break-words">{t(label)}</span>
               </button>
             </li>
           );

@@ -179,14 +179,14 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
           <PackRow key={pack.id} pack={pack} progress={progress} busy={busy} onDownload={download} onRemove={remove} />
         ))}
       </ul>
-      <div className="flex gap-2">
-        <Button type="button" variant="outline" disabled={busy !== null || !anyMissing} onClick={() => void downloadMissing()}>
+      <div className="flex flex-col gap-2">
+        <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null || !anyMissing} onClick={() => void downloadMissing()}>
           {t("Download all")}
         </Button>
-        <Button type="button" variant="outline" disabled={busy !== null || !anyReady} onClick={() => void redownloadReady()}>
+        <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null || !anyReady} onClick={() => void redownloadReady()}>
           {t("Re-download all")}
         </Button>
-        <Button type="button" variant="outline" disabled={busy !== null || !anyReady} onClick={() => void removeReady()}>
+        <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null || !anyReady} onClick={() => void removeReady()}>
           {t("Delete all")}
         </Button>
       </div>
@@ -238,7 +238,7 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
             ))}
           </div>
         </div>
-        <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void chooseFile()}>
+        <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null} onClick={() => void chooseFile()}>
           {busy === "pick" ? t("Copying") : t("Choose a GGUF")}
         </Button>
         <label className="block">
@@ -264,7 +264,7 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
             onChange={(event) => setSha(event.target.value)}
           />
         </label>
-        <Button type="button" disabled={busy !== null || url.trim() === ""} onClick={() => void addLink()}>
+        <Button type="button" className="w-full whitespace-normal" disabled={busy !== null || url.trim() === ""} onClick={() => void addLink()}>
           {busy === "link" ? t("Downloading") : t("Add from a link")}
         </Button>
       </div>
@@ -315,40 +315,38 @@ function PackRow({
   const size = packBytes(pack);
   const label = pack.kind === "custom" && pack.label !== "Custom model" ? pack.label : t(pack.label);
   return (
-    <li className="py-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-foreground">{label}</p>
-          <p className="text-xs leading-5 text-muted-foreground">
-            {t(pack.detail)}
-            {size ? ` · ${size}` : ""} · {pack.ready ? t("On this phone") : t("Not downloaded")}
-            {pack.selected ? ` · ${t("In use")}` : ""}
-            {ratio !== null ? ` · ${formatBytes(current?.received ?? 0)} / ${formatBytes(current?.total ?? pack.downloadBytes)}` : ""}
-          </p>
-          {pack.note ? <p className="text-xs leading-5 text-muted-foreground">{t(pack.note)}</p> : null}
-        </div>
-        <div className="flex shrink-0 gap-2">
-          {pack.ready && onUse && !pack.selected ? (
-            <Button type="button" disabled={busy !== null} onClick={() => void onUse(pack.id)}>
-              {t("Use this model")}
-            </Button>
-          ) : null}
-          {pack.ready && onDownload ? (
-            <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void onDownload(pack.id)}>
-              {busy === pack.id ? t("Downloading") : t("Download again")}
-            </Button>
-          ) : null}
-          {!pack.ready && onDownload ? (
-            <Button type="button" disabled={busy !== null} onClick={() => void onDownload(pack.id)}>
-              {busy === pack.id ? t("Downloading") : t("Download")}
-            </Button>
-          ) : null}
-          {pack.ready ? (
-            <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void onRemove(pack.id)}>
-              {t("Delete")}
-            </Button>
-          ) : null}
-        </div>
+    <li className="space-y-3 py-3">
+      <div className="min-w-0">
+        <p className="text-base text-foreground">{label}</p>
+        <p className="text-sm leading-5 text-muted-foreground">
+          {t(pack.detail)}
+          {size ? ` · ${size}` : ""} · {pack.ready ? t("On this phone") : t("Not downloaded")}
+          {pack.selected ? ` · ${t("In use")}` : ""}
+          {ratio !== null ? ` · ${formatBytes(current?.received ?? 0)} / ${formatBytes(current?.total ?? pack.downloadBytes)}` : ""}
+        </p>
+        {pack.note ? <p className="text-sm leading-5 text-muted-foreground">{t(pack.note)}</p> : null}
+      </div>
+      <div className="flex flex-col gap-2">
+        {pack.ready && onUse && !pack.selected ? (
+          <Button type="button" className="w-full whitespace-normal" disabled={busy !== null} onClick={() => void onUse(pack.id)}>
+            {t("Use this model")}
+          </Button>
+        ) : null}
+        {pack.ready && onDownload ? (
+          <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null} onClick={() => void onDownload(pack.id)}>
+            {busy === pack.id ? t("Downloading") : t("Download again")}
+          </Button>
+        ) : null}
+        {!pack.ready && onDownload ? (
+          <Button type="button" className="w-full whitespace-normal" disabled={busy !== null} onClick={() => void onDownload(pack.id)}>
+            {busy === pack.id ? t("Downloading") : t("Download")}
+          </Button>
+        ) : null}
+        {pack.ready ? (
+          <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null} onClick={() => void onRemove(pack.id)}>
+            {t("Delete")}
+          </Button>
+        ) : null}
       </div>
       {ratio !== null && <Progress value={ratio} className="mt-2" />}
     </li>

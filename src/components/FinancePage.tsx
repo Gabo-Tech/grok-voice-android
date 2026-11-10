@@ -69,14 +69,14 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
         addLabel={t(addLabel)}
         active={active}
       >
-        <div className="sticky top-0 z-10 -mx-1 mb-4 flex gap-2 overflow-x-auto bg-background px-1 pb-2">
+        <div className="mb-4 grid grid-cols-2 gap-2">
           {SEGMENTS.map((id) => (
-            <Chip key={id} on={segment === id} onClick={() => setSegment(id)}>
+            <Chip key={id} wide on={segment === id} onClick={() => setSegment(id)}>
               {t(segmentLabel(id))}
             </Chip>
           ))}
         </div>
-        {finance.error && <Notice title={finance.error} onDismiss={() => finance.setError(null)} />}
+        {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
         {segment === "overview" && (
           <Overview
             finance={finance}
@@ -263,7 +263,7 @@ function AmountLine({ label, amount }: { label: string; amount: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1">
       <span className="text-base text-muted-foreground">{label}</span>
-      <span className="text-3xl leading-tight font-medium tracking-tight tabular-nums">{amount}</span>
+      <span className="min-w-0 text-right text-2xl leading-tight font-medium tracking-tight break-words tabular-nums">{amount}</span>
     </div>
   );
 }
@@ -294,13 +294,13 @@ function Activity({
   const t = useT();
   return (
     <div>
-      <div className="mb-2 flex gap-2 overflow-x-auto">
+      <div className="mb-2 flex flex-wrap gap-2">
         <Chip on={classFilter === "all"} onClick={() => onClass("all")}>{t("All")}</Chip>
         <Chip on={classFilter === "recurring"} onClick={() => onClass("recurring")}>{t("Recurring")}</Chip>
         <Chip on={classFilter === "once"} onClick={() => onClass("once")}>{t("Once")}</Chip>
         <Chip on={classFilter === "irregular"} onClick={() => onClass("irregular")}>{t("Irregular")}</Chip>
       </div>
-      <div className="mb-4 flex gap-2 overflow-x-auto">
+      <div className="mb-4 flex flex-wrap gap-2">
         <Chip on={directionFilter === "all"} onClick={() => onDirection("all")}>{t("All")}</Chip>
         <Chip on={directionFilter === "expense"} onClick={() => onDirection("expense")}>{t("Expense")}</Chip>
         <Chip on={directionFilter === "income"} onClick={() => onDirection("income")}>{t("Income")}</Chip>
@@ -510,8 +510,8 @@ function TransactionSheet({
             <Chip on={direction === "payment"} onClick={() => setDirection("payment")}>{t("Payment")}</Chip>
           </div>
         </Field>
-        <Field label={t("Currency")}>
-          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} />
+        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
+          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} autoCapitalize="characters" />
         </Field>
         <Field label={t("Category or payee")}>
           <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t("Lunch, rent, salary")} />
@@ -653,7 +653,7 @@ function AccountSheet({
         </Field>
         {!investment && (
           <Field label={t("Kind")}>
-            <div className="flex gap-2 overflow-x-auto">
+            <div className="flex flex-wrap gap-2">
               {KINDS.map((id) => (
                 <Chip key={id} on={kind === id} onClick={() => setKind(id)}>{t(kindLabel(id))}</Chip>
               ))}
@@ -663,8 +663,8 @@ function AccountSheet({
         <Field label={investment ? t("Worth") : t("Balance")} hint={t("Leave blank until you have checked it.")}>
           <Input inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="h-16 text-3xl tabular-nums" />
         </Field>
-        <Field label={t("Currency")}>
-          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} />
+        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
+          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} autoCapitalize="characters" />
         </Field>
         <Field label={t("Institution")} hint={t("A bank name or label. Not an account number.")}>
           <Input value={institution} onChange={(e) => setInstitution(e.target.value)} />
@@ -674,7 +674,7 @@ function AccountSheet({
             <Field label={t("Ticker")}>
               <Input value={ticker} onChange={(e) => setTicker(e.target.value)} />
             </Field>
-            <Field label={t("Contribution")} hint={t("Automated")}>
+            <Field label={t("Contribution")} hint={t("Amount added on a schedule. Leave blank if you do not know it.")}>
               <Input inputMode="decimal" value={contribution} onChange={(e) => setContribution(e.target.value)} />
             </Field>
             <CadenceChips value={contributionCadence} onChange={setContributionCadence} />
@@ -778,8 +778,8 @@ function RuleSheet({
         <Field label={t("Amount")}>
           <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-16 text-3xl tabular-nums" />
         </Field>
-        <Field label={t("Currency")}>
-          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} />
+        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
+          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} autoCapitalize="characters" />
         </Field>
         <Field label={t("Direction")}>
           <div className="flex gap-2 overflow-x-auto">
@@ -815,13 +815,17 @@ function CadenceChips({ value, onChange }: { value: string; onChange: (value: st
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: string }) {
+function Chip({ on, onClick, wide, children }: { on: boolean; onClick: () => void; wide?: boolean; children: string }) {
   return (
     <button
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={cn("min-h-12 shrink-0 px-3 text-sm", on ? "bg-foreground text-background" : "border border-border text-foreground")}
+      className={cn(
+        "min-h-12 px-3 text-sm leading-5",
+        wide ? "w-full" : "shrink-0",
+        on ? "bg-foreground text-background" : "border border-border text-foreground",
+      )}
     >
       {children}
     </button>

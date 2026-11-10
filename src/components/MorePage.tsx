@@ -582,7 +582,7 @@ export function MorePage({
         <MenuRow icon={<Hourglass className="size-4" />} title={t("Quiet gap")} detail={fill("{n}s", { n: quiet })} onClick={() => setSection("quiet")} />
         <MenuRow icon={<Languages className="size-4" />} title={t("Language")} detail={t("Follow the phone")} onClick={() => setSection("language")} />
       </SettingsGroup>
-      <SettingsGroup title={t("Spend")}>
+      <SettingsGroup title={t("Voice time")}>
         <MenuRow
           icon={<Wallet className="size-4" />}
           title={t("Daily voice budget")}
@@ -654,7 +654,7 @@ function MemorySection() {
     <div className="space-y-4 pb-6">
       <h2 className="text-2xl font-medium tracking-tight">{t("Memory")}</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        {t("On-device Talk reads these pinned facts and short notes from recent local sessions. Cloud Talk does not. Wiping this does not delete notes, People, or voice keys.")}
+        {t("On-device Talk reads these pinned facts and short notes from recent local sessions. Cloud Talk does not. Wiping this does not delete notes, People, Finance, or voice keys.")}
       </p>
       <Field label={t("Pin fact")}>
         <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("I live in Zurich")} />
@@ -699,7 +699,7 @@ function MemorySection() {
       >
         {confirmWipe ? t("Wipe memory") : t("Wipe memory")}
       </Button>
-      {confirmWipe && <p className="text-xs leading-5 text-muted-foreground">{t("Tap again. Notes, People, and voice keys stay.")}</p>}
+      {confirmWipe && <p className="text-sm leading-5 text-muted-foreground">{t("Tap again. Notes, People, Finance, and voice keys stay.")}</p>}
       {error && <p className="text-sm text-foreground">{t(error)}</p>}
     </div>
   );

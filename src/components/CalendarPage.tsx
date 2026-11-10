@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
 import { Sheet } from "@/components/Sheet";
@@ -157,32 +157,34 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
         )}
 
         <div className="mt-8">
-          <div className="mb-3 flex items-center justify-between px-1">
-            <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">
+          <div className="mb-3 flex items-center justify-between gap-2 px-1">
+            <p className="min-w-0 text-lg leading-6 font-medium text-foreground">
               {cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
             </p>
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               <Button
-                size="sm"
+                size="icon"
                 variant="outline"
+                aria-label={t("Previous")}
                 onClick={() => {
                   const next = new Date(year, month - 1, 1);
                   setCursor(next);
                   setSelected(next);
                 }}
               >
-                {t("Previous")}
+                <ChevronLeft />
               </Button>
               <Button
-                size="sm"
+                size="icon"
                 variant="outline"
+                aria-label={t("Next")}
                 onClick={() => {
                   const next = new Date(year, month + 1, 1);
                   setCursor(next);
                   setSelected(next);
                 }}
               >
-                {t("Next")}
+                <ChevronRight />
               </Button>
             </div>
           </div>

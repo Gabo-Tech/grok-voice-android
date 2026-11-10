@@ -615,7 +615,7 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
 
     let person_lead = person_lead_from(args)?;
     if wipe && confirmed {
-        notes.push("Wiped pinned facts and recent on-device notes. Notes, People, and voice keys stay.".into());
+        notes.push("Wiped pinned facts and recent on-device notes. Notes, People, Finance, and voice keys stay.".into());
     }
     if pending.is_some() && notes.iter().all(|note| note.is_empty()) && !changed && person_lead.is_none() {
         notes.clear();

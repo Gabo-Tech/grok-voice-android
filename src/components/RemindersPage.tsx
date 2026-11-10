@@ -308,8 +308,8 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                 onClick={() => setKind(item)}
                 className={
                   item === kind
-                    ? "h-12 border border-foreground text-sm text-foreground"
-                    : "h-12 border border-border text-sm text-muted-foreground"
+                    ? "flex min-h-12 items-center justify-center border border-foreground px-1 text-center text-sm leading-tight text-foreground"
+                    : "flex min-h-12 items-center justify-center border border-border px-1 text-center text-sm leading-tight text-muted-foreground"
                 }
               >
                 {kindName(item, t)}

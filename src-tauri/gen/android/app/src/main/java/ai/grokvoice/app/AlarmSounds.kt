@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -14,12 +13,10 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
-import android.os.LocaleList
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.util.Log
-import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -593,28 +590,7 @@ object AlarmSounds {
 
   private fun text(context: Context, id: Int): String = localeContext(context).getString(id)
 
-  fun localeContext(context: Context): Context {
-    val tag = readSettings(context).optString("locale", "").trim().replace('_', '-')
-    if (tag.isEmpty()) return context
-    val locale = Locale.forLanguageTag(tag)
-    if (locale.language.isNullOrEmpty()) return context
-    val config = Configuration(context.resources.configuration)
-    config.setLocale(locale)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-      config.setLocales(LocaleList(locale))
-    }
-    return context.createConfigurationContext(config)
-  }
-
-  private fun readSettings(context: Context): JSONObject {
-    val file = File(appRoot(context), "settings.json")
-    if (!file.isFile) return JSONObject()
-    return try {
-      JSONObject(file.readText())
-    } catch (_: Exception) {
-      JSONObject()
-    }
-  }
+  fun localeContext(context: Context): Context = AppLocale.wrap(context)
 
   fun appRoot(context: Context): File {
     return roots(context).firstOrNull { File(it, "agenda.json").isFile || File(it, "settings.json").isFile }

@@ -141,7 +141,9 @@ body {
   line-height: 1.5;
 }
 
-input[type="datetime-local"] {
+input[type="datetime-local"],
+input[type="date"],
+input[type="time"] {
   color-scheme: dark;
 }
 
@@ -184,11 +186,11 @@ input[type="datetime-local"] {
 }
 
 .app-safe {
-  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
 }
 
 .app-safe-bar {
-  padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+  padding-bottom: calc(9rem + env(safe-area-inset-bottom));
 }
 
 .thumb-actions {
