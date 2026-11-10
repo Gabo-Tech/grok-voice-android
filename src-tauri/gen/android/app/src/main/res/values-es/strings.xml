@@ -65,5 +65,15 @@
     <string name="music_playing">Reproduciendo</string>
     <string name="music_pause">Pausa</string>
     <string name="music_stop">Parar</string>
+    <string name="alarm_stop">Parar</string>
+    <string name="alarm_file_playing">Reproduciendo tu audio</string>
+    <string name="alarm_youtube_starting">Iniciando el audio de YouTube…</string>
+    <string name="alarm_youtube_playing">Reproduciendo audio de YouTube</string>
+    <string name="alarm_file_missing">Ese archivo de audio no está, así que suena la alarma predeterminada.</string>
+    <string name="alarm_offline">No hay red, así que este vídeo de YouTube no se pudo reproducir. Suena la alarma predeterminada.</string>
+    <string name="alarm_youtube_failed">Este vídeo de YouTube no se pudo reproducir. Suena la alarma predeterminada.</string>
+    <string name="alarm_media_silent">El audio de YouTube usa el volumen multimedia, que está en silencio. Suena la alarma predeterminada.</string>
+    <string name="alarm_channel_name">Sonido de alarma</string>
+    <string name="alarm_channel_desc">Visible mientras suena un sonido de alarma elegido. El sonido se reproduce aparte.</string>
 </resources>
 

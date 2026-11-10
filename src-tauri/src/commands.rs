@@ -471,6 +471,9 @@ pub fn save_scheduled(
     date: Option<String>,
     lead_days: Option<u32>,
     until_ms: Option<i64>,
+    sound_kind: Option<String>,
+    sound_ref: Option<String>,
+    sound_label: Option<String>,
 ) -> Result<AgendaSnapshot> {
     let schedule = actions::ScheduleMeta {
         recurrence: recurrence.unwrap_or_default(),
@@ -482,18 +485,49 @@ pub fn save_scheduled(
         ..actions::ScheduleMeta::default()
     };
     let has_schedule = !schedule.recurrence.is_empty() || !schedule.weekdays.is_empty() || !schedule.time.is_empty() || !schedule.date.is_empty();
-    app.state::<Agenda>()
-        .upsert_item(
-            &app,
-            id,
-            kind.as_deref().unwrap_or("reminder"),
-            &title,
-            note.as_deref().unwrap_or(""),
-            at_ms,
-            has_schedule.then_some(schedule),
-        )
+    let kind = kind.unwrap_or_else(|| "reminder".into());
+    let agenda = app.state::<Agenda>();
+    let sound = match sound_kind {
+        None => None,
+        Some(value) => Some(
+            crate::alarm_sound::from_form(&value, sound_ref.as_deref().unwrap_or(""), sound_label.as_deref().unwrap_or(""), &agenda.sounds_dir())
+                .map_err(msg)?,
+        ),
+    };
+    if kind != "alarm" && sound.as_ref().is_some_and(|choice| !choice.is_empty()) {
+        return Err(msg(crate::alarm_sound::ERR_ALARMS_ONLY));
+    }
+    agenda
+        .upsert_item(&app, id, &kind, &title, note.as_deref().unwrap_or(""), at_ms, has_schedule.then_some(schedule), sound)
         .map_err(msg)?;
-    Ok(app.state::<Agenda>().snapshot(&app))
+    Ok(agenda.snapshot(&app))
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlarmSoundPick {
+    pub relative_path: String,
+    pub name: String,
+}
+
+#[tauri::command]
+pub fn pick_alarm_sound(app: AppHandle) -> Result<AlarmSoundPick> {
+    let agenda = app.state::<Agenda>();
+    let dir = agenda.sounds_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| msg(e.to_string()))?;
+    let (relative_path, name) = app
+        .state::<crate::native::NativeBridge>()
+        .pick_alarm_sound(&dir.to_string_lossy())
+        .map_err(|e| msg(e.to_string()))?;
+    crate::alarm_sound::file_choice(&dir, &relative_path, &name).map_err(msg)?;
+    Ok(AlarmSoundPick { relative_path, name })
+}
+
+#[tauri::command]
+pub fn preview_alarm_sound(app: AppHandle, relative_path: String) -> Result<()> {
+    let dir = app.state::<Agenda>().sounds_dir();
+    crate::alarm_sound::file_choice(&dir, &relative_path, "").map_err(msg)?;
+    app.state::<crate::native::NativeBridge>().preview_alarm_sound(&relative_path).map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]

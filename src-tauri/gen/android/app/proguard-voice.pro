@@ -14,6 +14,12 @@
 -keep class ai.grokvoice.app.ReminderReceiver { *; }
 -keep class ai.grokvoice.app.SpokenNoticeService { *; }
 -keep class ai.grokvoice.app.SpokenAlerts { *; }
+-keep class ai.grokvoice.app.AlarmSounds { *; }
+-keep class ai.grokvoice.app.AlarmSoundActivity { *; }
+-keep class ai.grokvoice.app.AlarmSoundService { *; }
+-keepclassmembers class ai.grokvoice.app.AlarmSoundActivity$YtBridge {
+    @android.webkit.JavascriptInterface <methods>;
+}
 -keep class ai.grokvoice.app.BootReceiver { *; }
 -keep class ai.grokvoice.app.RustBridge {
     native <methods>;

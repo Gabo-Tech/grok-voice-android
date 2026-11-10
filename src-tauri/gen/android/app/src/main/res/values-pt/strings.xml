@@ -65,5 +65,15 @@
     <string name="music_playing">Tocando</string>
     <string name="music_pause">Pausar</string>
     <string name="music_stop">Parar</string>
+    <string name="alarm_stop">Parar</string>
+    <string name="alarm_file_playing">Tocando seu áudio</string>
+    <string name="alarm_youtube_starting">Iniciando o áudio do YouTube…</string>
+    <string name="alarm_youtube_playing">Tocando áudio do YouTube</string>
+    <string name="alarm_file_missing">Esse arquivo de áudio não está, então o som padrão do alarme está tocando.</string>
+    <string name="alarm_offline">Sem rede, então este vídeo do YouTube não pôde tocar. O som padrão do alarme está tocando.</string>
+    <string name="alarm_youtube_failed">Este vídeo do YouTube não pôde tocar. O som padrão do alarme está tocando.</string>
+    <string name="alarm_media_silent">O áudio do YouTube usa o volume de mídia, que está no silêncio. O som padrão do alarme está tocando.</string>
+    <string name="alarm_channel_name">Som do alarme</string>
+    <string name="alarm_channel_desc">Visível enquanto um som de alarme escolhido toca. O som em si toca à parte.</string>
 </resources>
 

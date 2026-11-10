@@ -162,6 +162,9 @@ object SpokenAlerts {
       Log.w(TAG, "spoken notice audio focus denied; speaking on the alarm stream anyway")
     }
     RustBridge.setNoticeSpeaking(true)
+    // A chosen alarm sound is already playing. Pause it so this sentence stays
+    // clear, then let that sound continue. The sentence itself is unchanged.
+    AlarmSounds.yieldForSpeech()
     try {
       if (!playPiper(context, line) && !playAndroid(context, line)) {
         Log.w(TAG, "could not speak the notice")
@@ -169,6 +172,7 @@ object SpokenAlerts {
         Log.i(TAG, "spoken notice finished")
       }
     } finally {
+      AlarmSounds.resumeAfterSpeech()
       RustBridge.setNoticeSpeaking(false)
       if (focus != null) abandonFocus(am, focus)
     }

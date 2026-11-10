@@ -65,5 +65,15 @@
     <string name="music_playing">Reproduint</string>
     <string name="music_pause">Pausa</string>
     <string name="music_stop">Para</string>
+    <string name="alarm_stop">Para</string>
+    <string name="alarm_file_playing">S\'està reproduint el teu àudio</string>
+    <string name="alarm_youtube_starting">S\'està iniciant l\'àudio de YouTube…</string>
+    <string name="alarm_youtube_playing">S\'està reproduint l\'àudio de YouTube</string>
+    <string name="alarm_file_missing">Eixe fitxer d\'àudio no hi és, així que sona l\'alarma predeterminada.</string>
+    <string name="alarm_offline">No hi ha xarxa, així que este vídeo de YouTube no s\'ha pogut reproduir. Sona l\'alarma predeterminada.</string>
+    <string name="alarm_youtube_failed">Este vídeo de YouTube no s\'ha pogut reproduir. Sona l\'alarma predeterminada.</string>
+    <string name="alarm_media_silent">L\'àudio de YouTube usa el volum multimèdia, que està en silenci. Sona l\'alarma predeterminada.</string>
+    <string name="alarm_channel_name">So de l\'alarma</string>
+    <string name="alarm_channel_desc">Visible mentre sona un so d\'alarma triat. El so es reprodueix a banda.</string>
 </resources>
 

@@ -1,4 +1,5 @@
 mod actions;
+mod alarm_sound;
 #[cfg(target_os = "android")]
 mod android_mic;
 #[cfg(target_os = "android")]
@@ -146,6 +147,8 @@ pub fn run() {
             commands::save_note,
             commands::delete_note,
             commands::save_scheduled,
+            commands::pick_alarm_sound,
+            commands::preview_alarm_sound,
             commands::cancel_scheduled,
             commands::complete_scheduled,
             commands::save_event,
