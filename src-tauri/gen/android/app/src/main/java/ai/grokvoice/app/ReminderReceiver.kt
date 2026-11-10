@@ -11,7 +11,10 @@ class ReminderReceiver : BroadcastReceiver() {
     val kind = intent.getStringExtra("kind") ?: "reminder"
     val title = intent.getStringExtra("title") ?: "Reminder"
     val note = intent.getStringExtra("note") ?: ""
-    PhoneActions.notify(context, id, kind, title, note)
+    val soundKind = intent.getStringExtra("soundKind") ?: ""
+    val soundRef = intent.getStringExtra("soundRef") ?: ""
+    val soundLabel = intent.getStringExtra("soundLabel") ?: ""
+    PhoneActions.notify(context, id, kind, title, note, soundKind, soundRef, soundLabel)
     PhoneActions.cancel(context, id)
     SpokenAlerts.afterQueue { pending.finish() }
   }

@@ -21,4 +21,14 @@
     <string name="update_title">Grok Voice-Update</string>
     <string name="update_text">Version %1$s kann heruntergeladen werden.</string>
     <string name="update_action">Laden</string>
+    <string name="alarm_stop">Stopp</string>
+    <string name="alarm_file_playing">Dein Ton wird abgespielt</string>
+    <string name="alarm_youtube_starting">YouTube-Audio startet…</string>
+    <string name="alarm_youtube_playing">YouTube-Audio wird abgespielt</string>
+    <string name="alarm_file_missing">Diese Audiodatei fehlt, deshalb spielt der Standard-Weckton.</string>
+    <string name="alarm_offline">Kein Netz, deshalb konnte dieses YouTube-Video nicht abspielen. Der Standard-Weckton spielt.</string>
+    <string name="alarm_youtube_failed">Dieses YouTube-Video konnte nicht abspielen. Der Standard-Weckton spielt.</string>
+    <string name="alarm_media_silent">YouTube-Audio nutzt die Medienlautstärke, und die ist stumm. Der Standard-Weckton spielt.</string>
+    <string name="alarm_channel_name">Weckton</string>
+    <string name="alarm_channel_desc">Sichtbar, während ein gewählter Weckton läuft. Der Ton selbst spielt getrennt.</string>
 </resources>

@@ -108,6 +108,12 @@ export interface ScheduledItem {
   personId?: string;
   personReminderId?: string;
   untilMs?: number;
+  /** `file`, `youtube`, or empty for the phone's alarm sound. */
+  soundKind?: string;
+  /** Private file path or a YouTube video id. */
+  soundRef?: string;
+  /** File name or watch URL shown on the alarm. */
+  soundLabel?: string;
 }
 
 export interface CalEvent {
@@ -384,6 +390,9 @@ export const api = {
     date?: string;
     leadDays?: number;
     untilMs?: number;
+    soundKind?: string;
+    soundRef?: string;
+    soundLabel?: string;
   }) =>
     invoke<Agenda>("save_scheduled", {
       title: args.title,
@@ -397,7 +406,12 @@ export const api = {
       date: args.date ?? null,
       leadDays: args.leadDays ?? null,
       untilMs: args.untilMs ?? null,
+      soundKind: args.soundKind ?? null,
+      soundRef: args.soundRef ?? null,
+      soundLabel: args.soundLabel ?? null,
     }),
+  pickAlarmSound: () => invoke<{ relativePath: string; name: string }>("pick_alarm_sound"),
+  previewAlarmSound: (relativePath: string) => invoke<void>("preview_alarm_sound", { relativePath }),
   cancelScheduled: (id: number) => invoke<Agenda>("cancel_scheduled", { id }),
   completeScheduled: (id: number) => invoke<Agenda>("complete_scheduled", { id }),
   usageStatus: () => invoke<UsageStatus>("usage_status"),
