@@ -603,7 +603,7 @@ export function MorePage({
         <MenuRow icon={<AudioLines className="size-4" />} title={t("Voice and model")} detail={t("Names sent with the xAI key")} onClick={() => setSection("model")} />
       </SettingsGroup>
       <SettingsGroup title={t("Your data")}>
-        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, and memory")} onClick={() => setSection("backup")} />
+        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, Finance, and memory")} onClick={() => setSection("backup")} />
       </SettingsGroup>
       <SettingsGroup title={t("Support")}>
         <MenuRow icon={<Bug className="size-4" />} title={t("Debug")} detail={t("Logs, echo guard, and sign out")} onClick={() => setSection("debug")} />
@@ -832,7 +832,7 @@ function BackupPage() {
     try {
       const next = await api.restoreBackup(fileB64, passphrase, true, restoreKeys);
       setPreview(next);
-      setNotice(fill("Replaced {notes} notes and {people} people.", { notes: next.notes, people: next.people }));
+      setNotice(t("Replaced notes, people, and Finance on this phone."));
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -844,7 +844,8 @@ function BackupPage() {
     <div className="space-y-4 pb-6">
       <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        {t("An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.")}
+        {t("An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.")}{" "}
+        {t("Finance is included. An older backup without Finance leaves the money already on this phone.")}
       </p>
       <Field label={t("Passphrase")}>
         <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
@@ -869,7 +870,7 @@ function BackupPage() {
       <div className="border-t border-border pt-4">
         <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {t("Replace notes and People on this phone. Reminders that are not tied to a person stay. Confirm after you review the file.")}
+          {t("Replace notes, People, and Finance on this phone. Reminders that are not tied to a person stay. Confirm after you review the file.")}
         </p>
         <label className="mt-3 flex h-12 cursor-pointer items-center border border-border px-3 text-sm">
           <span className="truncate">{fileName || t("Choose a .gvb file")}</span>
@@ -885,7 +886,7 @@ function BackupPage() {
             {t("Review")}
           </Button>
           <Button disabled={busy || !preview} onClick={() => void restore()}>
-            {t("Replace notes and people")}
+            {t("Replace notes, people, and Finance")}
           </Button>
         </div>
         {preview && (
@@ -898,6 +899,7 @@ function BackupPage() {
               })}
               {preview.keys ? fill(" · {keys} keys in the file", { keys: preview.keys }) : ""}
               {preview.hasMemory ? fill(" · {facts} facts", { facts: preview.facts }) : t(" · no memory section")}
+              {preview.hasFinance ? ` · ${t("Includes Finance")}` : ` · ${t("No Finance in this file")}`}
             </p>
             {preview.keys > 0 && (
               <button

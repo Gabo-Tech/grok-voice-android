@@ -177,7 +177,7 @@ pub struct Agenda {
 }
 
 pub fn tool_definitions() -> Value {
-    json!([
+    let mut tools = json!([
         fn_tool("create_note", "Save a note on this phone. title is a short name. text may be markdown.", json!({
             "type": "object",
             "properties": { "title": { "type": "string" }, "text": { "type": "string" } },
@@ -543,7 +543,13 @@ pub fn tool_definitions() -> Value {
             "properties": { "id": { "type": "string" } },
             "required": ["id"]
         }))
-    ])
+    ]);
+    if let Some(list) = tools.as_array_mut() {
+        if let Some(extra) = crate::finance::tool_definitions().as_array() {
+            list.extend(extra.iter().cloned());
+        }
+    }
+    tools
 }
 
 fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
@@ -553,7 +559,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " play_local_music plays audio files and playlists already on this phone. Use it immediately for play music, play some music, or a named artist, album, or song. Do not use it when they say YouTube. YouTube, play on YouTube, and a YouTube video stay on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not play local files. If play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video."
+    " play_local_music plays audio files and playlists already on this phone. Use it immediately for play music, play some music, or a named artist, album, or song. Do not use it when they say YouTube. YouTube, play on YouTube, and a YouTube video stay on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not play local files. If play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, or investment the user described. list_finance answers how much they spent, cash on hand, a card balance, and the next loan payment. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, or account number. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it."
 }
 
 impl Agenda {
@@ -1682,6 +1688,9 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
     }
     if name == "share_item" {
         return share_item(app, args);
+    }
+    if let Some(value) = crate::finance::try_tool(app, name, args)? {
+        return Ok(value);
     }
     let agenda = app.state::<Agenda>();
     match name {

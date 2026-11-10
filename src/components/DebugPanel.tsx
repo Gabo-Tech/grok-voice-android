@@ -180,7 +180,7 @@ export function DebugPanel({
           <Row k={t("Service armed")} v={info?.serviceArmed ? t("on") : t("off")} tone={info?.serviceArmed ? "ok" : undefined} />
           <Row k={t("Foreground service")} v={info?.foregroundService ? t("running") : t("stopped")} tone={info?.foregroundService ? "ok" : undefined} />
           <Row k={t("Screen")} v={info?.screenInteractive ? t("on") : t("off")} />
-          <Row k={t("Activity")} v={info?.activityResumed ? t("visible") : t("background")} />
+          <Row k={t("App activity")} v={info?.activityResumed ? t("visible") : t("background")} />
           <Row k={t("Last stop")} v={info?.lastStopReason || "—"} tone={info?.lastStopReason ? "warn" : undefined} />
           <Row k={t("Speaker")} v={info?.speakerRate ? `24 kHz → ${info.speakerRate} Hz` : t("closed")} />
           <Row k={t("Wake word")} v={info?.wakewordTrained ? t("trained") : t("not trained")} tone={info?.wakewordTrained ? "ok" : "warn"} />

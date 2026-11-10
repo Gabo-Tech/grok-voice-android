@@ -1,16 +1,17 @@
 import { useSyncExternalStore } from "react";
-import { AlarmClock, CalendarDays, ChevronLeft, Mic, NotebookPen, Plus, Settings } from "lucide-react";
+import { AlarmClock, CalendarDays, ChevronLeft, Mic, NotebookPen, Plus, Settings, Wallet } from "lucide-react";
 import { getAction, getNav, requestBack, subscribeAction, subscribeNav } from "@/lib/history";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-export type AppTab = "talk" | "notes" | "calendar" | "reminders" | "more";
+export type AppTab = "talk" | "notes" | "calendar" | "reminders" | "finance" | "more";
 
 const ITEMS: Array<{ id: AppTab; label: string; icon: typeof Mic }> = [
   { id: "talk", label: "Talk", icon: Mic },
   { id: "notes", label: "Notes", icon: NotebookPen },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "reminders", label: "Time", icon: AlarmClock },
+  { id: "finance", label: "Finance", icon: Wallet },
   { id: "more", label: "Settings", icon: Settings },
 ];
 
@@ -37,7 +38,7 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
           ) : null}
         </div>
       )}
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {ITEMS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
@@ -47,7 +48,7 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                 onClick={() => onChange(id)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-h-12 w-full flex-col items-center justify-center px-0.5 py-1.5 text-[13px] leading-4",
+                  "flex min-h-12 w-full flex-col items-center justify-center px-0.5 py-1.5 text-[11px] leading-4",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >

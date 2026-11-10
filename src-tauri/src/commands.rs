@@ -729,6 +729,7 @@ pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bo
     let include_keys = include_keys.unwrap_or(false);
     let mut payload = crate::backup::Payload::notes_and_people(app.state::<Agenda>().notes(), app.state::<People>().list());
     payload.memory = Some(app.state::<crate::local_memory::LocalMemory>().snapshot());
+    payload.finance = Some(app.state::<crate::finance::Finance>().bundle());
     if include_keys {
         let secrets = app.state::<Vault>().accounts(&app.state::<NativeBridge>()).map_err(|e| msg(e.to_string()))?;
         payload.keys = secrets
@@ -787,6 +788,9 @@ pub fn restore_backup(
     actions::replace_notes(&app, payload.notes).map_err(msg)?;
     if let Some(memory) = payload.memory {
         app.state::<crate::local_memory::LocalMemory>().replace(memory);
+    }
+    if let Some(finance) = payload.finance {
+        app.state::<crate::finance::Finance>().replace(&app, finance).map_err(msg)?;
     }
     actions::sync_person_reminders(&app).map_err(msg)?;
     if restore_keys.unwrap_or(false) && !payload.keys.is_empty() {
@@ -1030,4 +1034,42 @@ pub async fn download_custom_local_model(
     .map_err(msg)?;
     use_local_for_talk(&app);
     local_pack_status(app).await
+}
+
+#[tauri::command]
+pub fn finance_snapshot(app: AppHandle, locale: Option<String>) -> crate::finance::Snapshot {
+    if let Some(locale) = locale.filter(|value| !value.trim().is_empty()) {
+        app.state::<crate::finance::Finance>().remember_locale(&locale);
+    }
+    app.state::<crate::finance::Finance>().snapshot(&app)
+}
+
+#[tauri::command]
+pub fn save_finance_account(app: AppHandle, account: crate::finance::AccountDraft) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().save_account(&app, account).map_err(msg)
+}
+
+#[tauri::command]
+pub fn save_finance_transaction(app: AppHandle, transaction: crate::finance::TransactionDraft) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().save_transaction(&app, transaction).map_err(msg)
+}
+
+#[tauri::command]
+pub fn save_finance_rule(app: AppHandle, rule: crate::finance::RuleDraft) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().save_rule(&app, rule).map_err(msg)
+}
+
+#[tauri::command]
+pub fn delete_finance_account(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().delete_account(&app, &id).map_err(msg)
+}
+
+#[tauri::command]
+pub fn delete_finance_transaction(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().delete_transaction(&app, &id).map_err(msg)
+}
+
+#[tauri::command]
+pub fn delete_finance_rule(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().delete_rule(&app, &id).map_err(msg)
 }
