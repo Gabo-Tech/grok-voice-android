@@ -20,4 +20,14 @@
     <string name="update_title">Grok Voice update</string>
     <string name="update_text">Version %1$s is ready to download.</string>
     <string name="update_action">Download</string>
+    <string name="alarm_stop">Stop</string>
+    <string name="alarm_file_playing">Playing your audio</string>
+    <string name="alarm_youtube_starting">Starting YouTube audio…</string>
+    <string name="alarm_youtube_playing">Playing YouTube audio</string>
+    <string name="alarm_file_missing">That audio file is missing, so the default alarm sound is playing.</string>
+    <string name="alarm_offline">No network, so this YouTube video could not play. The default alarm sound is playing.</string>
+    <string name="alarm_youtube_failed">This YouTube video could not play. The default alarm sound is playing.</string>
+    <string name="alarm_media_silent">YouTube audio uses the media volume, which is silent. The default alarm sound is playing.</string>
+    <string name="alarm_channel_name">Alarm sound</string>
+    <string name="alarm_channel_desc">Shown while a chosen alarm sound plays. The sound itself plays separately.</string>
 </resources>
