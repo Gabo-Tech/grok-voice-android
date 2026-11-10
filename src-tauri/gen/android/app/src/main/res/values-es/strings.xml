@@ -60,5 +60,10 @@
     <string name="channel_listen_health_desc">Cuando la escucha en segundo plano necesita la app abierta</string>
     <string name="listen_needs_app_title">Escuchar en segundo plano</string>
     <string name="listen_needs_app_text">Abre Grok Voice para que Hey Grok siga escuchando.</string>
+    <string name="music_channel_name">Música</string>
+    <string name="music_channel_desc">Visible mientras Grok Voice reproduce música de este teléfono</string>
+    <string name="music_playing">Reproduciendo</string>
+    <string name="music_pause">Pausa</string>
+    <string name="music_stop">Parar</string>
 </resources>
 

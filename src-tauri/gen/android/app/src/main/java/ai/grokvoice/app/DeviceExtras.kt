@@ -90,6 +90,7 @@ object DeviceExtras {
       .put("dnd", dnd)
       .put("callLog", if (granted(context, Manifest.permission.READ_CALL_LOG)) "granted" else "denied")
       .put("sms", if (granted(context, Manifest.permission.READ_SMS)) "granted" else "denied")
+      .put("audio", if (LocalMusic.canRead(context)) "granted" else "denied")
       .toString()
   }
 

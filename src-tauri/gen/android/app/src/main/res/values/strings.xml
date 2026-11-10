@@ -59,4 +59,9 @@
     <string name="channel_listen_health_desc">When background listening needs the app open</string>
     <string name="listen_needs_app_title">Listening in background</string>
     <string name="listen_needs_app_text">Open Grok Voice so Hey Grok can keep listening.</string>
+    <string name="music_channel_name">Music</string>
+    <string name="music_channel_desc">Shown while Grok Voice plays music stored on this phone</string>
+    <string name="music_playing">Playing</string>
+    <string name="music_pause">Pause</string>
+    <string name="music_stop">Stop</string>
 </resources>

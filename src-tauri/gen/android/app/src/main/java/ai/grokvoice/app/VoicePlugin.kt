@@ -374,6 +374,34 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
     resolveJson(invoke, HandOff.media(activity.applicationContext, a.action))
   }
 
+  @InvokeArg
+  class JsonArgs {
+    var json: String = ""
+  }
+
+  @Command
+  fun listLocalAudio(invoke: Invoke) {
+    resolveJson(invoke, LocalMusic.catalog(activity.applicationContext))
+  }
+
+  @Command
+  fun playLocalAudio(invoke: Invoke) {
+    val a = invoke.parseArgs(JsonArgs::class.java)
+    resolveJson(invoke, LocalMusic.play(activity.applicationContext, a.json))
+  }
+
+  @Command
+  fun requestAudioAccess(invoke: Invoke) {
+    LocalMusic.requestAccess(activity) { granted, openedSettings ->
+      val json = JSONObject()
+        .put("ok", granted)
+        .put("audio", if (granted) "granted" else "denied")
+        .put("openedSettings", openedSettings)
+        .toString()
+      resolveJson(invoke, json)
+    }
+  }
+
   @Command
   fun adjustVolume(invoke: Invoke) {
     val a = invoke.parseArgs(VolumeArgs::class.java)

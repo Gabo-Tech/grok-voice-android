@@ -599,7 +599,7 @@ export function MorePage({
           detail={settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("Normal")}
           onClick={() => setSection("alerts")}
         />
-        <MenuRow icon={<Bell className="size-4" />} title={t("Phone access")} detail={t("Notifications, Do Not Disturb, history")} onClick={() => setSection("access")} />
+        <MenuRow icon={<Bell className="size-4" />} title={t("Phone access")} detail={t("Notifications, Do Not Disturb, history, music")} onClick={() => setSection("access")} />
         <MenuRow icon={<AudioLines className="size-4" />} title={t("Voice and model")} detail={t("Names sent with the xAI key")} onClick={() => setSection("model")} />
       </SettingsGroup>
       <SettingsGroup title={t("Your data")}>
@@ -740,6 +740,15 @@ function AccessSection() {
         <span>{t("Call and text history")}</span>
         <span className="text-xs uppercase">{status ? `${accessWord(status.callLog, t)} / ${accessWord(status.sms, t)}` : ""}</span>
       </button>
+      <button
+        type="button"
+        className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm"
+        onClick={() => void api.requestAudioAccess().then(refresh).catch((e) => setError(errorText(e)))}
+      >
+        <span>{t("Music and audio")}</span>
+        <span className="text-xs uppercase">{accessWord(status?.audio, t)}</span>
+      </button>
+      <p className="text-sm leading-6 text-muted-foreground">{t("Talk plays songs stored on this phone after you allow this.")}</p>
       {error && <p className="text-sm text-foreground">{t(error)}</p>}
     </div>
   );

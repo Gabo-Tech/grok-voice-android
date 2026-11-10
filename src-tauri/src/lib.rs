@@ -14,6 +14,7 @@ mod i18n;
 mod local;
 mod local_memory;
 mod memory;
+mod music;
 mod native;
 mod notices;
 mod people;
@@ -173,6 +174,7 @@ pub fn run() {
             commands::access_status,
             commands::open_access_settings,
             commands::request_history_access,
+            commands::request_audio_access,
             commands::refresh_last_contact,
             commands::import_contact_birthday,
             commands::import_contact_dates,
