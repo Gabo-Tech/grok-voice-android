@@ -57,10 +57,11 @@ pub fn is_alert_kind(kind: &str) -> bool {
 }
 
 /// Piper only when the configured language has a pack already in the app.
-/// Spanish, Portuguese, and Valencian stay on Android text-to-speech.
+/// Portuguese and Valencian stay on Android text-to-speech.
 pub fn piper_pack(locale: &str, phone_lang: &str) -> Option<&'static str> {
     match spoken_lang(locale, phone_lang) {
         "de" => Some("tts-de"),
+        "es" => Some("tts-es"),
         "en" => Some("tts"),
         _ => None,
     }
@@ -70,6 +71,7 @@ pub fn piper_dir(pack: &str) -> Option<&'static str> {
     match pack {
         "tts" => Some("tts/vits-piper-en_US-lessac-low"),
         "tts-de" => Some("tts-de/vits-piper-de_DE-thorsten-low"),
+        "tts-es" => Some("tts-es/vits-piper-es_ES-davefx-medium"),
         _ => None,
     }
 }
@@ -78,6 +80,7 @@ pub fn piper_model_name(pack: &str) -> Option<&'static str> {
     match pack {
         "tts" => Some("en_US-lessac-low.onnx"),
         "tts-de" => Some("de_DE-thorsten-low.onnx"),
+        "tts-es" => Some("es_ES-davefx-medium.onnx"),
         _ => None,
     }
 }
@@ -937,6 +940,8 @@ fn spoken_lang(locale: &str, phone_lang: &str) -> &'static str {
     let tag = tag.trim().to_ascii_lowercase().replace('_', "-");
     if tag.starts_with("de") {
         "de"
+    } else if tag.starts_with("es") {
+        "es"
     } else if tag.is_empty() || tag.starts_with("en") {
         "en"
     } else {
@@ -1269,16 +1274,22 @@ mod tests {
         assert_eq!(piper_pack("", "de"), Some("tts-de"));
         assert_eq!(piper_pack("", "en"), Some("tts"));
         assert_eq!(piper_pack("", ""), Some("tts"));
-        assert_eq!(piper_pack("es", "en"), None);
+        assert_eq!(piper_pack("es", "en"), Some("tts-es"));
+        assert_eq!(piper_pack("", "es"), Some("tts-es"));
+        assert_eq!(piper_pack("es-MX", "en"), Some("tts-es"));
         assert_eq!(piper_pack("pt", "de"), None);
         assert_eq!(piper_pack("ca-ES-valencia", "ca"), None);
         assert_eq!(piper_dir("tts"), Some("tts/vits-piper-en_US-lessac-low"));
         assert_eq!(piper_model_name("tts-de"), Some("de_DE-thorsten-low.onnx"));
+        assert_eq!(piper_dir("tts-es"), Some("tts-es/vits-piper-es_ES-davefx-medium"));
+        assert_eq!(piper_model_name("tts-es"), Some("es_ES-davefx-medium.onnx"));
         let packs = include_str!("local/packs.rs");
         assert!(packs.contains("tts/vits-piper-en_US-lessac-low"));
         assert!(packs.contains("en_US-lessac-low.onnx"));
         assert!(packs.contains("tts-de/vits-piper-de_DE-thorsten-low"));
         assert!(packs.contains("de_DE-thorsten-low.onnx"));
+        assert!(packs.contains("tts-es/vits-piper-es_ES-davefx-medium"));
+        assert!(packs.contains("es_ES-davefx-medium.onnx"));
     }
 
     #[test]
@@ -1387,6 +1398,8 @@ mod tests {
         assert!(!spoken.contains("gv_llm"));
         assert!(spoken.contains("vits-piper-en_US-lessac-low"));
         assert!(spoken.contains("vits-piper-de_DE-thorsten-low"));
+        assert!(spoken.contains("vits-piper-es_ES-davefx-medium"));
+        assert!(spoken.contains("es_ES-davefx-medium.onnx"));
     }
     #[test]
     fn spoken_tasks_turn_first_person_into_a_natural_line() {

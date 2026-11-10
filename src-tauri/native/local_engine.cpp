@@ -135,15 +135,15 @@ GvAsr *gv_asr_load_transducer(
     config.model_config.provider = "cpu";
     config.model_config.model_type = "nemo_transducer";
     config.model_config.num_threads = threads > 0 ? threads : 2;
-    /* Beam search is supported for this NeMo transducer and catches more
-       German words than greedy. Moonshine stays greedy; it has no beam. */
+    /* Beam search is supported for these NeMo transducers (German and Spanish)
+       and catches more words than greedy. Moonshine stays greedy; it has no beam. */
     config.decoding_method = "modified_beam_search";
     config.max_active_paths = 4;
 
     asr->recognizer = SherpaOnnxCreateOfflineRecognizer(&config);
     if (!asr->recognizer) {
         gv_asr_free(asr);
-        gv_set_err(err, err_len, "could not load the German speech model");
+        gv_set_err(err, err_len, "could not load the speech model");
         return NULL;
     }
     return asr;

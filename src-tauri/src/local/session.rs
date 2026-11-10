@@ -33,6 +33,16 @@ use super::{
     vad::Vad,
 };
 
+/// German and Spanish each need their own packs. English falls through to the
+/// caller's message, which is different for a typed turn and a live session.
+fn optional_speech_missing(speech: &str) -> Option<&'static str> {
+    match speech {
+        "de" => Some("German on-device speech is not downloaded. English Moonshine Base does not understand German. Download the German packs in Settings."),
+        "es" => Some("Spanish on-device speech is not downloaded. English Moonshine Base does not understand Spanish. Download the Spanish packs in Settings."),
+        _ => None,
+    }
+}
+
 struct SearchGuard;
 impl Drop for SearchGuard {
     fn drop(&mut self) {
@@ -57,11 +67,9 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
     let settings = app.state::<crate::settings::SettingsStore>().get();
     let speech = settings.local_speech.clone();
     if !packs_ready_for(&dir, &speech) {
-        return Err(if speech == "de" {
-            "German on-device speech is not downloaded. English Moonshine Base does not understand German. Download the German packs in Settings.".into()
-        } else {
-            super::web::OFFLINE_VOICE.into()
-        });
+        return Err(optional_speech_missing(&speech)
+            .unwrap_or(super::web::OFFLINE_VOICE)
+            .into());
     }
     let facts = app.state::<NativeBridge>().device_facts().unwrap_or(crate::native::DeviceFacts {
         avail_mb: 0,
@@ -114,11 +122,9 @@ pub async fn run_session(
     let facts = device_facts(app).await;
     let speech = settings.local_speech.as_str();
     if !packs_ready_for(&dir, speech) {
-        return Err(if speech == "de" {
-            "German on-device speech is not downloaded. English Moonshine Base does not understand German. Download the German packs in Settings.".into()
-        } else {
-            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice keys.".into()
-        });
+        return Err(optional_speech_missing(speech).unwrap_or(
+            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice keys.",
+        ).into());
     }
     let paths = model_paths_for(&dir, speech);
     let family = chosen.family;

@@ -471,6 +471,7 @@ export function MorePage({
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { id: "en", label: t("English") },
+                  { id: "es", label: t("Spanish") },
                   { id: "de", label: t("German") },
                 ].map((choice) => (
                   <button
@@ -487,7 +488,7 @@ export function MorePage({
                 ))}
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {t("English uses Moonshine Base. German uses a separate download. Moonshine does not understand German.")}
+                {t("English uses Moonshine Base. Spanish and German each use a separate download. Moonshine does not understand Spanish or German.")}
               </p>
             </div>
           </div>

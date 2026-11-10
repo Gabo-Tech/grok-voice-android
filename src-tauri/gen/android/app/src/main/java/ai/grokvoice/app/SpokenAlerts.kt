@@ -400,11 +400,13 @@ object SpokenAlerts {
     val dir = when (pack) {
       "tts" -> File(root, "tts/vits-piper-en_US-lessac-low")
       "tts-de" -> File(root, "tts-de/vits-piper-de_DE-thorsten-low")
+      "tts-es" -> File(root, "tts-es/vits-piper-es_ES-davefx-medium")
       else -> return null
     }
     val model = when (pack) {
       "tts" -> File(dir, "en_US-lessac-low.onnx")
       "tts-de" -> File(dir, "de_DE-thorsten-low.onnx")
+      "tts-es" -> File(dir, "es_ES-davefx-medium.onnx")
       else -> return null
     }
     val tokens = File(dir, "tokens.txt")

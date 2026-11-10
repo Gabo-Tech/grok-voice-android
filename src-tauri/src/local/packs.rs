@@ -48,6 +48,12 @@ pub fn llm_model_id() -> &'static str {
 pub const TTS_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2";
 pub const STT_DE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8.tar.bz2";
 pub const TTS_DE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten-low.tar.bz2";
+/// NVIDIA `stt_es_fastconformer_hybrid_large_pc` (CC-BY-4.0), transducer branch,
+/// int8, from the sherpa-onnx asr-models release. Same NeMo files as the German pack.
+pub const STT_ES_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8.tar.bz2";
+/// Piper es_ES davefx medium. sherpa-onnx has no es_ES low voice. The archive is
+/// the same VITS layout as lessac and thorsten. The voice dataset is CC0.
+pub const TTS_ES_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-davefx-medium.tar.bz2";
 
 struct Spec {
     id: &'static str,
@@ -57,7 +63,7 @@ struct Spec {
     download_bytes: u64,
     sha256: &'static str,
     archive: bool,
-    /// English speech. German packs and extra language models are optional.
+    /// English speech. German and Spanish packs and extra language models are optional.
     required: bool,
     /// `speech` or `llm`.
     kind: &'static str,
@@ -126,6 +132,32 @@ const PACKS: &[Spec] = &[
         url: TTS_DE_URL,
         download_bytes: 67_101_576,
         sha256: "41fab35910fdcec4696b031951d8fd6c262e594cf77b35e1068fadbeb5a091a6",
+        archive: true,
+        required: false,
+        kind: "speech",
+        file: "",
+        family: "",
+    },
+    Spec {
+        id: "stt-es",
+        label: "Spanish speech to text",
+        detail: "NeMo FastConformer Spanish, int8",
+        url: STT_ES_URL,
+        download_bytes: 107_246_685,
+        sha256: "d6d29ffd560c366da1b177b71e79d8733a9a9910dd1ace282d9bfae94e056210",
+        archive: true,
+        required: false,
+        kind: "speech",
+        file: "",
+        family: "",
+    },
+    Spec {
+        id: "tts-es",
+        label: "Spanish voice",
+        detail: "Piper es_ES davefx, medium",
+        url: TTS_ES_URL,
+        download_bytes: 67_184_952,
+        sha256: "a3f6beb54a9cb893279f72978a22f807a4d9fc9c7848157b524d5cc7b7f58b22",
         archive: true,
         required: false,
         kind: "speech",
@@ -271,6 +303,23 @@ pub fn model_paths_for(root: &Path, lang: &str) -> ModelPaths {
             tts_data: tts.join("espeak-ng-data"),
         };
     }
+    if lang == "es" {
+        let stt = root.join("stt-es/sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8");
+        let tts = root.join("tts-es/vits-piper-es_ES-davefx-medium");
+        return ModelPaths {
+            asr: "transducer",
+            preprocess: stt.join("unused"),
+            encoder: stt.join("encoder.int8.onnx"),
+            uncached: stt.join("decoder.int8.onnx"),
+            cached: stt.join("unused"),
+            joiner: stt.join("joiner.int8.onnx"),
+            stt_tokens: stt.join("tokens.txt"),
+            llm,
+            tts_model: tts.join("es_ES-davefx-medium.onnx"),
+            tts_tokens: tts.join("tokens.txt"),
+            tts_data: tts.join("espeak-ng-data"),
+        };
+    }
     let stt = root.join("stt").join(STT_DIR);
     let tts = root.join("tts/vits-piper-en_US-lessac-low");
     ModelPaths {
@@ -323,6 +372,9 @@ pub fn packs_ready_for(root: &Path, lang: &str) -> bool {
     if lang == "de" && !(pack_ready(root, "stt-de") && pack_ready(root, "tts-de")) {
         return false;
     }
+    if lang == "es" && !(pack_ready(root, "stt-es") && pack_ready(root, "tts-es")) {
+        return false;
+    }
     pack_ready(root, &selected_id(root))
 }
 
@@ -373,6 +425,7 @@ fn pack_ready(root: &Path, id: &str) -> bool {
     }
     let english = speech_paths(root, "en");
     let german = speech_paths(root, "de");
+    let spanish = speech_paths(root, "es");
     match id {
         "stt" => {
             file_ok(&english.preprocess)
@@ -393,6 +446,15 @@ fn pack_ready(root: &Path, id: &str) -> bool {
         }
         "tts-de" => {
             file_ok(&german.tts_model) && file_ok(&german.tts_tokens) && dir_ok(&german.tts_data)
+        }
+        "stt-es" => {
+            file_ok(&spanish.encoder)
+                && file_ok(&spanish.uncached)
+                && file_ok(&spanish.joiner)
+                && file_ok(&spanish.stt_tokens)
+        }
+        "tts-es" => {
+            file_ok(&spanish.tts_model) && file_ok(&spanish.tts_tokens) && dir_ok(&spanish.tts_data)
         }
         _ => false,
     }
@@ -1045,7 +1107,10 @@ mod tests {
         assert!(
             status
                 .iter()
-                .filter(|pack| pack.kind == "speech" && pack.id != "stt-de" && pack.id != "tts-de")
+                .filter(|pack| {
+                    pack.kind == "speech"
+                        && !matches!(pack.id.as_str(), "stt-de" | "tts-de" | "stt-es" | "tts-es")
+                })
                 .all(|pack| pack.ready)
         );
         assert!(
@@ -1064,8 +1129,44 @@ mod tests {
                 .any(|pack| pack.id == "llm-custom" && !pack.ready)
         );
         assert!(status.iter().any(|pack| pack.id == "stt-de" && !pack.ready));
+        assert!(status.iter().any(|pack| pack.id == "stt-es" && !pack.ready));
+        assert!(status.iter().any(|pack| pack.id == "tts-es" && !pack.ready));
         assert!(packs_ready(&root));
         assert!(!packs_ready_for(&root, "de"));
+        assert!(!packs_ready_for(&root, "es"));
+        let spanish = model_paths_for(&root, "es");
+        assert_eq!(spanish.asr, "transducer");
+        assert!(spanish.encoder.ends_with(
+            "stt-es/sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8/encoder.int8.onnx"
+        ));
+        assert!(spanish.uncached.ends_with("decoder.int8.onnx"));
+        assert!(spanish.joiner.ends_with("joiner.int8.onnx"));
+        assert!(spanish
+            .tts_model
+            .ends_with("tts-es/vits-piper-es_ES-davefx-medium/es_ES-davefx-medium.onnx"));
+        assert_eq!(model_paths(&root).asr, "moonshine");
+        for path in [
+            &spanish.encoder,
+            &spanish.uncached,
+            &spanish.joiner,
+            &spanish.stt_tokens,
+            &spanish.tts_model,
+            &spanish.tts_tokens,
+        ] {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, b"es").unwrap();
+        }
+        fs::create_dir_all(&spanish.tts_data).unwrap();
+        assert!(pack_ready(&root, "stt-es"));
+        assert!(pack_ready(&root, "tts-es"));
+        assert!(packs_ready_for(&root, "es"));
+        assert!(packs_ready(&root));
+        assert!(!packs_ready_for(&root, "de"));
+        delete_pack(&root, "stt-es").unwrap();
+        assert!(!packs_ready_for(&root, "es"));
+        assert!(packs_ready(&root));
         assert_eq!(
             status
                 .iter()
@@ -1081,6 +1182,22 @@ mod tests {
                 .unwrap()
                 .download_bytes,
             67_101_576
+        );
+        assert_eq!(
+            status
+                .iter()
+                .find(|pack| pack.id == "stt-es")
+                .unwrap()
+                .download_bytes,
+            107_246_685
+        );
+        assert_eq!(
+            status
+                .iter()
+                .find(|pack| pack.id == "tts-es")
+                .unwrap()
+                .download_bytes,
+            67_184_952
         );
         assert_eq!(status[0].download_bytes, 250_807_309);
         assert_eq!(status[1].download_bytes, 144_811_360);
@@ -1197,6 +1314,31 @@ mod tests {
         let stt = PACKS.iter().find(|spec| spec.id == "stt").unwrap();
         let tts = PACKS.iter().find(|spec| spec.id == "tts").unwrap();
         let stt_de = PACKS.iter().find(|spec| spec.id == "stt-de").unwrap();
+        let stt_es = PACKS.iter().find(|spec| spec.id == "stt-es").unwrap();
+        let tts_es = PACKS.iter().find(|spec| spec.id == "tts-es").unwrap();
+        assert_eq!(stt_es.kind, "speech");
+        assert_eq!(tts_es.kind, "speech");
+        assert!(!stt_es.required);
+        assert!(!tts_es.required);
+        assert!(stt_es.archive && tts_es.archive);
+        assert!(crate::http::https_url_allowed(stt_es.url, PACK_HOSTS));
+        assert!(crate::http::https_url_allowed(tts_es.url, PACK_HOSTS));
+        assert_eq!(
+            stt_es.sha256,
+            "d6d29ffd560c366da1b177b71e79d8733a9a9910dd1ace282d9bfae94e056210"
+        );
+        assert_eq!(
+            tts_es.sha256,
+            "a3f6beb54a9cb893279f72978a22f807a4d9fc9c7848157b524d5cc7b7f58b22"
+        );
+        assert!(stt_es.url.contains("sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8"));
+        assert!(tts_es.url.contains("vits-piper-es_ES-davefx-medium"));
+        assert_eq!(
+            model_paths_for(Path::new("/models"), "es").asr,
+            "transducer"
+        );
+        assert_eq!(model_paths_for(Path::new("/models"), "de").asr, "transducer");
+        assert_eq!(model_paths_for(Path::new("/models"), "en").asr, "moonshine");
         assert_eq!(
             llm.sha256,
             "5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83"
@@ -1257,6 +1399,22 @@ mod tests {
         );
         assert_eq!(llama.family, "llama3");
         assert_eq!(active_model(Path::new("/models")).id, "llm");
+        let i18n = include_str!("../../../src/lib/i18n.ts");
+        for english in [
+            "Spanish speech to text",
+            "Spanish voice",
+            "NeMo FastConformer Spanish, int8",
+            "Piper es_ES davefx, medium",
+            "English uses Moonshine Base. Spanish and German each use a separate download. Moonshine does not understand Spanish or German.",
+            "Speech to text is Moonshine Base. Choose a language model below. SmolLM2 135M Instruct stays the default until you switch. Spanish speech, German speech, and the Piper voices stay as they are.",
+            "Spanish on-device speech is not downloaded. English Moonshine Base does not understand Spanish. Download the Spanish packs in Settings.",
+            "could not load the speech model",
+        ] {
+            assert!(
+                i18n.matches(english).count() >= 4,
+                "missing translation for {english}"
+            );
+        }
     }
 
     #[test]
