@@ -21,4 +21,9 @@
     <string name="update_title">Atualização do Grok Voice</string>
     <string name="update_text">A versão %1$s está pronta para baixar.</string>
     <string name="update_action">Baixar</string>
+    <string name="music_channel_name">Música</string>
+    <string name="music_channel_desc">Visível enquanto o Grok Voice toca música deste telefone</string>
+    <string name="music_playing">Tocando</string>
+    <string name="music_pause">Pausar</string>
+    <string name="music_stop">Parar</string>
 </resources>

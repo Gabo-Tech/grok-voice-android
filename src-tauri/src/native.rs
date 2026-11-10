@@ -339,6 +339,22 @@ mod imp {
             self.plugin_json("mediaControl", Args { action })
         }
 
+        pub fn list_local_audio(&self) -> Result<String> {
+            self.plugin_json("listLocalAudio", ())
+        }
+
+        pub fn play_local_audio(&self, json: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                json: &'a str,
+            }
+            self.plugin_json("playLocalAudio", Args { json })
+        }
+
+        pub fn request_audio(&self) -> Result<String> {
+            self.plugin_json("requestAudioAccess", ())
+        }
+
         pub fn adjust_volume(&self, direction: &str, steps: i32) -> Result<String> {
             #[derive(Serialize)]
             struct Args<'a> {
@@ -618,6 +634,18 @@ mod imp {
             Ok(serde_json::json!({ "ok": true, "detail": format!("Would send media {action} on the phone.") }).to_string())
         }
 
+        pub fn list_local_audio(&self) -> Result<String> {
+            Ok(r#"{"ok":false,"permission":"unsupported"}"#.into())
+        }
+
+        pub fn play_local_audio(&self, _json: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"failed"}"#.into())
+        }
+
+        pub fn request_audio(&self) -> Result<String> {
+            Ok(r#"{"ok":false,"audio":"denied","openedSettings":false}"#.into())
+        }
+
         pub fn adjust_volume(&self, direction: &str, _steps: i32) -> Result<String> {
             Ok(serde_json::json!({ "ok": true, "detail": format!("Would turn volume {direction} on the phone.") }).to_string())
         }
@@ -669,7 +697,7 @@ mod imp {
         }
 
         pub fn access_status(&self) -> Result<String> {
-            Ok(r#"{"notificationListener":"unknown","dnd":"unknown","callLog":"unknown","sms":"unknown"}"#.into())
+            Ok(r#"{"notificationListener":"unknown","dnd":"unknown","callLog":"unknown","sms":"unknown","audio":"unknown"}"#.into())
         }
 
         pub fn open_access_settings(&self, _kind: &str) -> Result<String> {

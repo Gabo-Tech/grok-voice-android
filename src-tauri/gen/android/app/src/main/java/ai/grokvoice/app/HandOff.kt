@@ -21,6 +21,7 @@ import org.json.JSONObject
 /** Media keys, volume, and drafts that open another app. Sending still happens there. */
 object HandOff {
   fun media(context: Context, action: String): String {
+    LocalMusic.control(context, action)?.let { return it }
     val code = when (action) {
       "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
       "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE

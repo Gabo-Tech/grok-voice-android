@@ -292,10 +292,21 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["id"]
         })),
-        fn_tool("media_control", "Control whatever is already playing: play, pause, stop, next, or previous. Call immediately. No confirmation.", json!({
+        fn_tool("media_control", "Control whatever is already playing: play, pause, stop, next, or previous. Call immediately. No confirmation. If play_local_music started the audio, these control that player. Otherwise they control another app.", json!({
             "type": "object",
             "properties": { "action": { "type": "string", "enum": ["play", "pause", "stop", "next", "previous"] } },
             "required": ["action"]
+        })),
+        fn_tool("play_local_music", "Play on-phone music, not YouTube. Call immediately for play music, play some music, a local playlist, or a named artist, album, or song. query is the name they said. Omit query for a random on-phone track. kind is playlist only when they ask for a playlist. This reads on-device audio and playlists only. It does not stream or open a music service. If they say YouTube, on YouTube, or a YouTube video, do not call this. Call open_youtube, say what will open, and wait for a clear yes. If this tool says nothing matched or there is no music, say that and do not play something else. Pause, stop, next, and previous use media_control.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "kind": { "type": "string", "enum": ["track", "playlist", "auto"] },
+                "title": { "type": "string" },
+                "artist": { "type": "string" },
+                "album": { "type": "string" },
+                "playlist": { "type": "string" }
+            }
         })),
         fn_tool("set_volume", "Raise or lower the music volume. direction is up or down. steps is 1 to 5. Call immediately.", json!({
             "type": "object",
@@ -430,7 +441,7 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["confirmed"]
         })),
-        fn_tool("open_youtube", "Open YouTube on a search or a link. Speak the query and wait for a clear yes, then call with confirmed true. Does not send anything.", json!({
+        fn_tool("open_youtube", "Open YouTube on a search or a link. Use this for play on YouTube, a YouTube song, or a YouTube video. Do not call play_local_music for that. Speak the query and wait for a clear yes, then call with confirmed true. Does not send anything. A search opens YouTube results and does not auto-play unless url is a video link.", json!({
             "type": "object",
             "properties": {
                 "query": { "type": "string" },
@@ -522,7 +533,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app."
+    " play_local_music plays audio files and playlists already on this phone. Use it immediately for play music, play some music, or a named artist, album, or song. Do not use it when they say YouTube. YouTube, play on YouTube, and a YouTube video stay on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not play local files. If play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app."
 }
 
 impl Agenda {
@@ -1450,9 +1461,123 @@ fn clip(value: &str, max: usize) -> String {
     value.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').take(max).collect()
 }
 
+fn music_query(args: &Value) -> String {
+    if let Some(query) = args["query"].as_str().map(str::trim).filter(|text| !text.is_empty()) {
+        return query.to_string();
+    }
+    let mut parts = Vec::new();
+    for key in ["title", "song", "artist", "album", "playlist", "name"] {
+        if let Some(part) = args[key].as_str().map(str::trim).filter(|text| !text.is_empty()) {
+            parts.push(part);
+        }
+    }
+    parts.join(" ")
+}
+
+enum MusicLoad {
+    Ready(crate::music::Library),
+    Denied { settings: bool },
+    PhoneOnly,
+    Failed,
+}
+
+fn music_library(raw: &str) -> Option<MusicLoad> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    match value["permission"].as_str() {
+        Some("denied") => Some(MusicLoad::Denied { settings: false }),
+        Some("unsupported") => Some(MusicLoad::PhoneOnly),
+        _ if value["ok"] != true => Some(MusicLoad::Failed),
+        _ => serde_json::from_value(value).ok().map(MusicLoad::Ready),
+    }
+}
+
+fn load_music(app: &AppHandle) -> MusicLoad {
+    let bridge = app.state::<NativeBridge>();
+    let first = match bridge.list_local_audio() {
+        Ok(raw) => raw,
+        Err(_) => return MusicLoad::Failed,
+    };
+    match music_library(&first) {
+        Some(MusicLoad::Denied { .. }) => {}
+        Some(other) => return other,
+        None => return MusicLoad::Failed,
+    }
+    let opened = bridge
+        .request_audio()
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|value| value["openedSettings"].as_bool())
+        .unwrap_or(false);
+    let second = match bridge.list_local_audio() {
+        Ok(raw) => raw,
+        Err(_) => return MusicLoad::Failed,
+    };
+    match music_library(&second) {
+        Some(MusicLoad::Denied { .. }) => MusicLoad::Denied { settings: opened },
+        Some(other) => other,
+        None => MusicLoad::Failed,
+    }
+}
+
+fn music_detail(locale: &str, key: &str, query: &str, title: &str, artist: &str, album: &str) -> Value {
+    let detail = crate::i18n::fill(locale, key, &[("query", query), ("title", title), ("artist", artist), ("album", album)]);
+    json!({ "ok": false, "error": detail, "detail": detail })
+}
+
+fn play_local_music(app: &AppHandle, args: &Value) -> Result<Value, String> {
+    let query = music_query(args);
+    let kind = crate::music::kind_of(args["kind"].as_str().unwrap_or(""));
+    let locale = locale_of(app);
+    if let Some(cleaned) = crate::music::youtube_request(&query) {
+        let detail = crate::i18n::line(&locale, "music-youtube");
+        return Ok(json!({
+            "ok": false,
+            "use": "open_youtube",
+            "query": cleaned,
+            "error": detail,
+            "detail": detail,
+        }));
+    }
+    let library = match load_music(app) {
+        MusicLoad::Ready(library) => library,
+        MusicLoad::Denied { settings } => {
+            let key = if settings { "music-permission-settings" } else { "music-permission" };
+            return Ok(music_detail(&locale, key, "", "", "", ""));
+        }
+        MusicLoad::PhoneOnly => return Ok(music_detail(&locale, "music-phone-only", "", "", "", "")),
+        MusicLoad::Failed => return Ok(music_detail(&locale, "music-failed", "", "", "", "")),
+    };
+    let planned = crate::music::plan(&library, &query, kind, rand::random::<usize>());
+    match planned {
+        crate::music::Plan::Youtube { query } => {
+            let detail = crate::i18n::line(&locale, "music-youtube");
+            Ok(json!({ "ok": false, "use": "open_youtube", "query": query, "error": detail, "detail": detail }))
+        }
+        crate::music::Plan::Miss { key, query } => Ok(music_detail(&locale, key, &query, "", "", "")),
+        crate::music::Plan::Play { items, line_key, title, artist, album } => {
+            let payload = json!({
+                "items": items.iter().map(|track| json!({
+                    "uri": track.uri,
+                    "title": track.title,
+                    "artist": track.artist,
+                    "album": track.album,
+                })).collect::<Vec<_>>()
+            });
+            let raw = app.state::<NativeBridge>().play_local_audio(&payload.to_string()).map_err(|err| err.to_string())?;
+            let value: Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({ "ok": false }));
+            if value["ok"] != true {
+                return Ok(music_detail(&locale, "music-failed", "", "", "", ""));
+            }
+            let detail = crate::i18n::fill(&locale, line_key, &[("title", &title), ("artist", &artist), ("album", &album), ("query", "")]);
+            Ok(json!({ "ok": true, "detail": detail, "title": title, "artist": artist, "album": album, "count": items.len() }))
+        }
+    }
+}
+
 fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     let bridge = app.state::<NativeBridge>();
     let raw = match name {
+        "play_local_music" => return play_local_music(app, args).map(Some),
         "media_control" => bridge
             .media_control(args["action"].as_str().unwrap_or(""))
             .map_err(|e| e.to_string())?,
@@ -3853,6 +3978,25 @@ mod tests {
 
         let found = reminders_payload(&items, &json!({ "month": "2026-11", "query": "check" }), now).unwrap();
         assert_eq!(reminder_rows(&found), vec![("Dentist".into(), "2026-11-20".into())]);
+    }
+
+    #[test]
+    fn local_music_does_not_replace_youtube() {
+        let tools = tool_definitions();
+        let desc = |name: &str| {
+            tools.as_array().unwrap().iter().find(|tool| tool["name"] == name).unwrap()["description"].as_str().unwrap().to_string()
+        };
+        assert!(desc("open_youtube").contains("YouTube"));
+        assert!(desc("open_youtube").contains("confirmed"));
+        assert!(desc("play_local_music").contains("not YouTube"));
+        assert!(desc("play_local_music").contains("open_youtube"));
+        assert!(desc("media_control").contains("play_local_music"));
+        assert!(lookup_hint().contains("play_local_music"));
+        assert!(lookup_hint().contains("open_youtube"));
+        let handoff = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/HandOff.kt");
+        assert!(handoff.contains("www.youtube.com/results?search_query="));
+        assert!(handoff.contains("com.google.android.youtube"));
+        assert!(handoff.contains("LocalMusic.control"));
     }
 
     #[test]

@@ -840,6 +840,12 @@ pub fn request_history_access(app: AppHandle) -> Result<PermissionStatus> {
 }
 
 #[tauri::command]
+pub fn request_audio_access(app: AppHandle) -> Result<serde_json::Value> {
+    let raw = app.state::<NativeBridge>().request_audio().map_err(|e| msg(e.to_string()))?;
+    serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
 pub fn refresh_last_contact(app: AppHandle, id: String) -> Result<crate::people::Person> {
     let people = app.state::<People>().list();
     let person = people.into_iter().find(|person| person.id == id).ok_or_else(|| msg("No person with that id."))?;

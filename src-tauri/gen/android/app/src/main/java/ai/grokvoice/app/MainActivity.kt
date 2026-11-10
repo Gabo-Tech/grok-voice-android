@@ -13,6 +13,7 @@ import android.webkit.WebView
 import org.json.JSONObject
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
@@ -20,6 +21,14 @@ class MainActivity : TauriActivity() {
   companion object {
     const val EXTRA_HEADLESS = "headless"
     const val EXTRA_WIDGET = "widget"
+  }
+
+  private val audioPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    LocalMusic.onPermissionResult(granted)
+  }
+
+  fun askAudioPermission(permission: String) {
+    audioPermission.launch(permission)
   }
 
   private val backCallback = object : OnBackPressedCallback(true) {
@@ -253,6 +262,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onDestroy() {
+    LocalMusic.onPermissionResult(false)
     syncBackCallback(false)
     VoiceListenerService.setUiResumed(false)
     if (!isChangingConfigurations) {

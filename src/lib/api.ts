@@ -263,6 +263,7 @@ export interface AccessStatus {
   dnd: string;
   callLog: string;
   sms: string;
+  audio?: string;
 }
 
 export interface ExportedBackup {
@@ -449,6 +450,7 @@ export const api = {
   accessStatus: () => invoke<AccessStatus>("access_status"),
   openAccessSettings: (kind: "notifications" | "dnd") => invoke<unknown>("open_access_settings", { kind }),
   requestHistoryAccess: () => invoke<PermissionStatus>("request_history_access"),
+  requestAudioAccess: () => invoke<{ audio?: string; openedSettings?: boolean }>("request_audio_access"),
   refreshLastContact: (id: string) => invoke<Person>("refresh_last_contact", { id }),
   importContactBirthday: (id: string) => invoke<Person>("import_contact_birthday", { id }),
   importContactDates: (id: string) => invoke<Person>("import_contact_dates", { id }),
