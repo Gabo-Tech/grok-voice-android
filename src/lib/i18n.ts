@@ -130,6 +130,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Q4_K_M. Gemma 3 chat model for talk and tools.": "Q4_K_M. Modelo de charla Gemma 3 para hablar y herramientas.",
     "Q8_0. Small Qwen chat model for talk and tools.": "Q8_0. Modelo de charla Qwen pequeño para hablar y herramientas.",
     "Q4_K_M. Llama 3.2 chat model for talk and tools.": "Q4_K_M. Modelo de charla Llama 3.2 para hablar y herramientas.",
+    "Q8_0. Compact Spanish and English chat model for talk and tools.":
+      "Q8_0. Modelo de charla compacto en español e inglés para hablar y herramientas.",
     "Custom model": "Modelo propio",
     "A GGUF you already have, or a download link. Talk only loads it as the local chat model.":
       "Un GGUF que ya tienes, o un enlace de descarga. Talk solo lo carga como el modelo de charla local.",
@@ -835,6 +837,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Q4_K_M. Gemma 3 chat model for talk and tools.": "Q4_K_M. Gemma-3-Gesprächsmodell für Reden und Werkzeuge.",
     "Q8_0. Small Qwen chat model for talk and tools.": "Q8_0. Kleines Qwen-Gesprächsmodell für Reden und Werkzeuge.",
     "Q4_K_M. Llama 3.2 chat model for talk and tools.": "Q4_K_M. Llama-3.2-Gesprächsmodell für Reden und Werkzeuge.",
+    "Q8_0. Compact Spanish and English chat model for talk and tools.":
+      "Q8_0. Kompaktes spanisch-englisches Gesprächsmodell für Reden und Werkzeuge.",
     "Custom model": "Eigenes Modell",
     "A GGUF you already have, or a download link. Talk only loads it as the local chat model.":
       "Eine GGUF, die du schon hast, oder ein Download-Link. Sprechen lädt sie nur als lokales Gesprächsmodell.",
@@ -1540,6 +1544,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Q4_K_M. Gemma 3 chat model for talk and tools.": "Q4_K_M. Modelo de conversa Gemma 3 para falar e ferramentas.",
     "Q8_0. Small Qwen chat model for talk and tools.": "Q8_0. Modelo de conversa Qwen pequeno para falar e ferramentas.",
     "Q4_K_M. Llama 3.2 chat model for talk and tools.": "Q4_K_M. Modelo de conversa Llama 3.2 para falar e ferramentas.",
+    "Q8_0. Compact Spanish and English chat model for talk and tools.":
+      "Q8_0. Modelo de conversa compacto em espanhol e inglês para falar e ferramentas.",
     "Custom model": "Modelo próprio",
     "A GGUF you already have, or a download link. Talk only loads it as the local chat model.":
       "Um GGUF que você já tem, ou um link de download. Falar só o carrega como o modelo de conversa local.",
@@ -2245,6 +2251,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Q4_K_M. Gemma 3 chat model for talk and tools.": "Q4_K_M. Model de conversa Gemma 3 per a parlar i eines.",
     "Q8_0. Small Qwen chat model for talk and tools.": "Q8_0. Model de conversa Qwen menut per a parlar i eines.",
     "Q4_K_M. Llama 3.2 chat model for talk and tools.": "Q4_K_M. Model de conversa Llama 3.2 per a parlar i eines.",
+    "Q8_0. Compact Spanish and English chat model for talk and tools.":
+      "Q8_0. Model de conversa compacte en espanyol i anglès per a parlar i eines.",
     "Custom model": "Model propi",
     "A GGUF you already have, or a download link. Talk only loads it as the local chat model.":
       "Un GGUF que ja tens, o un enllaç de descàrrega. Parlar només el carrega com el model de conversa local.",

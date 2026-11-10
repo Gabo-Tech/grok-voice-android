@@ -409,6 +409,7 @@ mod tests {
         assert!(ARCHITECTURES.binary_search(&"gemma3").is_ok());
         assert!(ARCHITECTURES.binary_search(&"qwen2").is_ok());
         assert!(ARCHITECTURES.binary_search(&"llama").is_ok());
+        assert!(ARCHITECTURES.binary_search(&"lfm2").is_ok());
         assert!(ARCHITECTURES.binary_search(&"smollm3").is_ok());
         assert!(ARCHITECTURES.binary_search(&"bert").is_err());
         assert!(ARCHITECTURES.binary_search(&"qwen3tts").is_err());

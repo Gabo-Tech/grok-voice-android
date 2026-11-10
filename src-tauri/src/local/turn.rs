@@ -109,14 +109,24 @@ pub fn prompt(system: &str, history: &[ChatTurn]) -> String {
     prompt_for("chatml", system, history)
 }
 
-/// ChatML for SmolLM and Qwen, Gemma's turn markers, or Llama 3 headers.
-/// The family comes from the pack, or from the GGUF chat template for a custom model.
+/// ChatML for SmolLM and Qwen, Gemma's turn markers, Llama 3 headers, or
+/// LFM2.5's ChatML with its beginning-of-text token. The family comes from
+/// the pack, or from the GGUF chat template for a custom model.
 pub fn prompt_for(family: &str, system: &str, history: &[ChatTurn]) -> String {
     match family {
         "gemma" => prompt_gemma(system, history),
         "llama3" => prompt_llama3(system, history),
+        "lfm2" => prompt_lfm(system, history),
         _ => prompt_chatml(system, history),
     }
+}
+
+/// LFM2.5 is ChatML plus `<|startoftext|>`. The loader does not insert that
+/// token (`add_special` is false), so the prompt has to carry it.
+fn prompt_lfm(system: &str, history: &[ChatTurn]) -> String {
+    let mut out = String::from("<|startoftext|>");
+    out.push_str(&prompt_chatml(system, history));
+    out
 }
 
 fn prompt_chatml(system: &str, history: &[ChatTurn]) -> String {
@@ -616,12 +626,16 @@ mod tests {
         assert!(llama.starts_with("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nbe brief<|eot_id|>"));
         assert!(llama.contains("<|start_header_id|>user<|end_header_id|>\n\nhello<|eot_id|>"));
         assert!(llama.ends_with("<|start_header_id|>assistant<|end_header_id|>\n\n"));
+        let lfm = super::prompt_for("lfm2", "be brief", &[ChatTurn { role: "user", text: "hola".into() }]);
+        assert!(lfm.starts_with("<|startoftext|><|im_start|>system\nbe brief<|im_end|>\n"));
+        assert!(lfm.contains("<|im_start|>user\nhola<|im_end|>\n"));
+        assert!(lfm.ends_with("<|im_start|>assistant\n"));
         let long = format!(
             "Can you create these recurring monthly events? {} On the 29th, the ZKB credit bill from 7:00 to 19:00.",
             "detail ".repeat(80)
         );
         assert!(long.chars().count() > HISTORY_TURN_CHARS);
-        for family in ["chatml", "gemma", "llama3"] {
+        for family in ["chatml", "gemma", "llama3", "lfm2"] {
             let prompt = super::prompt_for(
                 family,
                 "be brief",
@@ -644,5 +658,27 @@ mod tests {
         trim_history(&mut history);
         let total: usize = history.iter().map(|turn| turn.text.len()).sum();
         assert!(history.len() <= 2 || total <= super::HISTORY_CHAR_BUDGET);
+    }
+
+    #[test]
+    fn an_lfm_turn_uses_its_prompt_and_speaks_the_reply() {
+        let mut saw = String::new();
+        let spoken = super::run_turns_with(
+            "be brief",
+            &mut Vec::new(),
+            "hola",
+            "lfm2",
+            |prompt, grammar| {
+                saw = prompt.to_string();
+                assert!(grammar.is_empty());
+                Ok(r#"{"say":"Hola.","tool":null,"args":{}}"#.into())
+            },
+            |_name, _args| "{}".into(),
+        )
+        .unwrap();
+        assert!(saw.starts_with("<|startoftext|><|im_start|>system\n"));
+        assert!(saw.contains("<|im_start|>user\nhola<|im_end|>\n"));
+        assert!(saw.ends_with("<|im_start|>assistant\n"));
+        assert_eq!(spoken, "Hola.");
     }
 }

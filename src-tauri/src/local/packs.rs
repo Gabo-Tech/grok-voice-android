@@ -29,6 +29,12 @@ pub const QWEN_FILE: &str = "qwen2.5-0.5b-instruct-q8_0.gguf";
 /// Llama 3.2 1B Instruct, Q4_K_M, from bartowski's GGUF repo.
 pub const LLAMA_URL: &str = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf";
 pub const LLAMA_FILE: &str = "llama-3.2-1b-instruct-q4_k_m.gguf";
+/// LFM2.5 350M, Q8_0, from Liquid AI's official GGUF repo. Instruction-tuned
+/// for on-device chat. The file lists English and Spanish. Q8 matches the
+/// other sub-1B chat packs so tool JSON stays closer to the full weights.
+pub const LFM_URL: &str =
+    "https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/main/LFM2.5-350M-Q8_0.gguf";
+pub const LFM_FILE: &str = "lfm2.5-350m-q8_0.gguf";
 pub const STT_DIR: &str = "sherpa-onnx-moonshine-base-en-int8";
 const LEGACY_STT_DIR: &str = "sherpa-onnx-moonshine-tiny-en-int8";
 const REPLACE_NOTE: &str = "Replaces the previous pack. Download it again.";
@@ -68,7 +74,7 @@ struct Spec {
     /// `speech` or `llm`.
     kind: &'static str,
     file: &'static str,
-    /// `chatml`, `gemma`, or `llama3` for a language model.
+    /// `chatml`, `gemma`, `llama3`, or `lfm2` for a language model.
     family: &'static str,
 }
 
@@ -202,6 +208,19 @@ const PACKS: &[Spec] = &[
         kind: "llm",
         file: LLAMA_FILE,
         family: "llama3",
+    },
+    Spec {
+        id: "llm-lfm25-350m",
+        label: "LFM2.5 350M",
+        detail: "Q8_0. Compact Spanish and English chat model for talk and tools.",
+        url: LFM_URL,
+        download_bytes: 379_217_632,
+        sha256: "be036a757295e550098b85e13f6af2735d0fa73b41e1156a40c7d8e8e32a5766",
+        archive: false,
+        required: false,
+        kind: "llm",
+        file: LFM_FILE,
+        family: "lfm2",
     },
 ];
 
@@ -1359,7 +1378,12 @@ mod tests {
         assert!(crate::http::https_url_allowed(stt.url, PACK_HOSTS));
         assert_eq!(llm_model_id(), "smollm2-135m-instruct-q8_0");
         assert!(model_paths(Path::new("/models")).llm.ends_with(LLM_FILE));
-        for id in ["llm-gemma3-1b", "llm-qwen25-05b", "llm-llama32-1b"] {
+        for id in [
+            "llm-gemma3-1b",
+            "llm-qwen25-05b",
+            "llm-llama32-1b",
+            "llm-lfm25-350m",
+        ] {
             let spec = PACKS.iter().find(|spec| spec.id == id).unwrap();
             assert_eq!(spec.kind, "llm");
             assert!(!spec.required);
@@ -1398,6 +1422,20 @@ mod tests {
             "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83"
         );
         assert_eq!(llama.family, "llama3");
+        let lfm = PACKS
+            .iter()
+            .find(|spec| spec.id == "llm-lfm25-350m")
+            .unwrap();
+        assert_eq!(lfm.download_bytes, 379_217_632);
+        assert_eq!(
+            lfm.sha256,
+            "be036a757295e550098b85e13f6af2735d0fa73b41e1156a40c7d8e8e32a5766"
+        );
+        assert_eq!(lfm.family, "lfm2");
+        assert_eq!(lfm.file, LFM_FILE);
+        assert!(lfm.url.contains("LiquidAI/LFM2.5-350M-GGUF"));
+        assert!(lfm.url.ends_with("LFM2.5-350M-Q8_0.gguf"));
+        assert!(!lfm.required);
         assert_eq!(active_model(Path::new("/models")).id, "llm");
         let i18n = include_str!("../../../src/lib/i18n.ts");
         for english in [
@@ -1503,6 +1541,33 @@ mod tests {
         delete_pack(&root, "llm-gemma3-1b").unwrap();
         assert_eq!(selected_id(&root), "llm");
         assert!(!gemma.exists());
+        let lfm = root.join("llm-lfm25-350m").join(LFM_FILE);
+        fs::create_dir_all(lfm.parent().unwrap()).unwrap();
+        fs::write(&lfm, b"weights").unwrap();
+        select_model(&root, "llm-lfm25-350m").unwrap();
+        let active = active_model(&root);
+        assert_eq!(active.id, "llm-lfm25-350m");
+        assert_eq!(active.family, "lfm2");
+        assert_eq!(active.name, "LFM2.5 350M");
+        assert!(active.path.ends_with(LFM_FILE));
+        assert!(model_paths(&root).llm.ends_with(LFM_FILE));
+        assert!(
+            pack_status(&root)
+                .iter()
+                .any(|pack| pack.id == "llm-lfm25-350m"
+                    && pack.selected
+                    && pack.ready
+                    && pack.kind == "llm")
+        );
+        assert!(
+            pack_status(&root)
+                .iter()
+                .any(|pack| pack.id == "llm" && !pack.selected)
+        );
+        delete_pack(&root, "llm-lfm25-350m").unwrap();
+        assert_eq!(selected_id(&root), "llm");
+        assert_eq!(active_model(&root).family, "chatml");
+        assert!(!lfm.exists());
         let _ = fs::remove_dir_all(&root);
     }
 
