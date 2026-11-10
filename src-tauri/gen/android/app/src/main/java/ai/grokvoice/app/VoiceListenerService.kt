@@ -21,8 +21,6 @@ import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import org.json.JSONObject
-import java.io.File
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -557,7 +555,7 @@ class VoiceListenerService : Service() {
     if (needsPosted) return
     needsPosted = true
     ensureHealthChannel()
-    val copy = needsAppCopy(localeTag())
+    val copy = needsAppCopy()
     val immutable = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     val open = PendingIntent.getActivity(
       this, 3,
@@ -580,35 +578,30 @@ class VoiceListenerService : Service() {
   private fun ensureHealthChannel() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val nm = getSystemService(NotificationManager::class.java) ?: return
-    val channel = NotificationChannel(
-      HEALTH_CHANNEL_ID,
-      "Listen",
-      NotificationManager.IMPORTANCE_HIGH
-    ).apply {
-      description = "When background listening needs the app open"
-      setShowBadge(false)
+    val localized = AppLocale.wrap(this)
+    val name = localized.getString(R.string.channel_listen_health)
+    val description = localized.getString(R.string.channel_listen_health_desc)
+    val existing = nm.getNotificationChannel(HEALTH_CHANNEL_ID)
+    if (existing == null) {
+      val channel = NotificationChannel(
+        HEALTH_CHANNEL_ID,
+        name,
+        NotificationManager.IMPORTANCE_HIGH
+      ).apply {
+        this.description = description
+        setShowBadge(false)
+      }
+      nm.createNotificationChannel(channel)
+    } else if (existing.name != name || existing.description != description) {
+      existing.name = name
+      existing.description = description
+      nm.createNotificationChannel(existing)
     }
-    nm.createNotificationChannel(channel)
   }
 
-  private fun localeTag(): String {
-    val dirs = listOf(File(filesDir, "ai.grokvoice.app"), filesDir)
-    val file = dirs.map { File(it, "settings.json") }.firstOrNull { it.isFile } ?: return ""
-    return try {
-      JSONObject(file.readText()).optString("locale")
-    } catch (_: Exception) {
-      ""
-    }
-  }
-
-  private fun needsAppCopy(locale: String): Pair<String, String> {
-    return when (locale) {
-      "es" -> "Escuchar en segundo plano" to "Abre Grok Voice para que Hey Grok siga escuchando."
-      "de" -> "Im Hintergrund zuhören" to "Öffne Grok Voice, damit Hey Grok weiter zuhören kann."
-      "pt" -> "Ouvir em segundo plano" to "Abra o Grok Voice para o Hey Grok continuar ouvindo."
-      "ca-ES-valencia" -> "Escoltar en segon pla" to "Obri Grok Voice perquè Hey Grok continue escoltant."
-      else -> "Listening in background" to "Open Grok Voice so Hey Grok can keep listening."
-    }
+  private fun needsAppCopy(): Pair<String, String> {
+    val localized = AppLocale.wrap(this)
+    return localized.getString(R.string.listen_needs_app_title) to localized.getString(R.string.listen_needs_app_text)
   }
 
   private fun acquireWakeLock() {

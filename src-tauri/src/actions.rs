@@ -53,6 +53,15 @@ pub struct Item {
     /// Last moment the series may fire. 0 means it does not end.
     #[serde(default)]
     pub until_ms: i64,
+    /// `file` or `youtube`. Empty uses the phone's alarm sound.
+    #[serde(default)]
+    pub sound_kind: String,
+    /// `alarm-sounds/<file>` or a YouTube video id. Never a downloaded video.
+    #[serde(default)]
+    pub sound_ref: String,
+    /// File name, or the canonical watch URL, shown on the alarm and to Talk.
+    #[serde(default)]
+    pub sound_label: String,
 }
 
 impl Item {
@@ -71,6 +80,9 @@ impl Item {
             person_id: String::new(),
             person_reminder_id: String::new(),
             until_ms: 0,
+            sound_kind: String::new(),
+            sound_ref: String::new(),
+            sound_label: String::new(),
         }
     }
 }
@@ -165,7 +177,7 @@ pub struct Agenda {
 }
 
 pub fn tool_definitions() -> Value {
-    json!([
+    let mut tools = json!([
         fn_tool("create_note", "Save a note on this phone. title is a short name. text may be markdown.", json!({
             "type": "object",
             "properties": { "title": { "type": "string" }, "text": { "type": "string" } },
@@ -185,12 +197,16 @@ pub fn tool_definitions() -> Value {
             "properties": { "id": { "type": "string" } },
             "required": ["id"]
         })),
-        fn_tool("set_alarm", "Save an alarm in this app's Time list. Hour is 0-23 and minute is 0-59, for the next time that clock time occurs. A delay such as in 5 minutes is set_reminder with inMinutes, or set_timer with seconds. It is not the phone Clock.", json!({
+        fn_tool("set_alarm", "Save an alarm in this app's Time list with youtubeUrl or soundFile. Hour is 0-23 and minute is 0-59, for the next time that clock time occurs. A delay such as in 5 minutes is set_reminder with inMinutes, or set_timer with seconds. It is not the phone Clock. youtubeUrl is a YouTube video link. soundFile is an audio file already picked in the alarm form, by its file name. sound default clears a custom sound. The sound plays in this app. Do not download the video.", json!({
             "type": "object",
             "properties": {
                 "hour": { "type": "integer" },
                 "minute": { "type": "integer" },
-                "label": { "type": "string" }
+                "label": { "type": "string" },
+                "youtubeUrl": { "type": "string" },
+                "soundUrl": { "type": "string" },
+                "soundFile": { "type": "string" },
+                "sound": { "type": "string" }
             },
             "required": ["hour", "minute"]
         })),
@@ -241,13 +257,17 @@ pub fn tool_definitions() -> Value {
                 "recurring": { "type": "boolean" }
             }
         })),
-        fn_tool("update_reminder", "Change a reminder's title, note, or time. id from list_reminders. at is YYYY-MM-DDTHH:MM.", json!({
+        fn_tool("update_reminder", "Change a reminder's title, note, time, or alarm sound. id from list_reminders. at is YYYY-MM-DDTHH:MM. For an alarm, youtubeUrl or soundFile sets its sound, and sound default clears it. Custom sound is only for alarms.", json!({
             "type": "object",
             "properties": {
                 "id": { "type": "integer" },
                 "title": { "type": "string" },
                 "at": { "type": "string" },
-                "note": { "type": "string" }
+                "note": { "type": "string" },
+                "youtubeUrl": { "type": "string" },
+                "soundUrl": { "type": "string" },
+                "soundFile": { "type": "string" },
+                "sound": { "type": "string" }
             },
             "required": ["id"]
         })),
@@ -292,10 +312,21 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["id"]
         })),
-        fn_tool("media_control", "Control whatever is already playing: play, pause, stop, next, or previous. Call immediately. No confirmation.", json!({
+        fn_tool("media_control", "Control whatever is already playing: play, pause, stop, next, or previous. Call immediately. No confirmation. If play_local_music started the audio, these control that player. Otherwise they control another app.", json!({
             "type": "object",
             "properties": { "action": { "type": "string", "enum": ["play", "pause", "stop", "next", "previous"] } },
             "required": ["action"]
+        })),
+        fn_tool("play_local_music", "Play on-phone music, not YouTube. Call immediately for play music, play some music, a local playlist, or a named artist, album, or song. query is the name they said. Omit query for a random on-phone track. kind is playlist only when they ask for a playlist. This reads on-device audio and playlists only. It does not stream or open a music service. If they say YouTube, on YouTube, or a YouTube video, do not call this. Call open_youtube, say what will open, and wait for a clear yes. If this tool says nothing matched or there is no music, say that and do not play something else. Pause, stop, next, and previous use media_control.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "kind": { "type": "string", "enum": ["track", "playlist", "auto"] },
+                "title": { "type": "string" },
+                "artist": { "type": "string" },
+                "album": { "type": "string" },
+                "playlist": { "type": "string" }
+            }
         })),
         fn_tool("set_volume", "Raise or lower the music volume. direction is up or down. steps is 1 to 5. Call immediately.", json!({
             "type": "object",
@@ -394,7 +425,7 @@ pub fn tool_definitions() -> Value {
             "type": "object",
             "properties": {}
         })),
-        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
+        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English, Spanish, or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
             "type": "object",
             "properties": {
                 "language": { "type": "string" },
@@ -430,7 +461,7 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["confirmed"]
         })),
-        fn_tool("open_youtube", "Open YouTube on a search or a link. Speak the query and wait for a clear yes, then call with confirmed true. Does not send anything.", json!({
+        fn_tool("open_youtube", "Open YouTube on a search or a link. Use this for play on YouTube, a YouTube song, or a YouTube video. Do not call play_local_music for that. Speak the query and wait for a clear yes, then call with confirmed true. Does not send anything. A search opens YouTube results and does not auto-play unless url is a video link.", json!({
             "type": "object",
             "properties": {
                 "query": { "type": "string" },
@@ -512,7 +543,13 @@ pub fn tool_definitions() -> Value {
             "properties": { "id": { "type": "string" } },
             "required": ["id"]
         }))
-    ])
+    ]);
+    if let Some(list) = tools.as_array_mut() {
+        if let Some(extra) = crate::finance::tool_definitions().as_array() {
+            list.extend(extra.iter().cloned());
+        }
+    }
+    tools
 }
 
 fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
@@ -522,7 +559,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app."
+    " play_local_music plays audio files and playlists already on this phone. Use it immediately for play music, play some music, or a named artist, album, or song. Do not use it when they say YouTube. YouTube, play on YouTube, and a YouTube video stay on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not play local files. If play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, or investment the user described. list_finance answers how much they spent, cash on hand, a card balance, and the next loan payment. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, or account number. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it."
 }
 
 impl Agenda {
@@ -628,6 +665,10 @@ impl Agenda {
         Ok(())
     }
 
+    pub fn sounds_dir(&self) -> PathBuf {
+        self.path.parent().map(|dir| dir.join(crate::alarm_sound::DIR)).unwrap_or_else(|| PathBuf::from(crate::alarm_sound::DIR))
+    }
+
     pub fn upsert_item(
         &self,
         app: &AppHandle,
@@ -637,6 +678,7 @@ impl Agenda {
         note: &str,
         at_ms: i64,
         schedule: Option<ScheduleMeta>,
+        sound: Option<crate::alarm_sound::SoundChoice>,
     ) -> Result<Item, String> {
         if title.trim().is_empty() {
             return Err("A title is required.".into());
@@ -683,6 +725,16 @@ impl Agenda {
             }
             return Err("That time is in the past.".into());
         }
+        let previous_file = (item.sound_kind == crate::alarm_sound::FILE && !item.sound_ref.is_empty()).then(|| item.sound_ref.clone());
+        if item.kind != "alarm" {
+            item.sound_kind.clear();
+            item.sound_ref.clear();
+            item.sound_label.clear();
+        } else if let Some(choice) = sound {
+            item.sound_kind = choice.kind;
+            item.sound_ref = choice.reference;
+            item.sound_label = choice.label;
+        }
         if let Some(existing) = store.items.iter_mut().find(|i| i.id == item.id) {
             *existing = item.clone();
         } else {
@@ -690,8 +742,14 @@ impl Agenda {
         }
         store.items.sort_by_key(|i| i.at_ms);
         Self::persist(&self.path, &store)?;
+        if let Some(previous) = previous_file {
+            if previous != item.sound_ref {
+                let used = file_sounds(&store.items);
+                crate::alarm_sound::delete_if_unused(&self.sounds_dir(), &previous, &used);
+            }
+        }
         drop(store);
-        let _ = app.state::<NativeBridge>().schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
+        arm_item(app, &item);
         touch(app);
         Ok(item)
     }
@@ -755,12 +813,16 @@ impl Agenda {
         }
         app.state::<NativeBridge>().cancel_item(id).map_err(|e| e.to_string())?;
         let mut store = self.lock();
+        let removed = store.items.iter().find(|item| item.id == id).cloned();
         let before = store.items.len();
         store.items.retain(|i| i.id != id);
         if store.items.len() == before {
             return Err("Nothing scheduled with that id.".into());
         }
         Self::persist(&self.path, &store)?;
+        if let Some(removed) = removed.filter(|item| item.sound_kind == crate::alarm_sound::FILE) {
+            crate::alarm_sound::delete_if_unused(&self.sounds_dir(), &removed.sound_ref, &file_sounds(&store.items));
+        }
         drop(store);
         touch(app);
         Ok(())
@@ -796,7 +858,7 @@ impl Agenda {
         store.items.sort_by_key(|i| i.at_ms);
         Self::persist(&self.path, &store)?;
         drop(store);
-        let _ = app.state::<NativeBridge>().schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
+        arm_item(app, &item);
         touch(app);
         Ok(())
     }
@@ -909,7 +971,7 @@ impl Agenda {
             let _ = bridge.cancel_item(id);
         }
         for item in arm {
-            let _ = bridge.schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
+            arm_item(app, &item);
         }
     }
 
@@ -931,9 +993,10 @@ pub fn reschedule(app: &AppHandle) {
     let agenda = app.state::<Agenda>();
     agenda.sweep(app);
     let items = agenda.lock().items.clone();
-    let bridge = app.state::<NativeBridge>();
+    let used = file_sounds(&items);
+    crate::alarm_sound::sweep_orphans(&agenda.sounds_dir(), &used);
     for item in items {
-        let _ = bridge.schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
+        arm_item(app, &item);
     }
     rearm_events(app);
 }
@@ -1450,9 +1513,123 @@ fn clip(value: &str, max: usize) -> String {
     value.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').take(max).collect()
 }
 
+fn music_query(args: &Value) -> String {
+    if let Some(query) = args["query"].as_str().map(str::trim).filter(|text| !text.is_empty()) {
+        return query.to_string();
+    }
+    let mut parts = Vec::new();
+    for key in ["title", "song", "artist", "album", "playlist", "name"] {
+        if let Some(part) = args[key].as_str().map(str::trim).filter(|text| !text.is_empty()) {
+            parts.push(part);
+        }
+    }
+    parts.join(" ")
+}
+
+enum MusicLoad {
+    Ready(crate::music::Library),
+    Denied { settings: bool },
+    PhoneOnly,
+    Failed,
+}
+
+fn music_library(raw: &str) -> Option<MusicLoad> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    match value["permission"].as_str() {
+        Some("denied") => Some(MusicLoad::Denied { settings: false }),
+        Some("unsupported") => Some(MusicLoad::PhoneOnly),
+        _ if value["ok"] != true => Some(MusicLoad::Failed),
+        _ => serde_json::from_value(value).ok().map(MusicLoad::Ready),
+    }
+}
+
+fn load_music(app: &AppHandle) -> MusicLoad {
+    let bridge = app.state::<NativeBridge>();
+    let first = match bridge.list_local_audio() {
+        Ok(raw) => raw,
+        Err(_) => return MusicLoad::Failed,
+    };
+    match music_library(&first) {
+        Some(MusicLoad::Denied { .. }) => {}
+        Some(other) => return other,
+        None => return MusicLoad::Failed,
+    }
+    let opened = bridge
+        .request_audio()
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|value| value["openedSettings"].as_bool())
+        .unwrap_or(false);
+    let second = match bridge.list_local_audio() {
+        Ok(raw) => raw,
+        Err(_) => return MusicLoad::Failed,
+    };
+    match music_library(&second) {
+        Some(MusicLoad::Denied { .. }) => MusicLoad::Denied { settings: opened },
+        Some(other) => other,
+        None => MusicLoad::Failed,
+    }
+}
+
+fn music_detail(locale: &str, key: &str, query: &str, title: &str, artist: &str, album: &str) -> Value {
+    let detail = crate::i18n::fill(locale, key, &[("query", query), ("title", title), ("artist", artist), ("album", album)]);
+    json!({ "ok": false, "error": detail, "detail": detail })
+}
+
+fn play_local_music(app: &AppHandle, args: &Value) -> Result<Value, String> {
+    let query = music_query(args);
+    let kind = crate::music::kind_of(args["kind"].as_str().unwrap_or(""));
+    let locale = locale_of(app);
+    if let Some(cleaned) = crate::music::youtube_request(&query) {
+        let detail = crate::i18n::line(&locale, "music-youtube");
+        return Ok(json!({
+            "ok": false,
+            "use": "open_youtube",
+            "query": cleaned,
+            "error": detail,
+            "detail": detail,
+        }));
+    }
+    let library = match load_music(app) {
+        MusicLoad::Ready(library) => library,
+        MusicLoad::Denied { settings } => {
+            let key = if settings { "music-permission-settings" } else { "music-permission" };
+            return Ok(music_detail(&locale, key, "", "", "", ""));
+        }
+        MusicLoad::PhoneOnly => return Ok(music_detail(&locale, "music-phone-only", "", "", "", "")),
+        MusicLoad::Failed => return Ok(music_detail(&locale, "music-failed", "", "", "", "")),
+    };
+    let planned = crate::music::plan(&library, &query, kind, rand::random::<usize>());
+    match planned {
+        crate::music::Plan::Youtube { query } => {
+            let detail = crate::i18n::line(&locale, "music-youtube");
+            Ok(json!({ "ok": false, "use": "open_youtube", "query": query, "error": detail, "detail": detail }))
+        }
+        crate::music::Plan::Miss { key, query } => Ok(music_detail(&locale, key, &query, "", "", "")),
+        crate::music::Plan::Play { items, line_key, title, artist, album } => {
+            let payload = json!({
+                "items": items.iter().map(|track| json!({
+                    "uri": track.uri,
+                    "title": track.title,
+                    "artist": track.artist,
+                    "album": track.album,
+                })).collect::<Vec<_>>()
+            });
+            let raw = app.state::<NativeBridge>().play_local_audio(&payload.to_string()).map_err(|err| err.to_string())?;
+            let value: Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({ "ok": false }));
+            if value["ok"] != true {
+                return Ok(music_detail(&locale, "music-failed", "", "", "", ""));
+            }
+            let detail = crate::i18n::fill(&locale, line_key, &[("title", &title), ("artist", &artist), ("album", &album), ("query", "")]);
+            Ok(json!({ "ok": true, "detail": detail, "title": title, "artist": artist, "album": album, "count": items.len() }))
+        }
+    }
+}
+
 fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     let bridge = app.state::<NativeBridge>();
     let raw = match name {
+        "play_local_music" => return play_local_music(app, args).map(Some),
         "media_control" => bridge
             .media_control(args["action"].as_str().unwrap_or(""))
             .map_err(|e| e.to_string())?,
@@ -1512,6 +1689,9 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
     if name == "share_item" {
         return share_item(app, args);
     }
+    if let Some(value) = crate::finance::try_tool(app, name, args)? {
+        return Ok(value);
+    }
     let agenda = app.state::<Agenda>();
     match name {
         "create_note" => {
@@ -1543,6 +1723,7 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             if hour > 23 || minute > 59 {
                 return Err("hour must be 0-23 and minute 0-59.".into());
             }
+            let sound = crate::alarm_sound::from_tool(args, &agenda.sounds_dir())?;
             let label = label_or(args, "label", "Alarm");
             let when = next_occurrence(hour, minute)?;
             let id = agenda.take_id()?;
@@ -1550,7 +1731,16 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                 .state::<NativeBridge>()
                 .set_alarm(hour, minute, &label, id, when.timestamp_millis())
                 .map_err(|e| e.to_string())?;
-            finish_schedule(app, &agenda, id, "alarm", &label, "", when, &raw)
+            let mut done = finish_schedule(app, &agenda, id, "alarm", &label, "", when, &raw)?;
+            if done["ok"] == true {
+                if let Some(choice) = sound.filter(|choice| !choice.is_empty()) {
+                    agenda.upsert_item(app, Some(id), "alarm", &label, "", when.timestamp_millis(), None, Some(choice.clone()))?;
+                    if let Some(detail) = done["detail"].as_str() {
+                        done["detail"] = json!(format!("{detail}{}", crate::alarm_sound::detail(&choice)));
+                    }
+                }
+            }
+            Ok(done)
         }
         "set_timer" => {
             let seconds = timer_seconds(args)?;
@@ -1574,7 +1764,7 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             let note = args["note"].as_str().unwrap_or("").trim();
             let schedule = schedule_from_args(args)?;
             let at_ms = reminder_anchor_ms(args, &schedule)?;
-            let item = agenda.upsert_item(app, None, "reminder", &title, note, at_ms, Some(schedule))?;
+            let item = agenda.upsert_item(app, None, "reminder", &title, note, at_ms, Some(schedule), None)?;
             let when = DateTime::from_timestamp_millis(item.at_ms)
                 .map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string())
                 .unwrap_or_default();
@@ -1626,11 +1816,16 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             } else {
                 None
             };
-            let item = agenda.upsert_item(app, Some(id), &existing.kind, title, note, at_ms, schedule)?;
+            let sound = crate::alarm_sound::from_tool(args, &agenda.sounds_dir())?;
+            if sound.as_ref().is_some_and(|choice| !choice.is_empty()) && existing.kind != "alarm" {
+                return Err(crate::alarm_sound::ERR_ALARMS_ONLY.into());
+            }
+            let item = agenda.upsert_item(app, Some(id), &existing.kind, title, note, at_ms, schedule, sound.clone())?;
+            let sound_detail = sound.map(|choice| crate::alarm_sound::detail(&choice)).unwrap_or_default();
             let when = DateTime::from_timestamp_millis(item.at_ms)
                 .map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string())
                 .unwrap_or_default();
-            Ok(json!({ "ok": true, "id": item.id, "detail": format!("Updated: {} at {when}", item.title) }))
+            Ok(json!({ "ok": true, "id": item.id, "detail": format!("Updated: {} at {when}.{sound_detail}", item.title) }))
         }
         "cancel_reminder" => {
             let id = args["id"].as_i64().ok_or("id from list_reminders is required")? as i32;
@@ -2236,6 +2431,8 @@ fn reminder_row(item: &Item, at_ms: i64) -> Value {
         "date": item.date,
         "leadDays": item.lead_days,
         "personId": item.person_id,
+        "soundKind": item.sound_kind,
+        "soundLabel": item.sound_label,
     })
 }
 
@@ -2854,6 +3051,23 @@ fn event_alarm_at(event: &CalEvent, now: DateTime<Local>) -> Option<i64> {
     (next > now_ms).then_some(next)
 }
 
+fn file_sounds(items: &[Item]) -> Vec<String> {
+    items.iter().filter(|item| item.sound_kind == crate::alarm_sound::FILE).map(|item| item.sound_ref.clone()).collect()
+}
+
+fn arm_item(app: &AppHandle, item: &Item) {
+    let _ = app.state::<NativeBridge>().schedule_item(
+        item.id,
+        &item.kind,
+        &item.title,
+        &item.note,
+        item.at_ms,
+        &item.sound_kind,
+        &item.sound_ref,
+        &item.sound_label,
+    );
+}
+
 fn arm_local_event(app: &AppHandle, event: &CalEvent) {
     if event.alarm_id <= 0 {
         return;
@@ -2861,7 +3075,7 @@ fn arm_local_event(app: &AppHandle, event: &CalEvent) {
     let bridge = app.state::<NativeBridge>();
     match event_alarm_at(event, Local::now()) {
         Some(at) => {
-            let _ = bridge.schedule_item(event.alarm_id, "event", &event.title, &event.location, at);
+            let _ = bridge.schedule_item(event.alarm_id, "event", &event.title, &event.location, at, "", "", "");
         }
         None => {
             let _ = bridge.cancel_item(event.alarm_id);
@@ -3003,6 +3217,7 @@ fn snooze_reminder(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
                 "",
                 target.timestamp_millis(),
                 Some(ScheduleMeta::default()),
+                None,
             )?;
             return Ok(json!({
                 "ok": true,
@@ -3019,6 +3234,7 @@ fn snooze_reminder(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
             &item.note,
             target.timestamp_millis(),
             Some(ScheduleMeta { recurrence: "none".into(), ..ScheduleMeta::default() }),
+            None,
         )?;
         return Ok(json!({
             "ok": true,
@@ -3035,6 +3251,7 @@ fn snooze_reminder(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
         "",
         target.timestamp_millis(),
         Some(ScheduleMeta::default()),
+        None,
     )?;
     Ok(json!({
         "ok": true,
@@ -3263,7 +3480,7 @@ pub fn sync_person_reminders(app: &AppHandle) -> Result<(), String> {
         let _ = bridge.cancel_item(id);
     }
     for item in arm {
-        let _ = bridge.schedule_item(item.id, &item.kind, &item.title, &item.note, item.at_ms);
+        arm_item(app, &item);
     }
     touch(app);
     Ok(())
@@ -3342,6 +3559,28 @@ mod tests {
     }
 
     #[test]
+    fn an_alarm_keeps_its_sound_and_old_items_still_load() {
+        let raw = r#"{"id":1,"kind":"alarm","title":"Wake","note":"","atMs":1}"#;
+        let item: Item = serde_json::from_str(raw).unwrap();
+        assert_eq!(item.sound_kind, "");
+        assert_eq!(item.sound_ref, "");
+        let choice = crate::alarm_sound::youtube_choice("https://youtu.be/dQw4w9WgXcQ").unwrap();
+        let stored = Item {
+            sound_kind: choice.kind,
+            sound_ref: choice.reference,
+            sound_label: choice.label,
+            ..Item::basic(2, "alarm", "Wake", "", 5)
+        };
+        let again: Item = serde_json::from_str(&serde_json::to_string(&stored).unwrap()).unwrap();
+        assert_eq!(again.sound_kind, "youtube");
+        assert_eq!(again.sound_ref, "dQw4w9WgXcQ");
+        let row = reminder_row(&again, again.at_ms);
+        assert_eq!(row["soundKind"], "youtube");
+        assert!(row["soundLabel"].as_str().unwrap().contains("youtube.com/watch"));
+        assert!(row.get("soundRef").is_none());
+    }
+
+    #[test]
     fn reminders_alarms_and_countdowns_stay_on_the_time_list() {
         let now = Local::now();
         let reminder = Item::basic(3, "reminder", "Check EURUSD price", "", now.timestamp_millis() + 5 * 60_000);
@@ -3372,6 +3611,9 @@ mod tests {
         assert!(desc("set_reminder").contains("inMinutes"));
         assert!(desc("set_timer").contains("Time list"));
         assert!(desc("set_alarm").contains("Time list"));
+        assert!(desc("set_alarm").contains("youtubeUrl"));
+        assert!(desc("update_reminder").contains("soundFile"));
+        assert!(lookup_hint().contains("youtubeUrl"));
         assert!(desc("create_calendar_event").contains("this app's Calendar"));
         assert!(!desc("set_timer").contains("Clock"));
         assert!(!desc("set_alarm").contains("Clock app"));
@@ -3853,6 +4095,25 @@ mod tests {
 
         let found = reminders_payload(&items, &json!({ "month": "2026-11", "query": "check" }), now).unwrap();
         assert_eq!(reminder_rows(&found), vec![("Dentist".into(), "2026-11-20".into())]);
+    }
+
+    #[test]
+    fn local_music_does_not_replace_youtube() {
+        let tools = tool_definitions();
+        let desc = |name: &str| {
+            tools.as_array().unwrap().iter().find(|tool| tool["name"] == name).unwrap()["description"].as_str().unwrap().to_string()
+        };
+        assert!(desc("open_youtube").contains("YouTube"));
+        assert!(desc("open_youtube").contains("confirmed"));
+        assert!(desc("play_local_music").contains("not YouTube"));
+        assert!(desc("play_local_music").contains("open_youtube"));
+        assert!(desc("media_control").contains("play_local_music"));
+        assert!(lookup_hint().contains("play_local_music"));
+        assert!(lookup_hint().contains("open_youtube"));
+        let handoff = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/HandOff.kt");
+        assert!(handoff.contains("www.youtube.com/results?search_query="));
+        assert!(handoff.contains("com.google.android.youtube"));
+        assert!(handoff.contains("LocalMusic.control"));
     }
 
     #[test]

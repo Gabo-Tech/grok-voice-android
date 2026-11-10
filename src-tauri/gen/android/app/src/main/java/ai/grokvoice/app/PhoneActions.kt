@@ -22,6 +22,7 @@ object PhoneActions {
   private const val KEY = "scheduled"
   private const val ALARM_CHANNEL = "grok_alarms"
   private const val REMINDER_CHANNEL = "grok_reminders"
+  private const val SOUND_CHANNEL = "grok_alarm_sound"
 
   /** Alarms stay in Grok Voice so Time, list_reminders, and spoken alerts can see them. */
   fun setAlarm(activity: Activity, hour: Int, minute: Int, label: String, id: Int, atMs: Long): String {
@@ -41,12 +42,22 @@ object PhoneActions {
     return """{"ok":true,"via":"local","detail":"Countdown saved in this app's Time list for $spoken."}"""
   }
 
-  fun schedule(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long): String {
+  fun schedule(
+    context: Context,
+    id: Int,
+    kind: String,
+    title: String,
+    note: String,
+    atMs: Long,
+    soundKind: String = "",
+    soundRef: String = "",
+    soundLabel: String = "",
+  ): String {
     if (atMs <= System.currentTimeMillis()) {
       return """{"ok":false,"error":"That time is in the past."}"""
     }
-    upsert(context, id, kind, title, note, atMs)
-    arm(context, id, kind, title, note, atMs)
+    upsert(context, id, kind, title, note, atMs, soundKind, soundRef, soundLabel)
+    arm(context, id, kind, title, note, atMs, soundKind, soundRef, soundLabel)
     return """{"ok":true,"via":"local"}"""
   }
 
@@ -83,47 +94,90 @@ object PhoneActions {
       val at = o.optLong("atMs")
       if (at <= now) continue
       keep.put(o)
-      arm(context, o.optInt("id"), o.optString("kind"), o.optString("title"), o.optString("note"), at)
+      arm(
+        context,
+        o.optInt("id"),
+        o.optString("kind"),
+        o.optString("title"),
+        o.optString("note"),
+        at,
+        o.optString("soundKind"),
+        o.optString("soundRef"),
+        o.optString("soundLabel"),
+      )
     }
     write(context, keep)
   }
 
-  fun notify(context: Context, id: Int, kind: String, title: String, note: String) {
+  fun notify(
+    context: Context,
+    id: Int,
+    kind: String,
+    title: String,
+    note: String,
+    soundKind: String = "",
+    soundRef: String = "",
+    soundLabel: String = "",
+  ) {
     val alarm = kind == "alarm" || kind == "timer" || kind == "countdown"
     val event = kind == "event" || kind == "calendar"
     val audibleChannel = if (alarm) ALARM_CHANNEL else REMINDER_CHANNEL
     val spoken = SpokenAlerts.isSpoken(context)
+    val custom = if (kind == "alarm") AlarmSounds.choice(soundKind, soundRef, soundLabel) else null
+    val customError = if (custom?.kind == "file") AlarmSounds.fileProblem(context, custom.ref) else null
     // Spoken posts on a silent sibling so the existing audible channel, and any
     // sound the user set on it, stays exactly as it is for Normal delivery.
-    val channel = if (spoken) spokenChannelId(audibleChannel) else audibleChannel
+    // A chosen alarm sound also posts silently and plays on its own, so the
+    // default channel chime does not stack on top of it.
+    val channel = when {
+      spoken -> spokenChannelId(audibleChannel)
+      custom != null -> SOUND_CHANNEL
+      else -> audibleChannel
+    }
     val nm = context.getSystemService(NotificationManager::class.java)
+    val localized = AppLocale.wrap(context)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       if (spoken) {
-        ensureSpokenChannel(nm, channel, audibleChannel, alarm)
-      } else if (nm.getNotificationChannel(channel) == null) {
-        val importance = NotificationManager.IMPORTANCE_HIGH
-        val created = NotificationChannel(
-          channel,
-          if (alarm) "Alarms and timers" else "Reminders",
-          importance
-        )
-        if (alarm) {
-          val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-          created.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), attrs)
-          created.enableVibration(true)
+        ensureSpokenChannel(localized, nm, channel, audibleChannel, alarm)
+      } else if (custom != null) {
+        ensureQuietAlarmChannel(context, nm)
+      } else {
+        val name = localized.getString(if (alarm) R.string.channel_alarms else R.string.channel_reminders)
+        val existing = nm.getNotificationChannel(channel)
+        if (existing == null) {
+          val importance = NotificationManager.IMPORTANCE_HIGH
+          val created = NotificationChannel(
+            channel,
+            name,
+            importance
+          )
+          if (alarm) {
+            val attrs = AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_ALARM)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+              .build()
+            created.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), attrs)
+            created.enableVibration(true)
+          }
+          nm.createNotificationChannel(created)
+        } else if (existing.name != name) {
+          existing.name = name
+          nm.createNotificationChannel(existing)
         }
-        nm.createNotificationChannel(created)
       }
     }
-    val open = PendingIntent.getActivity(
-      context, 0,
-      Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-    )
-    val text = if (note.isBlank()) kind.replaceFirstChar { it.uppercase() } else note
+    val shownTitle = title.ifBlank { "Grok" }
+    val open = if (custom != null) {
+      AlarmSounds.contentIntent(context, id, shownTitle, custom)
+    } else {
+      PendingIntent.getActivity(
+        context, 0,
+        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+      )
+    }
+    val base = if (note.isBlank()) kindLabel(localized, kind) else note
+    val text = if (customError != null) "$customError $base" else base
     val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       Notification.Builder(context, channel)
     } else {
@@ -131,10 +185,11 @@ object PhoneActions {
       Notification.Builder(context)
     }
       .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-      .setContentTitle(title.ifBlank { "Grok" })
+      .setContentTitle(shownTitle)
       .setContentText(text)
+      .setStyle(Notification.BigTextStyle().bigText(text))
       .setContentIntent(open)
-      .setAutoCancel(true)
+      .setAutoCancel(custom == null)
       .setCategory(
         when {
           alarm -> Notification.CATEGORY_ALARM
@@ -142,6 +197,13 @@ object PhoneActions {
           else -> Notification.CATEGORY_REMINDER
         }
       )
+    if (custom != null) {
+      builder.setFullScreenIntent(open, true)
+      builder.setOngoing(true)
+      builder.setOnlyAlertOnce(true)
+      val stopLabel = AlarmSounds.localeContext(context).getString(R.string.alarm_stop)
+      builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, stopLabel, AlarmSounds.stopIntent(context, id))
+    }
     if (spoken) {
       // The SDK stubs omit Notification.Builder.setSilent. This is the same
       // override NotificationCompat uses: the post does not chime, and a sound
@@ -159,6 +221,9 @@ object PhoneActions {
       // Notifications not allowed. The schedule itself still happened.
       false
     }
+    if (posted && custom != null) {
+      AlarmSounds.begin(context, if (id == 0) 1 else id, channel, shownTitle, custom, n)
+    }
     if (posted) {
       val category = when {
         alarm -> "alarm"
@@ -166,8 +231,23 @@ object PhoneActions {
         else -> "reminder"
       }
       val bannerAudible = spoken && channelHasSound(nm, channel)
-      SpokenAlerts.enqueue(context, id, kind, title.ifBlank { "Grok" }, text, channel, category, bannerAudible)
+      SpokenAlerts.enqueue(context, id, kind, shownTitle, text, channel, category, bannerAudible)
     }
+  }
+
+  private fun ensureQuietAlarmChannel(context: Context, nm: NotificationManager) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    if (nm.getNotificationChannel(SOUND_CHANNEL) != null) return
+    val localized = AlarmSounds.localeContext(context)
+    val created = NotificationChannel(
+      SOUND_CHANNEL,
+      localized.getString(R.string.alarm_channel_name),
+      NotificationManager.IMPORTANCE_HIGH
+    )
+    created.setSound(null, null)
+    created.enableVibration(true)
+    created.description = localized.getString(R.string.alarm_channel_desc)
+    nm.createNotificationChannel(created)
   }
 
   private fun spokenChannelId(base: String): String = "${base}_spoken"
@@ -178,11 +258,28 @@ object PhoneActions {
    * audible channel when that one already exists. A later user sound on this
    * channel is left in place; speech waits for it.
    */
-  private fun ensureSpokenChannel(nm: NotificationManager, id: String, audibleId: String, alarm: Boolean) {
+  private fun kindLabel(context: Context, kind: String): String {
+    val id = when (kind) {
+      "alarm" -> R.string.widget_fallback_alarm
+      "timer", "countdown" -> R.string.widget_fallback_countdown
+      "event", "calendar" -> R.string.widget_fallback_event
+      else -> R.string.widget_fallback_reminder
+    }
+    return context.getString(id)
+  }
+
+  private fun ensureSpokenChannel(context: Context, nm: NotificationManager, id: String, audibleId: String, alarm: Boolean) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val audible = nm.getNotificationChannel(audibleId)
     val existing = nm.getNotificationChannel(id)
+    val name = context.getString(if (alarm) R.string.channel_alarms_spoken else R.string.channel_reminders_spoken)
+    val description = context.getString(R.string.channel_spoken_banner_desc)
     if (existing != null) {
+      if (existing.name != name || existing.description != description) {
+        existing.name = name
+        existing.description = description
+        nm.createNotificationChannel(existing)
+      }
       if (audible?.canBypassDnd() == true && !existing.canBypassDnd()) {
         try {
           existing.setBypassDnd(true)
@@ -199,12 +296,12 @@ object PhoneActions {
     }
     val created = NotificationChannel(
       id,
-      if (alarm) "Alarms and timers, spoken" else "Reminders, spoken",
+      name,
       importance
     )
     created.setSound(null, null)
     created.enableVibration(false)
-    created.description = "Visual banner while this alert is spoken. No chime."
+    created.description = description
     if (audible?.canBypassDnd() == true) {
       try {
         created.setBypassDnd(true)
@@ -397,9 +494,19 @@ object PhoneActions {
     return primary ?: visible ?: any
   }
 
-  private fun arm(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long) {
+  private fun arm(
+    context: Context,
+    id: Int,
+    kind: String,
+    title: String,
+    note: String,
+    atMs: Long,
+    soundKind: String,
+    soundRef: String,
+    soundLabel: String,
+  ) {
     val am = context.getSystemService(AlarmManager::class.java)
-    val pi = pending(context, id, kind, title, note)
+    val pi = pending(context, id, kind, title, note, soundKind, soundRef, soundLabel)
     val show = PendingIntent.getActivity(
       context, id + 100_000,
       Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -418,25 +525,57 @@ object PhoneActions {
     }
   }
 
-  private fun pending(context: Context, id: Int, kind: String, title: String, note: String): PendingIntent {
+  private fun pending(
+    context: Context,
+    id: Int,
+    kind: String,
+    title: String,
+    note: String,
+    soundKind: String = "",
+    soundRef: String = "",
+    soundLabel: String = "",
+  ): PendingIntent {
     val intent = Intent(context, ReminderReceiver::class.java)
       .putExtra("id", id)
       .putExtra("kind", kind)
       .putExtra("title", title)
       .putExtra("note", note)
+      .putExtra("soundKind", soundKind)
+      .putExtra("soundRef", soundRef)
+      .putExtra("soundLabel", soundLabel)
     return PendingIntent.getBroadcast(
       context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
   }
 
-  private fun upsert(context: Context, id: Int, kind: String, title: String, note: String, atMs: Long) {
+  private fun upsert(
+    context: Context,
+    id: Int,
+    kind: String,
+    title: String,
+    note: String,
+    atMs: Long,
+    soundKind: String,
+    soundRef: String,
+    soundLabel: String,
+  ) {
     val arr = read(context)
     val next = JSONArray()
     for (i in 0 until arr.length()) {
       val o = arr.getJSONObject(i)
       if (o.optInt("id") != id) next.put(o)
     }
-    next.put(JSONObject().put("id", id).put("kind", kind).put("title", title).put("note", note).put("atMs", atMs))
+    next.put(
+      JSONObject()
+        .put("id", id)
+        .put("kind", kind)
+        .put("title", title)
+        .put("note", note)
+        .put("atMs", atMs)
+        .put("soundKind", soundKind)
+        .put("soundRef", soundRef)
+        .put("soundLabel", soundLabel)
+    )
     write(context, next)
   }
 

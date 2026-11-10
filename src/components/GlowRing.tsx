@@ -46,7 +46,7 @@ export function GlowRing({
         onClick={onPress}
         disabled={disabled}
         aria-pressed={live}
-        aria-label={live ? "End voice session" : "Start voice session"}
+        aria-label={live ? t("End voice session") : t("Start voice session")}
         className="mark shrink-0 rounded-full disabled:opacity-50"
         style={{ "--ink": live ? "#f2f2f2" : "#b5b5b5", width: "5.75rem", height: "5.75rem" } as CSSProperties}
       >

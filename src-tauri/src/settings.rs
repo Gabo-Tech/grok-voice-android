@@ -57,7 +57,7 @@ pub struct Settings {
     pub monthly_budget_minutes: u32,
     /// End the live session when the monthly budget is reached. Off unless the user opts in.
     pub monthly_budget_hard_stop: bool,
-    /// On-device speech: `en` (Moonshine + Piper English) or `de` (German packs).
+    /// On-device speech: `en` (Moonshine + Piper English), `es` (Spanish packs), or `de` (German packs).
     pub local_speech: String,
     /// UI locale. Empty follows the phone. `ca-ES-valencia` is Valencian.
     pub locale: String,
@@ -135,7 +135,7 @@ impl SettingsStore {
         s.idle_timeout_secs = s.idle_timeout_secs.clamp(5, 600);
         s.daily_budget_minutes = s.daily_budget_minutes.min(24 * 60);
         s.monthly_budget_minutes = s.monthly_budget_minutes.min(31 * 24 * 60);
-        s.local_speech = if s.local_speech == "de" { "de".into() } else { "en".into() };
+        s.local_speech = stored_speech(&s.local_speech);
         s.locale = if s.locale.trim().is_empty() {
             String::new()
         } else {
@@ -250,6 +250,26 @@ mod tests {
         assert_eq!(next.monthly_budget_minutes, 300);
         assert_eq!(next.local_speech, "de");
         assert_eq!(on.listen, Some(true));
+        let spanish = edit_settings(&quiet, &json!({"localSpeech": "español"})).unwrap();
+        let spanish_settings = spanish.settings.unwrap();
+        assert_eq!(spanish_settings.local_speech, "es");
+        assert!(spanish.detail.contains("Spanish"));
+        assert!(describe_settings(&spanish_settings, &[]).to_string().contains("\"localSpeech\":\"Spanish\""));
+        assert!(
+            edit_settings(&quiet, &json!({"localSpeech": "Portuguese"}))
+                .unwrap_err()
+                .contains("Spanish")
+        );
+        let speech_path = std::env::temp_dir().join(format!("grok-settings-speech-{}.json", std::process::id()));
+        let _ = fs::remove_file(&speech_path);
+        let speech_store = SettingsStore::load(speech_path.clone());
+        let saved_speech = speech_store.save(spanish_settings).unwrap();
+        assert_eq!(saved_speech.local_speech, "es");
+        assert!(fs::read_to_string(&speech_path).unwrap().contains("\"localSpeech\": \"es\""));
+        let mut other = saved_speech.clone();
+        other.local_speech = "pt".into();
+        assert_eq!(speech_store.save(other).unwrap().local_speech, "en");
+        let _ = fs::remove_file(&speech_path);
 
         let lead = edit_settings(&armed, &json!({"notifyDays": 7})).unwrap();
         assert!(lead.settings.is_none());
@@ -374,7 +394,7 @@ pub fn keep_listen_preference(stored: &Settings, mut incoming: Settings) -> Sett
 /// Settings Talk can read. Voice order is provider names only.
 pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
     let language = language_name(&settings.locale);
-    let speech = if settings.local_speech == "de" { "German" } else { "English" };
+    let speech = speech_name(&settings.local_speech);
     let daily = minutes_phrase(settings.daily_budget_minutes);
     let monthly = minutes_phrase(settings.monthly_budget_minutes);
     let order = if voice_order.is_empty() {
@@ -475,7 +495,7 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     if let Some(speech) = first_string(args, &["localSpeech", "speech"]) {
         next.local_speech = parse_speech(&speech)?;
         changed = true;
-        notes.push(format!("Local speech is {}.", if next.local_speech == "de" { "German" } else { "English" }));
+        notes.push(format!("Local speech is {}.", speech_name(&next.local_speech)));
     }
     if let Some(on) = first_bool(args, &["preferOnDevice", "preferLocal", "preferLocalOnWake"]) {
         next.prefer_local_on_wake = on;
@@ -595,7 +615,7 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
 
     let person_lead = person_lead_from(args)?;
     if wipe && confirmed {
-        notes.push("Wiped pinned facts and recent on-device notes. Notes, People, and voice keys stay.".into());
+        notes.push("Wiped pinned facts and recent on-device notes. Notes, People, Finance, and voice keys stay.".into());
     }
     if pending.is_some() && notes.iter().all(|note| note.is_empty()) && !changed && person_lead.is_none() {
         notes.clear();
@@ -746,11 +766,28 @@ fn parse_locale(value: &str) -> std::result::Result<String, String> {
     Ok(locale)
 }
 
+fn stored_speech(value: &str) -> String {
+    match value {
+        "de" => "de".into(),
+        "es" => "es".into(),
+        _ => "en".into(),
+    }
+}
+
+fn speech_name(code: &str) -> &'static str {
+    match code {
+        "de" => "German",
+        "es" => "Spanish",
+        _ => "English",
+    }
+}
+
 fn parse_speech(value: &str) -> std::result::Result<String, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "en" | "english" => Ok("en".into()),
+        "es" | "spanish" | "espanol" | "español" => Ok("es".into()),
         "de" | "german" | "deutsch" => Ok("de".into()),
-        _ => Err("On-device speech is English or German.".into()),
+        _ => Err("On-device speech is English, Spanish, or German.".into()),
     }
 }
 

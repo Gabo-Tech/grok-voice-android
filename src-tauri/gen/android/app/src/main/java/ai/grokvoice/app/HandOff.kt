@@ -21,6 +21,7 @@ import org.json.JSONObject
 /** Media keys, volume, and drafts that open another app. Sending still happens there. */
 object HandOff {
   fun media(context: Context, action: String): String {
+    LocalMusic.control(context, action)?.let { return it }
     val code = when (action) {
       "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
       "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
@@ -68,7 +69,7 @@ object HandOff {
         "email" -> email(to, subject, body)
         "call" -> dial(phone)
         "sms" -> sms(phone, text)
-        "share" -> share(text.ifBlank { body })
+        "share" -> share(context, text.ifBlank { body })
         else -> return fail("Unknown app.")
       }
     } catch (e: IllegalArgumentException) {
@@ -312,12 +313,12 @@ object HandOff {
     return Intent(Intent.ACTION_DIAL, Uri.parse("tel:${phoneNumber(phone)}"))
   }
 
-  private fun share(text: String): Intent {
+  private fun share(context: Context, text: String): Intent {
     val body = text.trim()
     if (body.isEmpty()) throw IllegalArgumentException("There is nothing to share.")
     return Intent.createChooser(
       Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, body),
-      "Share"
+      AppLocale.wrap(context).getString(R.string.share_title)
     )
   }
 
@@ -355,10 +356,27 @@ object HandOff {
 
   private fun notify(context: Context, intent: Intent, kind: String) {
     val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val localized = AppLocale.wrap(context)
+    val channelName = localized.getString(R.string.channel_handoff)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      if (nm.getNotificationChannel("handoff") == null) {
-        nm.createNotificationChannel(NotificationChannel("handoff", "Open another app", NotificationManager.IMPORTANCE_HIGH))
+      val existing = nm.getNotificationChannel("handoff")
+      if (existing == null) {
+        nm.createNotificationChannel(NotificationChannel("handoff", channelName, NotificationManager.IMPORTANCE_HIGH))
+      } else if (existing.name != channelName) {
+        existing.name = channelName
+        nm.createNotificationChannel(existing)
       }
+    }
+    val titleId = when (kind) {
+      "call" -> R.string.handoff_title_call
+      "sms" -> R.string.handoff_title_text
+      "share" -> R.string.handoff_title_share
+      "whatsapp" -> R.string.handoff_title_whatsapp
+      "signal" -> R.string.handoff_title_signal
+      "email" -> R.string.handoff_title_email
+      "youtube" -> R.string.handoff_title_youtube
+      "browser" -> R.string.handoff_title_browser
+      else -> R.string.handoff_open_text
     }
     val pending = PendingIntent.getActivity(
       context,
@@ -376,8 +394,8 @@ object HandOff {
       4300 + (kind.hashCode() and 0xff),
       builder
         .setSmallIcon(android.R.drawable.ic_menu_send)
-        .setContentTitle("Open $kind")
-        .setContentText("Tap to open the draft")
+        .setContentTitle(localized.getString(titleId))
+        .setContentText(localized.getString(R.string.handoff_open_text))
         .setContentIntent(pending)
         .setAutoCancel(true)
         .build()

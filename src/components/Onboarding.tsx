@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorText, type AuthStatus, type PermissionStatus, type WakewordStatus } from "@/lib/api";
 import { VoiceOrder } from "@/components/VoiceOrder";
-import { useT } from "@/lib/i18n";
+import { fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const PROVIDERS = [
@@ -81,6 +81,7 @@ export function Onboarding({
   const [error, setError] = useState<string | null>(null);
   const [perms, setPerms] = useState<PermissionStatus | null>(null);
   const [done, setDone] = useState(false);
+  const t = useT();
 
   const id = STEPS[step].id;
   const micGranted = perms?.microphone === "granted";
@@ -182,7 +183,7 @@ export function Onboarding({
   return (
     <div className="flex h-full flex-col px-5 py-6">
       <header className="mb-6 text-center">
-        <p className="text-[11px] tracking-[0.35em] text-primary uppercase">Setup</p>
+        <p className="text-[11px] tracking-[0.35em] text-primary uppercase">{t("Setup")}</p>
         <h1 className="mt-1 text-lg font-semibold tracking-[0.22em]">GROK//VOICE</h1>
       </header>
 
@@ -201,7 +202,7 @@ export function Onboarding({
               >
                 {state === "done" ? <Check className="size-3.5" /> : i + 1}
               </span>
-              <span className={cn("text-xs", state === "now" ? "text-foreground" : "text-muted-foreground")}>{s.label}</span>
+              <span className={cn("text-xs", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(s.label)}</span>
             </li>
           );
         })}
@@ -259,24 +260,24 @@ export function Onboarding({
 
       {error && (
         <p role="alert" className="mt-3 text-sm leading-6 text-foreground">
-          {error}
+          {t(error)}
         </p>
       )}
       {!canNext && id === "key" && (
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">Save a voice to continue. On device counts after you tap Use on device.</p>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("Save a voice to continue. On device counts after you tap Use on device.")}</p>
       )}
-      {!canNext && id === "mic" && <p className="mt-3 text-sm leading-6 text-muted-foreground">Allow the microphone to continue.</p>}
+      {!canNext && id === "mic" && <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("Allow the microphone to continue.")}</p>}
       {done && preview && (
-        <p className="mt-3 text-center text-sm text-primary">Preview finished. In the app this opens the assistant.</p>
+        <p className="mt-3 text-center text-sm text-primary">{t("Preview finished. In the app this opens the assistant.")}</p>
       )}
 
       <footer className="mt-4 flex gap-2 pt-2">
         <Button variant="outline" disabled={step === 0 || busy} onClick={back}>
-          <ChevronLeft /> Back
+          <ChevronLeft /> {t("Back")}
         </Button>
         <Button className="flex-1" disabled={!canNext} onClick={next}>
           {busy && id === "ready" ? <Loader2 className="animate-spin" /> : <ChevronRight />}
-          {id === "wake" && !wake.trained ? "Skip for now" : id === "ready" ? "Start talking" : "Next"}
+          {id === "wake" && !wake.trained ? t("Skip for now") : id === "ready" ? t("Start talking") : t("Next")}
         </Button>
       </footer>
     </div>
@@ -284,6 +285,7 @@ export function Onboarding({
 }
 
 function HelloStep() {
+  const t = useT();
   return (
     <div className="space-y-5">
       <div
@@ -294,18 +296,18 @@ function HelloStep() {
         <Sparkles className="size-8 text-primary" />
       </div>
       <div className="text-center">
-        <h2 className="text-xl font-medium">A voice assistant that stays on your phone</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Five short steps. About two minutes.</p>
+        <h2 className="text-xl font-medium">{t("A voice assistant that stays on your phone")}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{t("Five short steps. About two minutes.")}</p>
       </div>
       <ul className="space-y-3">
-        <Point n="1" title="Choose xAI, OpenAI, or On device">
-          xAI and OpenAI need a key. On device needs a download. The first one in the list is tried first.
+        <Point n="1" title={t("Choose xAI, OpenAI, or On device")}>
+          {t("xAI and OpenAI need a key. On device needs a download. The first one in the list is tried first.")}
         </Point>
-        <Point n="2" title="Allow the microphone">
-          Needed to hear you, including when the screen is off.
+        <Point n="2" title={t("Allow the microphone")}>
+          {t("Needed to hear you, including when the screen is off.")}
         </Point>
-        <Point n="3" title="Teach “Hey Grok”">
-          Three short recordings. They never leave the phone. You can skip and tap instead.
+        <Point n="3" title={t("Teach “Hey Grok”")}>
+          {t("Three short recordings. They never leave the phone. You can skip and tap instead.")}
         </Point>
       </ul>
     </div>
@@ -354,7 +356,7 @@ function KeyStep({
     <Card className="border-primary/20">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="size-4 text-primary" /> Add a voice key
+          <KeyRound className="size-4 text-primary" /> {t("Add a voice key")}
         </CardTitle>
         <CardDescription>{t("Add xAI, OpenAI, or On device.")}</CardDescription>
       </CardHeader>
@@ -370,26 +372,26 @@ function KeyStep({
                 item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
               )}
             >
-              <span className="text-base text-foreground">{item.label}</span>
-              <span className="text-sm leading-5">{item.blurb}</span>
+              <span className="text-base text-foreground">{t(item.label)}</span>
+              <span className="text-sm leading-5">{t(item.blurb)}</span>
             </button>
           ))}
         </div>
         {chosen.id === "local" ? (
           <div className="space-y-3">
             <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-muted-foreground">
-              <li>Tap Use on device. That adds it to the list. No key.</li>
-              <li>Leave it first if the phone should answer before a cloud key.</li>
-              <li>Download the packs below. Until they finish, Talk uses the next key.</li>
+              <li>{t("Tap Use on device. That adds it to the list. No key.")}</li>
+              <li>{t("Leave it first if the phone should answer before a cloud key.")}</li>
+              <li>{t("Download the packs below. Until they finish, Talk uses the next key.")}</li>
             </ol>
           </div>
         ) : (
           <>
             <Button variant="outline" className="w-full" onClick={() => onOpen(chosen.url)}>
-              <ExternalLink /> {chosen.link}
+              <ExternalLink /> {t(chosen.link)}
             </Button>
             <div className="space-y-2">
-              <Label htmlFor="voice-key">Paste the {chosen.label} key</Label>
+              <Label htmlFor="voice-key">{fill("Paste the {name} key", { name: chosen.label })}</Label>
               <Input
                 id="voice-key"
                 type="password"
@@ -405,14 +407,14 @@ function KeyStep({
           </>
         )}
         <Button className="w-full" disabled={busy || (chosen.id !== "local" && value.trim().length < 12)} onClick={onSave}>
-          {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} {chosen.id === "local" ? "Use on device" : "Save this key"}
+          {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} {chosen.id === "local" ? t("Use on device") : t("Save this key")}
         </Button>
         {accounts.length > 0 && <VoiceOrder accounts={accounts} onReorder={onReorder} onRemove={onRemove} />}
         {accounts.length > 0 && (
-          <p className="text-sm leading-6 text-muted-foreground">Add another voice if you want a fallback, then tap Next.</p>
+          <p className="text-sm leading-6 text-muted-foreground">{t("Add another voice if you want a fallback, then tap Next.")}</p>
         )}
         <p className="text-sm leading-6 text-muted-foreground">
-          Each key stays on this phone. xAI is checked before it is stored. If the first voice fails, the next one is tried.
+          {t("Each key stays on this phone. xAI is checked before it is stored. If the first voice fails, the next one is tried.")}
         </p>
         {chosen.id === "local" && <LocalPacks />}
       </CardContent>
@@ -431,35 +433,33 @@ function MicStep({
 }) {
   const mic = perms?.microphone;
   const notes = perms?.notifications;
+  const t = useT();
   return (
     <Card className="border-primary/20">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Mic className="size-4 text-primary" /> Allow the microphone
+          <Mic className="size-4 text-primary" /> {t("Allow the microphone")}
         </CardTitle>
-        <CardDescription>Android will show a system prompt. Choose Allow.</CardDescription>
+        <CardDescription>{t("Android will show a system prompt. Choose Allow.")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          The microphone hears “Hey Grok” and your question. A quiet notification stays up so
-          Android does not switch the microphone off when the screen locks.
+          {t("The microphone hears “Hey Grok” and your question. A quiet notification stays up so Android does not switch the microphone off when the screen locks.")}
         </p>
         <Button className="w-full" disabled={busy || mic === "granted"} onClick={onAllow}>
           {busy ? <Loader2 className="animate-spin" /> : <Mic />}
-          {mic === "granted" ? "Microphone allowed" : "Allow microphone"}
+          {mic === "granted" ? t("Microphone allowed") : t("Allow microphone")}
         </Button>
-        <StatusLine label="Microphone" value={mic} />
-        <StatusLine label="Notification" value={notes} />
+        <StatusLine label={t("Microphone")} value={mic} />
+        <StatusLine label={t("Notification")} value={notes} />
         {mic === "denied" && (
           <p className="text-sm text-destructive">
-            Microphone is blocked. Open Android Settings → Apps → Grok Voice → Permissions, allow
-            Microphone, then come back and tap the button again.
+            {t("Microphone is blocked. Open Android Settings → Apps → Grok Voice → Permissions, allow Microphone, then come back and tap the button again.")}
           </p>
         )}
         {mic === "granted" && notes !== "granted" && (
           <p className="text-xs text-muted-foreground">
-            Notifications are off. Listening still works while the app is open. Allow notifications
-            later if you want “Hey Grok” with the screen locked.
+            {t("Notifications are off. Listening still works while the app is open. Allow notifications later if you want “Hey Grok” with the screen locked.")}
           </p>
         )}
       </CardContent>
@@ -468,41 +468,43 @@ function MicStep({
 }
 
 function StatusLine({ label, value }: { label: string; value?: string }) {
+  const t = useT();
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-foreground">{value === "granted" ? "Allowed" : value === "denied" ? "Blocked" : "Not asked yet"}</span>
+      <span className="text-foreground">{value === "granted" ? t("Allowed") : value === "denied" ? t("Blocked") : t("Not asked yet")}</span>
     </div>
   );
 }
 
 function ReadyStep({ wakeTrained }: { wakeTrained: boolean }) {
+  const t = useT();
   return (
     <div className="space-y-3">
       <Card className="border-primary/20">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <AudioLines className="size-4 text-primary" /> How to talk
+            <AudioLines className="size-4 text-primary" /> {t("How to talk")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <ol className="space-y-3 text-sm">
             <li>
-              <span className="font-medium">Tap the ring</span>
-              <span className="block text-muted-foreground">Speak after it says Listening. Tap again to hang up.</span>
+              <span className="font-medium">{t("Tap the ring")}</span>
+              <span className="block text-muted-foreground">{t("Speak after it says Listening. Tap again to hang up.")}</span>
             </li>
             <li>
-              <span className="font-medium">Ask it to do things</span>
+              <span className="font-medium">{t("Ask it to do things")}</span>
               <span className="block text-muted-foreground">
-                Notes, alarms, timers, reminders, and calendar. Each has its own tab after setup.
+                {t("Notes, alarms, timers, reminders, and calendar. Each has its own tab after setup.")}
               </span>
             </li>
             <li>
-              <span className="font-medium">{wakeTrained ? "Or say “Hey Grok”" : "Wake word is optional"}</span>
+              <span className="font-medium">{wakeTrained ? t("Or say “Hey Grok”") : t("Wake word is optional")}</span>
               <span className="block text-muted-foreground">
                 {wakeTrained
-                  ? "Turn on Listen on the Talk tab. A notification means it is listening."
-                  : "You skipped enrollment. Train it anytime under Settings, then Wake word, and turn Listen on."}
+                  ? t("Turn on Listen on the Talk tab. A notification means it is listening.")
+                  : t("You skipped enrollment. Train it anytime under Settings, then Wake word, and turn Listen on.")}
               </span>
             </li>
           </ol>
@@ -512,9 +514,7 @@ function ReadyStep({ wakeTrained }: { wakeTrained: boolean }) {
         <CardContent className="flex gap-3 pt-4">
           <Headphones className="mt-0.5 size-4 shrink-0 text-primary" />
           <p className="text-sm text-muted-foreground">
-            Use headphones the first time. On a loudspeaker the microphone hears the reply and Grok
-            answers itself. Echo guard is on so the mic mutes while Grok is talking. Turn it off in
-            Settings, then Debug, if you want to interrupt.
+            {t("Use headphones the first time. On a loudspeaker the microphone hears the reply and Grok answers itself. Echo guard is on so the mic mutes while Grok is talking. Turn it off in Settings, then Debug, if you want to interrupt.")}
           </p>
         </CardContent>
       </Card>

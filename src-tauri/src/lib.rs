@@ -1,4 +1,5 @@
 mod actions;
+mod alarm_sound;
 #[cfg(target_os = "android")]
 mod android_mic;
 #[cfg(target_os = "android")]
@@ -9,11 +10,13 @@ mod commands;
 mod diagnostics;
 mod error;
 mod files;
+mod finance;
 mod http;
 mod i18n;
 mod local;
 mod local_memory;
 mod memory;
+mod music;
 mod native;
 mod notices;
 mod people;
@@ -92,6 +95,7 @@ pub fn run() {
             app.manage(WakewordFiles::new(dir.join("wakeword")));
             app.manage(actions::Agenda::load(dir.join("agenda.json")));
             app.manage(people::People::load(dir.join("people.json")));
+            app.manage(finance::Finance::load(dir.join("finance.json")));
             app.manage(memory::Memory::load(dir.join("memory.json")));
             app.manage(local_memory::LocalMemory::load(
                 dir.join("local-memory.json"),
@@ -145,6 +149,8 @@ pub fn run() {
             commands::save_note,
             commands::delete_note,
             commands::save_scheduled,
+            commands::pick_alarm_sound,
+            commands::preview_alarm_sound,
             commands::cancel_scheduled,
             commands::complete_scheduled,
             commands::save_event,
@@ -173,6 +179,7 @@ pub fn run() {
             commands::access_status,
             commands::open_access_settings,
             commands::request_history_access,
+            commands::request_audio_access,
             commands::refresh_last_contact,
             commands::import_contact_birthday,
             commands::import_contact_dates,
@@ -182,6 +189,13 @@ pub fn run() {
             commands::select_local_model,
             commands::import_local_model,
             commands::download_custom_local_model,
+            commands::finance_snapshot,
+            commands::save_finance_account,
+            commands::save_finance_transaction,
+            commands::save_finance_rule,
+            commands::delete_finance_account,
+            commands::delete_finance_transaction,
+            commands::delete_finance_rule,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

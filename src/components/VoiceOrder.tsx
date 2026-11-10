@@ -134,7 +134,7 @@ export function VoiceOrder({
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-muted-foreground">{t(chainPlace(index, rows.length))}</p>
                 <p className="mt-1 text-base text-foreground">
-                  {providerLabel(account.provider)}
+                  {t(providerLabel(account.provider))}
                   <span className="text-muted-foreground"> · {account.hint}</span>
                 </p>
                 <div className={cn("mt-2 grid gap-2", onEdit ? "grid-cols-2" : "grid-cols-1")}>

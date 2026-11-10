@@ -162,6 +162,9 @@ object SpokenAlerts {
       Log.w(TAG, "spoken notice audio focus denied; speaking on the alarm stream anyway")
     }
     RustBridge.setNoticeSpeaking(true)
+    // A chosen alarm sound is already playing. Pause it so this sentence stays
+    // clear, then let that sound continue. The sentence itself is unchanged.
+    AlarmSounds.yieldForSpeech()
     try {
       if (!playPiper(context, line) && !playAndroid(context, line)) {
         Log.w(TAG, "could not speak the notice")
@@ -169,6 +172,7 @@ object SpokenAlerts {
         Log.i(TAG, "spoken notice finished")
       }
     } finally {
+      AlarmSounds.resumeAfterSpeech()
       RustBridge.setNoticeSpeaking(false)
       if (focus != null) abandonFocus(am, focus)
     }
@@ -400,11 +404,13 @@ object SpokenAlerts {
     val dir = when (pack) {
       "tts" -> File(root, "tts/vits-piper-en_US-lessac-low")
       "tts-de" -> File(root, "tts-de/vits-piper-de_DE-thorsten-low")
+      "tts-es" -> File(root, "tts-es/vits-piper-es_ES-davefx-medium")
       else -> return null
     }
     val model = when (pack) {
       "tts" -> File(dir, "en_US-lessac-low.onnx")
       "tts-de" -> File(dir, "de_DE-thorsten-low.onnx")
+      "tts-es" -> File(dir, "es_ES-davefx-medium.onnx")
       else -> return null
     }
     val tokens = File(dir, "tokens.txt")

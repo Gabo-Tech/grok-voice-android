@@ -10,8 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { formatClock, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
 import { RepeatFields, endOfDay, untilInput, type RepeatChoice } from "@/components/RepeatFields";
+import { AlarmSoundFields, type SoundMode } from "@/components/AlarmSoundFields";
 import { api, type ScheduledItem } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { fill, useT } from "@/lib/i18n";
 
 const KINDS = ["reminder", "alarm", "timer"] as const;
 const WEEKDAYS = [
@@ -44,6 +45,11 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
   const [leadDays, setLeadDays] = useState(0);
   const [personId, setPersonId] = useState("");
   const [until, setUntil] = useState("");
+  const [soundMode, setSoundMode] = useState<SoundMode>("default");
+  const [soundFileRef, setSoundFileRef] = useState("");
+  const [soundFileName, setSoundFileName] = useState("");
+  const [soundUrl, setSoundUrl] = useState("");
+  const [soundError, setSoundError] = useState<string | null>(null);
 
   const items = agenda.agenda.reminders;
 
@@ -61,6 +67,11 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
     setLeadDays(0);
     setPersonId("");
     setUntil("");
+    setSoundMode("default");
+    setSoundFileRef("");
+    setSoundFileName("");
+    setSoundUrl("");
+    setSoundError(null);
     setOpen(true);
   };
 
@@ -83,6 +94,12 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
     setLeadDays(item.leadDays ?? 0);
     setPersonId(item.personId || "");
     setUntil(untilInput(item.untilMs));
+    const nextSound = item.soundKind === "file" || item.soundKind === "youtube" ? item.soundKind : "default";
+    setSoundMode(nextSound);
+    setSoundFileRef(item.soundKind === "file" ? item.soundRef || "" : "");
+    setSoundFileName(item.soundKind === "file" ? item.soundLabel || item.soundRef || "" : "");
+    setSoundUrl(item.soundKind === "youtube" ? item.soundLabel || item.soundRef || "" : "");
+    setSoundError(null);
     setOpen(true);
   };
 
@@ -98,6 +115,16 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
   const save = () => {
     const next = title.trim();
     if (!next) return;
+    if (kind === "alarm" && soundMode === "file" && !soundFileRef) {
+      setSoundError("Choose an audio file.");
+      return;
+    }
+    if (kind === "alarm" && soundMode === "youtube" && !soundUrl.trim()) {
+      setSoundError("That is not a YouTube video link.");
+      return;
+    }
+    setSoundError(null);
+    const customSound = kind === "alarm" && soundMode !== "default";
     void agenda.run(async () => {
       const snap = await api.saveScheduled({
         title: next,
@@ -111,6 +138,9 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
         date: linked || repeat === "yearly" || repeat === "once" || repeat === "monthly" ? date : "",
         leadDays: linked || repeat === "yearly" ? leadDays : 0,
         untilMs: repeating && until ? endOfDay(until) : 0,
+        soundKind: customSound ? soundMode : "",
+        soundRef: customSound ? (soundMode === "file" ? soundFileRef : soundUrl.trim()) : "",
+        soundLabel: customSound ? (soundMode === "file" ? soundFileName : soundUrl.trim()) : "",
       });
       close();
       return snap;
@@ -129,11 +159,14 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
     void agenda.run(async () => api.completeScheduled(id));
   };
 
+  const soundProblem =
+    soundError ||
+    (kind === "alarm" && agenda.error && SOUND_ERRORS.some((item) => agenda.error?.includes(item)) ? agenda.error : null);
   const grouped = useMemo(
     () => groupItems(items.filter((item) => kindFilter === "all" || item.kind === kindFilter), query),
     [items, query, kindFilter],
   );
-  const subtitle = waitingLine(grouped);
+  const subtitle = waitingLine(grouped, t);
 
   return (
     <>
@@ -158,19 +191,19 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                   : "h-12 shrink-0 border border-border px-3 text-sm text-muted-foreground"
               }
             >
-              {item === "all" ? "All" : item === "timer" ? "Countdowns" : item === "alarm" ? "Alarms" : "Reminders"}
+              {item === "all" ? t("All") : item === "timer" ? t("Countdowns") : item === "alarm" ? t("Alarms") : t("Reminders")}
             </button>
           ))}
         </div>
         {(items.length > 0 || query) && (
         <div className="mb-6">
-          <Field label="Search">
+          <Field label={t("Search")}>
             <div className="relative">
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="A title or a note"
-                aria-label="Search reminders"
+                placeholder={t("A title or a note")}
+                aria-label={t("Search reminders")}
                 className="pr-16"
               />
               {query && (
@@ -179,32 +212,32 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                   className="absolute top-0 right-0 h-12 px-3 text-sm text-foreground"
                   onClick={() => setQuery("")}
                 >
-                  Clear
+                  {t("Clear")}
                 </button>
               )}
             </div>
           </Field>
         </div>
         )}
-        {agenda.error && !open && <Notice title={agenda.error} />}
+        {agenda.error && !open && <Notice title={t(agenda.error)} />}
         {grouped.total === 0 ? (
           <EmptyState
-            title={query ? "No matches" : "Nothing scheduled"}
-            body={query ? "Try another word." : "Add an alarm, a countdown, or a reminder."}
-            actionLabel={query ? "Clear search" : "New reminder"}
+            title={query ? t("No matches") : t("Nothing scheduled")}
+            body={query ? t("Try another word.") : t("Add an alarm, a countdown, or a reminder.")}
+            actionLabel={query ? t("Clear search") : t("New reminder")}
             onAction={query ? () => setQuery("") : () => openNew("reminder")}
           />
         ) : (
           <div className="space-y-6">
             {grouped.sections.map((section) => (
               <section key={section.name}>
-                <h2 className="mb-2 px-1 text-sm text-muted-foreground">{section.name}</h2>
+                <h2 className="mb-2 px-1 text-sm text-muted-foreground">{t(section.name)}</h2>
                 <div className="divide-y divide-border border-y border-border">
                   {section.items.map((item) => (
                     <div key={item.id} className="flex items-start gap-3 px-1 py-3.5">
                       <button
                         type="button"
-                        aria-label={`Mark ${item.title} done`}
+                        aria-label={fill("Mark {title} done", { title: item.title })}
                         className="grid size-12 shrink-0 place-items-center"
                         onClick={() => finish(item.id)}
                       >
@@ -221,7 +254,13 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                         </div>
                         <div className="min-w-0 flex-1 border-l border-border pl-4">
                           <p className="text-xs text-muted-foreground">
-                            {[item.kind, patternLabel(item)].filter(Boolean).join(" · ")}
+                            {[
+                              kindName(item.kind, t),
+                              patternLabel(item, t),
+                              item.soundKind === "file" || item.soundKind === "youtube" ? t("Custom sound") : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </p>
                           <p className="truncate text-base leading-6 text-foreground">{item.title}</p>
                           {item.note ? (
@@ -240,22 +279,22 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
 
       <Sheet
         open={open}
-        title={editing ? `Edit ${kind}` : `New ${kind}`}
+        title={editing ? t(editKindLabel(kind)) : t(newKindLabel(kind))}
         onClose={close}
         footer={
           <div className="flex flex-wrap items-center gap-2">
-            <ShareButton title={title} text={[kind, repeating ? `${clock} ${date}`.trim() : kind === "timer" ? `${minutes} min` : at, note].filter(Boolean).join("\n")} />
+            <ShareButton title={title} text={[kindName(kind, t), repeating ? `${clock} ${date}`.trim() : kind === "timer" ? fill("{n} min", { n: minutes }) : at, note].filter(Boolean).join("\n")} />
             {editing && (
               <Button variant="ghost" disabled={agenda.busy} onClick={() => remove(editing.id)}>
-                <Trash2 /> Delete
+                <Trash2 /> {t("Delete")}
               </Button>
             )}
             <div className="flex-1" />
             <Button variant="ghost" onClick={close}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button disabled={agenda.busy || !title.trim()} onClick={save}>
-              Save
+              {t("Save")}
             </Button>
           </div>
         }
@@ -269,21 +308,21 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                 onClick={() => setKind(item)}
                 className={
                   item === kind
-                    ? "h-12 border border-foreground text-sm text-foreground"
-                    : "h-12 border border-border text-sm text-muted-foreground"
+                    ? "flex min-h-12 items-center justify-center border border-foreground px-1 text-center text-sm leading-tight text-foreground"
+                    : "flex min-h-12 items-center justify-center border border-border px-1 text-center text-sm leading-tight text-muted-foreground"
                 }
               >
-                {item}
+                {kindName(item, t)}
               </button>
             ))}
           </div>
-          <Field label="Title" error={open ? agenda.error : null}>
+          <Field label={t("Title")} error={open && agenda.error && !soundProblem ? t(agenda.error) : null}>
             <Input
               autoFocus
               value={title}
               aria-invalid={Boolean(agenda.error) || undefined}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Call the clinic"
+              placeholder={t("Call the clinic")}
             />
           </Field>
           {kind === "reminder" && !linked && (
@@ -316,11 +355,11 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-sm leading-5 text-muted-foreground">This date belongs to someone in People.</p>
+              <p className="mt-2 text-sm leading-5 text-muted-foreground">{t("This date belongs to someone in People.")}</p>
             </div>
           )}
           {kind === "timer" ? (
-            <Field label="Length" hint="Counts from the moment you save.">
+            <Field label={t("Length")} hint={t("Counts from the moment you save.")}>
               <div className="mb-3 flex gap-2">
                 {[5, 10, 25].map((value) => (
                   <button
@@ -333,7 +372,7 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                         : "h-12 flex-1 border border-border text-sm text-muted-foreground"
                     }
                   >
-                    {value} min
+                    {fill("{n} min", { n: value })}
                   </button>
                 ))}
               </div>
@@ -352,11 +391,11 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                   <Input type="date" aria-label={t("Date")} value={asDateInput(date)} onChange={(e) => setDate(e.target.value)} />
                 </Field>
               )}
-              <Field label="Time" hint="Next notification uses this clock.">
+              <Field label={t("Time")} hint={t("Next notification uses this clock.")}>
                 <Input type="time" value={clock} onChange={(e) => setClock(e.target.value)} />
               </Field>
               {(linked || repeat === "yearly") && (
-                <Field label="Early">
+                <Field label={t("Early")}>
                   <div className="flex gap-2">
                     {[0, 1, 3, 7].map((days) => (
                       <button
@@ -369,7 +408,7 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
                             : "h-12 flex-1 border border-border text-sm text-muted-foreground"
                         }
                       >
-                        {days === 0 ? "Day of" : `${days}d`}
+                        {days === 0 ? t("Day of") : fill("{n}d", { n: days })}
                       </button>
                     ))}
                   </div>
@@ -377,9 +416,9 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
               )}
             </div>
           ) : (
-            <Field label="When">
+            <Field label={t("When")}>
               <div className="mb-3 flex flex-col gap-2">
-                {quickTimes().map((choice) => (
+                {quickTimes(t).map((choice) => (
                   <button
                     key={choice.label}
                     type="button"
@@ -397,8 +436,25 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
               <Input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
             </Field>
           )}
-          <Field label="Note">
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Bring the referral" className="min-h-28" />
+          {kind === "alarm" && (
+            <AlarmSoundFields
+              mode={soundMode}
+              fileName={soundFileName}
+              fileRef={soundFileRef}
+              url={soundUrl}
+              error={soundProblem}
+              busy={agenda.busy}
+              onMode={setSoundMode}
+              onFile={(relativePath, name) => {
+                setSoundFileRef(relativePath);
+                setSoundFileName(name);
+              }}
+              onUrl={setSoundUrl}
+              onError={setSoundError}
+            />
+          )}
+          <Field label={t("Note")}>
+            <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("Bring the referral")} className="min-h-28" />
           </Field>
         </div>
       </Sheet>
@@ -406,15 +462,48 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
   );
 }
 
-function quickTimes(): Array<{ label: string; ms: number }> {
+const SOUND_ERRORS = [
+  "That is not a YouTube video link.",
+  "That audio file is missing. Pick it again.",
+  "That audio file is too large.",
+  "Choose an audio file.",
+  "No file was chosen.",
+  "Could not read that audio file.",
+  "Custom sound is only for alarms.",
+  "Could not open the file picker.",
+  "That audio file is not saved on this phone. Pick it in the alarm form.",
+  "Choose either a YouTube link or an audio file.",
+  "An alarm is already playing.",
+  "Choosing an audio file works on the Android phone.",
+];
+
+function kindName(kind: string, t: (english: string) => string) {
+  if (kind === "alarm") return t("Alarm");
+  if (kind === "timer") return t("Countdown");
+  return t("Reminder");
+}
+
+function newKindLabel(kind: string) {
+  if (kind === "alarm") return "New alarm";
+  if (kind === "timer") return "New countdown";
+  return "New reminder";
+}
+
+function editKindLabel(kind: string) {
+  if (kind === "alarm") return "Edit alarm";
+  if (kind === "timer") return "Edit countdown";
+  return "Edit reminder";
+}
+
+function quickTimes(t: (english: string) => string): Array<{ label: string; ms: number }> {
   const now = new Date();
   const tonight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0, 0);
   if (tonight.getTime() <= now.getTime()) tonight.setDate(tonight.getDate() + 1);
   const morning = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0, 0, 0);
   return [
-    { label: "In 1 hour", ms: now.getTime() + 3_600_000 },
-    { label: "Tonight", ms: tonight.getTime() },
-    { label: "Tomorrow morning", ms: morning.getTime() },
+    { label: t("In 1 hour"), ms: now.getTime() + 3_600_000 },
+    { label: t("Tonight"), ms: tonight.getTime() },
+    { label: t("Tomorrow morning"), ms: morning.getTime() },
   ];
 }
 
@@ -451,20 +540,26 @@ function clockFrom(ms: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function patternLabel(item: ScheduledItem): string {
-  const days = (item.weekdays ?? []).map((day) => WEEKDAYS.find((item) => item.id === day)?.label).filter(Boolean).join(" ");
-  if (item.recurrence === "daily") return "Daily";
-  if (item.recurrence === "weekly") return days ? `Weekly ${days}` : "Weekly";
-  if (item.recurrence === "monthly") return "Monthly";
-  if (item.recurrence === "yearly") return item.date ? `Yearly ${item.date}` : "Yearly";
-  if (item.recurrence === "once" && item.date) return `Once ${item.date}`;
+function patternLabel(item: ScheduledItem, t: (english: string) => string): string {
+  const days = (item.weekdays ?? [])
+    .map((day) => {
+      const label = WEEKDAYS.find((item) => item.id === day)?.label;
+      return label ? t(label) : "";
+    })
+    .filter(Boolean)
+    .join(" ");
+  if (item.recurrence === "daily") return t("Daily");
+  if (item.recurrence === "weekly") return days ? `${t("Weekly")} ${days}` : t("Weekly");
+  if (item.recurrence === "monthly") return t("Monthly");
+  if (item.recurrence === "yearly") return item.date ? `${t("Yearly")} ${item.date}` : t("Yearly");
+  if (item.recurrence === "once" && item.date) return `${t("Once")} ${item.date}`;
   return "";
 }
 
-function waitingLine(grouped: ReturnType<typeof groupItems>): string {
+function waitingLine(grouped: ReturnType<typeof groupItems>, t: (english: string) => string): string {
   const parts: string[] = [];
-  if (grouped.overdue) parts.push(`${grouped.overdue} overdue`);
-  if (grouped.today) parts.push(`${grouped.today} today`);
-  if (!grouped.overdue && !grouped.today && grouped.later) parts.push(`${grouped.later} later`);
-  return parts.length ? parts.join(" · ") : "None waiting";
+  if (grouped.overdue) parts.push(fill("{n} overdue", { n: grouped.overdue }));
+  if (grouped.today) parts.push(fill("{n} today", { n: grouped.today }));
+  if (!grouped.overdue && !grouped.today && grouped.later) parts.push(fill("{n} later", { n: grouped.later }));
+  return parts.length ? parts.join(" · ") : t("None waiting");
 }

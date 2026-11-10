@@ -80,6 +80,9 @@ class ScheduleArgs {
   var title: String = ""
   var note: String = ""
   var atMs: Long = 0
+  var soundKind: String = ""
+  var soundRef: String = ""
+  var soundLabel: String = ""
 }
 
 @InvokeArg
@@ -299,7 +302,20 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun scheduleItem(invoke: Invoke) {
     val a = invoke.parseArgs(ScheduleArgs::class.java)
-    resolveJson(invoke, PhoneActions.schedule(activity.applicationContext, a.id, a.kind, a.title, a.note, a.atMs))
+    resolveJson(
+      invoke,
+      PhoneActions.schedule(
+        activity.applicationContext,
+        a.id,
+        a.kind,
+        a.title,
+        a.note,
+        a.atMs,
+        a.soundKind,
+        a.soundRef,
+        a.soundLabel,
+      )
+    )
   }
 
   @Command
@@ -372,6 +388,34 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   fun mediaControl(invoke: Invoke) {
     val a = invoke.parseArgs(MediaArgs::class.java)
     resolveJson(invoke, HandOff.media(activity.applicationContext, a.action))
+  }
+
+  @InvokeArg
+  class JsonArgs {
+    var json: String = ""
+  }
+
+  @Command
+  fun listLocalAudio(invoke: Invoke) {
+    resolveJson(invoke, LocalMusic.catalog(activity.applicationContext))
+  }
+
+  @Command
+  fun playLocalAudio(invoke: Invoke) {
+    val a = invoke.parseArgs(JsonArgs::class.java)
+    resolveJson(invoke, LocalMusic.play(activity.applicationContext, a.json))
+  }
+
+  @Command
+  fun requestAudioAccess(invoke: Invoke) {
+    LocalMusic.requestAccess(activity) { granted, openedSettings ->
+      val json = JSONObject()
+        .put("ok", granted)
+        .put("audio", if (granted) "granted" else "denied")
+        .put("openedSettings", openedSettings)
+        .toString()
+      resolveJson(invoke, json)
+    }
   }
 
   @Command
@@ -584,6 +628,88 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   @InvokeArg
   class GgufDestArgs {
     var dest: String = ""
+  }
+
+  @InvokeArg
+  class PreviewSoundArgs {
+    var relativePath: String = ""
+  }
+
+  @InvokeArg
+  class PickSoundArgs {
+    var destDir: String = ""
+  }
+
+  private var pendingSoundDir: File? = null
+
+  @Command
+  fun pickAlarmSound(invoke: Invoke) {
+    try {
+      val args = invoke.parseArgs(PickSoundArgs::class.java)
+      val dest = File(args.destDir)
+      dest.mkdirs()
+      val canon = dest.canonicalFile
+      val storage = activity.dataDir.canonicalFile.path
+      val parent = canon.parentFile?.path ?: ""
+      if (canon.name != "alarm-sounds" || !parent.startsWith(storage)) {
+        invoke.reject("Could not open the file picker.")
+        return
+      }
+      pendingSoundDir = canon
+      val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+      intent.addCategory(Intent.CATEGORY_OPENABLE)
+      intent.type = "audio/*"
+      intent.putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "application/ogg", "application/octet-stream"))
+      intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      startActivityForResult(invoke, intent, "alarmSoundPickerResult")
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not open the file picker.", e)
+    }
+  }
+
+  @ActivityCallback
+  fun alarmSoundPickerResult(invoke: Invoke, result: ActivityResult) {
+    if (result.resultCode != Activity.RESULT_OK) {
+      invoke.reject("No file was chosen.")
+      return
+    }
+    val uri = result.data?.data
+    if (uri == null) {
+      invoke.reject("No file was chosen.")
+      return
+    }
+    val dir = pendingSoundDir
+    pendingSoundDir = null
+    if (dir == null) {
+      invoke.reject("No file was chosen.")
+      return
+    }
+    Thread {
+      try {
+        val (relativePath, name) = AlarmSounds.copyPicked(activity, uri, dir)
+        val ret = JSObject()
+        ret.put("relativePath", relativePath)
+        ret.put("name", name)
+        invoke.resolve(ret)
+      } catch (e: Exception) {
+        invoke.reject(e.message ?: "Could not read that audio file.")
+      }
+    }.start()
+  }
+
+  @Command
+  fun previewAlarmSound(invoke: Invoke) {
+    try {
+      val args = invoke.parseArgs(PreviewSoundArgs::class.java)
+      val error = AlarmSounds.preview(activity, args.relativePath)
+      if (error.isNotEmpty()) {
+        invoke.reject(error)
+        return
+      }
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not read that audio file.")
+    }
   }
 
   @Command

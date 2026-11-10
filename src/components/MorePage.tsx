@@ -17,7 +17,7 @@ import { OPENAI_VOICES, XAI_VOICES } from "@/lib/voices";
 import { providerLabel } from "@/lib/flow";
 import { VoiceOrder } from "@/components/VoiceOrder";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
-import { setAppLocale, useT } from "@/lib/i18n";
+import { fill, setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export type Section =
@@ -276,7 +276,11 @@ export function MorePage({
               </p>
               <p className="mt-2 text-sm text-foreground">
                 {usage
-                  ? `${usage.minutes} min across ${usage.sessions} ${usage.sessions === 1 ? t("session") : t("sessions")} today`
+                  ? fill("{minutes} min across {count} {unit} today", {
+                      minutes: usage.minutes,
+                      count: usage.sessions,
+                      unit: usage.sessions === 1 ? t("session") : t("sessions"),
+                    })
                   : t("Today's time is counted on this phone.")}
               </p>
               <div className="mt-3 grid grid-cols-4 gap-2">
@@ -471,6 +475,7 @@ export function MorePage({
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { id: "en", label: t("English") },
+                  { id: "es", label: t("Spanish") },
                   { id: "de", label: t("German") },
                 ].map((choice) => (
                   <button
@@ -487,7 +492,7 @@ export function MorePage({
                 ))}
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {t("English uses Moonshine Base. German uses a separate download. Moonshine does not understand German.")}
+                {t("English uses Moonshine Base. Spanish and German each use a separate download. Moonshine does not understand Spanish or German.")}
               </p>
             </div>
           </div>
@@ -543,13 +548,13 @@ export function MorePage({
       <ListenStatus />
       <div className="mb-6 border border-border px-3 py-3">
         <p className="text-base text-foreground">
-          {first ? t("Tried first") + `: ${providerLabel(first.provider)}` : t("No voice yet")}
+          {first ? `${t("Tried first")}: ${t(providerLabel(first.provider))}` : t("No voice yet")}
         </p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
           {accounts.length > 1
             ? `${t("Then this")} ${accounts
                 .slice(1)
-                .map((account) => providerLabel(account.provider))
+                .map((account) => t(providerLabel(account.provider)))
                 .join(", ")}.`
             : first
               ? t("Add another voice if you want a fallback.")
@@ -557,7 +562,11 @@ export function MorePage({
         </p>
         <p className="mt-2 text-sm text-foreground">
           {usage
-            ? `${usage.minutes} min · ${usage.sessions} ${usage.sessions === 1 ? t("session") : t("sessions")}`
+            ? fill("{minutes} min · {count} {unit}", {
+                minutes: usage.minutes,
+                count: usage.sessions,
+                unit: usage.sessions === 1 ? t("session") : t("sessions"),
+              })
             : t("Today's time is counted on this phone.")}
         </p>
       </div>
@@ -570,14 +579,14 @@ export function MorePage({
           detail={wake.trained ? t("Hey Grok enrolled") : t("Not enrolled yet")}
           onClick={() => setSection("wake")}
         />
-        <MenuRow icon={<Hourglass className="size-4" />} title={t("Quiet gap")} detail={`${quiet}s`} onClick={() => setSection("quiet")} />
+        <MenuRow icon={<Hourglass className="size-4" />} title={t("Quiet gap")} detail={fill("{n}s", { n: quiet })} onClick={() => setSection("quiet")} />
         <MenuRow icon={<Languages className="size-4" />} title={t("Language")} detail={t("Follow the phone")} onClick={() => setSection("language")} />
       </SettingsGroup>
-      <SettingsGroup title={t("Spend")}>
+      <SettingsGroup title={t("Voice time")}>
         <MenuRow
           icon={<Wallet className="size-4" />}
           title={t("Daily voice budget")}
-          detail={settings?.dailyBudgetMinutes ? `${settings.dailyBudgetMinutes} min` : t("Off")}
+          detail={settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off")}
           onClick={() => setSection("spend")}
         />
       </SettingsGroup>
@@ -590,11 +599,11 @@ export function MorePage({
           detail={settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("Normal")}
           onClick={() => setSection("alerts")}
         />
-        <MenuRow icon={<Bell className="size-4" />} title={t("Phone access")} detail={t("Notifications, Do Not Disturb, history")} onClick={() => setSection("access")} />
+        <MenuRow icon={<Bell className="size-4" />} title={t("Phone access")} detail={t("Notifications, Do Not Disturb, history, music")} onClick={() => setSection("access")} />
         <MenuRow icon={<AudioLines className="size-4" />} title={t("Voice and model")} detail={t("Names sent with the xAI key")} onClick={() => setSection("model")} />
       </SettingsGroup>
       <SettingsGroup title={t("Your data")}>
-        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, and memory")} onClick={() => setSection("backup")} />
+        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, Finance, and memory")} onClick={() => setSection("backup")} />
       </SettingsGroup>
       <SettingsGroup title={t("Support")}>
         <MenuRow icon={<Bug className="size-4" />} title={t("Debug")} detail={t("Logs, echo guard, and sign out")} onClick={() => setSection("debug")} />
@@ -645,10 +654,10 @@ function MemorySection() {
     <div className="space-y-4 pb-6">
       <h2 className="text-2xl font-medium tracking-tight">{t("Memory")}</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        On-device Talk reads these pinned facts and short notes from recent local sessions. Cloud Talk does not. Wiping this does not delete notes, People, or voice keys.
+        {t("On-device Talk reads these pinned facts and short notes from recent local sessions. Cloud Talk does not. Wiping this does not delete notes, People, Finance, or voice keys.")}
       </p>
       <Field label={t("Pin fact")}>
-        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="I live in Zurich" />
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("I live in Zurich")} />
       </Field>
       <Button type="button" onClick={() => void pin()}>
         {t("Pin fact")}
@@ -690,8 +699,8 @@ function MemorySection() {
       >
         {confirmWipe ? t("Wipe memory") : t("Wipe memory")}
       </Button>
-      {confirmWipe && <p className="text-xs leading-5 text-muted-foreground">Tap again. Notes, People, and voice keys stay.</p>}
-      {error && <p className="text-sm text-foreground">{error}</p>}
+      {confirmWipe && <p className="text-sm leading-5 text-muted-foreground">{t("Tap again. Notes, People, Finance, and voice keys stay.")}</p>}
+      {error && <p className="text-sm text-foreground">{t(error)}</p>}
     </div>
   );
 }
@@ -713,15 +722,15 @@ function AccessSection() {
     <div className="space-y-4 pb-6">
       <h2 className="text-2xl font-medium tracking-tight">{t("Phone access")}</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        These are asked only when you turn them on. Notification access and Do Not Disturb open system settings. Call and text history is a separate permission and is not read until you allow it.
+        {t("These are asked only when you turn them on. Notification access and Do Not Disturb open system settings. Call and text history is a separate permission and is not read until you allow it.")}
       </p>
       <button type="button" className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm" onClick={() => void api.openAccessSettings("notifications").then(refresh)}>
         <span>{t("Notification access")}</span>
-        <span className="text-xs uppercase">{status?.notificationListener || ""}</span>
+        <span className="text-xs uppercase">{accessWord(status?.notificationListener, t)}</span>
       </button>
       <button type="button" className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm" onClick={() => void api.openAccessSettings("dnd").then(refresh)}>
         <span>{t("Do Not Disturb")}</span>
-        <span className="text-xs uppercase">{status?.dnd || ""}</span>
+        <span className="text-xs uppercase">{accessWord(status?.dnd, t)}</span>
       </button>
       <button
         type="button"
@@ -729,14 +738,32 @@ function AccessSection() {
         onClick={() => void api.requestHistoryAccess().then(refresh).catch((e) => setError(errorText(e)))}
       >
         <span>{t("Call and text history")}</span>
-        <span className="text-xs uppercase">{status ? `${status.callLog} / ${status.sms}` : ""}</span>
+        <span className="text-xs uppercase">{status ? `${accessWord(status.callLog, t)} / ${accessWord(status.sms, t)}` : ""}</span>
       </button>
-      {error && <p className="text-sm text-foreground">{error}</p>}
+      <button
+        type="button"
+        className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm"
+        onClick={() => void api.requestAudioAccess().then(refresh).catch((e) => setError(errorText(e)))}
+      >
+        <span>{t("Music and audio")}</span>
+        <span className="text-xs uppercase">{accessWord(status?.audio, t)}</span>
+      </button>
+      <p className="text-sm leading-6 text-muted-foreground">{t("Talk plays songs stored on this phone after you allow this.")}</p>
+      {error && <p className="text-sm text-foreground">{t(error)}</p>}
     </div>
   );
 }
 
+function accessWord(value: string | undefined, t: (english: string) => string) {
+  if (!value) return "";
+  if (value === "granted") return t("Allowed");
+  if (value === "denied") return t("Blocked");
+  if (value === "unknown") return t("Unknown");
+  return t(value);
+}
+
 function BackupPage() {
+  const t = useT();
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
   const [includeKeys, setIncludeKeys] = useState(false);
@@ -805,7 +832,7 @@ function BackupPage() {
     try {
       const next = await api.restoreBackup(fileB64, passphrase, true, restoreKeys);
       setPreview(next);
-      setNotice(`Replaced ${next.notes} notes and ${next.people} people.`);
+      setNotice(t("Replaced notes, people, and Finance on this phone."));
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -815,14 +842,15 @@ function BackupPage() {
 
   return (
     <div className="space-y-4 pb-6">
-      <h2 className="text-2xl font-medium tracking-tight">Backup</h2>
+      <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.
+        {t("An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.")}{" "}
+        {t("Finance is included. An older backup without Finance leaves the money already on this phone.")}
       </p>
-      <Field label="Passphrase">
+      <Field label={t("Passphrase")}>
         <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
       </Field>
-      <Field label="Passphrase again">
+      <Field label={t("Passphrase again")}>
         <Input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
       </Field>
       <button
@@ -833,19 +861,19 @@ function BackupPage() {
           includeKeys ? "border-foreground text-foreground" : "border-border text-muted-foreground",
         )}
       >
-        <span>Include voice keys</span>
-        <span className="text-xs tracking-[0.12em] uppercase">{includeKeys ? "On" : "Off"}</span>
+        <span>{t("Include voice keys")}</span>
+        <span className="text-xs tracking-[0.12em] uppercase">{includeKeys ? t("On") : t("Off")}</span>
       </button>
       <Button disabled={busy} onClick={() => void exportFile()}>
-        Export backup
+        {t("Export backup")}
       </Button>
       <div className="border-t border-border pt-4">
-        <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Restore</p>
+        <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Replace notes and People on this phone. Reminders that are not tied to a person stay. Confirm after you review the file.
+          {t("Replace notes, People, and Finance on this phone. Reminders that are not tied to a person stay. Confirm after you review the file.")}
         </p>
         <label className="mt-3 flex h-12 cursor-pointer items-center border border-border px-3 text-sm">
-          <span className="truncate">{fileName || "Choose a .gvb file"}</span>
+          <span className="truncate">{fileName || t("Choose a .gvb file")}</span>
           <input
             type="file"
             accept=".gvb,application/octet-stream"
@@ -855,18 +883,23 @@ function BackupPage() {
         </label>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button variant="outline" disabled={busy || !fileB64 || passphrase.length < 8} onClick={() => void review()}>
-            Review
+            {t("Review")}
           </Button>
           <Button disabled={busy || !preview} onClick={() => void restore()}>
-            Replace notes and people
+            {t("Replace notes, people, and Finance")}
           </Button>
         </div>
         {preview && (
           <div className="mt-3 space-y-2 text-sm text-foreground">
             <p>
-              {preview.notes} notes · {preview.people} people · {preview.reminders} dates
-              {preview.keys ? ` · ${preview.keys} keys in the file` : ""}
-              {preview.hasMemory ? ` · ${preview.facts} facts` : " · no memory section"}
+              {fill("{notes} notes · {people} people · {reminders} dates", {
+                notes: preview.notes,
+                people: preview.people,
+                reminders: preview.reminders,
+              })}
+              {preview.keys ? fill(" · {keys} keys in the file", { keys: preview.keys }) : ""}
+              {preview.hasMemory ? fill(" · {facts} facts", { facts: preview.facts }) : t(" · no memory section")}
+              {preview.hasFinance ? ` · ${t("Includes Finance")}` : ` · ${t("No Finance in this file")}`}
             </p>
             {preview.keys > 0 && (
               <button
@@ -877,15 +910,15 @@ function BackupPage() {
                   restoreKeys ? "border-foreground text-foreground" : "border-border text-muted-foreground",
                 )}
               >
-                <span>Also replace voice keys</span>
-                <span className="text-xs tracking-[0.12em] uppercase">{restoreKeys ? "On" : "Off"}</span>
+                <span>{t("Also replace voice keys")}</span>
+                <span className="text-xs tracking-[0.12em] uppercase">{restoreKeys ? t("On") : t("Off")}</span>
               </button>
             )}
           </div>
         )}
       </div>
-      {error && <p className="text-sm text-foreground">{error}</p>}
-      {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
+      {error && <p className="text-sm text-foreground">{t(error)}</p>}
+      {notice && <p className="text-sm text-muted-foreground">{t(notice)}</p>}
     </div>
   );
 }
@@ -988,20 +1021,20 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
               item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
             )}
           >
-            {item.label}
+            {t(item.label)}
           </button>
         ))}
       </div>
       {provider === "local" ? (
         <p className="text-sm leading-6 text-muted-foreground">
-          No key. Talk uses this phone when the packs below are ready. If a pack is missing or the model cannot load, the next key is used.
+          {t("No key. Talk uses this phone when the packs below are ready. If a pack is missing or the model cannot load, the next key is used.")}
         </p>
       ) : (
-        <Field label={editing ? "New key" : "Key"}>
+        <Field label={editing ? t("New key") : t("Key")}>
           <Input
             type="password"
             autoComplete="off"
-            placeholder={editing ? "Leave blank to keep the saved key" : ""}
+            placeholder={editing ? t("Leave blank to keep the saved key") : ""}
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
           />
@@ -1009,7 +1042,7 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
       )}
       <div className="flex gap-2">
         <Button disabled={busy || !secretReady} onClick={() => void save()}>
-          {provider === "local" ? (editing ? "Update on device" : "Use on device") : editing ? "Update this key" : "Save this key"}
+          {provider === "local" ? (editing ? t("Update on device") : t("Use on device")) : editing ? t("Update this key") : t("Save this key")}
         </Button>
         {editing && (
           <Button
@@ -1020,7 +1053,7 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
               setSecret("");
             }}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
         )}
       </div>
@@ -1039,7 +1072,7 @@ function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatu
       <p className="text-sm leading-6 text-muted-foreground">
         {t("Off follows the list. On uses On device first for Talk when its packs are on this phone and On device is in this list.")}
       </p>
-      {error && <p className="text-sm text-foreground">{error}</p>}
+      {error && <p className="text-sm text-foreground">{t(error)}</p>}
       <LocalPacks onChanged={() => void api.getSettings().then(setSettings).catch(() => {})} />
       <VoiceOrder
         accounts={accounts}

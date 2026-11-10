@@ -10,7 +10,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Grok"
+        android:text="@string/widget_brand"
         android:textColor="#F5F5F5"
         android:textSize="16sp" />
 
@@ -19,7 +19,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
-        android:text="Background listening is off"
+        android:text="@string/widget_listen_off"
         android:textColor="#A3A3A3"
         android:textSize="12sp" />
 
@@ -45,7 +45,7 @@
             android:layout_weight="1"
             android:background="@drawable/widget_chip"
             android:gravity="center"
-            android:text="Listen in background"
+            android:text="@string/widget_listen_start"
             android:textColor="#0E0E0E"
             android:textSize="12sp" />
 
@@ -56,7 +56,7 @@
             android:layout_weight="1"
             android:background="@drawable/widget_chip_outline"
             android:gravity="center"
-            android:text="Listen now"
+            android:text="@string/widget_listen_now"
             android:textColor="#F5F5F5"
             android:textSize="12sp" />
     </LinearLayout>

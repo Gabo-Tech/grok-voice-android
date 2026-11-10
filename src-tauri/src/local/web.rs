@@ -250,6 +250,12 @@ mod tests {
             "go_home",
             "phone_status",
             "media_control",
+            "play_local_music",
+            "log_money",
+            "save_recurring",
+            "save_account",
+            "list_finance",
+            "delete_finance",
         ] {
             assert!(network_block(name, false).is_none(), "{name} stays available offline");
         }

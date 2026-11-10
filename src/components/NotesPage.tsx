@@ -83,7 +83,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("A word from a note")}
-                aria-label="Search notes"
+                aria-label={t("Search notes")}
                 className="pr-16"
               />
               {query && (
@@ -99,7 +99,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
           </Field>
         </div>
         )}
-        {agenda.error && <Notice title={agenda.error} />}
+        {agenda.error && <Notice title={t(agenda.error)} />}
         {notes.length === 0 ? (
           <EmptyState
             title={query ? t("No matches") : t("No notes yet")}
@@ -110,7 +110,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
         ) : (
           <div className="divide-y divide-border border-y border-border">
             {notes.map((note) => {
-              const name = note.title || headingFrom(note.text) || "Untitled";
+              const name = note.title || headingFrom(note.text) || t("Untitled");
               const previewLine = note.text.replace(/\s+/g, " ").trim();
               return (
                 <RowButton key={note.id} onClick={() => openEdit(note)}>
@@ -137,48 +137,48 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
             <ShareButton title={title} text={text} />
             {editing && (
               <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
-                <Trash2 /> Delete
+                <Trash2 /> {t("Delete")}
               </Button>
             )}
             <div className="flex-1" />
             <Button variant="ghost" onClick={close}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button disabled={agenda.busy || (!title.trim() && !text.trim())} onClick={save}>
-              Save
+              {t("Save")}
             </Button>
           </div>
         }
       >
         <div className="border border-border">
           <div className="px-3 pt-3">
-            <Field label="Title" error={open ? agenda.error : null}>
+            <Field label={t("Title")} error={open ? (agenda.error ? t(agenda.error) : null) : null}>
               <Input
                 autoFocus
                 value={title}
                 aria-invalid={Boolean(agenda.error) || undefined}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Grocery list"
+                placeholder={t("Grocery list")}
                 className="border-0 px-0 focus-visible:border-transparent"
               />
             </Field>
           </div>
           <div className="border-t border-border px-3 py-3">
             <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="text-sm text-muted-foreground">Note</span>
+              <span className="text-sm text-muted-foreground">{t("Note")}</span>
               <button type="button" className="min-h-12 px-2 text-sm text-foreground" onClick={() => setPreview((on) => !on)}>
-                {preview ? "Edit" : "Preview"}
+                {preview ? t("Edit") : t("Formatted")}
               </button>
             </div>
             {preview ? (
               <div className="min-h-[40vh] py-1">
-                <NoteMarkdown text={text || "Nothing written yet."} />
+                <NoteMarkdown text={text || t("Nothing written yet.")} />
               </div>
             ) : (
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder={"- milk\n- **bread**"}
+                placeholder={t("- milk\n- **bread**")}
                 className="min-h-[40vh] border-0 px-0 font-mono focus-visible:border-transparent"
               />
             )}

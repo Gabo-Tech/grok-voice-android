@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pushOverlay } from "@/lib/history";
+import { useT } from "@/lib/i18n";
 
 export function Sheet({
   open,
@@ -18,6 +19,7 @@ export function Sheet({
 }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const t = useT();
 
   useEffect(() => {
     if (!open) return;
@@ -36,11 +38,11 @@ export function Sheet({
 
   return (
     <div className="sheet-root" role="dialog" aria-modal="true" aria-label={title}>
-      <button type="button" className="sheet-scrim" aria-label="Close" onClick={onClose} />
+      <button type="button" className="sheet-scrim" aria-label={t("Close")} onClick={onClose} />
       <div className="sheet-panel">
         <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
           <h2 className="text-lg leading-6 font-medium">{title}</h2>
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close">
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("Close")}>
             <X />
           </Button>
         </header>

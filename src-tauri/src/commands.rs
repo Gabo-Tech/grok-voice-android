@@ -471,6 +471,9 @@ pub fn save_scheduled(
     date: Option<String>,
     lead_days: Option<u32>,
     until_ms: Option<i64>,
+    sound_kind: Option<String>,
+    sound_ref: Option<String>,
+    sound_label: Option<String>,
 ) -> Result<AgendaSnapshot> {
     let schedule = actions::ScheduleMeta {
         recurrence: recurrence.unwrap_or_default(),
@@ -482,18 +485,49 @@ pub fn save_scheduled(
         ..actions::ScheduleMeta::default()
     };
     let has_schedule = !schedule.recurrence.is_empty() || !schedule.weekdays.is_empty() || !schedule.time.is_empty() || !schedule.date.is_empty();
-    app.state::<Agenda>()
-        .upsert_item(
-            &app,
-            id,
-            kind.as_deref().unwrap_or("reminder"),
-            &title,
-            note.as_deref().unwrap_or(""),
-            at_ms,
-            has_schedule.then_some(schedule),
-        )
+    let kind = kind.unwrap_or_else(|| "reminder".into());
+    let agenda = app.state::<Agenda>();
+    let sound = match sound_kind {
+        None => None,
+        Some(value) => Some(
+            crate::alarm_sound::from_form(&value, sound_ref.as_deref().unwrap_or(""), sound_label.as_deref().unwrap_or(""), &agenda.sounds_dir())
+                .map_err(msg)?,
+        ),
+    };
+    if kind != "alarm" && sound.as_ref().is_some_and(|choice| !choice.is_empty()) {
+        return Err(msg(crate::alarm_sound::ERR_ALARMS_ONLY));
+    }
+    agenda
+        .upsert_item(&app, id, &kind, &title, note.as_deref().unwrap_or(""), at_ms, has_schedule.then_some(schedule), sound)
         .map_err(msg)?;
-    Ok(app.state::<Agenda>().snapshot(&app))
+    Ok(agenda.snapshot(&app))
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlarmSoundPick {
+    pub relative_path: String,
+    pub name: String,
+}
+
+#[tauri::command]
+pub fn pick_alarm_sound(app: AppHandle) -> Result<AlarmSoundPick> {
+    let agenda = app.state::<Agenda>();
+    let dir = agenda.sounds_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| msg(e.to_string()))?;
+    let (relative_path, name) = app
+        .state::<crate::native::NativeBridge>()
+        .pick_alarm_sound(&dir.to_string_lossy())
+        .map_err(|e| msg(e.to_string()))?;
+    crate::alarm_sound::file_choice(&dir, &relative_path, &name).map_err(msg)?;
+    Ok(AlarmSoundPick { relative_path, name })
+}
+
+#[tauri::command]
+pub fn preview_alarm_sound(app: AppHandle, relative_path: String) -> Result<()> {
+    let dir = app.state::<Agenda>().sounds_dir();
+    crate::alarm_sound::file_choice(&dir, &relative_path, "").map_err(msg)?;
+    app.state::<crate::native::NativeBridge>().preview_alarm_sound(&relative_path).map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]
@@ -695,6 +729,7 @@ pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bo
     let include_keys = include_keys.unwrap_or(false);
     let mut payload = crate::backup::Payload::notes_and_people(app.state::<Agenda>().notes(), app.state::<People>().list());
     payload.memory = Some(app.state::<crate::local_memory::LocalMemory>().snapshot());
+    payload.finance = Some(app.state::<crate::finance::Finance>().bundle());
     if include_keys {
         let secrets = app.state::<Vault>().accounts(&app.state::<NativeBridge>()).map_err(|e| msg(e.to_string()))?;
         payload.keys = secrets
@@ -753,6 +788,9 @@ pub fn restore_backup(
     actions::replace_notes(&app, payload.notes).map_err(msg)?;
     if let Some(memory) = payload.memory {
         app.state::<crate::local_memory::LocalMemory>().replace(memory);
+    }
+    if let Some(finance) = payload.finance {
+        app.state::<crate::finance::Finance>().replace(&app, finance).map_err(msg)?;
     }
     actions::sync_person_reminders(&app).map_err(msg)?;
     if restore_keys.unwrap_or(false) && !payload.keys.is_empty() {
@@ -837,6 +875,12 @@ pub fn open_access_settings(app: AppHandle, kind: String) -> Result<serde_json::
 #[tauri::command]
 pub fn request_history_access(app: AppHandle) -> Result<PermissionStatus> {
     app.state::<NativeBridge>().request_history_access().map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub fn request_audio_access(app: AppHandle) -> Result<serde_json::Value> {
+    let raw = app.state::<NativeBridge>().request_audio().map_err(|e| msg(e.to_string()))?;
+    serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]
@@ -990,4 +1034,42 @@ pub async fn download_custom_local_model(
     .map_err(msg)?;
     use_local_for_talk(&app);
     local_pack_status(app).await
+}
+
+#[tauri::command]
+pub fn finance_snapshot(app: AppHandle, locale: Option<String>) -> crate::finance::Snapshot {
+    if let Some(locale) = locale.filter(|value| !value.trim().is_empty()) {
+        app.state::<crate::finance::Finance>().remember_locale(&locale);
+    }
+    app.state::<crate::finance::Finance>().snapshot(&app)
+}
+
+#[tauri::command]
+pub fn save_finance_account(app: AppHandle, account: crate::finance::AccountDraft) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().save_account(&app, account).map_err(msg)
+}
+
+#[tauri::command]
+pub fn save_finance_transaction(app: AppHandle, transaction: crate::finance::TransactionDraft) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().save_transaction(&app, transaction).map_err(msg)
+}
+
+#[tauri::command]
+pub fn save_finance_rule(app: AppHandle, rule: crate::finance::RuleDraft) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().save_rule(&app, rule).map_err(msg)
+}
+
+#[tauri::command]
+pub fn delete_finance_account(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().delete_account(&app, &id).map_err(msg)
+}
+
+#[tauri::command]
+pub fn delete_finance_transaction(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().delete_transaction(&app, &id).map_err(msg)
+}
+
+#[tauri::command]
+pub fn delete_finance_rule(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().delete_rule(&app, &id).map_err(msg)
 }

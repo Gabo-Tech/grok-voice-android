@@ -265,7 +265,17 @@ mod imp {
             self.plugin_json("shareFile", Args { path, mime, title })
         }
 
-        pub fn schedule_item(&self, id: i32, kind: &str, title: &str, note: &str, at_ms: i64) -> Result<String> {
+        pub fn schedule_item(
+            &self,
+            id: i32,
+            kind: &str,
+            title: &str,
+            note: &str,
+            at_ms: i64,
+            sound_kind: &str,
+            sound_ref: &str,
+            sound_label: &str,
+        ) -> Result<String> {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
             struct Args<'a> {
@@ -274,8 +284,45 @@ mod imp {
                 title: &'a str,
                 note: &'a str,
                 at_ms: i64,
+                sound_kind: &'a str,
+                sound_ref: &'a str,
+                sound_label: &'a str,
             }
-            self.plugin_json("scheduleItem", Args { id, kind, title, note, at_ms })
+            self.plugin_json(
+                "scheduleItem",
+                Args { id, kind, title, note, at_ms, sound_kind, sound_ref, sound_label },
+            )
+        }
+
+        pub fn pick_alarm_sound(&self, dest_dir: &str) -> Result<(String, String)> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args<'a> {
+                dest_dir: &'a str,
+            }
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Picked {
+                relative_path: String,
+                name: String,
+            }
+            let picked: Picked = self.handle.run_mobile_plugin("pickAlarmSound", Args { dest_dir }).map_err(|e| msg(e.to_string()))?;
+            if picked.relative_path.trim().is_empty() {
+                return Err(msg(crate::alarm_sound::ERR_NONE_CHOSEN));
+            }
+            Ok((picked.relative_path, picked.name))
+        }
+
+        pub fn preview_alarm_sound(&self, relative_path: &str) -> Result<()> {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args<'a> {
+                relative_path: &'a str,
+            }
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>("previewAlarmSound", Args { relative_path })
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(())
         }
 
         pub fn cancel_item(&self, id: i32) -> Result<String> {
@@ -337,6 +384,22 @@ mod imp {
                 action: &'a str,
             }
             self.plugin_json("mediaControl", Args { action })
+        }
+
+        pub fn list_local_audio(&self) -> Result<String> {
+            self.plugin_json("listLocalAudio", ())
+        }
+
+        pub fn play_local_audio(&self, json: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                json: &'a str,
+            }
+            self.plugin_json("playLocalAudio", Args { json })
+        }
+
+        pub fn request_audio(&self) -> Result<String> {
+            self.plugin_json("requestAudioAccess", ())
         }
 
         pub fn adjust_volume(&self, direction: &str, steps: i32) -> Result<String> {
@@ -601,7 +664,17 @@ mod imp {
             Err(crate::error::msg("Sharing a file works on the Android phone."))
         }
 
-        pub fn schedule_item(&self, _id: i32, _kind: &str, title: &str, _note: &str, _at_ms: i64) -> Result<String> {
+        pub fn schedule_item(
+            &self,
+            _id: i32,
+            _kind: &str,
+            title: &str,
+            _note: &str,
+            _at_ms: i64,
+            _sound_kind: &str,
+            _sound_ref: &str,
+            _sound_label: &str,
+        ) -> Result<String> {
             Ok(serde_json::json!({
                 "ok": true,
                 "via": "local",
@@ -610,12 +683,32 @@ mod imp {
             .to_string())
         }
 
+        pub fn pick_alarm_sound(&self, _dest_dir: &str) -> Result<(String, String)> {
+            Err(crate::error::msg(crate::alarm_sound::ERR_PHONE))
+        }
+
+        pub fn preview_alarm_sound(&self, _relative_path: &str) -> Result<()> {
+            Err(crate::error::msg(crate::alarm_sound::ERR_PHONE))
+        }
+
         pub fn cancel_item(&self, _id: i32) -> Result<String> {
             Ok(r#"{"ok":true}"#.into())
         }
 
         pub fn media_control(&self, action: &str) -> Result<String> {
             Ok(serde_json::json!({ "ok": true, "detail": format!("Would send media {action} on the phone.") }).to_string())
+        }
+
+        pub fn list_local_audio(&self) -> Result<String> {
+            Ok(r#"{"ok":false,"permission":"unsupported"}"#.into())
+        }
+
+        pub fn play_local_audio(&self, _json: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"failed"}"#.into())
+        }
+
+        pub fn request_audio(&self) -> Result<String> {
+            Ok(r#"{"ok":false,"audio":"denied","openedSettings":false}"#.into())
         }
 
         pub fn adjust_volume(&self, direction: &str, _steps: i32) -> Result<String> {
@@ -669,7 +762,7 @@ mod imp {
         }
 
         pub fn access_status(&self) -> Result<String> {
-            Ok(r#"{"notificationListener":"unknown","dnd":"unknown","callLog":"unknown","sms":"unknown"}"#.into())
+            Ok(r#"{"notificationListener":"unknown","dnd":"unknown","callLog":"unknown","sms":"unknown","audio":"unknown"}"#.into())
         }
 
         pub fn open_access_settings(&self, _kind: &str) -> Result<String> {

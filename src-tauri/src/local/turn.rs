@@ -36,16 +36,22 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
     listed.extend(crate::local_memory::tool_definitions());
     for tool in &listed {
         let name = tool["name"].as_str().unwrap_or("");
+        if matches!(name, "log_money" | "save_recurring" | "save_account" | "list_finance" | "delete_finance") {
+            continue;
+        }
         let desc = brief_tool(tool["description"].as_str().unwrap_or(""));
         tools.push_str(&format!("- {name}: {desc}\n"));
     }
+    tools.push_str("- log_money: expense, income, or payment. Do not invent a balance.\n- save_recurring: bill, payday, or investment.\n- save_account: stated balance only.\n- list_finance: read saved money.\n- delete_finance: confirmed true.\n");
     let speech_line = if speech == "de" {
         "The user is speaking German. Put the spoken reply in the say field in German. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
+    } else if speech == "es" {
+        "The user is speaking Spanish. Put the spoken reply in the say field in Spanish. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
     } else {
-        "This session uses the English Moonshine Base speech model. It does not understand German.\n"
+        "This session uses English Moonshine Base. It does not understand Spanish or German.\n"
     };
     format!(
-        "{custom}\n\nYou are running on this phone. Reply with one JSON object and nothing else, shaped as {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. say is what you speak. tool is null or one name from the list. args is that tool's arguments. Call the tool before saying a note, reminder, person, setting, alarm, timer, calendar change, or pinned fact is done. create_person and update_person edit People on this phone. delete_person and turning Listen off need confirmed true. get_settings and update_settings change language, Prefer on device, Listen, budgets, and notificationDelivery (normal or spoken). Never store an API key. remember_fact and forget_fact change on-device memory only. For open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item, say what will open and pass confirmed false until the user clearly agrees, then call the same tool with confirmed true. Nothing is sent, and a call is not placed, until they confirm in the other app. media_control, set_volume, set_dnd, go_home, read_notifications, and phone_status act on this phone. Times are local YYYY-MM-DDTHH:MM. If web_search returns an error, speak that error. When they ask what is saved, call list_notes, list_reminders, list_calendar_events, or list_people once. A range uses from and to, month, or span. Do not look up one day at a time.\n{speech_line}\nTools:\n{tools}\n{}\n{}"
+        "{custom}\n\nYou are running on this phone. Reply with one JSON object only: {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. Call the tool before saying a note, reminder, person, setting, alarm, timer, calendar change, or pinned fact is done. create_person and update_person edit People. delete_person and Listen off need confirmed true. get_settings and update_settings change language, Listen, budgets, and notificationDelivery. Never store an API key. remember_fact and forget_fact change on-device memory only. open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item need confirmed true after a clear yes. Nothing is sent until they confirm in that app. YouTube uses open_youtube, not play_local_music. Times are local YYYY-MM-DDTHH:MM. If web_search errors, speak that error. For saved items call list_notes, list_reminders, list_calendar_events, list_people, or list_finance once, with from and to, month, or span. Do not look up one day at a time.\n{speech_line}\nTools:\n{tools}\n{}\n{}"
     , clip_chars(memory.trim(), MEMORY_CLIP_CHARS), clip_chars(local_memory.trim(), MEMORY_CLIP_CHARS))
 }
 
@@ -107,14 +113,24 @@ pub fn prompt(system: &str, history: &[ChatTurn]) -> String {
     prompt_for("chatml", system, history)
 }
 
-/// ChatML for SmolLM and Qwen, Gemma's turn markers, or Llama 3 headers.
-/// The family comes from the pack, or from the GGUF chat template for a custom model.
+/// ChatML for SmolLM and Qwen, Gemma's turn markers, Llama 3 headers, or
+/// LFM2.5's ChatML with its beginning-of-text token. The family comes from
+/// the pack, or from the GGUF chat template for a custom model.
 pub fn prompt_for(family: &str, system: &str, history: &[ChatTurn]) -> String {
     match family {
         "gemma" => prompt_gemma(system, history),
         "llama3" => prompt_llama3(system, history),
+        "lfm2" => prompt_lfm(system, history),
         _ => prompt_chatml(system, history),
     }
+}
+
+/// LFM2.5 is ChatML plus `<|startoftext|>`. The loader does not insert that
+/// token (`add_special` is false), so the prompt has to carry it.
+fn prompt_lfm(system: &str, history: &[ChatTurn]) -> String {
+    let mut out = String::from("<|startoftext|>");
+    out.push_str(&prompt_chatml(system, history));
+    out
 }
 
 fn prompt_chatml(system: &str, history: &[ChatTurn]) -> String {
@@ -409,12 +425,18 @@ mod tests {
         assert!(prompt.contains("I live in Zurich"));
         assert!(prompt.contains("remember_fact"));
         assert!(prompt.contains("Moonshine"));
+        assert!(prompt.contains("does not understand Spanish or German"));
         assert!(prompt.contains("inMinutes"));
         assert!(prompt.contains("Time list"));
+        assert!(prompt.contains("youtubeUrl"));
         assert!(prompt.contains("Calendar"));
         let german = system_prompt("be brief", "", "", "de");
         assert!(german.contains("German"));
         assert!(!german.contains("I live in Zurich"));
+        let spanish = system_prompt("be brief", "", "", "es");
+        assert!(spanish.contains("speaking Spanish"));
+        assert!(spanish.contains("say field in Spanish"));
+        assert!(!spanish.contains("Moonshine Base speech model"));
         let cloud = crate::actions::tool_definitions().to_string();
         assert!(!cloud.contains("remember_fact"));
         assert!(!cloud.contains("forget_fact"));
@@ -609,12 +631,16 @@ mod tests {
         assert!(llama.starts_with("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nbe brief<|eot_id|>"));
         assert!(llama.contains("<|start_header_id|>user<|end_header_id|>\n\nhello<|eot_id|>"));
         assert!(llama.ends_with("<|start_header_id|>assistant<|end_header_id|>\n\n"));
+        let lfm = super::prompt_for("lfm2", "be brief", &[ChatTurn { role: "user", text: "hola".into() }]);
+        assert!(lfm.starts_with("<|startoftext|><|im_start|>system\nbe brief<|im_end|>\n"));
+        assert!(lfm.contains("<|im_start|>user\nhola<|im_end|>\n"));
+        assert!(lfm.ends_with("<|im_start|>assistant\n"));
         let long = format!(
             "Can you create these recurring monthly events? {} On the 29th, the ZKB credit bill from 7:00 to 19:00.",
             "detail ".repeat(80)
         );
         assert!(long.chars().count() > HISTORY_TURN_CHARS);
-        for family in ["chatml", "gemma", "llama3"] {
+        for family in ["chatml", "gemma", "llama3", "lfm2"] {
             let prompt = super::prompt_for(
                 family,
                 "be brief",
@@ -637,5 +663,27 @@ mod tests {
         trim_history(&mut history);
         let total: usize = history.iter().map(|turn| turn.text.len()).sum();
         assert!(history.len() <= 2 || total <= super::HISTORY_CHAR_BUDGET);
+    }
+
+    #[test]
+    fn an_lfm_turn_uses_its_prompt_and_speaks_the_reply() {
+        let mut saw = String::new();
+        let spoken = super::run_turns_with(
+            "be brief",
+            &mut Vec::new(),
+            "hola",
+            "lfm2",
+            |prompt, grammar| {
+                saw = prompt.to_string();
+                assert!(grammar.is_empty());
+                Ok(r#"{"say":"Hola.","tool":null,"args":{}}"#.into())
+            },
+            |_name, _args| "{}".into(),
+        )
+        .unwrap();
+        assert!(saw.starts_with("<|startoftext|><|im_start|>system\n"));
+        assert!(saw.contains("<|im_start|>user\nhola<|im_end|>\n"));
+        assert!(saw.ends_with("<|im_start|>assistant\n"));
+        assert_eq!(spoken, "Hola.");
     }
 }

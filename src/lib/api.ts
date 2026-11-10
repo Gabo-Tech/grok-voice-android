@@ -108,6 +108,12 @@ export interface ScheduledItem {
   personId?: string;
   personReminderId?: string;
   untilMs?: number;
+  /** `file`, `youtube`, or empty for the phone's alarm sound. */
+  soundKind?: string;
+  /** Private file path or a YouTube video id. */
+  soundRef?: string;
+  /** File name or watch URL shown on the alarm. */
+  soundLabel?: string;
 }
 
 export interface CalEvent {
@@ -231,6 +237,141 @@ export interface BackupPreview {
   facts: number;
   sessions: number;
   hasMemory: boolean;
+  accounts?: number;
+  transactions?: number;
+  rules?: number;
+  hasFinance?: boolean;
+}
+
+export interface FinanceAccount {
+  id: string;
+  name: string;
+  kind: string;
+  institution: string;
+  balanceMinor: number | null;
+  currency: string;
+  balanceAsOf: string;
+  balanceUpdatedMs: number;
+  dueDate: string;
+  paymentMinor: number | null;
+  cadence: string;
+  notes: string;
+  updatedMs: number;
+  ticker: string;
+  contributionMinor: number | null;
+  contributionCadence: string;
+  contributionDate: string;
+  calendarEventId: string;
+  shownBalanceMinor: number | null;
+}
+
+export interface FinanceTransaction {
+  id: string;
+  amountMinor: number;
+  currency: string;
+  direction: string;
+  category: string;
+  accountId: string;
+  fromAccountId: string;
+  date: string;
+  notes: string;
+  recurrence: string;
+  ruleId: string;
+  createdMs: number;
+  updatedMs: number;
+}
+
+export interface FinanceRule {
+  id: string;
+  name: string;
+  amountMinor: number | null;
+  currency: string;
+  direction: string;
+  cadence: string;
+  weekdays: number[];
+  nextDate: string;
+  category: string;
+  accountId: string;
+  notes: string;
+  calendarEventId: string;
+  updatedMs: number;
+  fromAccount: boolean;
+}
+
+export interface FinanceTotal {
+  currency: string;
+  incomeMinor: number;
+  expenseMinor: number;
+  paymentMinor: number;
+}
+
+export interface FinanceUpcoming {
+  id: string;
+  source: string;
+  title: string;
+  date: string;
+  amountMinor: number | null;
+  currency: string;
+  direction: string;
+  calendarEventId: string;
+}
+
+export interface FinanceSnapshot {
+  accounts: FinanceAccount[];
+  transactions: FinanceTransaction[];
+  rules: FinanceRule[];
+  totals: FinanceTotal[];
+  upcoming: FinanceUpcoming[];
+  period: string;
+  defaultCurrency: string;
+}
+
+export interface FinanceAccountDraft {
+  id?: string;
+  name: string;
+  kind: string;
+  institution?: string;
+  balance?: string;
+  currency?: string;
+  dueDate?: string;
+  payment?: string;
+  cadence?: string;
+  notes?: string;
+  ticker?: string;
+  contribution?: string;
+  contributionCadence?: string;
+  contributionDate?: string;
+}
+
+export interface FinanceTransactionDraft {
+  id?: string;
+  amount: string;
+  currency?: string;
+  direction: string;
+  category?: string;
+  accountId?: string;
+  accountName?: string;
+  fromAccountId?: string;
+  fromAccountName?: string;
+  date?: string;
+  notes?: string;
+  recurrence?: string;
+  cadence?: string;
+}
+
+export interface FinanceRuleDraft {
+  id?: string;
+  name: string;
+  amount?: string;
+  currency?: string;
+  direction?: string;
+  cadence?: string;
+  nextDate?: string;
+  category?: string;
+  accountId?: string;
+  accountName?: string;
+  notes?: string;
+  weekdays?: number[];
 }
 
 export interface LocalFact {
@@ -263,6 +404,7 @@ export interface AccessStatus {
   dnd: string;
   callLog: string;
   sms: string;
+  audio?: string;
 }
 
 export interface ExportedBackup {
@@ -384,6 +526,9 @@ export const api = {
     date?: string;
     leadDays?: number;
     untilMs?: number;
+    soundKind?: string;
+    soundRef?: string;
+    soundLabel?: string;
   }) =>
     invoke<Agenda>("save_scheduled", {
       title: args.title,
@@ -397,7 +542,12 @@ export const api = {
       date: args.date ?? null,
       leadDays: args.leadDays ?? null,
       untilMs: args.untilMs ?? null,
+      soundKind: args.soundKind ?? null,
+      soundRef: args.soundRef ?? null,
+      soundLabel: args.soundLabel ?? null,
     }),
+  pickAlarmSound: () => invoke<{ relativePath: string; name: string }>("pick_alarm_sound"),
+  previewAlarmSound: (relativePath: string) => invoke<void>("preview_alarm_sound", { relativePath }),
   cancelScheduled: (id: number) => invoke<Agenda>("cancel_scheduled", { id }),
   completeScheduled: (id: number) => invoke<Agenda>("complete_scheduled", { id }),
   usageStatus: () => invoke<UsageStatus>("usage_status"),
@@ -449,6 +599,7 @@ export const api = {
   accessStatus: () => invoke<AccessStatus>("access_status"),
   openAccessSettings: (kind: "notifications" | "dnd") => invoke<unknown>("open_access_settings", { kind }),
   requestHistoryAccess: () => invoke<PermissionStatus>("request_history_access"),
+  requestAudioAccess: () => invoke<{ audio?: string; openedSettings?: boolean }>("request_audio_access"),
   refreshLastContact: (id: string) => invoke<Person>("refresh_last_contact", { id }),
   importContactBirthday: (id: string) => invoke<Person>("import_contact_birthday", { id }),
   importContactDates: (id: string) => invoke<Person>("import_contact_dates", { id }),
@@ -461,6 +612,14 @@ export const api = {
     invoke<LocalPack[]>("download_custom_local_model", { url, sha256, name, family }),
   updateStatus: () => invoke<UpdateStatus>("update_status"),
   dismissUpdate: () => invoke<UpdateStatus>("dismiss_update"),
+  financeSnapshot: (locale?: string) => invoke<FinanceSnapshot>("finance_snapshot", { locale: locale ?? null }),
+  saveFinanceAccount: (account: FinanceAccountDraft) => invoke<FinanceSnapshot>("save_finance_account", { account }),
+  saveFinanceTransaction: (transaction: FinanceTransactionDraft) =>
+    invoke<FinanceSnapshot>("save_finance_transaction", { transaction }),
+  saveFinanceRule: (rule: FinanceRuleDraft) => invoke<FinanceSnapshot>("save_finance_rule", { rule }),
+  deleteFinanceAccount: (id: string) => invoke<FinanceSnapshot>("delete_finance_account", { id }),
+  deleteFinanceTransaction: (id: string) => invoke<FinanceSnapshot>("delete_finance_transaction", { id }),
+  deleteFinanceRule: (id: string) => invoke<FinanceSnapshot>("delete_finance_rule", { id }),
 };
 
 export function errorText(e: unknown): string {
