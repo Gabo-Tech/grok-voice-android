@@ -378,12 +378,29 @@ mod imp {
             self.plugin_json("deleteCalendarEvent", Args { id })
         }
 
-        pub fn media_control(&self, action: &str) -> Result<String> {
+        pub fn media_control(&self, action: &str, player: &str) -> Result<String> {
             #[derive(Serialize)]
             struct Args<'a> {
                 action: &'a str,
+                player: &'a str,
             }
-            self.plugin_json("mediaControl", Args { action })
+            self.plugin_json("mediaControl", Args { action, player })
+        }
+
+        pub fn music_players(&self) -> Result<String> {
+            self.plugin_json("musicPlayers", ())
+        }
+
+        pub fn play_external_music(&self, player: &str, query: &str, title: &str, artist: &str, album: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                player: &'a str,
+                query: &'a str,
+                title: &'a str,
+                artist: &'a str,
+                album: &'a str,
+            }
+            self.plugin_json("playExternalMusic", Args { player, query, title, artist, album })
         }
 
         pub fn list_local_audio(&self) -> Result<String> {
@@ -695,8 +712,16 @@ mod imp {
             Ok(r#"{"ok":true}"#.into())
         }
 
-        pub fn media_control(&self, action: &str) -> Result<String> {
+        pub fn media_control(&self, action: &str, _player: &str) -> Result<String> {
             Ok(serde_json::json!({ "ok": true, "detail": format!("Would send media {action} on the phone.") }).to_string())
+        }
+
+        pub fn music_players(&self) -> Result<String> {
+            Ok(r#"{"ok":true,"players":[{"id":"local","installed":true,"package":""},{"id":"musify","installed":false,"package":""},{"id":"youtube_music","installed":false,"package":""},{"id":"youtube","installed":false,"package":""},{"id":"system","installed":true,"package":""}]}"#.into())
+        }
+
+        pub fn play_external_music(&self, _player: &str, _query: &str, _title: &str, _artist: &str, _album: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"code":"music-external-phone"}"#.into())
         }
 
         pub fn list_local_audio(&self) -> Result<String> {

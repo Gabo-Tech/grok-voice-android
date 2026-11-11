@@ -206,6 +206,14 @@ export interface Settings {
   notificationDelivery?: string;
   /** Optional name spoken alerts may say. Empty keeps a plain hey. */
   spokenName?: string;
+  /** `local`, `musify`, `youtube`, `youtube_music`, or `system`. */
+  musicPlayer?: string;
+}
+
+export interface MusicPlayerChoice {
+  id: string;
+  installed: boolean;
+  package?: string;
 }
 
 export interface UsageStatus {
@@ -506,6 +514,7 @@ export const api = {
   requestBatteryExemption: () => invoke<ListenHealth>("request_battery_exemption"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
+  musicPlayers: () => invoke<{ ok?: boolean; players?: MusicPlayerChoice[] }>("music_players"),
   debugSnapshot: () => invoke<DebugInfo>("debug_snapshot"),
   debugLogs: () => invoke<LogLine[]>("debug_logs"),
   agendaSnapshot: () => invoke<Agenda>("agenda_snapshot"),

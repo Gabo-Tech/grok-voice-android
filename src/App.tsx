@@ -32,7 +32,7 @@ function previewRoute(inApp: boolean): { app: boolean; tab: AppTab; section: Sec
   const tabs: AppTab[] = ["talk", "notes", "calendar", "reminders", "finance", "more"];
   const asked = params.get("tab");
   const tab = tabs.includes(asked as AppTab) ? (asked as AppTab) : "talk";
-  const sections: Section[] = ["menu", "model", "wake", "people", "spend", "language", "keys"];
+  const sections: Section[] = ["menu", "model", "wake", "people", "spend", "language", "keys", "music", "updates"];
   const sectionAsked = params.get("section");
   const section = sections.includes(sectionAsked as Section) ? (sectionAsked as Section) : "menu";
   return { app: true, tab, section };

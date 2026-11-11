@@ -250,6 +250,7 @@ mod tests {
             "go_home",
             "phone_status",
             "media_control",
+            "play_music",
             "play_local_music",
             "log_money",
             "save_recurring",

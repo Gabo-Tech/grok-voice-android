@@ -65,6 +65,7 @@
     <string name="music_playing">Wiedergabe</string>
     <string name="music_pause">Pause</string>
     <string name="music_stop">Stopp</string>
+    <string name="music_pick_player">Musik-App auswählen</string>
     <string name="alarm_stop">Stopp</string>
     <string name="alarm_file_playing">Dein Ton wird abgespielt</string>
     <string name="alarm_youtube_starting">YouTube-Audio startet…</string>

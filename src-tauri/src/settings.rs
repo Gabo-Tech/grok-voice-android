@@ -69,6 +69,10 @@ pub struct Settings {
     /// Optional name spoken alerts may use. Empty keeps a plain "Hey".
     #[serde(default)]
     pub spoken_name: String,
+    /// `local`, `musify`, `youtube`, `youtube_music`, or `system`.
+    /// Empty and unknown values stay on files on this phone.
+    #[serde(default)]
+    pub music_player: String,
 }
 
 impl Default for Settings {
@@ -95,6 +99,7 @@ impl Default for Settings {
             locale: String::new(),
             notification_delivery: crate::notices::DELIVERY_NORMAL.into(),
             spoken_name: String::new(),
+            music_player: crate::music::PLAYER_LOCAL.into(),
         }
     }
 }
@@ -121,6 +126,7 @@ impl SettingsStore {
             .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
             .unwrap_or_default();
         inner.notification_delivery = crate::notices::stored_delivery(&inner.notification_delivery);
+        inner.music_player = crate::music::stored_player(&inner.music_player).to_string();
         inner.voice = crate::voices::xai_voice(&inner.voice);
         inner.openai_voice = crate::voices::openai_voice(&inner.openai_voice);
         Self { path, inner: RwLock::new(inner) }
@@ -150,6 +156,7 @@ impl SettingsStore {
             s.notification_delivery = crate::notices::stored_delivery(&s.notification_delivery);
         }
         s.spoken_name = crate::notices::sanitize_spoken_name(&s.spoken_name);
+        s.music_player = crate::music::stored_player(&s.music_player).to_string();
         crate::files::write_private(&self.path, &serde_json::to_vec_pretty(&s)?)?;
         *self.inner.write().unwrap() = s.clone();
         Ok(s)
@@ -414,8 +421,9 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
     } else {
         format!("Spoken alerts say {}.", settings.spoken_name)
     };
+    let player = crate::music::player_name(&settings.music_player);
     let detail = format!(
-        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. Grok voice is {}. OpenAI voice is {}. {order} Days before a birthday stay on that person.",
+        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. Default music player is {player}. Grok voice is {}. OpenAI voice is {}. {order} Days before a birthday stay on that person.",
         settings.idle_timeout_secs, settings.voice, settings.openai_voice
     );
     json!({
@@ -443,6 +451,7 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
             crate::notices::DELIVERY_NORMAL
         },
         "spokenName": settings.spoken_name,
+        "musicPlayer": crate::music::stored_player(&settings.music_player),
         "detail": detail
     })
 }
@@ -465,7 +474,7 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     let unknown: Vec<&str> = object.keys().filter(|key| !known_setting(key)).map(|key| key.as_str()).collect();
     if !unknown.is_empty() {
         return Err(format!(
-            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, spoken name, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
+            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, spoken name, the default music player, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
             unknown.join(", ")
         ));
     }
@@ -597,6 +606,11 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
             notes.push(format!("Spoken alerts will say {}.", next.spoken_name));
         }
     }
+    if let Some(player) = first_string(args, &["musicPlayer", "defaultMusicPlayer", "music"]) {
+        next.music_player = crate::music::parse_player(&player)?.to_string();
+        changed = true;
+        notes.push(format!("Default music player is {}.", crate::music::player_name(&next.music_player)));
+    }
 
     let mut pending = None;
     let mut listen = None;
@@ -715,6 +729,9 @@ fn known_setting(key: &str) -> bool {
             | "spokenName"
             | "userName"
             | "myName"
+            | "musicPlayer"
+            | "defaultMusicPlayer"
+            | "music"
     )
 }
 

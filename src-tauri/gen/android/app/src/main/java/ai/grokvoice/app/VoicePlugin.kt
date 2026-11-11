@@ -364,6 +364,16 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   @InvokeArg
   class MediaArgs {
     var action: String = ""
+    var player: String = ""
+  }
+
+  @InvokeArg
+  class MusicPlayArgs {
+    var player: String = ""
+    var query: String = ""
+    var title: String = ""
+    var artist: String = ""
+    var album: String = ""
   }
 
   @InvokeArg
@@ -387,7 +397,18 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun mediaControl(invoke: Invoke) {
     val a = invoke.parseArgs(MediaArgs::class.java)
-    resolveJson(invoke, HandOff.media(activity.applicationContext, a.action))
+    resolveJson(invoke, HandOff.media(activity.applicationContext, a.action, a.player))
+  }
+
+  @Command
+  fun musicPlayers(invoke: Invoke) {
+    resolveJson(invoke, MusicLaunch.players(activity.applicationContext))
+  }
+
+  @Command
+  fun playExternalMusic(invoke: Invoke) {
+    val a = invoke.parseArgs(MusicPlayArgs::class.java)
+    resolveJson(invoke, MusicLaunch.play(activity.applicationContext, a.player, a.query, a.title, a.artist, a.album))
   }
 
   @InvokeArg

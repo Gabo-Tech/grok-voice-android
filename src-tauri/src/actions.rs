@@ -312,12 +312,23 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["id"]
         })),
-        fn_tool("media_control", "Control whatever is already playing: play, pause, stop, next, or previous. Call immediately. No confirmation. If play_local_music started the audio, these control that player. Otherwise they control another app.", json!({
+        fn_tool("media_control", "Control whatever is already playing: play, pause, resume, stop, next, previous, shuffle, or unshuffle. Call immediately. No confirmation. If play_local_music started the audio, these control that player. Otherwise they control the default music app when its playback session is visible, then whatever else is playing. Shuffle needs a player that is already open. The on-phone file player cannot shuffle.", json!({
             "type": "object",
-            "properties": { "action": { "type": "string", "enum": ["play", "pause", "stop", "next", "previous"] } },
+            "properties": { "action": { "type": "string", "enum": ["play", "pause", "resume", "stop", "next", "previous", "shuffle", "unshuffle"] } },
             "required": ["action"]
         })),
-        fn_tool("play_local_music", "Play on-phone music, not YouTube. Call immediately for play music, play some music, a local playlist, or a named artist, album, or song. query is the name they said. Omit query for a random on-phone track. kind is playlist only when they ask for a playlist. This reads on-device audio and playlists only. It does not stream or open a music service. If they say YouTube, on YouTube, or a YouTube video, do not call this. Call open_youtube, say what will open, and wait for a clear yes. If this tool says nothing matched or there is no music, say that and do not play something else. Pause, stop, next, and previous use media_control.", json!({
+        fn_tool("play_music", "Play music. No confirmation. Uses the default music player: files on this phone, Musify, YouTube Music, YouTube, or ask each time. query is the name they said. Omit query to start or resume. The default is files on this phone, Musify, YouTube Music, YouTube, or ask each time. Musify searches and plays its first match and does not download audio here. YouTube Music is asked to play. The YouTube app opens a search and does not start playing unless the query is a video link. If Musify or YouTube Music cannot open, YouTube opens, then the browser. If they say local, on this phone, or my files, this plays on-phone files. If they say YouTube or on YouTube, do not call this. Call open_youtube, say what will open, and wait for a clear yes. If this tool returns use open_youtube, call open_youtube with that query and confirmed false.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "kind": { "type": "string", "enum": ["track", "playlist", "auto"] },
+                "title": { "type": "string" },
+                "artist": { "type": "string" },
+                "album": { "type": "string" },
+                "playlist": { "type": "string" }
+            }
+        })),
+        fn_tool("play_local_music", "Play on-phone music, not YouTube. Call this only when they ask for files on this phone, local music, or a playlist stored on the phone. For play music or a song with no source, call play_music. query is the name they said. Omit query for a random on-phone track. kind is playlist only when they ask for a playlist. This reads on-device audio and playlists only. It does not stream or open a music service. If they say YouTube, on YouTube, or a YouTube video, do not call this. Call open_youtube, say what will open, and wait for a clear yes. If this tool says nothing matched or there is no music, say that and do not play something else. Pause, stop, next, and previous use media_control.", json!({
             "type": "object",
             "properties": {
                 "query": { "type": "string" },
@@ -421,11 +432,11 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["confirmed"]
         })),
-        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, voice order, the Grok voice, the OpenAI voice, whether notifications are normal or spoken out loud, and spokenName when one is saved.", json!({
+        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, the default music player, voice order, the Grok voice, the OpenAI voice, whether notifications are normal or spoken out loud, and spokenName when one is saved.", json!({
             "type": "object",
             "properties": {}
         })),
-        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English, Spanish, or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
+        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, the default music player, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English, Spanish, or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. musicPlayer is local, Musify, YouTube, YouTube Music, or system. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
             "type": "object",
             "properties": {
                 "language": { "type": "string" },
@@ -445,6 +456,7 @@ pub fn tool_definitions() -> Value {
                 "wakeThreshold": { "type": "number" },
                 "notificationDelivery": { "type": "string" },
                 "spokenName": { "type": "string" },
+                "musicPlayer": { "type": "string" },
                 "speakNotifications": { "type": "boolean" },
                 "notifyDays": { "type": "integer" },
                 "birthdayLeadDays": { "type": "integer" },
@@ -559,7 +571,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " play_local_music plays audio files and playlists already on this phone. Use it immediately for play music, play some music, or a named artist, album, or song. Do not use it when they say YouTube. YouTube, play on YouTube, and a YouTube video stay on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not play local files. If play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, or investment the user described. list_finance answers how much they spent, cash on hand, a card balance, and the next loan payment. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, or account number. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it."
+    " play_music uses the default music player immediately, with no confirmation. The default is files on this phone until Settings changes it to Musify, YouTube Music, YouTube, or ask each time. play_local_music is only for files already on this phone. Do not use play_music or play_local_music when they say YouTube or on YouTube. That stays on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not download anything. A search does not start playing by itself. If play_music or play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. media_control pause, play, stop, next, previous, and shuffle act immediately. Shuffle only works when a player session is already open. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, or investment the user described. list_finance answers how much they spent, cash on hand, a card balance, and the next loan payment. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, or account number. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it."
 }
 
 impl Agenda {
@@ -1626,13 +1638,114 @@ fn play_local_music(app: &AppHandle, args: &Value) -> Result<Value, String> {
     }
 }
 
+fn play_music(app: &AppHandle, args: &Value) -> Result<Value, String> {
+    let query = music_query(args);
+    let player = app.state::<crate::settings::SettingsStore>().get().music_player;
+    match crate::music::route_play(&player, &query) {
+        crate::music::PlayRoute::ConfirmYoutube { query } => {
+            let detail = crate::i18n::line(&locale_of(app), "music-youtube");
+            Ok(json!({ "ok": false, "use": "open_youtube", "query": query, "error": detail, "detail": detail }))
+        }
+        crate::music::PlayRoute::Local { .. } => play_local_music(app, args),
+        crate::music::PlayRoute::External { player, query } => play_external(app, player, &query, args),
+    }
+}
+
+fn play_external(app: &AppHandle, player: &str, query: &str, args: &Value) -> Result<Value, String> {
+    let raw = app
+        .state::<NativeBridge>()
+        .play_external_music(
+            player,
+            query,
+            args["title"].as_str().unwrap_or(""),
+            args["artist"].as_str().unwrap_or(""),
+            args["album"].as_str().unwrap_or(""),
+        )
+        .map_err(|err| err.to_string())?;
+    let value: Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({ "ok": false, "code": "music-none" }));
+    Ok(speak_music(&locale_of(app), &value))
+}
+
+fn speak_music(locale: &str, value: &Value) -> Value {
+    let code = value.get("code").and_then(|item| item.as_str()).unwrap_or("music-none");
+    let query = value.get("query").and_then(|item| item.as_str()).unwrap_or("");
+    let title = value.get("title").and_then(|item| item.as_str()).unwrap_or("");
+    let artist = value.get("artist").and_then(|item| item.as_str()).unwrap_or("");
+    let mut detail = match code {
+        "music-musify-playing" if !title.is_empty() && !artist.is_empty() => {
+            crate::i18n::fill(locale, "music-musify-playing-by", &[("title", title), ("artist", artist), ("query", query)])
+        }
+        "music-musify-playing" if !title.is_empty() => {
+            crate::i18n::fill(locale, "music-musify-playing", &[("title", title), ("artist", artist), ("query", query)])
+        }
+        "music-musify-playing" => crate::i18n::line(locale, "music-musify-started"),
+        other => {
+            let line = crate::i18n::fill(locale, other, &[("query", query), ("title", title), ("artist", artist)]);
+            if line == other { crate::i18n::line(locale, "music-none") } else { line }
+        }
+    };
+    if let Some(from) = value.get("fallbackFrom").and_then(|item| item.as_str()).filter(|text| !text.is_empty()) {
+        let key = format!("music-fallback-{from}");
+        let prefix = crate::i18n::line(locale, &key);
+        if prefix != key {
+            detail = format!("{prefix} {detail}");
+        }
+    }
+    let ok = value.get("ok").is_some_and(|flag| flag == &json!(true));
+    let mut out = json!({
+        "ok": ok,
+        "code": code,
+        "detail": detail,
+        "player": value.get("player").cloned().unwrap_or(Value::Null),
+        "via": value.get("via").cloned().unwrap_or(Value::Null),
+        "title": title,
+        "artist": artist,
+        "query": query,
+    });
+    if !ok {
+        out["error"] = json!(detail);
+    }
+    out
+}
+
+fn speak_media(locale: &str, mut value: Value) -> Value {
+    let code = value.get("code").and_then(|item| item.as_str()).unwrap_or("");
+    let via = value.get("via").and_then(|item| item.as_str()).unwrap_or("");
+    let detail = if code == "media-sent" {
+        crate::i18n::line(locale, if via == "listener" { "media-sent-listener" } else { "media-sent" })
+    } else if !code.is_empty() {
+        let line = crate::i18n::line(locale, code);
+        if line == code { value.get("detail").and_then(|item| item.as_str()).unwrap_or(code).to_string() } else { line }
+    } else {
+        match value.get("detail").and_then(|item| item.as_str()).unwrap_or("") {
+            "Playing." => crate::i18n::line(locale, "media-play"),
+            "Paused." => crate::i18n::line(locale, "media-pause"),
+            "Stopped." => crate::i18n::line(locale, "media-stop"),
+            "Next track." => crate::i18n::line(locale, "media-next"),
+            "Previous track." => crate::i18n::line(locale, "media-previous"),
+            other => other.to_string(),
+        }
+    };
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("detail".into(), json!(detail));
+        if obj.get("ok").is_some_and(|flag| flag != &json!(true)) {
+            obj.insert("error".into(), json!(detail));
+        }
+    }
+    value
+}
+
 fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     let bridge = app.state::<NativeBridge>();
     let raw = match name {
+        "play_music" => return play_music(app, args).map(Some),
         "play_local_music" => return play_local_music(app, args).map(Some),
-        "media_control" => bridge
-            .media_control(args["action"].as_str().unwrap_or(""))
-            .map_err(|e| e.to_string())?,
+        "media_control" => {
+            let player = app.state::<crate::settings::SettingsStore>().get().music_player;
+            let raw = bridge.media_control(args["action"].as_str().unwrap_or(""), &player).map_err(|e| e.to_string())?;
+            let value: Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({ "ok": false }));
+            return Ok(Some(speak_media(&locale_of(app), value)));
+        }
         "set_volume" => {
             let steps = args["steps"].as_i64().unwrap_or(1).clamp(1, 5) as i32;
             bridge
@@ -4105,15 +4218,28 @@ mod tests {
         };
         assert!(desc("open_youtube").contains("YouTube"));
         assert!(desc("open_youtube").contains("confirmed"));
+        assert!(desc("play_music").contains("default music player"));
+        assert!(desc("play_music").contains("open_youtube"));
         assert!(desc("play_local_music").contains("not YouTube"));
         assert!(desc("play_local_music").contains("open_youtube"));
         assert!(desc("media_control").contains("play_local_music"));
+        assert!(lookup_hint().contains("play_music"));
         assert!(lookup_hint().contains("play_local_music"));
         assert!(lookup_hint().contains("open_youtube"));
         let handoff = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/HandOff.kt");
         assert!(handoff.contains("www.youtube.com/results?search_query="));
         assert!(handoff.contains("com.google.android.youtube"));
         assert!(handoff.contains("LocalMusic.control"));
+        let launch = include_str!("../gen/android/app/src/main/java/ai/grokvoice/app/MusicLaunch.kt");
+        assert!(launch.contains("com.gokadzev.musify"));
+        assert!(launch.contains("com.gokadzev.musify.fdroid"));
+        assert!(launch.contains("playFromSearch"));
+        assert!(launch.contains("https://www.youtube.com/results?search_query="));
+        assert!(!launch.contains("youtube_explode"));
+        let manifest = include_str!("../gen/android/app/src/main/AndroidManifest.xml");
+        assert!(manifest.contains("com.gokadzev.musify"));
+        assert!(manifest.contains("android.media.action.MEDIA_PLAY_FROM_SEARCH"));
+        assert!(manifest.contains("android.media.browse.MediaBrowserService"));
     }
 
     #[test]

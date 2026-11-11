@@ -13,36 +13,19 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.provider.ContactsContract
-import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** Media keys, volume, and drafts that open another app. Sending still happens there. */
 object HandOff {
-  fun media(context: Context, action: String): String {
-    LocalMusic.control(context, action)?.let { return it }
-    val code = when (action) {
-      "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
-      "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
-      "stop" -> KeyEvent.KEYCODE_MEDIA_STOP
-      "next" -> KeyEvent.KEYCODE_MEDIA_NEXT
-      "previous" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
-      else -> return fail("Use play, pause, stop, next, or previous.")
+  fun media(context: Context, action: String, player: String): String {
+    val normalized = MusicLaunch.canonical(action)
+    if (player.isBlank() || player == "local") {
+      LocalMusic.control(context, normalized)?.let { return it }
+      return MusicLaunch.control(context, normalized, player, tryLocal = false)
     }
-    val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    val now = android.os.SystemClock.uptimeMillis()
-    audio.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-    audio.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0))
-    val spoken = when (action) {
-      "play" -> "Playing."
-      "pause" -> "Paused."
-      "stop" -> "Stopped."
-      "next" -> "Next track."
-      "previous" -> "Previous track."
-      else -> "Done."
-    }
-    return ok(spoken)
+    return MusicLaunch.control(context, normalized, player, tryLocal = true)
   }
 
   fun volume(context: Context, direction: String, steps: Int): String {
