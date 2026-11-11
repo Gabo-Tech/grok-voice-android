@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod actions;
 mod alarm_sound;
 #[cfg(target_os = "android")]
@@ -140,6 +142,7 @@ pub fn run() {
             commands::request_battery_exemption,
             commands::get_settings,
             commands::save_settings,
+            commands::music_players,
             commands::update_status,
             commands::dismiss_update,
             commands::debug_snapshot,

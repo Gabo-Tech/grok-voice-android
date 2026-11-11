@@ -280,7 +280,7 @@ object LocalMusic {
           skip(context, -1)
         }
       }
-      "play" -> {
+      "play", "resume" -> {
         if (player == null) return null
         requestFocus(context)
         player?.start()
@@ -288,6 +288,14 @@ object LocalMusic {
         current?.let { publish(it, playing = true) }
         showForeground(context)
         ok("Playing.")
+      }
+      "shuffle", "unshuffle" -> {
+        if (!active) return null
+        JSONObject()
+          .put("ok", false)
+          .put("code", "media-shuffle-none")
+          .put("detail", "Shuffle needs a player that is already open. Nothing was changed.")
+          .toString()
       }
       else -> null
     }

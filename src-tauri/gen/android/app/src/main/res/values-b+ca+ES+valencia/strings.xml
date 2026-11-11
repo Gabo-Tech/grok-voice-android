@@ -65,6 +65,7 @@
     <string name="music_playing">Reproduint</string>
     <string name="music_pause">Pausa</string>
     <string name="music_stop">Para</string>
+    <string name="music_pick_player">Tria una app de música</string>
     <string name="alarm_stop">Para</string>
     <string name="alarm_file_playing">S\'està reproduint el teu àudio</string>
     <string name="alarm_youtube_starting">S\'està iniciant l\'àudio de YouTube…</string>

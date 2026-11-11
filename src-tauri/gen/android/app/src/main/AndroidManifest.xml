@@ -46,6 +46,18 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="vnd.android.cursor.item/contact" />
         </intent>
+        <intent>
+            <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+        <package android:name="com.gokadzev.musify" />
+        <package android:name="com.gokadzev.musify.fdroid" />
+        <package android:name="com.gokadzev.musify.debug" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.apps.youtube.music" />
     </queries>
 
     <uses-feature android:name="android.hardware.microphone" android:required="true" />

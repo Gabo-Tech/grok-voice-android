@@ -574,6 +574,195 @@ fn shuffle(items: &mut [Track], pick: usize) {
     }
 }
 
+pub const PLAYER_LOCAL: &str = "local";
+pub const PLAYER_MUSIFY: &str = "musify";
+pub const PLAYER_YOUTUBE: &str = "youtube";
+pub const PLAYER_YOUTUBE_MUSIC: &str = "youtube_music";
+pub const PLAYER_SYSTEM: &str = "system";
+
+/// Stored id. Unknown or empty values stay on files on this phone.
+pub fn stored_player(raw: &str) -> &'static str {
+    match fold(raw).as_str() {
+        "musify" => PLAYER_MUSIFY,
+        "youtube music" | "yt music" | "you tube music" => PLAYER_YOUTUBE_MUSIC,
+        "youtube" | "yt" | "you tube" => PLAYER_YOUTUBE,
+        "system" | "ask" | "default" | "phone default" => PLAYER_SYSTEM,
+        "local" | "files" | "phone" | "local files" | "on this phone" | "this phone" => PLAYER_LOCAL,
+        _ => PLAYER_LOCAL,
+    }
+}
+
+/// A voice change. Unknown names are an error so Talk does not silently switch player.
+pub fn parse_player(raw: &str) -> Result<&'static str, String> {
+    let folded = fold(raw);
+    match folded.as_str() {
+        "musify" => Ok(PLAYER_MUSIFY),
+        "youtube music" | "yt music" | "you tube music" => Ok(PLAYER_YOUTUBE_MUSIC),
+        "youtube" | "yt" | "you tube" => Ok(PLAYER_YOUTUBE),
+        "system" | "ask" | "default" | "phone default" => Ok(PLAYER_SYSTEM),
+        "local" | "files" | "phone" | "local files" | "on this phone" | "this phone" | "files on this phone" => Ok(PLAYER_LOCAL),
+        _ => Err(
+            "Music player can be local files, Musify, YouTube, YouTube Music, or the phone default.".into(),
+        ),
+    }
+}
+
+pub fn player_name(id: &str) -> &'static str {
+    match stored_player(id) {
+        PLAYER_MUSIFY => "Musify",
+        PLAYER_YOUTUBE => "YouTube",
+        PLAYER_YOUTUBE_MUSIC => "YouTube Music",
+        PLAYER_SYSTEM => "the phone default",
+        _ => "files on this phone",
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlayRoute {
+    /// The words named YouTube the site. Talk must confirm with `open_youtube`.
+    ConfirmYoutube { query: String },
+    Local { query: String },
+    External { player: &'static str, query: String },
+}
+
+/// Where "play …" goes. A named YouTube site request still waits for yes.
+/// "YouTube Music" and "Musify" are players, so they do not take that detour.
+pub fn route_play(default_player: &str, query: &str) -> PlayRoute {
+    if said_youtube_music(query) {
+        return PlayRoute::External { player: PLAYER_YOUTUBE_MUSIC, query: search_text(query) };
+    }
+    if said_youtube_site(query) {
+        let cleaned = youtube_video_url(query)
+            .or_else(|| youtube_request(query))
+            .unwrap_or_else(|| search_text(query));
+        return PlayRoute::ConfirmYoutube { query: cleaned };
+    }
+    if asks_for_local(query) {
+        return PlayRoute::Local { query: search_text(query) };
+    }
+    if said_musify(query) {
+        let text = youtube_video_url(query).unwrap_or_else(|| search_text(query));
+        return PlayRoute::External { player: PLAYER_MUSIFY, query: text };
+    }
+    if let Some(url) = youtube_video_url(query) {
+        let player = stored_player(default_player);
+        return if player == PLAYER_LOCAL {
+            PlayRoute::ConfirmYoutube { query: url }
+        } else {
+            PlayRoute::External { player, query: url }
+        };
+    }
+    let player = stored_player(default_player);
+    if player == PLAYER_LOCAL {
+        PlayRoute::Local { query: search_text(query) }
+    } else {
+        PlayRoute::External { player, query: search_text(query) }
+    }
+}
+
+/// Song words, or a normalized YouTube watch URL when the request contains a video id.
+pub fn search_text(query: &str) -> String {
+    if let Some(url) = youtube_video_url(query) {
+        return url;
+    }
+    interpret(&strip_player_words(query), Kind::Auto).query
+}
+
+/// `https://www.youtube.com/watch?v=` plus an 11-character id, when one is present.
+pub fn youtube_video_url(raw: &str) -> Option<String> {
+    let id = youtube_video_id(raw)?;
+    Some(format!("https://www.youtube.com/watch?v={id}"))
+}
+
+fn youtube_video_id(raw: &str) -> Option<String> {
+    let lower = raw.to_ascii_lowercase();
+    for marker in ["youtu.be/", "watch?v=", "watch?v%3d", "/shorts/", "/embed/", "/live/"] {
+        if let Some(pos) = lower.find(marker) {
+            let start = pos + marker.len();
+            if let Some(id) = take_video_id(&raw[start..]) {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
+fn take_video_id(rest: &str) -> Option<String> {
+    let id: String = rest.chars().take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-').collect();
+    if id.len() == 11 { Some(id) } else { None }
+}
+
+fn without_urls(raw: &str) -> String {
+    raw.split_whitespace()
+        .filter(|token| {
+            let lower = token.to_ascii_lowercase();
+            !lower.starts_with("http://") && !lower.starts_with("https://")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn said_youtube_music(query: &str) -> bool {
+    let folded = fold(&without_urls(query));
+    folded.contains("youtube music") || folded.contains("you tube music") || folded.contains("yt music")
+}
+
+fn said_youtube_site(query: &str) -> bool {
+    if said_youtube_music(query) {
+        return false;
+    }
+    let folded = fold(&without_urls(query));
+    folded.split_whitespace().any(|token| token == "youtube" || token == "yt") || folded.contains("you tube")
+}
+
+fn said_musify(query: &str) -> bool {
+    fold(&without_urls(query)).split_whitespace().any(|token| token == "musify")
+}
+
+fn asks_for_local(query: &str) -> bool {
+    let folded = fold(&without_urls(query));
+    if folded.split_whitespace().any(|token| matches!(token, "local" | "offline" | "downloaded")) {
+        return true;
+    }
+    folded.contains("this phone") || folded.contains("my phone") || folded.contains("my files") || folded.contains("on the phone")
+}
+
+fn strip_player_words(query: &str) -> String {
+    let folded = fold(&without_urls(query));
+    let tokens: Vec<&str> = folded.split_whitespace().collect();
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        if tokens[index] == "on" && player_word_at(&tokens, index + 1) {
+            index += 1;
+            continue;
+        }
+        if tokens[index] == "you" && tokens.get(index + 1) == Some(&"tube") {
+            index += 2;
+            if tokens.get(index) == Some(&"music") {
+                index += 1;
+            }
+            continue;
+        }
+        if tokens[index] == "youtube" && tokens.get(index + 1) == Some(&"music") {
+            index += 2;
+            continue;
+        }
+        if matches!(tokens[index], "musify" | "youtube" | "yt") {
+            index += 1;
+            continue;
+        }
+        out.push(tokens[index]);
+        index += 1;
+    }
+    out.join(" ")
+}
+
+fn player_word_at(tokens: &[&str], index: usize) -> bool {
+    matches!(tokens.get(index), Some(&"musify" | &"youtube" | &"yt"))
+        || (tokens.get(index) == Some(&"you") && tokens.get(index + 1) == Some(&"tube"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -736,6 +925,52 @@ mod tests {
     }
 
     #[test]
+    fn play_routes_follow_the_default_player_and_keep_youtube_confirmation() {
+        assert!(matches!(route_play("local", "play some music"), PlayRoute::Local { query } if query.is_empty()));
+        assert!(matches!(
+            route_play("musify", "play some music"),
+            PlayRoute::External { player: "musify", query } if query.is_empty()
+        ));
+        assert!(matches!(
+            route_play("musify", "play Bohemian Rhapsody"),
+            PlayRoute::External { player: "musify", query } if query == "bohemian rhapsody"
+        ));
+        assert!(matches!(
+            route_play("local", "play Bohemian Rhapsody on musify"),
+            PlayRoute::External { player: "musify", query } if query == "bohemian rhapsody"
+        ));
+        assert!(matches!(
+            route_play("musify", "play local files"),
+            PlayRoute::Local { .. }
+        ));
+        assert!(matches!(
+            route_play("musify", "play Bohemian Rhapsody on YouTube"),
+            PlayRoute::ConfirmYoutube { query } if query == "bohemian rhapsody"
+        ));
+        assert!(matches!(
+            route_play("youtube", "play jazz"),
+            PlayRoute::External { player: "youtube", query } if query == "jazz"
+        ));
+        assert!(matches!(
+            route_play("local", "play See You Again on YouTube Music"),
+            PlayRoute::External { player: "youtube_music", query } if query == "see you again"
+        ));
+        let url = "https://youtu.be/dQw4w9WgXcQ";
+        assert_eq!(
+            youtube_video_url(url).as_deref(),
+            Some("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        );
+        assert!(matches!(
+            route_play("musify", url),
+            PlayRoute::External { player: "musify", query } if query == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        ));
+        assert!(matches!(route_play("local", url), PlayRoute::ConfirmYoutube { .. }));
+        assert_eq!(stored_player("YouTube Music"), "youtube_music");
+        assert_eq!(stored_player("nope"), "local");
+        assert!(parse_player("sideways").is_err());
+    }
+
+    #[test]
     fn spoken_lines_exist_in_every_locale_and_the_player_stays_off_the_alarm_stream() {
         for key in [
             "music-playing",
@@ -752,6 +987,38 @@ mod tests {
             "music-phone-only",
             "music-failed",
             "music-youtube",
+            "music-musify-playing",
+            "music-musify-playing-by",
+            "music-musify-started",
+            "music-musify-resume",
+            "music-ytmusic",
+            "music-ytmusic-resume",
+            "music-youtube-app",
+            "music-youtube-video",
+            "music-youtube-home",
+            "music-youtube-browser",
+            "music-browser-video",
+            "music-browser-home",
+            "music-system",
+            "music-system-resume",
+            "music-system-ask",
+            "music-none",
+            "music-external-phone",
+            "music-fallback-musify",
+            "music-fallback-youtube_music",
+            "music-fallback-youtube",
+            "music-fallback-system",
+            "media-play",
+            "media-pause",
+            "media-stop",
+            "media-next",
+            "media-previous",
+            "media-shuffle",
+            "media-unshuffle",
+            "media-shuffle-none",
+            "media-sent",
+            "media-sent-listener",
+            "media-bad",
         ] {
             let english = crate::i18n::line("en", key);
             assert!(english.contains(' ') || english.contains('{'), "{key}");
@@ -777,6 +1044,7 @@ mod tests {
             assert!(xml.contains("music_channel_name"));
             assert!(xml.contains("music_pause"));
             assert!(xml.contains("music_stop"));
+            assert!(xml.contains("music_pick_player"));
         }
     }
 }

@@ -339,6 +339,12 @@ pub fn get_settings(store: State<'_, SettingsStore>) -> Settings {
 }
 
 #[tauri::command]
+pub fn music_players(app: AppHandle) -> Result<serde_json::Value> {
+    let raw = app.state::<NativeBridge>().music_players()?;
+    serde_json::from_str(&raw).map_err(|err| msg(err.to_string()))
+}
+
+#[tauri::command]
 pub fn save_settings(store: State<'_, SettingsStore>, engine: State<'_, Engine>, settings: Settings) -> Result<Settings> {
     let settings = crate::settings::keep_listen_preference(&store.get(), settings);
     let saved = store.save(settings)?;

@@ -64,6 +64,7 @@
     <string name="music_playing">Playing</string>
     <string name="music_pause">Pause</string>
     <string name="music_stop">Stop</string>
+    <string name="music_pick_player">Choose a music app</string>
     <string name="alarm_stop">Stop</string>
     <string name="alarm_file_playing">Playing your audio</string>
     <string name="alarm_youtube_starting">Starting YouTube audio…</string>

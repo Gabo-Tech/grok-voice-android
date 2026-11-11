@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Archive, AudioLines, Bell, Brain, Bug, ChevronRight, Hourglass, KeyRound, Languages, Package, Users, Wallet, Wand2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, KeyRound, Languages, Music, Package, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { LocalPacks } from "@/components/LocalPacks";
 import { Field } from "@/components/Field";
@@ -11,7 +11,7 @@ import { WakeView } from "@/components/WakeView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { VoiceState } from "@/hooks/useVoice";
-import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type ListenHealth, type LocalMemoryBundle, type Settings, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
 import { VoicePicker } from "@/components/VoicePicker";
 import { OPENAI_VOICES, XAI_VOICES } from "@/lib/voices";
 import { providerLabel } from "@/lib/flow";
@@ -34,7 +34,9 @@ export type Section =
   | "quiet"
   | "model"
   | "language"
-  | "alerts";
+  | "alerts"
+  | "music"
+  | "updates";
 
 const PROVIDERS = [
   { id: "xai", label: "xAI" },
@@ -82,7 +84,9 @@ export function MorePage({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState("");
   const [usage, setUsage] = useState<UsageStatus | null>(null);
-  const [installed, setInstalled] = useState("");
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
+  const [settingsQuery, setSettingsQuery] = useState("");
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     void api
@@ -110,11 +114,12 @@ export function MorePage({
             monthlyBudgetHardStop: false,
             localSpeech: "en",
             locale: "",
+            musicPlayer: "local",
           });
         }
       });
     void api.usageStatus().then(setUsage).catch(() => {});
-    void api.updateStatus().then((status) => setInstalled(status.installed)).catch(() => {});
+    void api.updateStatus().then(setUpdate).catch(() => {});
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     void listen<Settings>("voice://settings", (event) => {
@@ -540,11 +545,145 @@ export function MorePage({
     );
   }
 
+  if (section === "music") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
+        <Back onClick={() => setSection("menu")} />
+        <MusicSettings
+          settings={settings}
+          onChange={(next) => {
+            setSettings(next);
+            void api.saveSettings(next).then(setSettings).catch(() => setSettings(next));
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (section === "updates") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
+        <Back onClick={() => setSection("menu")} />
+        <UpdatesSettings installed={update?.installed ?? ""} available={update?.version ?? ""} />
+      </div>
+    );
+  }
+
   const accounts = auth.accounts ?? [];
   const first = accounts[0];
+  const query = settingsQuery.trim().toLowerCase();
+  const languageDetail = localeDetail(settings?.locale, t);
+  const groups: SettingsFolder[] = [
+    {
+      id: "voice",
+      title: t("Voice and AI"),
+      rows: [
+        { section: "keys", icon: <KeyRound className="size-4" />, title: t("Voice keys"), detail: t("Order and fallback") },
+        { section: "model", icon: <AudioLines className="size-4" />, title: t("Voice and model"), detail: t("Names sent with the xAI key") },
+        {
+          section: "spend",
+          icon: <Wallet className="size-4" />,
+          title: t("Daily voice budget"),
+          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off"),
+        },
+      ],
+    },
+    {
+      id: "talk",
+      title: t("Talk on this phone"),
+      rows: [
+        { section: "packs", icon: <Package className="size-4" />, title: t("On-device packs"), detail: t("Speech, model, and voice") },
+        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: fill("{n}s", { n: quiet }) },
+      ],
+    },
+    {
+      id: "listen",
+      title: t("Listen"),
+      rows: [
+        {
+          section: "wake",
+          icon: <Wand2 className="size-4" />,
+          title: t("Wake word"),
+          detail: wake.trained ? t("Hey Grok enrolled") : t("Not enrolled yet"),
+        },
+      ],
+    },
+    {
+      id: "alerts",
+      title: t("Notifications and spoken alerts"),
+      rows: [
+        {
+          section: "alerts",
+          icon: <Bell className="size-4" />,
+          title: t("Notification alerts"),
+          detail: settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("Normal"),
+        },
+        {
+          section: "access",
+          icon: <Bell className="size-4" />,
+          title: t("Phone access"),
+          detail: t("Notifications, Do Not Disturb, history, music"),
+        },
+      ],
+    },
+    {
+      id: "music",
+      title: t("Music"),
+      rows: [
+        {
+          section: "music",
+          icon: <Music className="size-4" />,
+          title: t("Default music player"),
+          detail: playerDetail(settings?.musicPlayer, t),
+        },
+      ],
+    },
+    {
+      id: "language",
+      title: t("Language"),
+      rows: [{ section: "language", icon: <Languages className="size-4" />, title: t("Language"), detail: languageDetail }],
+    },
+    {
+      id: "privacy",
+      title: t("Backup and privacy"),
+      rows: [
+        { section: "people", icon: <Users className="size-4" />, title: t("People"), detail: t("Nicknames and how to reach them") },
+        { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), detail: t("Pinned facts for on-device Talk") },
+        {
+          section: "backup",
+          icon: <Archive className="size-4" />,
+          title: t("Backup"),
+          detail: t("Encrypted notes, People, Finance, and memory"),
+        },
+      ],
+    },
+    {
+      id: "updates",
+      title: t("Updates"),
+      rows: [
+        {
+          section: "updates",
+          icon: <Download className="size-4" />,
+          title: t("Updates"),
+          detail: update?.installed ? `${t("Installed version")} ${update.installed}` : t("The installed version"),
+        },
+      ],
+    },
+    {
+      id: "about",
+      title: t("About"),
+      rows: [{ section: "debug", icon: <Bug className="size-4" />, title: t("Debug"), detail: t("Logs, echo guard, and sign out") }],
+    },
+  ];
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      rows: group.rows.filter((row) => !query || `${group.title} ${row.title} ${row.detail}`.toLowerCase().includes(query)),
+    }))
+    .filter((group) => group.rows.length > 0);
 
   return (
-    <PageChrome title={t("Settings")} subtitle={t("Voice, people, and this phone")} active={active && section === "menu"}>
+    <PageChrome title={t("Settings")} subtitle={t("Voice, music, and this phone")} active={active && section === "menu"}>
       <ListenStatus />
       <div className="mb-6 border border-border px-3 py-3">
         <p className="text-base text-foreground">
@@ -570,59 +709,187 @@ export function MorePage({
             : t("Today's time is counted on this phone.")}
         </p>
       </div>
-      <SettingsGroup title={t("Voice")}>
-        <MenuRow icon={<KeyRound className="size-4" />} title={t("Voice keys")} detail={t("Order and fallback")} onClick={() => setSection("keys")} />
-        <MenuRow icon={<Package className="size-4" />} title={t("On-device packs")} detail={t("Speech, model, and voice")} onClick={() => setSection("packs")} />
-        <MenuRow
-          icon={<Wand2 className="size-4" />}
-          title={t("Wake word")}
-          detail={wake.trained ? t("Hey Grok enrolled") : t("Not enrolled yet")}
-          onClick={() => setSection("wake")}
+      <label className="mb-4 block px-1">
+        <span className="sr-only">{t("Find a setting")}</span>
+        <Input
+          value={settingsQuery}
+          onChange={(event) => setSettingsQuery(event.target.value)}
+          placeholder={t("Find a setting")}
+          aria-label={t("Find a setting")}
         />
-        <MenuRow icon={<Hourglass className="size-4" />} title={t("Quiet gap")} detail={fill("{n}s", { n: quiet })} onClick={() => setSection("quiet")} />
-        <MenuRow icon={<Languages className="size-4" />} title={t("Language")} detail={t("Follow the phone")} onClick={() => setSection("language")} />
-      </SettingsGroup>
-      <SettingsGroup title={t("Voice time")}>
-        <MenuRow
-          icon={<Wallet className="size-4" />}
-          title={t("Daily voice budget")}
-          detail={settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off")}
-          onClick={() => setSection("spend")}
-        />
-      </SettingsGroup>
-      <SettingsGroup title={t("This phone")}>
-        <MenuRow icon={<Users className="size-4" />} title={t("People")} detail={t("Nicknames and how to reach them")} onClick={() => setSection("people")} />
-        <MenuRow icon={<Brain className="size-4" />} title={t("Memory")} detail={t("Pinned facts for on-device Talk")} onClick={() => setSection("memory")} />
-        <MenuRow
-          icon={<Bell className="size-4" />}
-          title={t("Notification alerts")}
-          detail={settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("Normal")}
-          onClick={() => setSection("alerts")}
-        />
-        <MenuRow icon={<Bell className="size-4" />} title={t("Phone access")} detail={t("Notifications, Do Not Disturb, history, music")} onClick={() => setSection("access")} />
-        <MenuRow icon={<AudioLines className="size-4" />} title={t("Voice and model")} detail={t("Names sent with the xAI key")} onClick={() => setSection("model")} />
-      </SettingsGroup>
-      <SettingsGroup title={t("Your data")}>
-        <MenuRow icon={<Archive className="size-4" />} title={t("Backup")} detail={t("Encrypted notes, People, Finance, and memory")} onClick={() => setSection("backup")} />
-      </SettingsGroup>
-      <SettingsGroup title={t("Support")}>
-        <MenuRow icon={<Bug className="size-4" />} title={t("Debug")} detail={t("Logs, echo guard, and sign out")} onClick={() => setSection("debug")} />
-      </SettingsGroup>
-      {installed ? (
-        <p className="px-1 text-sm text-muted-foreground">
-          {t("Installed version")} {installed}
-        </p>
-      ) : null}
+      </label>
+      {visibleGroups.length === 0 ? <p className="px-1 text-sm text-muted-foreground">{t("No settings match that.")}</p> : null}
+      {visibleGroups.map((group) => {
+        const open = query.length > 0 || openGroups[group.id] !== false;
+        return (
+          <section key={group.id} className="mb-6">
+            <button
+              type="button"
+              className="mb-2 flex min-h-12 w-full items-center justify-between gap-3 px-1 text-left"
+              aria-expanded={open}
+              onClick={() => {
+                if (query) return;
+                setOpenGroups((current) => ({ ...current, [group.id]: current[group.id] === false }));
+              }}
+            >
+              <span className="text-sm text-muted-foreground">{group.title}</span>
+              <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground", !open && "-rotate-90")} />
+            </button>
+            {open ? (
+              <div className="divide-y divide-border border-y border-border">
+                {group.rows.map((row) => (
+                  <MenuRow
+                    key={row.section}
+                    icon={row.icon}
+                    title={row.title}
+                    detail={row.detail}
+                    onClick={() => setSection(row.section)}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
     </PageChrome>
   );
 }
 
-function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+type SettingsFolder = {
+  id: string;
+  title: string;
+  rows: { section: Section; icon: React.ReactNode; title: string; detail: string }[];
+};
+
+function localeDetail(locale: string | undefined, t: (text: string) => string): string {
+  if (locale === "en") return t("English");
+  if (locale === "es") return t("Spanish");
+  if (locale === "de") return t("German");
+  if (locale === "pt") return t("Portuguese");
+  if (locale === "ca-ES-valencia") return t("Valencian");
+  return t("Follow the phone");
+}
+
+function playerDetail(id: string | undefined, t: (text: string) => string): string {
+  if (id === "musify") return "Musify";
+  if (id === "youtube_music") return t("YouTube Music");
+  if (id === "youtube") return "YouTube";
+  if (id === "system") return t("Ask each time");
+  return t("Files on this phone");
+}
+
+function MusicSettings({ settings, onChange }: { settings: Settings | null; onChange: (next: Settings) => void }) {
+  const t = useT();
+  const [players, setPlayers] = useState<MusicPlayerChoice[] | null>(null);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      setPlayers([
+        { id: "local", installed: true },
+        { id: "musify", installed: false },
+        { id: "youtube_music", installed: false },
+        { id: "youtube", installed: false },
+        { id: "system", installed: true },
+      ]);
+      return;
+    }
+    void api
+      .musicPlayers()
+      .then((result) => setPlayers(result.players ?? []))
+      .catch(() => setPlayers([{ id: "local", installed: true }, { id: "system", installed: true }]));
+  }, []);
+
+  const installed = new Set((players ?? []).filter((player) => player.installed).map((player) => player.id));
+  const current = settings?.musicPlayer || "local";
+  const choices = [
+    {
+      id: "local",
+      title: t("Files on this phone"),
+      body: t("Songs and playlists already on this phone. Pause and next control that player."),
+    },
+    {
+      id: "musify",
+      title: "Musify",
+      body: t("Musify searches and plays the first match. This app does not download the audio. Pause and next use Musify when its playback session is active."),
+    },
+    {
+      id: "youtube_music",
+      title: t("YouTube Music"),
+      body: t("Asks YouTube Music to play. If that app cannot, YouTube opens."),
+    },
+    {
+      id: "youtube",
+      title: "YouTube",
+      body: t("Opens a YouTube search. A search does not start playing by itself. A video link does open in YouTube."),
+    },
+    {
+      id: "system",
+      title: t("Ask each time"),
+      body: t("The phone picks a music app, or asks when more than one can play."),
+    },
+  ];
+
   return (
-    <section className="mb-6">
-      <h2 className="mb-2 px-1 text-sm text-muted-foreground">{title}</h2>
-      <div className="divide-y divide-border border-y border-border">{children}</div>
-    </section>
+    <div>
+      <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Default music player")}</h2>
+      <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
+        {t("Only installed apps can be chosen. Files on this phone and Ask each time are always here.")}
+      </p>
+      {settings ? (
+        <div className="space-y-2">
+          {choices.map((choice) => {
+            const available = choice.id === "local" || choice.id === "system" || installed.has(choice.id) || current === choice.id;
+            if (!available) return null;
+            const missing = choice.id !== "local" && choice.id !== "system" && players !== null && !installed.has(choice.id);
+            const selected = current === choice.id;
+            return (
+              <button
+                key={choice.id}
+                type="button"
+                disabled={missing}
+                onClick={() => onChange({ ...settings, musicPlayer: choice.id })}
+                className={cn(
+                  "min-h-14 w-full border px-3 py-3 text-left",
+                  selected ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                  missing && "opacity-60",
+                )}
+              >
+                <span className="block text-base text-foreground">
+                  {choice.title}
+                  {missing ? ` · ${t("Not installed")}` : ""}
+                </span>
+                <span className="mt-1 block text-sm leading-5">{choice.body}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
+      )}
+      <p className="mt-4 px-1 text-sm leading-6 text-muted-foreground">
+        {t("Pause, next, and previous reach the player that is actually playing. Allow notification access if those commands miss Musify.")}
+      </p>
+    </div>
+  );
+}
+
+function UpdatesSettings({ installed, available }: { installed: string; available: string }) {
+  const t = useT();
+  const newer = Boolean(available && installed && available !== installed);
+  return (
+    <div>
+      <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Updates")}</h2>
+      <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
+        {t("When a newer version is published, a banner at the top of the app offers the download.")}{" "}
+        {t("Nothing is installed from this screen.")}
+      </p>
+      <div className="border border-border px-3 py-3">
+        <p className="text-base text-foreground">{installed ? `${t("Installed version")} ${installed}` : t("The installed version")}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {newer ? t("A newer version is posted.") : t("This is the newest version this phone has checked.")}
+        </p>
+      </div>
+    </div>
   );
 }
 
