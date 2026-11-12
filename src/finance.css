@@ -106,6 +106,39 @@
   overflow-wrap: anywhere;
 }
 
+.finance .fin-tabs {
+  display: flex;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--fin-canvas);
+  border-top: var(--frame) solid var(--fin-line);
+}
+
+.finance .fin-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0.4rem 0.1rem 0.45rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--fin-muted);
+  font-family: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.finance .fin-tab[aria-selected="true"] {
+  color: var(--fin-ink);
+  border-bottom-color: var(--fin-gold);
+}
+
 .finance .fin-chip {
   min-height: 44px;
   border: var(--frame) solid var(--fin-line);

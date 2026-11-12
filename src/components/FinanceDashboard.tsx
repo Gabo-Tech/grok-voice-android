@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
-import { CombinedHeadline, LiveRates, StaticHeadline } from "@/components/CombinedTotal";
+import { CombinedHeadline, StaticHeadline } from "@/components/CombinedTotal";
 import {
   addDays,
   addMonths,
@@ -22,7 +22,11 @@ import {
 } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
+import { financePanels, type FinancePlace } from "@/lib/financeTabs";
 import { cn } from "@/lib/utils";
+
+export type { FinancePlace };
+export { financePanels };
 
 export type WorthFocus = "owned" | "debt" | "invested" | "cash";
 
@@ -40,20 +44,96 @@ function gapsOf(heads: Headline[]): string[] {
   return [...new Set(heads.flatMap((head) => head.missing))].sort();
 }
 
+function periodParts(rows: FinanceTransaction[], start: string, end: string, direction: string): MoneyPart[] {
+  return rows.flatMap((tx) => {
+    if (tx.direction !== direction || !tx.currency) return [];
+    if (start && tx.date < start) return [];
+    if (end && tx.date > end) return [];
+    return [{ amountMinor: tx.amountMinor, currency: tx.currency }];
+  });
+}
+
+/** Codes the combined headlines still cannot convert. Same book the Overview uses. Empty when every pair is known. */
+export function missingRateKey(snapshot: FinanceState["snapshot"], nowMs: number): string {
+  const accounts = snapshot.accounts;
+  const today = todayIso();
+  const display = (snapshot.defaultCurrency || "").toUpperCase();
+  const book = bookFromStatus(snapshot.fx);
+  const worth = netWorth(accounts.map((account) => ({ kind: account.kind, currency: account.currency, shownBalanceMinor: account.shownBalanceMinor })));
+  const bounds = monthBounds(today);
+  const flow = cashFlow(snapshot.transactions, bounds.start, bounds.end);
+  const expenses = comingRows(snapshot.rules, snapshot.transactions, today, "out");
+  const income = comingRows(snapshot.rules, snapshot.transactions, today, "in");
+  const planned = plannedHits(snapshot.rules, snapshot.transactions, today);
+  const monthPlan = projectWindow(flow, planned, today, bounds.end, today, true);
+  const horizon = addDays(today, 30);
+  const yesterday = addDays(today, -1);
+  const nextPlan = projectWindow([], planned, today, horizon, today, false);
+  const overduePlan = projectWindow([], planned, "1970-01-01", yesterday, today, false);
+  const moves = netWorthChange(
+    snapshot.transactions.map((tx) => ({
+      currency: tx.currency,
+      direction: tx.direction,
+      amountMinor: tx.amountMinor,
+      date: tx.date,
+      accountKind: accounts.find((account) => account.id === tx.accountId)?.kind || "",
+      fromKind: accounts.find((account) => account.id === tx.fromAccountId)?.kind,
+    })),
+    bounds.start,
+    bounds.end,
+  );
+  const nextIn = headlineOf(nextPlan.map((row) => ({ amountMinor: row.comingIn, currency: row.currency })), display, book, nowMs);
+  const nextOut = headlineOf(nextPlan.map((row) => ({ amountMinor: row.comingOut, currency: row.currency })), display, book, nowMs);
+  return gapsOf([
+    headlineOf(worth.map((row) => ({ amountMinor: row.net, currency: row.currency })), display, book, nowMs),
+    headlineOf(flow.map((row) => ({ amountMinor: row.left, currency: row.currency })), display, book, nowMs),
+    headlineOf(listed(expenses), display, book, nowMs),
+    headlineOf(listed(income), display, book, nowMs),
+    headlineOf(monthPlan.map((row) => ({ amountMinor: row.projected, currency: row.currency })), display, book, nowMs),
+    subtractHeadlines(nextIn, nextOut, display),
+    headlineOf(overduePlan.map((row) => ({ amountMinor: row.comingIn, currency: row.currency })), display, book, nowMs),
+    headlineOf(overduePlan.map((row) => ({ amountMinor: row.comingOut, currency: row.currency })), display, book, nowMs),
+    headlineOf(moves.map((row) => ({ amountMinor: row.change, currency: row.currency })), display, book, nowMs),
+    headlineOf(periodParts(snapshot.transactions, bounds.start, bounds.end, "expense"), display, book, nowMs),
+    headlineOf(periodParts(snapshot.transactions, bounds.start, bounds.end, "income"), display, book, nowMs),
+  ]).join(",");
+}
+
+/** Fetch when a headline is blocked. Runs from FinancePage on every tab, above any early return. */
+export function useFinanceRateWatch(finance: FinanceState) {
+  const nowMs = useMemo(() => Date.now(), [finance.snapshot]);
+  const gapKey = useMemo(() => missingRateKey(finance.snapshot, nowMs), [finance.snapshot, nowMs]);
+  const tried = useRef("");
+  useEffect(() => {
+    if (!gapKey || !finance.inApp) return;
+    if (tried.current === gapKey) return;
+    tried.current = gapKey;
+    finance.refreshRates();
+  }, [gapKey, finance.inApp, finance.refreshRates]);
+}
+
 export function FinanceDashboard({
   finance,
   accounts,
+  place,
   onProgram,
   onIncome,
+  onPayout,
   onFocus,
-  onOpenSettings,
+  onOpenExpenses,
+  onOpenIncome,
+  children,
 }: {
   finance: FinanceState;
   accounts: FinanceAccount[];
+  place: FinancePlace;
   onProgram: () => void;
   onIncome: () => void;
+  onPayout?: () => void;
   onFocus: (focus: WorthFocus) => void;
-  onOpenSettings?: () => void;
+  onOpenExpenses?: () => void;
+  onOpenIncome?: () => void;
+  children?: ReactNode;
 }) {
   const t = useT();
   const today = todayIso();
@@ -72,8 +152,10 @@ export function FinanceDashboard({
   );
   const rules = finance.snapshot.rules;
   const txs = finance.snapshot.transactions;
-  const expenses = useMemo(() => comingRows(rules, txs, today, "out"), [rules, txs, today]);
-  const income = useMemo(() => comingRows(rules, txs, today, "in"), [rules, txs, today]);
+  const comingOut = useMemo(() => comingRows(rules, txs, today, "out"), [rules, txs, today]);
+  const comingIn = useMemo(() => comingRows(rules, txs, today, "in"), [rules, txs, today]);
+  const payoutRows = useMemo(() => comingIn.filter((row) => row.purpose === "investment_payout"), [comingIn]);
+  const incomeRows = useMemo(() => comingIn.filter((row) => row.purpose !== "investment_payout"), [comingIn]);
   const planned = useMemo(() => plannedHits(rules, txs, today), [rules, txs, today]);
   const monthPlan = useMemo(() => projectWindow(flow, planned, today, bounds.end, today, true), [flow, planned, today, bounds.end]);
   const horizon = addDays(today, 30);
@@ -82,8 +164,12 @@ export function FinanceDashboard({
   const overduePlan = useMemo(() => projectWindow([], planned, "1970-01-01", yesterday, today, false), [planned, today, yesterday]);
   const worthParts = useMemo(() => worth.map((row) => ({ amountMinor: row.net, currency: row.currency })), [worth]);
   const flowParts = useMemo(() => flow.map((row) => ({ amountMinor: row.left, currency: row.currency })), [flow]);
-  const expenseParts = useMemo(() => listed(expenses), [expenses]);
-  const incomeParts = useMemo(() => listed(income), [income]);
+  const spentParts = useMemo(() => periodParts(txs, bounds.start, bounds.end, "expense"), [txs, bounds.start, bounds.end]);
+  const paidParts = useMemo(() => periodParts(txs, bounds.start, bounds.end, "payment"), [txs, bounds.start, bounds.end]);
+  const earnedParts = useMemo(() => periodParts(txs, bounds.start, bounds.end, "income"), [txs, bounds.start, bounds.end]);
+  const comingOutParts = useMemo(() => listed(comingOut), [comingOut]);
+  const incomeParts = useMemo(() => listed(incomeRows), [incomeRows]);
+  const payoutParts = useMemo(() => listed(payoutRows), [payoutRows]);
   const planParts = useMemo(() => monthPlan.map((row) => ({ amountMinor: row.projected, currency: row.currency })), [monthPlan]);
   const moves = useMemo(
     () =>
@@ -105,10 +191,6 @@ export function FinanceDashboard({
     const nextIn = headlineOf(nextPlan.map((row) => ({ amountMinor: row.comingIn, currency: row.currency })), display, book, nowMs);
     const nextOut = headlineOf(nextPlan.map((row) => ({ amountMinor: row.comingOut, currency: row.currency })), display, book, nowMs);
     return {
-      worth: headlineOf(worthParts, display, book, nowMs),
-      month: headlineOf(flowParts, display, book, nowMs),
-      expenses: headlineOf(expenseParts, display, book, nowMs),
-      income: headlineOf(incomeParts, display, book, nowMs),
       plan: headlineOf(planParts, display, book, nowMs),
       next: subtractHeadlines(nextIn, nextOut, display),
       nextIn,
@@ -118,123 +200,188 @@ export function FinanceDashboard({
       moves: headlineOf(moves.map((row) => ({ amountMinor: row.change, currency: row.currency })), display, book, nowMs),
       previous: headlineOf(previous.map((row) => ({ amountMinor: row.left, currency: row.currency })), display, book, nowMs),
     };
-  }, [worthParts, flowParts, expenseParts, incomeParts, planParts, nextPlan, overduePlan, moves, previous, display, book, nowMs]);
-  const gapCodes = useMemo(
-    () => gapsOf([heads.worth, heads.month, heads.expenses, heads.income, heads.plan, heads.next, heads.overdueIn, heads.overdueOut, heads.moves]),
-    [heads],
-  );
-  const gapKey = gapCodes.join(",");
-  const tried = useRef("");
-  useEffect(() => {
-    if (!gapKey || !finance.inApp) return;
-    if (tried.current === gapKey) return;
-    tried.current = gapKey;
-    finance.refreshRates();
-  }, [gapKey, finance.inApp, finance.refreshRates]);
-
-  const rateCodes = useMemo(() => {
-    const codes = new Set<string>();
-    for (const part of [...worthParts, ...flowParts, ...expenseParts, ...incomeParts, ...planParts]) {
-      const code = part.currency.trim().toUpperCase();
-      if (code) codes.add(code);
-    }
-    return [...codes].sort();
-  }, [worthParts, flowParts, expenseParts, incomeParts, planParts]);
+  }, [planParts, nextPlan, overduePlan, moves, previous, display, book, nowMs]);
+  const panels = financePanels(place);
+  const openExpenses = onOpenExpenses ?? onProgram;
+  const openIncome = onOpenIncome ?? onIncome;
+  const openPayout = onPayout ?? onIncome;
 
   return (
-    <div className="fin-stack w-full min-w-0 space-y-6">
-      <LiveRates codes={rateCodes} display={display} book={book} nowMs={nowMs} busy={finance.busy} missing={gapCodes} onOpenSettings={onOpenSettings} />
-
-      <section className="fin-panel">
-        <h2 className="fin-kicker">{t("Net worth")}</h2>
-        <p className="fin-muted mt-2 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
-        {worth.length === 0 ? (
-          <p className="mt-4 text-base">{t("No balances stated yet")}</p>
-        ) : (
-          <>
+    <div className="fin-stack w-full min-w-0 space-y-6" data-finance-place={place}>
+      {panels.includes("net-worth") ? (
+        <section className="fin-panel" data-finance-panel="net-worth">
+          <h2 className="fin-kicker">{t("Net worth")}</h2>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
+          {worth.length === 0 ? (
+            <p className="mt-4 text-base">{t("No balances stated yet")}</p>
+          ) : (
             <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
-            <div className="mt-4 grid w-full min-w-0 grid-cols-2 gap-2">
-              <FocusChip label={t("You own")} onClick={() => onFocus("owned")} />
-              <FocusChip label={t("You owe")} onClick={() => onFocus("debt")} />
-              <FocusChip label={t("Invested")} onClick={() => onFocus("invested")} />
-              <FocusChip label={t("Cash & savings")} onClick={() => onFocus("cash")} />
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="fin-panel">
-        <h2 className="fin-kicker">{t("This month")}</h2>
-        <p className="fin-muted mt-2 text-sm leading-5">{t("Income received minus expenses paid.")}</p>
-        {flow.length === 0 ? (
-          <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
-        ) : (
-          <>
-            <CombinedHeadline parts={flowParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="auto" />
-            {heads.previous.state === "ready" ? (
-              <p className="fin-muted mt-2 text-sm">{fill("Last month left {amount}", { amount: formatMoney(heads.previous.amountMinor, heads.previous.currency) })}</p>
-            ) : null}
-          </>
-        )}
-        {heads.moves.state !== "empty" ? (
-          <div className="mt-4 border-t border-border pt-3">
-            <p className="text-sm font-medium">{t("Change this month")}</p>
-            <p className="fin-muted mt-1 text-sm leading-5">{t("From what you recorded. A holding stays at the price you entered.")}</p>
-            <CombinedHeadline
-              parts={moves.map((row) => ({ amountMinor: row.change, currency: row.currency }))}
-              display={display}
-              book={book}
-              nowMs={nowMs}
-              busy={finance.busy}
-              size="text-2xl"
-              tone="auto"
-            />
+          )}
+          <div className="mt-4 grid w-full min-w-0 grid-cols-2 gap-2">
+            <FocusChip label={t("You own")} onClick={() => onFocus("owned")} />
+            <FocusChip label={t("You owe")} onClick={() => onFocus("debt")} />
+            <FocusChip label={t("Invested")} onClick={() => onFocus("invested")} />
+            <FocusChip label={t("Cash & savings")} onClick={() => onFocus("cash")} />
           </div>
-        ) : null}
-      </section>
+          {heads.moves.state !== "empty" ? (
+            <div className="mt-4 border-t border-border pt-3">
+              <p className="text-sm font-medium">{t("Change this month")}</p>
+              <p className="fin-muted mt-1 text-sm leading-5">{t("From what you recorded. A holding stays at the price you entered.")}</p>
+              <CombinedHeadline
+                parts={moves.map((row) => ({ amountMinor: row.change, currency: row.currency }))}
+                display={display}
+                book={book}
+                nowMs={nowMs}
+                busy={finance.busy}
+                size="text-2xl"
+                tone="auto"
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-      <Coming
-        title={t("Coming expenses")}
-        body={t("Bills, rent, subscriptions, and fixed runs.")}
-        rows={expenses}
-        parts={expenseParts}
-        emptyTitle={t("Program a bill")}
-        emptyBody={t("Rent, a subscription, or a course with an end.")}
-        onEmpty={onProgram}
-        onPaid={(id, date) => finance.markPaid(id, date)}
-        onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
-        paidLabel={t("Mark paid")}
-        book={book}
-        display={display}
-        nowMs={nowMs}
-        busy={finance.busy}
-      />
-      <Coming
-        title={t("Coming income")}
-        body={t("Paydays, planned income, and payouts.")}
-        rows={income}
-        parts={incomeParts}
-        emptyTitle={t("Program income")}
-        emptyBody={t("A payday, money you will get, or a payout.")}
-        onEmpty={onIncome}
-        onPaid={(id, date) => finance.markPaid(id, date)}
-        onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
-        paidLabel={t("Mark received")}
-        book={book}
-        display={display}
-        nowMs={nowMs}
-        busy={finance.busy}
-      />
+      {panels.includes("expenses") ? (
+        <section className="fin-panel" data-finance-panel="expenses">
+          <h2 className="fin-kicker">{t("This month's expenses")}</h2>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("Paid this month.")}</p>
+          {spentParts.length === 0 && paidParts.length === 0 ? (
+            <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
+          ) : spentParts.length > 0 ? (
+            <CombinedHeadline parts={spentParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="out" />
+          ) : null}
+          {paidParts.length > 0 ? (
+            <div className="mt-4 border-t border-border pt-3">
+              <p className="text-sm font-medium">{t("Payments")}</p>
+              <CombinedHeadline parts={paidParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-2xl" tone="out" />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-      <section className="fin-panel fin-planned">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="fin-kicker">{t("If these land")}</h2>
-          <span className="stamp">{t("Not actual")}</span>
-        </div>
-        <p className="fin-muted mt-2 text-sm leading-5">{t("This month if the plan happens. Not a lifetime total.")}</p>
-        {monthPlan.length === 0 ? <p className="mt-4 text-base">{t("Nothing planned in this window")}</p> : <StaticHeadline head={heads.plan} fetchedMs={book?.fetchedMs || 0} size="text-4xl" />}
-      </section>
-      <NextThirty nextIn={heads.nextIn} nextOut={heads.nextOut} net={heads.next} overdueIn={heads.overdueIn} overdueOut={heads.overdueOut} fetchedMs={book?.fetchedMs || 0} />
+      {place === "expenses" && panels.includes("activity") ? children : null}
+
+      {panels.includes("coming-expenses") ? (
+        <Coming
+          title={t("Coming expenses")}
+          body={t("Bills, rent, subscriptions, and fixed runs.")}
+          rows={comingOut}
+          parts={comingOutParts}
+          emptyTitle={t("Program a bill")}
+          emptyBody={t("Rent, a subscription, or a course with an end.")}
+          onEmpty={onProgram}
+          onPaid={(id, date) => finance.markPaid(id, date)}
+          onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
+          paidLabel={t("Mark paid")}
+          book={book}
+          display={display}
+          nowMs={nowMs}
+          busy={finance.busy}
+        />
+      ) : null}
+
+      {panels.includes("income") ? (
+        <section className="fin-panel" data-finance-panel="income">
+          <h2 className="fin-kicker">{t("This month's income")}</h2>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("Received this month.")}</p>
+          {earnedParts.length === 0 ? (
+            <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
+          ) : (
+            <CombinedHeadline parts={earnedParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="in" />
+          )}
+        </section>
+      ) : null}
+
+      {place === "income" && panels.includes("activity") ? children : null}
+
+      {panels.includes("coming-income") ? (
+        <Coming
+          title={t("Coming income")}
+          body={t("Paydays, planned income, and payouts.")}
+          rows={incomeRows}
+          parts={incomeParts}
+          emptyTitle={t("Program income")}
+          emptyBody={t("A payday, money you will get, or a payout.")}
+          onEmpty={onIncome}
+          onPaid={(id, date) => finance.markPaid(id, date)}
+          onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
+          paidLabel={t("Mark received")}
+          book={book}
+          display={display}
+          nowMs={nowMs}
+          busy={finance.busy}
+        />
+      ) : null}
+
+      {panels.includes("payouts") ? (
+        <Coming
+          title={t("Investment payouts")}
+          body={t("The payout only. The principal stays what you entered.")}
+          rows={payoutRows}
+          parts={payoutParts}
+          emptyTitle={t("Program income")}
+          emptyBody={t("A payday, money you will get, or a payout.")}
+          onEmpty={openPayout}
+          onPaid={(id, date) => finance.markPaid(id, date)}
+          onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
+          paidLabel={t("Mark received")}
+          book={book}
+          display={display}
+          nowMs={nowMs}
+          busy={finance.busy}
+        />
+      ) : null}
+
+      {panels.includes("result") ? (
+        <section className="fin-panel" data-finance-panel="result">
+          <h2 className="fin-kicker">{t("This month's result")}</h2>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("Income received minus expenses paid.")}</p>
+          {flow.length === 0 ? (
+            <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
+          ) : (
+            <>
+              <CombinedHeadline parts={flowParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="auto" />
+              {heads.previous.state === "ready" ? (
+                <p className="fin-muted mt-2 text-sm">{fill("Last month left {amount}", { amount: formatMoney(heads.previous.amountMinor, heads.previous.currency) })}</p>
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : null}
+
+      {panels.includes("upcoming") ? (
+        <section className="fin-panel" data-finance-panel="upcoming">
+          <h2 className="fin-kicker">{t("Upcoming")}</h2>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("Still ahead. Open a tab for the full list.")}</p>
+          <button type="button" className="mt-4 block w-full text-left" onClick={openExpenses}>
+            <p className="text-sm font-extrabold tracking-wide uppercase">{t("Coming expenses")}</p>
+            {comingOut.length === 0 ? (
+              <p className="fin-muted mt-1 text-sm">{t("Nothing planned in this window")}</p>
+            ) : (
+              <CombinedHeadline parts={comingOutParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="out" />
+            )}
+          </button>
+          <button type="button" className="mt-4 block w-full text-left" onClick={openIncome}>
+            <p className="text-sm font-extrabold tracking-wide uppercase">{t("Coming income")}</p>
+            {comingIn.length === 0 ? (
+              <p className="fin-muted mt-1 text-sm">{t("Nothing planned in this window")}</p>
+            ) : (
+              <CombinedHeadline parts={listed(comingIn)} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="in" />
+            )}
+          </button>
+          {heads.plan.state !== "empty" ? (
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium">{t("If these land")}</p>
+                <span className="stamp">{t("Not actual")}</span>
+              </div>
+              <p className="fin-muted mt-1 text-sm leading-5">{t("This month if the plan happens. Not a lifetime total.")}</p>
+              <StaticHeadline head={heads.plan} size="text-3xl" />
+            </div>
+          ) : null}
+          <NextThirty nextIn={heads.nextIn} nextOut={heads.nextOut} net={heads.next} overdueIn={heads.overdueIn} overdueOut={heads.overdueOut} />
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -245,23 +392,21 @@ function NextThirty({
   net,
   overdueIn,
   overdueOut,
-  fetchedMs,
 }: {
   nextIn: Headline;
   nextOut: Headline;
   net: Headline;
   overdueIn: Headline;
   overdueOut: Headline;
-  fetchedMs: number;
 }) {
   const t = useT();
   const quiet = [net, nextIn, nextOut, overdueIn, overdueOut].every((head) => head.state === "empty");
   if (quiet) return null;
   return (
-    <section className="fin-window">
+    <section className="fin-window mt-4">
       <h2 className="fin-kicker">{t("Next 30 days")}</h2>
       <p className="fin-muted mt-2 text-sm leading-5">{t("Planned in and out for the next 30 days, plus anything overdue. Not this month's leftover.")}</p>
-      <StaticHeadline head={net} fetchedMs={fetchedMs} size="text-4xl" />
+      <StaticHeadline head={net} size="text-4xl" />
       {nextIn.state === "ready" || nextOut.state === "ready" ? (
         <div className="mt-3 grid w-full min-w-0 grid-cols-2 gap-2">
           {nextIn.state === "ready" ? <Mini label={t("Incoming")} value={formatMoney(nextIn.amountMinor, nextIn.currency)} tone="in" /> : null}
