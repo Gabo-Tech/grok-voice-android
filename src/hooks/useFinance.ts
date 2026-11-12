@@ -194,11 +194,11 @@ export function useFinance() {
     [inApp, run],
   );
 
-  const refreshRates = useCallback(() => {
+  const refreshRates = useCallback((force = false) => {
     if (!inApp) return;
     setBusy(true);
     void api
-      .refreshFinanceRates()
+      .refreshFinanceRates(force)
       .then((next) => {
         setSnapshot(next);
         setError(null);

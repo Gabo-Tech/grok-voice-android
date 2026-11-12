@@ -197,7 +197,9 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
             {cells.map((day, i) => {
               if (!day) return <span key={`pad-${i}`} />;
               const on = sameDay(day, selected);
-              const count = monthEvents.filter((event) => overlapsDay(event, day)).length;
+              const dayEvents = monthEvents.filter((event) => overlapsDay(event, day));
+              const count = dayEvents.length;
+              const money = dayEvents.some((event) => event.source === "finance");
               const today = sameDay(day, new Date());
               return (
                 <button
@@ -211,7 +213,7 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
                   } ${today && !on ? "underline decoration-2 underline-offset-2" : ""}`}
                 >
                   {day.getDate()}
-                  <span className="text-xs leading-4">{count > 0 ? count : ""}</span>
+                  <span className="text-[10px] leading-3" style={money ? { color: "var(--gold)" } : undefined}>{count > 0 ? count : ""}</span>
                 </button>
               );
             })}
@@ -287,24 +289,36 @@ function EventList({ events, onOpen }: { events: CalEvent[]; onOpen: (event: Cal
   const t = useT();
   return (
     <div className="divide-y divide-border border-y border-border">
-      {events.map((event, i) => (
-        <RowButton key={`${event.id || event.startMs}-${i}`} onClick={() => onOpen(event)} className="gap-4">
-          <div className="w-14 shrink-0 pt-0.5 text-right">
-            <p className="text-sm leading-5 tabular-nums text-foreground">
-              {event.allDay ? t("All day") : formatClock(event.startMs)}
-            </p>
-          </div>
-          <div className="min-w-0 flex-1 border-l border-border pl-4">
-            <p className="truncate text-base leading-6 text-foreground">{event.title || t("Untitled")}</p>
-            <p className="mt-1 truncate text-sm leading-5 text-muted-foreground">
-              {event.allDay ? t("All day") : formatSpan(event.startMs, event.endMs, false)}
-              {event.location ? ` · ${event.location}` : ""}
-              {event.recurrence && event.recurrence !== "none" ? ` · ${repeatName(event.recurrence, t)}` : ""}
-              {event.source === "local" ? ` · ${t("in app")}` : ""}
-            </p>
-          </div>
-        </RowButton>
-      ))}
+      {events.map((event, i) => {
+        const finance = event.source === "finance";
+        return (
+          <RowButton key={`${event.id || event.startMs}-${i}`} onClick={finance ? undefined : () => onOpen(event)} className="gap-4">
+            <div className="w-16 shrink-0 pt-0.5 text-right">
+              <p className="text-sm leading-5 tabular-nums text-foreground">
+                {finance ? t("Scheduled") : event.allDay ? t("All day") : formatClock(event.startMs)}
+              </p>
+            </div>
+            <div className="min-w-0 flex-1 border-l border-border pl-4">
+              <p className="truncate text-base leading-6 text-foreground">{event.title || t("Untitled")}</p>
+              <p className="mt-1 text-sm leading-5 break-words text-muted-foreground">
+                {finance ? (
+                  <>
+                    {event.location ? `${event.location} · ` : ""}
+                    {t("From Finance")}
+                  </>
+                ) : (
+                  <>
+                    {event.allDay ? t("All day") : formatSpan(event.startMs, event.endMs, false)}
+                    {event.location ? ` · ${event.location}` : ""}
+                    {event.recurrence && event.recurrence !== "none" ? ` · ${repeatName(event.recurrence, t)}` : ""}
+                    {event.source === "local" ? ` · ${t("in app")}` : ""}
+                  </>
+                )}
+              </p>
+            </div>
+          </RowButton>
+        );
+      })}
     </div>
   );
 }

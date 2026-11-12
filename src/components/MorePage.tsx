@@ -303,7 +303,7 @@ export function MorePage({
                     })
                   : t("Today's time is counted on this phone.")}
               </p>
-              <div className="mt-3 grid grid-cols-4 gap-2">
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 {[
                   { minutes: 0, label: t("Off") },
                   { minutes: 15, label: "15" },
@@ -348,7 +348,7 @@ export function MorePage({
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 {t("Counts xAI, OpenAI, and on-device time together, so a fallback key is not silent.")}
               </p>
-              <div className="mt-3 grid grid-cols-4 gap-2">
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 {[
                   { minutes: 0, label: t("Off") },
                   { minutes: 60, label: "60" },
@@ -481,7 +481,7 @@ export function MorePage({
                       saveBudget({ ...settings, locale: choice.id });
                     }}
                     className={cn(
-                      "h-12 border px-2 text-sm",
+                      "min-h-12 h-auto border px-2 py-2 text-center text-sm leading-4 whitespace-normal",
                       (settings.locale || "") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
                     )}
                   >
@@ -503,7 +503,7 @@ export function MorePage({
                     type="button"
                     onClick={() => saveBudget({ ...settings, localSpeech: choice.id })}
                     className={cn(
-                      "h-12 border px-2 text-sm",
+                      "min-h-12 h-auto border px-2 py-2 text-center text-sm leading-4 whitespace-normal",
                       (settings.localSpeech || "en") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
                     )}
                   >

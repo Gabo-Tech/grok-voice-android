@@ -85,7 +85,7 @@ export function RepeatFields({
                 aria-pressed={on}
                 onClick={() => onWeekdays(on ? weekdays.filter((value) => value !== day.id) : [...weekdays, day.id].sort())}
                 className={cn(
-                  "h-12 border text-xs",
+                  "h-11 min-w-0 border px-0 text-[11px]",
                   on ? "border-2 border-foreground font-medium text-foreground" : "border-border text-muted-foreground",
                 )}
               >

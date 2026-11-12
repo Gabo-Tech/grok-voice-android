@@ -28,7 +28,17 @@ pub fn search_redirect() -> reqwest::redirect::Policy {
 }
 
 pub fn rates_redirect() -> reqwest::redirect::Policy {
-    allow_https(&["api.frankfurter.app", "api.coingecko.com"])
+    allow_https(&[
+        "api.frankfurter.dev",
+        "api.frankfurter.app",
+        "open.er-api.com",
+        "data-api.ecb.europa.eu",
+        "cdn.jsdelivr.net",
+        "latest.currency-api.pages.dev",
+        "api.coingecko.com",
+        "api.coinbase.com",
+        "api.kraken.com",
+    ])
 }
 
 /// A bring-your-own model link. HTTPS only, no embedded password, and no local or private address.
@@ -170,6 +180,35 @@ mod tests {
             "https://evil.example/file",
             &["github.com"]
         ));
+    }
+
+    #[test]
+    fn rate_hosts_include_the_frankfurter_successor_and_the_fallbacks() {
+        let hosts = [
+            "https://api.frankfurter.dev/v1/latest?base=EUR",
+            "https://open.er-api.com/v6/latest/EUR",
+            "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?lastNObservations=1&format=csvdata",
+            "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/eur.min.json",
+            "https://latest.currency-api.pages.dev/v1/currencies/eur.min.json",
+            "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur",
+            "https://api.coinbase.com/v2/exchange-rates?currency=EUR",
+            "https://api.kraken.com/0/public/Ticker?pair=XXBTZEUR",
+        ];
+        let patterns = [
+            "api.frankfurter.dev",
+            "open.er-api.com",
+            "data-api.ecb.europa.eu",
+            "cdn.jsdelivr.net",
+            "latest.currency-api.pages.dev",
+            "api.coingecko.com",
+            "api.coinbase.com",
+            "api.kraken.com",
+        ];
+        for url in hosts {
+            assert!(https_url_allowed(url, &patterns), "{url}");
+        }
+        assert!(!https_url_allowed("https://api.frankfurter.dev.evil.test/latest", &patterns));
+        assert!(!https_url_allowed("http://api.frankfurter.dev/v1/latest", &["api.frankfurter.dev"]));
     }
 
     #[test]

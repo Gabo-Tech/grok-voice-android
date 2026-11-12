@@ -1104,8 +1104,8 @@ pub fn export_finance_pdf(app: AppHandle, filter: crate::finance::PdfRequest) ->
 }
 
 #[tauri::command]
-pub fn refresh_finance_rates(app: AppHandle) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().refresh_rates(&app).map_err(msg)
+pub fn refresh_finance_rates(app: AppHandle, force: Option<bool>) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().refresh_rates(&app, force.unwrap_or(false)).map_err(msg)
 }
 
 #[tauri::command]

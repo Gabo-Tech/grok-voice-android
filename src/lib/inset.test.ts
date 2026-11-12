@@ -26,6 +26,7 @@ import {
 } from "./financeMath.ts";
 import { catalogHas, catalogStats } from "./i18n.ts";
 import { financePanels, FINANCE_TABS, readFinanceTab } from "./financeTabs.ts";
+import { appliedFilters, clearedFilters, withoutFilter, type LedgerFilters } from "./financeFilters.ts";
 import { readFileSync } from "node:fs";
 import { resolveInset, scrollDelta } from "./keyboard.ts";
 
@@ -468,6 +469,44 @@ assert.ok(page.includes("sessionStorage"));
 assert.ok(page.includes("grok-finance-tab"));
 assert.ok(page.includes("useFinanceRateWatch"));
 assert.ok(page.includes("refreshRates"));
+assert.ok(page.includes("appliedFilters"));
+assert.ok(page.includes('t("Filters")'));
+assert.ok(page.includes("fin-actions"));
+assert.ok(page.includes("chip-scroller"));
+assert.equal(page.includes('className="mb-2 flex flex-wrap gap-2"'), false);
+
+const blankFilters: LedgerFilters = { account: "all", category: "all", currency: "all", recurrence: "all", direction: "expense", group: "all" };
+assert.deepEqual(appliedFilters(blankFilters, { account: "Mercury" }, "expense"), []);
+const narrowed = { ...blankFilters, account: "acct-mercury", currency: "CHF", direction: "payment" };
+const chips = appliedFilters(narrowed, { account: "Mercury", currency: "CHF", direction: "Payment" }, "expense");
+assert.deepEqual(chips.map((chip) => chip.id), ["account", "currency", "direction"]);
+assert.equal(withoutFilter(narrowed, "currency", "expense").currency, "all");
+assert.equal(withoutFilter(narrowed, "direction", "expense").direction, "expense");
+assert.equal(clearedFilters("income").direction, "income");
+assert.equal(clearedFilters("any").direction, "all");
+
+const rentDates = occurrenceDates(
+  { id: "rent", name: "Rent", direction: "expense", cadence: "monthly", startDate: "2026-01-20", amountMinor: 120000, currency: "EUR" },
+  "2026-11-12",
+);
+assert.ok(rentDates.includes("2026-11-20"));
+assert.ok(rentDates.includes("2026-12-20"));
+const payoutDates = occurrenceDates(
+  { id: "eggs", name: "Nitroeggs", direction: "income", purpose: "investment_payout", cadence: "every_n_days", intervalDays: 10, startDate: "2026-11-10", amountMinor: 1400, currency: "USD" },
+  "2026-11-12",
+);
+assert.ok(payoutDates.includes("2026-11-10"));
+assert.ok(payoutDates.includes("2026-11-20"));
+const once = occurrenceDates(
+  { id: "bonus", name: "Bonus", direction: "income", cadence: "", startDate: "2026-11-20", amountMinor: 50000, currency: "EUR" },
+  "2026-11-12",
+);
+assert.deepEqual(once, ["2026-11-20"]);
+
+const calendar = readFileSync(new URL("../components/CalendarPage.tsx", import.meta.url), "utf8");
+assert.ok(calendar.includes('event.source === "finance"'));
+assert.ok(calendar.includes('t("From Finance")'));
+assert.ok(calendar.includes('t("Scheduled")'));
 
 const overrideAt = math.indexOf("manualQuote(book, sourceCode, target, true)");
 const cachedAt = math.indexOf("cachedQuote(book, sourceCode, target)");
@@ -485,6 +524,13 @@ for (const key of [
   "Add expense",
   "Investment payouts",
   "Tap a chart to filter this screen.",
+  "Filters",
+  "Clear filters",
+  "Remove filter",
+  "Categories",
+  "Currencies",
+  "Scheduled",
+  "From Finance",
 ]) {
   assert.equal(catalogHas(key), true, key);
 }
