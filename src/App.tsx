@@ -15,7 +15,7 @@ import { useAgenda } from "@/hooks/useAgenda";
 import { useFinance } from "@/hooks/useFinance";
 import { useVoice } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type Settings, type WakewordStatus } from "@/lib/api";
-import type { SettingsDestination } from "@/lib/flow";
+import { applyAppearance, choiceFromSettings, readStoredAppearance, rememberAppearance, type AppearanceChoice } from "@/lib/appearance";
 import { popUntil, pushStep } from "@/lib/history";
 import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ function previewRoute(inApp: boolean): { app: boolean; tab: AppTab; section: Sec
   const tabs: AppTab[] = ["talk", "notes", "calendar", "reminders", "finance", "more"];
   const asked = params.get("tab");
   const tab = tabs.includes(asked as AppTab) ? (asked as AppTab) : "talk";
-  const sections: Section[] = ["menu", "model", "wake", "people", "spend", "language", "keys", "music", "updates"];
+  const sections: Section[] = ["menu", "model", "wake", "people", "spend", "language", "keys", "music", "updates", "finance"];
   const sectionAsked = params.get("section");
   const section = sections.includes(sectionAsked as Section) ? (sectionAsked as Section) : "menu";
   return { app: true, tab, section };
@@ -77,6 +77,16 @@ export default function App() {
   const finance = useFinance();
   const t = useT();
   const thumb = useThumbBar();
+  const [appearance, setAppearance] = useState<AppearanceChoice>(() => readStoredAppearance());
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const paint = () => applyAppearance(appearance, media.matches);
+    paint();
+    if (appearance !== "system") return;
+    media.addEventListener("change", paint);
+    return () => media.removeEventListener("change", paint);
+  }, [appearance]);
 
   useEffect(() => {
     if (!preview.app || preview.section === "menu") return;
@@ -111,11 +121,21 @@ export default function App() {
       .then((s) => {
         setAppLocale(s.locale || "");
         setOnboarded(s.onboarded);
+        const choice = choiceFromSettings(s.appearance);
+        if (choice) {
+          rememberAppearance(choice);
+          setAppearance(choice);
+        }
       })
       .catch(() => setOnboarded(false));
     let unlisten: (() => void) | undefined;
     void listen<Settings>("voice://settings", (event) => {
       setAppLocale(event.payload.locale || "");
+      const choice = choiceFromSettings(event.payload.appearance);
+      if (choice) {
+        rememberAppearance(choice);
+        setAppearance(choice);
+      }
     }).then((fn) => {
       unlisten = fn;
     });
@@ -162,7 +182,7 @@ export default function App() {
     );
   }
 
-  const openSettings = (where: SettingsDestination) => {
+  const openSettings = (where: Section) => {
     if (tab !== "more") {
       const prev = tab;
       const prevFocus = moreFocus;
@@ -237,7 +257,7 @@ export default function App() {
         ) : null}
         {seen.finance ? (
         <div className={tab === "finance" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
-          <FinancePage finance={finance} active={tab === "finance"} />
+          <FinancePage finance={finance} active={tab === "finance"} onOpenCurrency={() => openSettings("finance")} />
         </div>
         ) : null}
         {seen.more ? (
@@ -256,6 +276,8 @@ export default function App() {
               void api.authStatus().then(setAuth);
             }}
             onReplayTour={() => setOnboarded(false)}
+            finance={finance}
+            onAppearance={setAppearance}
           />
         </div>
         ) : null}

@@ -88,8 +88,11 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
     val content = findViewById<View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
-      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-      v.setPadding(0, 0, 0, ime.bottom)
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+      // Shrink the WebView to the top of the keyboard once. The page hides the
+      // bottom bar and does not add this height again.
+      v.setPadding(0, 0, 0, ime)
+      publishIme(ime)
       insets
     }
     // In-app history is handled in the WebView. At the root, back leaves the task
@@ -180,8 +183,22 @@ class MainActivity : TauriActivity() {
     return hit
   }
 
+  fun paintCanvas(hex: String) {
+    if (!hex.matches(Regex("^#[0-9A-Fa-f]{6}$"))) return
+    val color = Color.parseColor(hex)
+    runOnUiThread {
+      window?.decorView?.setBackgroundColor(color)
+      findWebView(window?.decorView)?.setBackgroundColor(color)
+    }
+  }
+
+  private fun publishIme(px: Int) {
+    val root = window?.decorView ?: return
+    dispatchJs(root, "window.__grokIme&&window.__grokIme($px)")
+  }
+
   override fun onWebViewCreate(webView: WebView) {
-    webView.setBackgroundColor(Color.parseColor("#0E0E0E"))
+    webView.setBackgroundColor(Color.parseColor("#0E0F11"))
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
     }
@@ -198,6 +215,7 @@ class MainActivity : TauriActivity() {
     // software layer smears icons and flattens text. Leave the default.
     webView.setLayerType(View.LAYER_TYPE_NONE, null)
     webView.addJavascriptInterface(BackBridge(this), "GrokNav")
+    webView.addJavascriptInterface(ThemeBridge(this), "GrokTheme")
   }
 
   override fun onPause() {
@@ -279,5 +297,12 @@ private class BackBridge(private val activity: MainActivity) {
   @JavascriptInterface
   fun setCanGoBack(can: Boolean) {
     activity.runOnUiThread { activity.syncBackCallback(can) }
+  }
+}
+
+private class ThemeBridge(private val activity: MainActivity) {
+  @JavascriptInterface
+  fun setCanvas(hex: String) {
+    activity.paintCanvas(hex)
   }
 }

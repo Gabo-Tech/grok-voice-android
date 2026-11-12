@@ -5,11 +5,14 @@ import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Downl
 import { DebugPanel } from "@/components/DebugPanel";
 import { LocalPacks } from "@/components/LocalPacks";
 import { Field } from "@/components/Field";
+import { CurrencyEditor } from "@/components/CurrencyEditor";
 import { PageChrome, RowButton } from "@/components/PageChrome";
+import { ThemePicker } from "@/components/ThemePicker";
 import { PeoplePage } from "@/components/PeoplePage";
 import { WakeView } from "@/components/WakeView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { FinanceState } from "@/hooks/useFinance";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
 import { VoicePicker } from "@/components/VoicePicker";
@@ -17,6 +20,7 @@ import { OPENAI_VOICES, XAI_VOICES } from "@/lib/voices";
 import { providerLabel } from "@/lib/flow";
 import { VoiceOrder } from "@/components/VoiceOrder";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
+import { normalizeAppearance } from "@/lib/appearance";
 import { fill, setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +40,8 @@ export type Section =
   | "language"
   | "alerts"
   | "music"
-  | "updates";
+  | "updates"
+  | "finance";
 
 const PROVIDERS = [
   { id: "xai", label: "xAI" },
@@ -55,6 +60,8 @@ export function MorePage({
   onWake,
   onSignedOut,
   onReplayTour,
+  finance,
+  onAppearance,
 }: {
   voice: VoiceState;
   wake: WakewordStatus;
@@ -66,6 +73,8 @@ export function MorePage({
   onWake: (s: WakewordStatus) => void;
   onSignedOut: () => void;
   onReplayTour: () => void;
+  finance: FinanceState;
+  onAppearance: (choice: ReturnType<typeof normalizeAppearance>) => void;
 }) {
   const t = useT();
   const section = initialSection;
@@ -94,6 +103,8 @@ export function MorePage({
       .then((s) => {
         setQuiet(s.idleTimeoutSecs);
         setSettings(s);
+        const choice = normalizeAppearance(s.appearance);
+        if (s.appearance) onAppearance(choice);
       })
       .catch(() => {
         if (!isTauri()) {
@@ -115,6 +126,7 @@ export function MorePage({
             localSpeech: "en",
             locale: "",
             musicPlayer: "local",
+            appearance: "graphite",
           });
         }
       });
@@ -126,11 +138,12 @@ export function MorePage({
       setSettings(event.payload);
       setQuiet(event.payload.idleTimeoutSecs);
       setAppLocale(event.payload.locale || "");
+      if (event.payload.appearance) onAppearance(normalizeAppearance(event.payload.appearance));
     }).then((fn) => {
       unlisten = fn;
     });
     return () => unlisten?.();
-  }, []);
+  }, [onAppearance]);
 
   const setQuietGap = (seconds: number) => {
     const next = Math.min(120, Math.max(5, seconds));
@@ -569,31 +582,50 @@ export function MorePage({
     );
   }
 
+  if (section === "finance") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
+        <Back onClick={() => setSection("menu")} />
+        <h2 className="masthead px-1 text-2xl">{t("Finance")}</h2>
+        <div className="masthead-rule mx-1" />
+        <p className="mt-3 mb-4 px-1 text-sm leading-6 text-muted-foreground">
+          {t("Default currency for amounts you do not name. An account keeps its own. Nothing is converted.")}
+        </p>
+        <CurrencyEditor finance={finance} />
+      </div>
+    );
+  }
+
   const accounts = auth.accounts ?? [];
   const first = accounts[0];
   const query = settingsQuery.trim().toLowerCase();
   const languageDetail = localeDetail(settings?.locale, t);
+  const saveLook = (next: Settings) => {
+    setSettings(next);
+    if (next.appearance) onAppearance(normalizeAppearance(next.appearance));
+    void api.saveSettings(next).then(setSettings).catch(() => setSettings(next));
+  };
   const groups: SettingsFolder[] = [
     {
+      id: "appearance",
+      title: t("Appearance"),
+      hint: `${t("Theme")} ${t("Graphite")} ${t("Ink")} ${t("Stone")} ${t("System")}`,
+      extra: <ThemePicker settings={settings} onChange={saveLook} />,
+      rows: [],
+    },
+    {
       id: "voice",
-      title: t("Voice and AI"),
+      title: t("Voice"),
       rows: [
-        { section: "keys", icon: <KeyRound className="size-4" />, title: t("Voice keys"), detail: t("Order and fallback") },
-        { section: "model", icon: <AudioLines className="size-4" />, title: t("Voice and model"), detail: t("Names sent with the xAI key") },
+        { section: "model", icon: <AudioLines className="size-4" />, title: t("Voice and model"), detail: t("The voice and the model sent with the xAI key.") },
         {
           section: "spend",
           icon: <Wallet className="size-4" />,
           title: t("Daily voice budget"),
-          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off"),
+          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("A soft cap on talk time. Off until you set minutes."),
         },
-      ],
-    },
-    {
-      id: "talk",
-      title: t("Talk on this phone"),
-      rows: [
-        { section: "packs", icon: <Package className="size-4" />, title: t("On-device packs"), detail: t("Speech, model, and voice") },
-        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: fill("{n}s", { n: quiet }) },
+        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: t("How long Talk waits before only Hey Grok is heard.") },
+        { section: "packs", icon: <Package className="size-4" />, title: t("On-device packs"), detail: t("Speech and the model downloaded to this phone.") },
       ],
     },
     {
@@ -604,25 +636,25 @@ export function MorePage({
           section: "wake",
           icon: <Wand2 className="size-4" />,
           title: t("Wake word"),
-          detail: wake.trained ? t("Hey Grok enrolled") : t("Not enrolled yet"),
+          detail: wake.trained ? t("Hey Grok enrolled") : t("Hands-free Hey Grok. It can stay on when you leave."),
         },
       ],
     },
     {
       id: "alerts",
-      title: t("Notifications and spoken alerts"),
+      title: t("Spoken alerts"),
       rows: [
         {
           section: "alerts",
           icon: <Bell className="size-4" />,
           title: t("Notification alerts"),
-          detail: settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("Normal"),
+          detail: settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("A notification, or a spoken line that uses your name."),
         },
         {
           section: "access",
           icon: <Bell className="size-4" />,
           title: t("Phone access"),
-          detail: t("Notifications, Do Not Disturb, history, music"),
+          detail: t("What this app may read on the phone."),
         },
       ],
     },
@@ -639,53 +671,75 @@ export function MorePage({
       ],
     },
     {
+      id: "finance",
+      title: t("Finance"),
+      rows: [
+        {
+          section: "finance",
+          icon: <Wallet className="size-4" />,
+          title: t("Default currency"),
+          detail: finance.snapshot.defaultCurrency
+            ? finance.snapshot.defaultCurrency.toUpperCase()
+            : t("Used when you do not name a currency."),
+        },
+      ],
+    },
+    {
+      id: "people",
+      title: t("People"),
+      rows: [{ section: "people", icon: <Users className="size-4" />, title: t("People"), detail: t("Nicknames, birthdays, and how you reach them.") }],
+    },
+    {
+      id: "keys",
+      title: t("API keys"),
+      rows: [
+        {
+          section: "keys",
+          icon: <KeyRound className="size-4" />,
+          title: t("Voice keys"),
+          detail: t("Keys for Grok and OpenAI stay on this phone. The first one is tried first."),
+        },
+      ],
+    },
+    {
       id: "language",
       title: t("Language"),
       rows: [{ section: "language", icon: <Languages className="size-4" />, title: t("Language"), detail: languageDetail }],
     },
     {
       id: "privacy",
-      title: t("Backup and privacy"),
+      title: t("Backup"),
       rows: [
-        { section: "people", icon: <Users className="size-4" />, title: t("People"), detail: t("Nicknames and how to reach them") },
-        { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), detail: t("Pinned facts for on-device Talk") },
-        {
-          section: "backup",
-          icon: <Archive className="size-4" />,
-          title: t("Backup"),
-          detail: t("Encrypted notes, People, Finance, and memory"),
-        },
-      ],
-    },
-    {
-      id: "updates",
-      title: t("Updates"),
-      rows: [
-        {
-          section: "updates",
-          icon: <Download className="size-4" />,
-          title: t("Updates"),
-          detail: update?.installed ? `${t("Installed version")} ${update.installed}` : t("The installed version"),
-        },
+        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("An encrypted file of notes, People, Finance, and memory.") },
+        { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), detail: t("Pinned facts Talk can use on this phone.") },
       ],
     },
     {
       id: "about",
       title: t("About"),
-      rows: [{ section: "debug", icon: <Bug className="size-4" />, title: t("Debug"), detail: t("Logs, echo guard, and sign out") }],
+      rows: [
+        {
+          section: "updates",
+          icon: <Download className="size-4" />,
+          title: t("Updates"),
+          detail: update?.installed ? `${t("Installed version")} ${update.installed}` : t("Check for a newer version. Nothing installs from here."),
+        },
+        { section: "debug", icon: <Bug className="size-4" />, title: t("Debug"), detail: t("Logs and echo guard, if something sounds wrong.") },
+      ],
     },
   ];
+
   const visibleGroups = groups
     .map((group) => ({
       ...group,
-      rows: group.rows.filter((row) => !query || `${group.title} ${row.title} ${row.detail}`.toLowerCase().includes(query)),
+      rows: group.rows.filter((row) => !query || `${group.title} ${group.hint ?? ""} ${row.title} ${row.detail}`.toLowerCase().includes(query)),
     }))
-    .filter((group) => group.rows.length > 0);
+    .filter((group) => group.rows.length > 0 || (group.extra && (!query || `${group.title} ${group.hint ?? ""}`.toLowerCase().includes(query))));
 
   return (
     <PageChrome title={t("Settings")} subtitle={t("Voice, music, and this phone")} active={active && section === "menu"}>
       <ListenStatus />
-      <div className="mb-6 border border-border px-3 py-3">
+      <div className="mag-panel mb-6">
         <p className="text-base text-foreground">
           {first ? `${t("Tried first")}: ${t(providerLabel(first.provider))}` : t("No voice yet")}
         </p>
@@ -722,21 +776,22 @@ export function MorePage({
       {visibleGroups.map((group) => {
         const open = query.length > 0 || openGroups[group.id] !== false;
         return (
-          <section key={group.id} className="mb-6">
+          <section key={group.id} className="mag-panel mb-4">
             <button
               type="button"
-              className="mb-2 flex min-h-12 w-full items-center justify-between gap-3 px-1 text-left"
+              className="mb-2 flex min-h-12 w-full items-center justify-between gap-3 text-left"
               aria-expanded={open}
               onClick={() => {
                 if (query) return;
                 setOpenGroups((current) => ({ ...current, [group.id]: current[group.id] === false }));
               }}
             >
-              <span className="text-sm text-muted-foreground">{group.title}</span>
+              <span className="chapter">{group.title}</span>
               <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground", !open && "-rotate-90")} />
             </button>
             {open ? (
-              <div className="divide-y divide-border border-y border-border">
+              <div className="space-y-1">
+                {group.extra}
                 {group.rows.map((row) => (
                   <MenuRow
                     key={row.section}
@@ -758,6 +813,8 @@ export function MorePage({
 type SettingsFolder = {
   id: string;
   title: string;
+  hint?: string;
+  extra?: React.ReactNode;
   rows: { section: Section; icon: React.ReactNode; title: string; detail: string }[];
 };
 

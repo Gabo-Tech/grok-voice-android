@@ -99,15 +99,16 @@ export function AssistantView({
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="shrink-0 px-1 pb-3">
         <div className="flex items-start justify-between gap-3">
-          <h1 className="text-2xl leading-tight font-medium tracking-tight">{t("Talk")}</h1>
-          {clock ? <p className="pt-1 text-sm tabular-nums text-muted-foreground">{clock}</p> : null}
+          <h1 className="masthead text-[1.85rem]">{t("Talk")}</h1>
+          {clock ? <p className="stamp">{clock}</p> : null}
         </div>
-        <p className="mt-2 inline-flex min-h-8 items-center border border-border px-2 text-sm text-foreground">
+        <div className="masthead-rule" />
+        <p className="stamp mt-3">
           {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
         </p>
       </header>
 
-      <div className="mb-3 shrink-0 border border-border px-3 py-2">
+      <div className="mag-panel mb-3 shrink-0">
         <label className="flex min-h-12 items-center justify-between gap-3">
           <span>
             <span className="block text-base text-foreground">{t("Listen")}</span>
@@ -177,7 +178,7 @@ export function AssistantView({
       </div>
 
       {voice.handoff && (
-        <div className="mb-3 border border-border px-3 py-3">
+        <div className="mag-panel mb-3">
           <p className="text-sm leading-6 text-foreground">{voice.handoff.summary}</p>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
             {voice.handoff.kind === "delete_person" || voice.handoff.kind === "listen_off" || voice.handoff.kind === "wipe_memory"
@@ -202,7 +203,7 @@ export function AssistantView({
       )}
 
       <form
-        className="mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
+        className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
         onSubmit={(e) => {
           e.preventDefault();
           const text = draft;
@@ -217,18 +218,18 @@ export function AssistantView({
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t("Type a message")}
           aria-label={t("Type a message")}
-          className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto rounded-[16px] border border-border bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
+          className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border border-border bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
         />
         <button
           type="submit"
           disabled={voice.sending || draft.trim().length === 0}
           aria-label={t("Send")}
-          className="grid size-12 shrink-0 place-items-center rounded-full border border-foreground text-foreground disabled:opacity-40"
+          className="grid size-12 shrink-0 place-items-center border border-foreground text-foreground disabled:opacity-40"
         >
           <Send className="size-5" strokeWidth={1.25} />
         </button>
       </form>
-      <div className="shrink-0 pt-4">
+      <div className="talk-mic shrink-0 pt-4">
         <GlowRing phase={voice.phase} level={voice.level} onPress={() => void voice.toggleSession()} />
       </div>
     </div>

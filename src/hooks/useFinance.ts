@@ -214,7 +214,7 @@ function minorOf(raw: string, currency: string): number | null {
 }
 
 function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): FinanceSnapshot {
-  const currency = (draft.currency || current.defaultCurrency || "USD").toUpperCase();
+  const currency = (draft.currency || current.defaultCurrency).toUpperCase();
   const balance = minorOf(draft.balance || "", currency);
   const now = Date.now();
   const existing = current.accounts.find((account) => account.id === draft.id);
@@ -273,7 +273,7 @@ function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): F
 }
 
 function previewTransaction(current: FinanceSnapshot, draft: FinanceTransactionDraft): FinanceSnapshot {
-  const currency = (draft.currency || current.defaultCurrency || "USD").toUpperCase();
+  const currency = (draft.currency || current.defaultCurrency).toUpperCase();
   const amount = minorOf(draft.amount, currency);
   if (!amount) return current;
   const wanted = (draft.accountName || "").trim();
@@ -350,7 +350,7 @@ function previewTransaction(current: FinanceSnapshot, draft: FinanceTransactionD
 }
 
 function previewRule(current: FinanceSnapshot, draft: FinanceRuleDraft): FinanceSnapshot {
-  const currency = (draft.currency || current.defaultCurrency || "USD").toUpperCase();
+  const currency = (draft.currency || current.defaultCurrency).toUpperCase();
   const rule: FinanceRule = {
     id: draft.id || nextId("fr"),
     name: draft.name.trim(),

@@ -73,6 +73,10 @@ pub struct Settings {
     /// Empty and unknown values stay on files on this phone.
     #[serde(default)]
     pub music_player: String,
+    /// `graphite`, `ink`, `stone`, or `system`. Empty and unknown stay on graphite.
+    /// System is never implied for someone who has not picked a theme.
+    #[serde(default)]
+    pub appearance: String,
 }
 
 impl Default for Settings {
@@ -100,6 +104,7 @@ impl Default for Settings {
             notification_delivery: crate::notices::DELIVERY_NORMAL.into(),
             spoken_name: String::new(),
             music_player: crate::music::PLAYER_LOCAL.into(),
+            appearance: String::new(),
         }
     }
 }
@@ -157,6 +162,7 @@ impl SettingsStore {
         }
         s.spoken_name = crate::notices::sanitize_spoken_name(&s.spoken_name);
         s.music_player = crate::music::stored_player(&s.music_player).to_string();
+        s.appearance = stored_appearance(&s.appearance, &self.get().appearance);
         crate::files::write_private(&self.path, &serde_json::to_vec_pretty(&s)?)?;
         *self.inner.write().unwrap() = s.clone();
         Ok(s)
@@ -166,6 +172,29 @@ impl SettingsStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appearance_stays_graphite_until_someone_picks() {
+        assert_eq!(stored_appearance("", ""), "graphite");
+        assert_eq!(stored_appearance("komi", ""), "graphite");
+        assert_eq!(stored_appearance("system", ""), "system");
+        assert_eq!(stored_appearance("", "stone"), "stone");
+        assert_eq!(stored_appearance("ink", "stone"), "ink");
+
+        let path = std::env::temp_dir().join(format!("grok-appearance-{}.json", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let store = SettingsStore::load(path.clone());
+        let first = store.save(Settings::default()).unwrap();
+        assert_eq!(first.appearance, "graphite");
+        let stone = store.save(Settings { appearance: "Stone".into(), ..Settings::default() }).unwrap();
+        assert_eq!(stone.appearance, "stone");
+        let kept = store
+            .save(Settings { appearance: String::new(), daily_budget_minutes: 4, ..store.get() })
+            .unwrap();
+        assert_eq!(kept.appearance, "stone");
+        assert_eq!(kept.daily_budget_minutes, 4);
+        let _ = fs::remove_file(&path);
+    }
 
     #[test]
     fn settings_save_cannot_clear_listen() {
@@ -781,6 +810,19 @@ fn parse_locale(value: &str) -> std::result::Result<String, String> {
         _ => return Err("Language can be English, Spanish, German, Portuguese, Valencian, or follow the phone.".into()),
     };
     Ok(locale)
+}
+
+/// Empty keeps a saved choice. Unknown values, including a first launch, are Graphite.
+pub fn stored_appearance(incoming: &str, previous: &str) -> String {
+    let incoming = incoming.trim().to_ascii_lowercase();
+    if matches!(incoming.as_str(), "graphite" | "ink" | "stone" | "system") {
+        return incoming;
+    }
+    let previous = previous.trim().to_ascii_lowercase();
+    if incoming.is_empty() && matches!(previous.as_str(), "graphite" | "ink" | "stone" | "system") {
+        return previous;
+    }
+    "graphite".into()
 }
 
 fn stored_speech(value: &str) -> String {
