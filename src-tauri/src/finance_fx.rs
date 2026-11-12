@@ -92,6 +92,28 @@ pub fn convert(amount_minor: i64, from: &str, to: &str, book: &FxBook, now_ms: i
     })
 }
 
+/// Codes that cannot move into `display`. An empty result means every part converted.
+pub fn missing_codes(parts: &[(i64, String)], display: &str, book: &FxBook) -> Vec<String> {
+    let display = display.trim().to_ascii_uppercase();
+    let mut missing = Vec::new();
+    for (amount, currency) in parts {
+        if *amount == 0 {
+            continue;
+        }
+        let code = currency.trim().to_ascii_uppercase();
+        if code.is_empty() {
+            continue;
+        }
+        if display.is_empty() || convert(*amount, &code, &display, book, 0).is_none() {
+            if !missing.iter().any(|row: &String| row == &code) {
+                missing.push(code);
+            }
+        }
+    }
+    missing.sort();
+    missing
+}
+
 pub fn combine(parts: &[(i64, String)], display: &str, book: &FxBook, now_ms: i64) -> Option<Converted> {
     let display = display.trim().to_ascii_uppercase();
     if display.is_empty() {
@@ -276,6 +298,8 @@ mod tests {
         assert_eq!(hero.amount_minor, 11_000);
         assert_ne!(hero.amount_minor, 11_100);
         assert!(combine(&[(10_000, "EUR".into()), (100, "XMR".into())], "EUR", &fresh, 1_000).is_none());
+        assert_eq!(missing_codes(&[(10_000, "EUR".into()), (100, "XMR".into())], "EUR", &fresh), vec!["XMR".to_string()]);
+        assert!(missing_codes(&[(10_000, "EUR".into()), (1_100, "USD".into())], "EUR", &fresh).is_empty());
         let mut old = fresh.clone();
         old.fetched_ms = 1_000 - STALE_MS - 1;
         let stale_rate = convert(1_100, "USD", "EUR", &old, 1_000).unwrap();

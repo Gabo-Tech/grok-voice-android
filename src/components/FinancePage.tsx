@@ -374,7 +374,17 @@ function Overview({
     <div className="fin-stack space-y-6">
       <p className="fin-muted text-sm leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
       <FinanceDashboard finance={finance} accounts={accounts} onProgram={onBill} onIncome={onIncome} onFocus={onFocus} />
-      <FinanceCarousel accounts={accounts} transactions={finance.snapshot.transactions} planned={bars} onPick={onPick} />
+      <FinanceCarousel
+        accounts={accounts}
+        transactions={finance.snapshot.transactions}
+        planned={bars}
+        display={finance.snapshot.defaultCurrency}
+        fx={finance.snapshot.fx}
+        busy={finance.busy}
+        onRefresh={() => finance.refreshRates()}
+        onSaveRate={(base, quote, rate) => finance.setManualRate(base, quote, rate)}
+        onPick={onPick}
+      />
       <Group title={t("Money")} rows={money} empty={t("No money in this group")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
       <Group title={t("Debts")} rows={debts} empty={t("No debts saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
       <Group title={t("Investments")} rows={investments} empty={t("No investments saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />

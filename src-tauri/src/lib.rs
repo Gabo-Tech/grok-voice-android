@@ -113,6 +113,7 @@ pub fn run() {
                 actions::reschedule(&handle);
             });
             app.manage(Engine::spawn(app.handle().clone()));
+            app.state::<crate::native::NativeBridge>().refresh_widgets();
             let update_app = app.handle().clone();
             let _ = std::thread::Builder::new()
                 .name("update-check".into())

@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.provider.CalendarContract
+import android.view.View
 import android.widget.RemoteViews
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,18 +30,62 @@ object HomeWidgets {
   const val EXTRA_TAB = "tab"
 
   private const val TICK = "ai.grokvoice.app.widget.TICK"
-  private const val ROW_COUNT = 4
 
   fun updateAll(context: Context) {
     val mgr = AppWidgetManager.getInstance(context)
-    push(context, mgr, ListenWidget::class.java) { views, _ -> bindListen(context, views) }
+    val theme = WidgetTheme.read(context)
+    val finance = AppData.widgetFinance(context)
     val text = AppLocale.wrap(context)
-    push(context, mgr, RemindersWidget::class.java) { views, _ ->
-      bindRows(context, views, text.getString(R.string.widget_reminders_title), reminderLines(context), text.getString(R.string.widget_reminders_empty), "reminders")
+    push(context, mgr, ListenWidget::class.java) { views, id -> bindListen(context, views, theme, heightOf(mgr, id)) }
+    push(context, mgr, RemindersWidget::class.java) { views, id ->
+      bindRows(context, views, theme, text.getString(R.string.widget_reminders_title), reminderLines(context), text.getString(R.string.widget_reminders_empty), "reminders", rowsFor(heightOf(mgr, id)))
     }
-    push(context, mgr, ScheduleWidget::class.java) { views, _ ->
-      bindRows(context, views, text.getString(R.string.widget_schedule_title), scheduleLines(context), text.getString(R.string.widget_schedule_empty), "events")
+    push(context, mgr, ScheduleWidget::class.java) { views, id ->
+      bindRows(context, views, theme, text.getString(R.string.widget_schedule_title), scheduleLines(context), text.getString(R.string.widget_schedule_empty), "events", rowsFor(heightOf(mgr, id)))
     }
+    push(context, mgr, NetWorthWidget::class.java) { views, _ ->
+      bindFigure(context, views, theme, text.getString(R.string.widget_net_title), figureText(context, finance?.optJSONObject("net"), R.string.widget_net_empty), "", "finance", theme.ink, 11)
+    }
+    push(context, mgr, MonthWidget::class.java) { views, _ ->
+      val node = finance?.optJSONObject("month")
+      val value = figureText(context, node, R.string.widget_month_empty)
+      val color = when {
+        node?.optString("state") == "ready" && node.optString("text").startsWith("-") -> theme.expense
+        node?.optString("state") == "ready" -> theme.income
+        else -> theme.ink
+      }
+      bindFigure(context, views, theme, text.getString(R.string.widget_month_title), value, "", "finance", color, 12)
+    }
+    push(context, mgr, WindowWidget::class.java) { views, _ ->
+      val incomingNode = finance?.optJSONObject("in")
+      val outgoingNode = finance?.optJSONObject("out")
+      val inState = incomingNode?.optString("state").orEmpty()
+      val outState = outgoingNode?.optString("state").orEmpty()
+      if (inState != "ready" && outState != "ready" && inState != "needs-rate" && outState != "needs-rate") {
+        bindFigure(context, views, theme, text.getString(R.string.widget_window_title), text.getString(R.string.widget_window_empty), "", "finance", theme.ink, 13)
+        return@push
+      }
+      val needs = listOf(incomingNode, outgoingNode).filter { it?.optString("state") == "needs-rate" }
+      if (needs.isNotEmpty()) {
+        val missing = needs.map { it?.optString("missing").orEmpty() }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+        bindFigure(context, views, theme, text.getString(R.string.widget_window_title), text.getString(R.string.widget_needs_rate, missing), "", "finance", theme.ink, 13)
+      } else {
+        val incoming = figureText(context, incomingNode, R.string.widget_window_empty)
+        val outgoing = figureText(context, outgoingNode, R.string.widget_window_empty)
+        bindFigure(
+          context,
+          views,
+          theme,
+          text.getString(R.string.widget_window_title),
+          "${text.getString(R.string.widget_in_label)}  $incoming",
+          "${text.getString(R.string.widget_out_label)}  $outgoing",
+          "finance",
+          theme.ink,
+          13,
+        )
+      }
+    }
+    push(context, mgr, NextWidget::class.java) { views, _ -> bindNext(context, views, theme) }
     scheduleTick(context)
   }
 
@@ -74,8 +119,8 @@ object HomeWidgets {
     val ids = mgr.getAppWidgetIds(ComponentName(context, cls))
     val layout = when (cls) {
       ListenWidget::class.java -> R.layout.widget_listen
-      RemindersWidget::class.java -> R.layout.widget_list
-      else -> R.layout.widget_list
+      RemindersWidget::class.java, ScheduleWidget::class.java -> R.layout.widget_list
+      else -> R.layout.widget_figure
     }
     for (id in ids) {
       val views = RemoteViews(context.packageName, layout)
@@ -84,31 +129,98 @@ object HomeWidgets {
     }
   }
 
-  private fun bindListen(context: Context, views: RemoteViews) {
+  private fun heightOf(mgr: AppWidgetManager, id: Int): Int =
+    mgr.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 180)
+
+  private fun rowsFor(height: Int): Int = when {
+    height < 130 -> 2
+    height < 180 -> 3
+    else -> 4
+  }
+
+  private fun bindListen(context: Context, views: RemoteViews, theme: WidgetTheme.Palette, height: Int) {
     val on = VoiceListenerService.isArmed(context)
     val text = AppLocale.wrap(context)
+    WidgetTheme.paint(views, theme)
+    views.setTextColor(R.id.widget_brand, theme.ink)
+    views.setTextColor(R.id.widget_listen_state, theme.muted)
+    views.setTextColor(R.id.widget_next, theme.ink)
     views.setTextViewText(R.id.widget_next, nextReminder(context).ifBlank { text.getString(R.string.widget_next_empty) })
+    views.setViewVisibility(R.id.widget_next, if (height < 120) View.GONE else View.VISIBLE)
     views.setTextViewText(R.id.widget_listen_state, text.getString(if (on) R.string.widget_listen_on else R.string.widget_listen_off))
     views.setTextViewText(R.id.widget_listen_toggle, text.getString(if (on) R.string.listener_stop else R.string.widget_listen_start))
+    views.setInt(R.id.widget_listen_toggle, "setBackgroundColor", theme.accent)
+    views.setTextColor(R.id.widget_listen_toggle, theme.onAccent)
+    views.setInt(R.id.widget_listen_now, "setBackgroundColor", theme.panel)
+    views.setTextColor(R.id.widget_listen_now, theme.ink)
     views.setOnClickPendingIntent(R.id.widget_listen_toggle, broadcast(context, ACTION_TOGGLE, 1))
     views.setOnClickPendingIntent(R.id.widget_listen_now, broadcast(context, ACTION_TALK, 2))
   }
 
-  private fun bindRows(context: Context, views: RemoteViews, title: String, lines: List<Line>, empty: String, tab: String) {
+  private fun bindFigure(context: Context, views: RemoteViews, theme: WidgetTheme.Palette, title: String, value: String, note: String, tab: String, valueColor: Int, request: Int) {
+    WidgetTheme.paint(views, theme)
+    views.setTextColor(R.id.widget_kicker, theme.accent)
+    views.setTextColor(R.id.widget_value, valueColor)
+    views.setTextColor(R.id.widget_note, theme.muted)
+    views.setTextViewText(R.id.widget_kicker, title)
+    views.setTextViewText(R.id.widget_value, value)
+    views.setTextViewText(R.id.widget_note, note)
+    views.setViewVisibility(R.id.widget_note, if (note.isBlank()) View.GONE else View.VISIBLE)
+    views.setOnClickPendingIntent(R.id.widget_root, openIntent(context, tab, request))
+  }
+
+  private fun bindNext(context: Context, views: RemoteViews, theme: WidgetTheme.Palette) {
+    val text = AppLocale.wrap(context)
+    val reminder = reminderLines(context).firstOrNull()
+    val event = scheduleLines(context).firstOrNull()
+    val next = listOfNotNull(reminder, event).minByOrNull { it.whenMs }
+    val tab = if (next == null || next.kind == "reminder") "reminders" else "events"
+    val value = next?.title ?: text.getString(R.string.widget_next_empty)
+    val note = next?.detail.orEmpty()
+    bindFigure(context, views, theme, text.getString(R.string.widget_next_title), value, note, tab, theme.ink, 14)
+  }
+
+  private fun figureText(context: Context, node: org.json.JSONObject?, empty: Int): String {
+    val text = AppLocale.wrap(context)
+    if (node == null) return text.getString(R.string.widget_finance_empty)
+    return when (node.optString("state")) {
+      "ready" -> {
+        val amount = node.optString("text")
+        if (node.optBoolean("stale")) "$amount · ${text.getString(R.string.widget_rates_stale)}" else amount
+      }
+      "needs-rate" -> text.getString(R.string.widget_needs_rate, node.optString("missing"))
+      else -> text.getString(empty)
+    }
+  }
+
+  private fun openIntent(context: Context, tab: String, request: Int): PendingIntent =
+    PendingIntent.getBroadcast(
+      context,
+      request,
+      Intent(context, HomeWidgetReceiver::class.java).setAction(ACTION_OPEN).putExtra(EXTRA_TAB, tab),
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+  private fun bindRows(context: Context, views: RemoteViews, theme: WidgetTheme.Palette, title: String, lines: List<Line>, empty: String, tab: String, count: Int) {
     val open = PendingIntent.getBroadcast(
       context, if (tab == "reminders") 3 else 4,
       Intent(context, HomeWidgetReceiver::class.java).setAction(ACTION_OPEN).putExtra(EXTRA_TAB, tab),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+    WidgetTheme.paint(views, theme)
+    views.setTextColor(R.id.widget_title, theme.accent)
+    intArrayOf(R.id.widget_row_1, R.id.widget_row_2, R.id.widget_row_3, R.id.widget_row_4).forEach { views.setTextColor(it, theme.ink) }
     views.setOnClickPendingIntent(R.id.widget_root, open)
     views.setTextViewText(R.id.widget_title, title)
-    val shown = if (lines.isEmpty()) listOf(Line(0, "", empty, "")) else lines.take(ROW_COUNT)
+    val shown = if (lines.isEmpty()) listOf(Line(0, "", empty, "")) else lines.take(count)
     val ids = intArrayOf(R.id.widget_row_1, R.id.widget_row_2, R.id.widget_row_3, R.id.widget_row_4)
     for (i in ids.indices) {
       val line = shown.getOrNull(i)
       if (line == null) {
+        views.setViewVisibility(ids[i], View.GONE)
         views.setTextViewText(ids[i], "")
       } else {
+        views.setViewVisibility(ids[i], View.VISIBLE)
         val prefix = if (line.detail.isBlank()) "" else "${line.detail}  "
         views.setTextViewText(ids[i], prefix + line.title)
       }
@@ -261,6 +373,10 @@ object AppData {
     return parseItems(arr)
   }
 
+  fun settingsRoot(context: Context): org.json.JSONObject? = readJson(settingsFile(context))
+
+  fun widgetFinance(context: Context): org.json.JSONObject? = readJson(firstExisting(context, "widget-finance.json"))
+
   fun readLocalEvents(context: Context): List<HomeWidgets.Event> {
     val root = readJson(agendaFile(context)) ?: return emptyList()
     val arr = root.optJSONArray("events") ?: return emptyList()
@@ -348,6 +464,50 @@ class RemindersWidget : AppWidgetProvider() {
 
 class ScheduleWidget : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    HomeWidgets.updateAll(context)
+  }
+
+  override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: android.os.Bundle) {
+    HomeWidgets.updateAll(context)
+  }
+}
+
+class NetWorthWidget : AppWidgetProvider() {
+  override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    HomeWidgets.updateAll(context)
+  }
+
+  override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: android.os.Bundle) {
+    HomeWidgets.updateAll(context)
+  }
+}
+
+class MonthWidget : AppWidgetProvider() {
+  override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    HomeWidgets.updateAll(context)
+  }
+
+  override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: android.os.Bundle) {
+    HomeWidgets.updateAll(context)
+  }
+}
+
+class WindowWidget : AppWidgetProvider() {
+  override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    HomeWidgets.updateAll(context)
+  }
+
+  override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: android.os.Bundle) {
+    HomeWidgets.updateAll(context)
+  }
+}
+
+class NextWidget : AppWidgetProvider() {
+  override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    HomeWidgets.updateAll(context)
+  }
+
+  override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: android.os.Bundle) {
     HomeWidgets.updateAll(context)
   }
 }

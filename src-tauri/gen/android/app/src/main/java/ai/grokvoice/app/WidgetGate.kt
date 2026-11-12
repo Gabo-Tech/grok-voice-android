@@ -13,7 +13,7 @@ object WidgetGate {
     private const val KEY_AT = "at"
     private const val TTL_MS = 15_000L
 
-    private val ALLOWED = setOf("arm", "disarm", "talk", "reminders", "events", "lock", "headless")
+    private val ALLOWED = setOf("arm", "disarm", "talk", "reminders", "events", "finance", "lock", "headless")
 
     fun allow(context: Context, action: String) {
         if (action !in ALLOWED) return

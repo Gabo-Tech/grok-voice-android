@@ -20,7 +20,7 @@ import { OPENAI_VOICES, XAI_VOICES } from "@/lib/voices";
 import { providerLabel } from "@/lib/flow";
 import { VoiceOrder } from "@/components/VoiceOrder";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
-import { normalizeAppearance } from "@/lib/appearance";
+import { normalizeAppearance, rememberCustomTheme } from "@/lib/appearance";
 import { fill, setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +103,7 @@ export function MorePage({
       .then((s) => {
         setQuiet(s.idleTimeoutSecs);
         setSettings(s);
+        if (s.customTheme) rememberCustomTheme(s.customTheme);
         const choice = normalizeAppearance(s.appearance);
         if (s.appearance) onAppearance(choice);
       })
@@ -138,6 +139,7 @@ export function MorePage({
       setSettings(event.payload);
       setQuiet(event.payload.idleTimeoutSecs);
       setAppLocale(event.payload.locale || "");
+      if (event.payload.customTheme) rememberCustomTheme(event.payload.customTheme);
       if (event.payload.appearance) onAppearance(normalizeAppearance(event.payload.appearance));
     }).then((fn) => {
       unlisten = fn;
@@ -602,6 +604,7 @@ export function MorePage({
   const languageDetail = localeDetail(settings?.locale, t);
   const saveLook = (next: Settings) => {
     setSettings(next);
+    if (next.customTheme) rememberCustomTheme(next.customTheme);
     if (next.appearance) onAppearance(normalizeAppearance(next.appearance));
     void api.saveSettings(next).then(setSettings).catch(() => setSettings(next));
   };
@@ -609,7 +612,7 @@ export function MorePage({
     {
       id: "appearance",
       title: t("Appearance"),
-      hint: `${t("Theme")} ${t("Graphite")} ${t("Ink")} ${t("Stone")} ${t("System")}`,
+      hint: `${t("Theme")} ${t("Graphite")} ${t("Ink")} ${t("Stone")} ${t("Midnight")} ${t("Carbon")} ${t("Ivory")} ${t("Sand")} ${t("Forest")} ${t("Plum")} ${t("System")} ${t("Custom")}`,
       extra: <ThemePicker settings={settings} onChange={saveLook} />,
       rows: [],
     },

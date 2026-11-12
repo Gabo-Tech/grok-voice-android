@@ -79,6 +79,7 @@
   color: var(--fin-ink);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
 }
 
 .finance .fin-chip {

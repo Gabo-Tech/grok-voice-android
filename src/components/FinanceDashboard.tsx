@@ -1,20 +1,23 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
+import { CombinedHeadline, RatePanel, StaticHeadline } from "@/components/CombinedTotal";
 import {
   addDays,
   addMonths,
   bookFromStatus,
   cashFlow,
-  combinedMinor,
   comingRows,
+  headlineOf,
   monthBounds,
   netWorth,
   netWorthChange,
   plannedHits,
   projectWindow,
+  subtractHeadlines,
   type ComingRow,
-  type Projection,
+  type Headline,
+  type MoneyPart,
   type RateBook,
 } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
@@ -27,6 +30,14 @@ export function todayIso(now = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function listed(rows: ComingRow[]): MoneyPart[] {
+  return rows.flatMap((row) => (row.amountMinor == null || !row.currency ? [] : [{ amountMinor: row.amountMinor, currency: row.currency }]));
+}
+
+function gapsOf(heads: Headline[]): string[] {
+  return [...new Set(heads.flatMap((head) => head.missing))].sort();
 }
 
 export function FinanceDashboard({
@@ -46,6 +57,7 @@ export function FinanceDashboard({
   const today = todayIso();
   const display = (finance.snapshot.defaultCurrency || "").toUpperCase();
   const book = useMemo(() => bookFromStatus(finance.snapshot.fx), [finance.snapshot.fx]);
+  const nowMs = useMemo(() => Date.now(), [finance.snapshot]);
   const worth = useMemo(
     () => netWorth(accounts.map((account) => ({ kind: account.kind, currency: account.currency, shownBalanceMinor: account.shownBalanceMinor }))),
     [accounts],
@@ -66,15 +78,11 @@ export function FinanceDashboard({
   const yesterday = addDays(today, -1);
   const nextPlan = useMemo(() => projectWindow([], planned, today, horizon, today, false), [planned, today, horizon]);
   const overduePlan = useMemo(() => projectWindow([], planned, "1970-01-01", yesterday, today, false), [planned, today, yesterday]);
-  const nowMs = finance.snapshot.fx?.fetchedMs ? Date.now() : Date.now();
-  const hero = useMemo(
-    () => combinedMinor(worth.map((row) => ({ amountMinor: row.net, currency: row.currency })), display, book, nowMs),
-    [worth, display, book, nowMs],
-  );
-  const monthHero = useMemo(
-    () => combinedMinor(flow.map((row) => ({ amountMinor: row.left, currency: row.currency })), display, book, nowMs),
-    [flow, display, book, nowMs],
-  );
+  const worthParts = useMemo(() => worth.map((row) => ({ amountMinor: row.net, currency: row.currency })), [worth]);
+  const flowParts = useMemo(() => flow.map((row) => ({ amountMinor: row.left, currency: row.currency })), [flow]);
+  const expenseParts = useMemo(() => listed(expenses), [expenses]);
+  const incomeParts = useMemo(() => listed(income), [income]);
+  const planParts = useMemo(() => monthPlan.map((row) => ({ amountMinor: row.projected, currency: row.currency })), [monthPlan]);
   const moves = useMemo(
     () =>
       netWorthChange(
@@ -91,9 +99,43 @@ export function FinanceDashboard({
       ),
     [txs, accounts, bounds.start, bounds.end],
   );
+  const heads = useMemo(() => {
+    const nextIn = headlineOf(nextPlan.map((row) => ({ amountMinor: row.comingIn, currency: row.currency })), display, book, nowMs);
+    const nextOut = headlineOf(nextPlan.map((row) => ({ amountMinor: row.comingOut, currency: row.currency })), display, book, nowMs);
+    return {
+      worth: headlineOf(worthParts, display, book, nowMs),
+      month: headlineOf(flowParts, display, book, nowMs),
+      expenses: headlineOf(expenseParts, display, book, nowMs),
+      income: headlineOf(incomeParts, display, book, nowMs),
+      plan: headlineOf(planParts, display, book, nowMs),
+      next: subtractHeadlines(nextIn, nextOut, display),
+      nextIn,
+      nextOut,
+      overdueIn: headlineOf(overduePlan.map((row) => ({ amountMinor: row.comingIn, currency: row.currency })), display, book, nowMs),
+      overdueOut: headlineOf(overduePlan.map((row) => ({ amountMinor: row.comingOut, currency: row.currency })), display, book, nowMs),
+      moves: headlineOf(moves.map((row) => ({ amountMinor: row.change, currency: row.currency })), display, book, nowMs),
+      previous: headlineOf(previous.map((row) => ({ amountMinor: row.left, currency: row.currency })), display, book, nowMs),
+    };
+  }, [worthParts, flowParts, expenseParts, incomeParts, planParts, nextPlan, overduePlan, moves, previous, display, book, nowMs]);
+  const gapCodes = useMemo(
+    () => gapsOf([heads.worth, heads.month, heads.expenses, heads.income, heads.plan, heads.next, heads.overdueIn, heads.overdueOut, heads.moves]),
+    [heads],
+  );
+  const gapKey = gapCodes.join(",");
+  const tried = useRef("");
+  useEffect(() => {
+    if (!gapKey || !finance.inApp) return;
+    if (tried.current === gapKey) return;
+    tried.current = gapKey;
+    finance.refreshRates();
+  }, [gapKey, finance.inApp, finance.refreshRates]);
 
   return (
     <div className="fin-stack space-y-6">
+      {gapCodes.length > 0 ? (
+        <RatePanel codes={gapCodes} display={display} busy={finance.busy} onRefresh={() => finance.refreshRates()} onSave={finance.setManualRate} />
+      ) : null}
+
       <section className="fin-panel">
         <h2 className="fin-kicker">{t("Net worth")}</h2>
         <p className="fin-muted mt-2 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
@@ -101,39 +143,13 @@ export function FinanceDashboard({
           <p className="mt-4 text-base">{t("No balances stated yet")}</p>
         ) : (
           <>
-            {hero ? (
-              <div className="mt-4">
-                <p className="fin-num text-5xl leading-none font-medium">{formatMoney(hero.amountMinor, hero.currency)}</p>
-                {hero.source === "identity" ? (
-                  <p className="fin-muted mt-2 text-sm">{hero.currency}</p>
-                ) : (
-                  <p className="fin-muted mt-2 text-sm leading-5">
-                    {fill("Together in {code}", { code: hero.currency })}
-                    {hero.asOf ? ` · ${fill("As of {date}", { date: hero.asOf })}` : ""}
-                    {hero.stale ? ` · ${t("Rates are stale")}` : ""}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="mt-4 text-base leading-6">{t("No combined total. A rate is missing.")}</p>
-            )}
+            <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
             <div className="mt-4 grid grid-cols-2 gap-2">
               <FocusChip label={t("You own")} onClick={() => onFocus("owned")} />
               <FocusChip label={t("You owe")} onClick={() => onFocus("debt")} />
               <FocusChip label={t("Invested")} onClick={() => onFocus("invested")} />
               <FocusChip label={t("Cash & savings")} onClick={() => onFocus("cash")} />
             </div>
-            {worth.map((row) => (
-              <div key={row.currency} className="mt-4 border-t border-border pt-3">
-                <p className="stamp">{row.currency}</p>
-                <p className="fin-num mt-2 text-3xl leading-none font-medium">{formatMoney(row.net, row.currency)}</p>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                  <Mini label={t("Cash & savings")} value={formatMoney(row.cashSavings, row.currency)} />
-                  <Mini label={t("Invested")} value={formatMoney(row.invested, row.currency)} />
-                  <Mini label={t("You owe")} value={formatMoney(row.owed, row.currency)} tone="out" />
-                </div>
-              </div>
-            ))}
           </>
         )}
       </section>
@@ -144,42 +160,26 @@ export function FinanceDashboard({
         {flow.length === 0 ? (
           <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
         ) : (
-          flow.map((row) => {
-            const before = previous.find((item) => item.currency === row.currency);
-            return (
-              <div key={row.currency} className="mt-4 border-t border-border pt-3">
-                <p className="stamp">{row.currency}</p>
-                <p className={cn("fin-num mt-2 text-4xl leading-none font-medium", row.left < 0 && "fin-out")}>
-                  {formatMoney(row.left, row.currency)}
-                </p>
-                <p className="fin-muted mt-1 text-sm">{row.left < 0 ? t("Short") : t("Left")}</p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Mini label={t("Incoming")} value={formatMoney(row.incoming, row.currency)} tone="in" />
-                  <Mini label={t("Outgoing")} value={formatMoney(row.outgoing, row.currency)} tone="out" />
-                </div>
-                {before ? (
-                  <p className="fin-muted mt-2 text-sm">{fill("Last month left {amount}", { amount: formatMoney(before.left, before.currency) })}</p>
-                ) : null}
-              </div>
-            );
-          })
+          <>
+            <CombinedHeadline parts={flowParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="auto" />
+            {heads.previous.state === "ready" ? (
+              <p className="fin-muted mt-2 text-sm">{fill("Last month left {amount}", { amount: formatMoney(heads.previous.amountMinor, heads.previous.currency) })}</p>
+            ) : null}
+          </>
         )}
-        {monthHero && monthHero.source !== "identity" ? (
-          <p className="fin-muted mt-4 text-sm leading-5">
-            {fill("Together in {code}", { code: monthHero.currency })}: {formatMoney(monthHero.amountMinor, monthHero.currency)}
-            {monthHero.asOf ? ` · ${fill("As of {date}", { date: monthHero.asOf })}` : ""}
-            {monthHero.stale ? ` · ${t("Rates are stale")}` : ""}
-          </p>
-        ) : null}
-        {moves.length > 0 ? (
+        {heads.moves.state !== "empty" ? (
           <div className="mt-4 border-t border-border pt-3">
             <p className="text-sm font-medium">{t("Change this month")}</p>
             <p className="fin-muted mt-1 text-sm leading-5">{t("From what you recorded. A holding stays at the price you entered.")}</p>
-            {moves.map((row) => (
-              <p key={row.currency} className={cn("fin-num mt-2 text-lg", row.change < 0 && "fin-out", row.change > 0 && "fin-in")}>
-                {formatMoney(row.change, row.currency)}
-              </p>
-            ))}
+            <CombinedHeadline
+              parts={moves.map((row) => ({ amountMinor: row.change, currency: row.currency }))}
+              display={display}
+              book={book}
+              nowMs={nowMs}
+              busy={finance.busy}
+              size="text-2xl"
+              tone="auto"
+            />
           </div>
         ) : null}
       </section>
@@ -188,6 +188,7 @@ export function FinanceDashboard({
         title={t("Coming expenses")}
         body={t("Bills, rent, subscriptions, and fixed runs.")}
         rows={expenses}
+        parts={expenseParts}
         emptyTitle={t("Program a bill")}
         emptyBody={t("Rent, a subscription, or a course with an end.")}
         onEmpty={onProgram}
@@ -197,11 +198,13 @@ export function FinanceDashboard({
         book={book}
         display={display}
         nowMs={nowMs}
+        busy={finance.busy}
       />
       <Coming
         title={t("Coming income")}
         body={t("Paydays, planned income, and payouts.")}
         rows={income}
+        parts={incomeParts}
         emptyTitle={t("Program income")}
         emptyBody={t("A payday, money you will get, or a payout.")}
         onEmpty={onIncome}
@@ -211,6 +214,7 @@ export function FinanceDashboard({
         book={book}
         display={display}
         nowMs={nowMs}
+        busy={finance.busy}
       />
 
       <section className="fin-panel fin-planned">
@@ -219,63 +223,47 @@ export function FinanceDashboard({
           <span className="stamp">{t("Not actual")}</span>
         </div>
         <p className="fin-muted mt-2 text-sm leading-5">{t("This month if the plan happens. Not a lifetime total.")}</p>
-        {monthPlan.length === 0 ? (
-          <p className="mt-4 text-base">{t("Nothing planned in this window")}</p>
-        ) : (
-          monthPlan.map((row) => (
-            <div key={row.currency} className="mt-4 border-t border-dashed border-border pt-3">
-              <p className="stamp">{row.currency}</p>
-              <p className={cn("fin-num mt-2 text-3xl leading-none", row.projected < 0 && "fin-out")}>{formatMoney(row.projected, row.currency)}</p>
-              <p className="fin-muted mt-2 text-sm leading-5">
-                {t("Left")} {formatMoney(row.actualLeft, row.currency)} · {t("Incoming")} {formatMoney(row.comingIn, row.currency)} · {t("Outgoing")}{" "}
-                {formatMoney(row.comingOut, row.currency)}
-              </p>
-            </div>
-          ))
-        )}
+        {monthPlan.length === 0 ? <p className="mt-4 text-base">{t("Nothing planned in this window")}</p> : <StaticHeadline head={heads.plan} size="text-4xl" />}
       </section>
-      <NextThirty next={nextPlan} overdue={overduePlan} />
+      <NextThirty nextIn={heads.nextIn} nextOut={heads.nextOut} net={heads.next} overdueIn={heads.overdueIn} overdueOut={heads.overdueOut} />
     </div>
   );
 }
 
-function NextThirty({ next, overdue }: { next: Projection[]; overdue: Projection[] }) {
+function NextThirty({
+  nextIn,
+  nextOut,
+  net,
+  overdueIn,
+  overdueOut,
+}: {
+  nextIn: Headline;
+  nextOut: Headline;
+  net: Headline;
+  overdueIn: Headline;
+  overdueOut: Headline;
+}) {
   const t = useT();
-  const codes = [...new Set([...next.map((row) => row.currency), ...overdue.map((row) => row.currency)])].sort();
-  const rows = codes
-    .map((currency) => {
-      const coming = next.find((row) => row.currency === currency);
-      const late = overdue.find((row) => row.currency === currency);
-      return {
-        currency,
-        comingIn: coming?.comingIn ?? 0,
-        comingOut: coming?.comingOut ?? 0,
-        overdueIn: late?.comingIn ?? 0,
-        overdueOut: late?.comingOut ?? 0,
-      };
-    })
-    .filter((row) => row.comingIn || row.comingOut || row.overdueIn || row.overdueOut);
-  if (rows.length === 0) return null;
+  const quiet = [net, nextIn, nextOut, overdueIn, overdueOut].every((head) => head.state === "empty");
+  if (quiet) return null;
   return (
     <section className="fin-window">
       <h2 className="fin-kicker">{t("Next 30 days")}</h2>
       <p className="fin-muted mt-2 text-sm leading-5">{t("Planned in and out for the next 30 days, plus anything overdue. Not this month's leftover.")}</p>
-      {rows.map((row) => (
-        <div key={row.currency} className="mt-4 border-t border-border pt-3">
-          <p className="stamp">{row.currency}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Mini label={t("Incoming")} value={formatMoney(row.comingIn, row.currency)} tone="in" />
-            <Mini label={t("Outgoing")} value={formatMoney(row.comingOut, row.currency)} tone="out" />
-          </div>
-          {row.overdueIn || row.overdueOut ? (
-            <p className="fin-muted mt-2 text-sm leading-5">
-              {t("Overdue still open")}
-              {row.overdueIn ? ` · ${t("Incoming")} ${formatMoney(row.overdueIn, row.currency)}` : ""}
-              {row.overdueOut ? ` · ${t("Outgoing")} ${formatMoney(row.overdueOut, row.currency)}` : ""}
-            </p>
-          ) : null}
+      <StaticHeadline head={net} size="text-4xl" />
+      {nextIn.state === "ready" || nextOut.state === "ready" ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {nextIn.state === "ready" ? <Mini label={t("Incoming")} value={formatMoney(nextIn.amountMinor, nextIn.currency)} tone="in" /> : null}
+          {nextOut.state === "ready" ? <Mini label={t("Outgoing")} value={formatMoney(nextOut.amountMinor, nextOut.currency)} tone="out" /> : null}
         </div>
-      ))}
+      ) : null}
+      {overdueIn.state === "ready" || overdueOut.state === "ready" ? (
+        <p className="fin-muted mt-2 text-sm leading-5 break-words">
+          {t("Overdue still open")}
+          {overdueIn.state === "ready" && overdueIn.amountMinor ? ` · ${t("Incoming")} ${formatMoney(overdueIn.amountMinor, overdueIn.currency)}` : ""}
+          {overdueOut.state === "ready" && overdueOut.amountMinor ? ` · ${t("Outgoing")} ${formatMoney(overdueOut.amountMinor, overdueOut.currency)}` : ""}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -284,6 +272,7 @@ function Coming({
   title,
   body,
   rows,
+  parts,
   emptyTitle,
   emptyBody,
   onEmpty,
@@ -293,10 +282,12 @@ function Coming({
   book,
   display,
   nowMs,
+  busy,
 }: {
   title: string;
   body: string;
   rows: ComingRow[];
+  parts: MoneyPart[];
   emptyTitle: string;
   emptyBody: string;
   onEmpty: () => void;
@@ -306,6 +297,7 @@ function Coming({
   book: RateBook | null;
   display: string;
   nowMs: number;
+  busy: boolean;
 }) {
   const t = useT();
   const groups = ["overdue", "week", "month", "later"] as const;
@@ -320,20 +312,23 @@ function Coming({
           <p className="fin-muted mt-1 text-sm leading-5">{emptyBody}</p>
         </button>
       ) : (
-        groups.map((bucket) => {
-          const items = rows.filter((row) => row.bucket === bucket);
-          if (items.length === 0) return null;
-          return (
-            <div key={bucket} className="mt-4">
-              <p className="stamp">{label[bucket]}</p>
-              <div className="mt-2 space-y-3">
-                {items.map((row) => (
-                  <ComingLine key={`${row.id}-${row.date}`} row={row} paidLabel={paidLabel} onPaid={onPaid} onSkip={onSkip} book={book} display={display} nowMs={nowMs} />
-                ))}
+        <>
+          <CombinedHeadline parts={parts} display={display} book={book} nowMs={nowMs} busy={busy} size="text-4xl" />
+          {groups.map((bucket) => {
+            const items = rows.filter((row) => row.bucket === bucket);
+            if (items.length === 0) return null;
+            return (
+              <div key={bucket} className="mt-4">
+                <p className="stamp">{label[bucket]}</p>
+                <div className="mt-2 space-y-3">
+                  {items.map((row) => (
+                    <ComingLine key={`${row.id}-${row.date}`} row={row} paidLabel={paidLabel} onPaid={onPaid} onSkip={onSkip} book={book} display={display} nowMs={nowMs} />
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+        </>
       )}
     </section>
   );
@@ -357,8 +352,8 @@ function ComingLine({
   nowMs: number;
 }) {
   const t = useT();
-  const converted = row.amountMinor == null ? null : combinedMinor([{ amountMinor: row.amountMinor, currency: row.currency }], display, book, nowMs);
-  const showConverted = converted && converted.source !== "identity";
+  const converted = row.amountMinor == null ? null : headlineOf([{ amountMinor: row.amountMinor, currency: row.currency }], display, book, nowMs);
+  const showConverted = converted && converted.state === "ready" && converted.source !== "identity";
   const progress = row.progress;
   const cadence =
     row.progress.mode === "open"
@@ -433,9 +428,9 @@ function FocusChip({ label, onClick }: { label: string; onClick: () => void }) {
 
 function Mini({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs leading-4 tracking-wide break-words text-muted-foreground uppercase">{label}</p>
-      <p className={cn("fin-num mt-1 text-base font-medium", tone === "in" && "fin-in", tone === "out" && "fin-out")}>{value}</p>
+      <p className={cn("fin-num mt-1 text-base font-medium break-words", tone === "in" && "fin-in", tone === "out" && "fin-out")}>{value}</p>
     </div>
   );
 }
