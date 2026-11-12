@@ -1,0 +1,126 @@
+/* Finance only. Dark graphite by default, warm stone when the phone is in light mode. */
+.finance {
+  --fin-canvas: #0e0f11;
+  --fin-panel: #17181b;
+  --fin-panel-2: #1c1d21;
+  --fin-line: rgba(232, 230, 227, 0.12);
+  --fin-ink: #eeece8;
+  --fin-muted: #8b8a86;
+  --fin-gold: #c4b5a0;
+  --fin-sage: #7d9a86;
+  --fin-rose: #c48984;
+  --fin-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  color: var(--fin-ink);
+  background: var(--fin-canvas);
+}
+
+.finance[data-theme="light"] {
+  --fin-canvas: #f4f2ee;
+  --fin-panel: #faf8f5;
+  --fin-panel-2: #ffffff;
+  --fin-line: rgba(26, 27, 30, 0.12);
+  --fin-ink: #1a1b1e;
+  --fin-muted: #6e6a64;
+  --fin-gold: #8c7358;
+  --fin-sage: #3e6b52;
+  --fin-rose: #8e4e4a;
+  --fin-shadow: 0 10px 24px rgba(26, 27, 30, 0.08);
+}
+
+.finance header h1 {
+  color: var(--fin-ink);
+  font-size: 1.65rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.finance header p,
+.finance .fin-muted {
+  color: var(--fin-muted);
+}
+
+.finance .fin-kicker {
+  color: var(--fin-gold);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.finance .fin-panel {
+  background: var(--fin-panel);
+  border: 1px solid var(--fin-line);
+  box-shadow: var(--fin-shadow);
+  padding: 1.05rem 1rem 1.15rem;
+}
+
+.finance .fin-stack > .fin-panel:nth-child(even) {
+  margin-left: 8px;
+}
+
+.finance .fin-num {
+  color: var(--fin-ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.finance .fin-chip {
+  min-height: 44px;
+  border: 1px solid var(--fin-line);
+  background: transparent;
+  color: var(--fin-ink);
+  padding: 0 0.85rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.finance .fin-chip[aria-pressed="true"] {
+  background: var(--fin-gold);
+  border-color: var(--fin-gold);
+  color: #1a1b1e;
+}
+
+.finance .fin-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--fin-line);
+}
+
+.finance .fin-dot.on {
+  width: 18px;
+  background: var(--fin-gold);
+}
+
+.finance .fin-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--fin-line);
+  flex: none;
+}
+
+.finance .fin-track {
+  height: 10px;
+  background: var(--fin-panel-2);
+  border: 1px solid var(--fin-line);
+}
+
+.finance .fin-row {
+  border-color: var(--fin-line);
+}
+
+.finance .sheet-panel,
+.finance.sheet-root .sheet-panel {
+  background: var(--fin-panel);
+  color: var(--fin-ink);
+  border-color: var(--fin-line);
+}
+
+.finance input,
+.finance textarea {
+  background: var(--fin-panel-2);
+  color: var(--fin-ink);
+  border-color: var(--fin-line);
+}

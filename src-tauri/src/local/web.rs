@@ -257,6 +257,8 @@ mod tests {
             "save_account",
             "list_finance",
             "delete_finance",
+            "mark_paid",
+            "export_finance_pdf",
         ] {
             assert!(network_block(name, false).is_none(), "{name} stays available offline");
         }

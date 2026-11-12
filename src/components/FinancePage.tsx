@@ -1,21 +1,26 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
-import { formatMoney, kindLabel, majorString } from "@/lib/money";
-import { useT } from "@/lib/i18n";
+import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
+import { displayColor, filterTransactions, groupOf, isDebt, netByCurrency, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
+import { activeLocale, fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import "@/finance.css";
 
 type Segment = "overview" | "activity" | "accounts" | "investments";
 type SheetKind = "transaction" | "account" | "investment" | "rule";
 
 const SEGMENTS: Segment[] = ["overview", "activity", "accounts", "investments"];
-const KINDS = ["bank", "cash", "credit_card", "loan", "other"] as const;
+const KINDS = ["bank", "cash", "credit_card", "loan", "other_debt", "other"] as const;
+const PERIODS: PeriodId[] = ["this", "last", "six", "year", "all"];
+const LEADS = [0, 1, 2, 3, 7] as const;
 const CADENCE = ["", "weekly", "monthly", "yearly"] as const;
 
 function segmentLabel(segment: Segment): string {
@@ -34,19 +39,75 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
   const [classFilter, setClassFilter] = useState("all");
   const [directionFilter, setDirectionFilter] = useState("all");
+  const [period, setPeriod] = useState<PeriodId>("this");
+  const [focusMonth, setFocusMonth] = useState("");
+  const [accountFilter, setAccountFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [currencyFilter, setCurrencyFilter] = useState("all");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [exportNote, setExportNote] = useState("");
+  const [categorySheet, setCategorySheet] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: light)");
+    const apply = () => setTheme(query.matches ? "light" : "dark");
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
 
   const accounts = finance.snapshot.accounts;
   const spending = accounts.filter((account) => account.kind !== "investment");
   const investments = accounts.filter((account) => account.kind === "investment");
   const rules = finance.snapshot.rules.filter((rule) => rule.cadence || rule.nextDate);
-  const recent = finance.snapshot.transactions.slice(0, 5);
-  const activity = useMemo(() => {
-    return finance.snapshot.transactions.filter((tx) => {
-      if (classFilter !== "all" && tx.recurrence !== classFilter) return false;
-      if (directionFilter !== "all" && tx.direction !== directionFilter) return false;
-      return true;
-    });
-  }, [finance.snapshot.transactions, classFilter, directionFilter]);
+  const bounds = useMemo(() => periodBounds(period, new Date(), focusMonth), [period, focusMonth]);
+  const activity = useMemo(
+    () =>
+      filterTransactions(finance.snapshot.transactions, {
+        start: bounds.start,
+        end: bounds.end,
+        accountId: accountFilter,
+        category: categoryFilter,
+        currency: currencyFilter,
+        direction: directionFilter,
+        recurrence: classFilter,
+        group: groupFilter,
+        accounts,
+      }),
+    [finance.snapshot.transactions, bounds, accountFilter, categoryFilter, currencyFilter, directionFilter, classFilter, groupFilter, accounts],
+  );
+  const recent = activity.slice(0, 5);
+  const currencies = useMemo(() => [...new Set(accounts.map((account) => account.currency).filter(Boolean))], [accounts]);
+  const categories = useMemo(() => {
+    const names = new Set(finance.snapshot.categories.map((category) => category.name));
+    for (const tx of finance.snapshot.transactions) if (tx.category) names.add(tx.category);
+    return [...names];
+  }, [finance.snapshot.categories, finance.snapshot.transactions]);
+  const pickChart = (pick: ChartPick) => {
+    if (pick.accountId) setAccountFilter(pick.accountId);
+    if (pick.category) setCategoryFilter(pick.category);
+    if (pick.currency) setCurrencyFilter(pick.currency);
+    if (pick.group) setGroupFilter(pick.group);
+    if (pick.month) setFocusMonth(pick.month);
+    setSegment("activity");
+  };
+  const exportSummary = () => {
+    const account = accounts.find((row) => row.id === accountFilter);
+    void finance
+      .exportPdf({
+        period: focusMonth || period,
+        account: account?.name || "",
+        category: categoryFilter === "all" ? "" : categoryFilter,
+        currency: currencyFilter === "all" ? "" : currencyFilter,
+        direction: directionFilter === "all" ? "" : directionFilter,
+        locale: activeLocale(),
+      })
+      .then((file) => {
+        setExportNote(file.shared ? t("Share sheet opened. Nothing was uploaded.") : t("PDF stays on this phone until you share it."));
+        if (!file.shared && file.dataB64) downloadBase64(file.fileName, file.dataB64);
+      })
+      .catch(() => setExportNote(t("Could not write the PDF.")));
+  };
 
   const openAdd = () => {
     setEditingAccount(null);
@@ -61,7 +122,7 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
   const empty = accounts.length === 0 && finance.snapshot.transactions.length === 0 && finance.snapshot.rules.length === 0;
 
   return (
-    <>
+    <div className="finance flex min-h-0 flex-1 flex-col" data-theme={theme}>
       <PageChrome
         title={t("Finance")}
         subtitle={t("On this phone. No bank login.")}
@@ -77,14 +138,20 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
           ))}
         </div>
         {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
+        {(segment === "overview" || segment === "activity") && (
+          <button type="button" className="fin-chip mb-4 w-full" onClick={exportSummary}>
+            {t("Export PDF")}
+          </button>
+        )}
+        {exportNote && <p className="fin-muted mb-4 text-sm leading-5">{exportNote}</p>}
         {segment === "overview" && (
           <Overview
             finance={finance}
             empty={empty}
-            spending={spending}
-            investments={investments}
+            accounts={accounts}
             recent={recent}
             onAdd={openAdd}
+            onPick={pickChart}
             onAccount={(account) => {
               setEditingAccount(account);
               setSheet(account.kind === "investment" ? "investment" : "account");
@@ -92,6 +159,12 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
             onTransaction={(tx) => {
               setEditingTx(tx);
               setSheet("transaction");
+            }}
+            onRule={(id) => {
+              const rule = finance.snapshot.rules.find((row) => row.id === id);
+              if (!rule) return;
+              setEditingRule(rule);
+              setSheet("rule");
             }}
           />
         )}
@@ -103,6 +176,20 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
             directionFilter={directionFilter}
             onClass={setClassFilter}
             onDirection={setDirectionFilter}
+            period={period}
+            onPeriod={(next) => {
+              setFocusMonth("");
+              setPeriod(next);
+            }}
+            accountFilter={accountFilter}
+            onAccountFilter={setAccountFilter}
+            categoryFilter={categoryFilter}
+            onCategory={setCategoryFilter}
+            currencyFilter={currencyFilter}
+            onCurrency={setCurrencyFilter}
+            categories={categories}
+            currencies={currencies}
+            onEditCategories={() => setCategorySheet(true)}
             onAdd={openAdd}
             onTransaction={(tx) => {
               setEditingTx(tx);
@@ -153,6 +240,7 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
         finance={finance}
         editing={editingTx}
         onClose={() => setSheet(null)}
+        theme={theme}
       />
       <AccountSheet
         open={sheet === "account" || sheet === "investment"}
@@ -160,110 +248,101 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
         finance={finance}
         editing={editingAccount}
         onClose={() => setSheet(null)}
+        theme={theme}
       />
-      <RuleSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} />
-    </>
+      <RuleSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} theme={theme} />
+      <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} theme={theme} />
+    </div>
   );
 }
 
 function Overview({
   finance,
   empty,
-  spending,
-  investments,
+  accounts,
   recent,
   onAdd,
+  onPick,
   onAccount,
   onTransaction,
+  onRule,
 }: {
   finance: FinanceState;
   empty: boolean;
-  spending: FinanceAccount[];
-  investments: FinanceAccount[];
+  accounts: FinanceAccount[];
   recent: FinanceTransaction[];
   onAdd: () => void;
+  onPick: (pick: ChartPick) => void;
   onAccount: (account: FinanceAccount) => void;
   onTransaction: (tx: FinanceTransaction) => void;
+  onRule: (id: string) => void;
 }) {
   const t = useT();
+  const nets = netByCurrency(accounts);
+  const money = accounts.filter((account) => groupOf(account.kind) === "money");
+  const debts = accounts.filter((account) => groupOf(account.kind) === "debt");
+  const investments = accounts.filter((account) => groupOf(account.kind) === "investment");
   if (empty) {
     return (
-      <EmptyState
-        title={t("No money saved yet")}
-        body={t("Say “I spent 12 euros on lunch” in Talk, or tap + to add one.")}
-        actionLabel={t("Add transaction")}
-        onAction={onAdd}
-      />
+      <div className="space-y-6">
+        <EmptyState
+          title={t("No money saved yet")}
+          body={t("Say “I spent 12 euros on lunch” in Talk, or tap + to add one.")}
+          actionLabel={t("Add transaction")}
+          onAction={onAdd}
+        />
+        <DefaultCurrency finance={finance} />
+      </div>
     );
   }
-  const totals = finance.snapshot.totals;
   return (
-    <div className="space-y-6">
-      <p className="text-sm leading-5 text-muted-foreground">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
-      <section>
-        <h2 className="text-sm text-muted-foreground">{t("This month")}</h2>
-        {totals.length === 0 ? (
-          <p className="mt-2 text-base text-foreground">{t("No activity yet")}</p>
+    <div className="fin-stack space-y-6">
+      <p className="fin-muted text-sm leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
+      <section className="fin-panel">
+        <h2 className="fin-kicker">{t("Net")}</h2>
+        <p className="fin-muted mt-2 text-sm leading-5">{t("Assets minus debts in this currency. No exchange rate is applied.")}</p>
+        {nets.length === 0 ? (
+          <p className="mt-3 text-base">{t("No balances stated yet")}</p>
         ) : (
-          <div className="mt-3 space-y-4">
-            {totals.map((row) => (
-              <div key={row.currency}>
-                <AmountLine label={t("Income")} amount={formatMoney(row.incomeMinor, row.currency)} />
-                <AmountLine label={t("Expenses")} amount={formatMoney(row.expenseMinor, row.currency)} />
-                {row.paymentMinor > 0 && <AmountLine label={t("Payments")} amount={formatMoney(row.paymentMinor, row.currency)} />}
-              </div>
-            ))}
-          </div>
+          nets.map((row) => (
+            <p key={row.currency} className="fin-num mt-3 text-4xl leading-tight font-medium">
+              {formatMoney(row.net, row.currency)}
+            </p>
+          ))
         )}
       </section>
-      {spending.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-sm text-muted-foreground">{t("Accounts")}</h2>
-          <AccountRows rows={spending} onOpen={onAccount} />
-        </section>
-      )}
-      {investments.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-sm text-muted-foreground">{t("Investments")}</h2>
-          <AccountRows rows={investments} onOpen={onAccount} />
-        </section>
-      )}
+      <FinanceCarousel accounts={accounts} transactions={finance.snapshot.transactions} onPick={onPick} />
+      <Group title={t("Money")} rows={money} empty={t("No money in this group")} onOpen={onAccount} />
+      <Group title={t("Debts")} rows={debts} empty={t("No debts saved")} onOpen={onAccount} />
+      <Group title={t("Investments")} rows={investments} empty={t("No investments saved")} onOpen={onAccount} />
+      <DefaultCurrency finance={finance} />
       <section>
-        <h2 className="mb-2 text-sm text-muted-foreground">{t("Upcoming")}</h2>
+        <h2 className="fin-kicker mb-2">{t("Upcoming")}</h2>
         {finance.snapshot.upcoming.length === 0 ? (
           <p className="text-base leading-6 text-muted-foreground">{t("A due date, payday, or subscription shows here and on Calendar.")}</p>
         ) : (
           <div className="divide-y divide-border border-y border-border">
             {finance.snapshot.upcoming.map((row) => (
-              <div key={`${row.source}-${row.id}`} className="flex min-h-12 items-baseline justify-between gap-3 py-3">
+              <button key={`${row.source}-${row.id}`} type="button" className="flex min-h-12 w-full items-baseline justify-between gap-3 py-3 text-left" onClick={() => onRule(row.id)}>
                 <div className="min-w-0">
-                  <p className="truncate text-base text-foreground">{row.title}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {row.date}
+                  <p className="truncate text-base">{row.title}</p>
+                  <p className="fin-muted text-sm">
+                    {relativeWhen(row.daysUntil, t)} · {row.date}
                     {row.calendarEventId ? ` · ${t("On Calendar")}` : ""}
                   </p>
                 </div>
-                <p className="shrink-0 text-lg tabular-nums">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</p>
-              </div>
+                <p className="fin-num shrink-0 text-lg">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</p>
+              </button>
             ))}
           </div>
         )}
       </section>
       {recent.length > 0 && (
         <section>
-          <h2 className="mb-2 text-sm text-muted-foreground">{t("Recent")}</h2>
+          <h2 className="fin-kicker mb-2">{t("Recent")}</h2>
           <TxRows rows={recent} accounts={finance.snapshot.accounts} onOpen={onTransaction} />
         </section>
       )}
-    </div>
-  );
-}
-
-function AmountLine({ label, amount }: { label: string; amount: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-1">
-      <span className="text-base text-muted-foreground">{label}</span>
-      <span className="min-w-0 text-right text-2xl leading-tight font-medium tracking-tight break-words tabular-nums">{amount}</span>
     </div>
   );
 }
@@ -275,6 +354,17 @@ function Activity({
   directionFilter,
   onClass,
   onDirection,
+  period,
+  onPeriod,
+  accountFilter,
+  onAccountFilter,
+  categoryFilter,
+  onCategory,
+  currencyFilter,
+  onCurrency,
+  categories,
+  currencies,
+  onEditCategories,
   onAdd,
   onTransaction,
   onRule,
@@ -286,6 +376,17 @@ function Activity({
   directionFilter: string;
   onClass: (value: string) => void;
   onDirection: (value: string) => void;
+  period: PeriodId;
+  onPeriod: (value: PeriodId) => void;
+  accountFilter: string;
+  onAccountFilter: (value: string) => void;
+  categoryFilter: string;
+  onCategory: (value: string) => void;
+  currencyFilter: string;
+  onCurrency: (value: string) => void;
+  categories: string[];
+  currencies: string[];
+  onEditCategories: () => void;
   onAdd: () => void;
   onTransaction: (tx: FinanceTransaction) => void;
   onRule: (rule: FinanceRule) => void;
@@ -294,6 +395,30 @@ function Activity({
   const t = useT();
   return (
     <div>
+      <div className="mb-2 flex gap-2 overflow-x-auto">
+        {PERIODS.map((id) => (
+          <Chip key={id} on={period === id} onClick={() => onPeriod(id)}>{t(periodLabel(id))}</Chip>
+        ))}
+      </div>
+      <div className="mb-2 flex gap-2 overflow-x-auto">
+        <Chip on={accountFilter === "all"} onClick={() => onAccountFilter("all")}>{t("All accounts")}</Chip>
+        {accounts.map((account) => (
+          <Chip key={account.id} on={accountFilter === account.id} onClick={() => onAccountFilter(account.id)}>{account.name}</Chip>
+        ))}
+      </div>
+      <div className="mb-2 flex gap-2 overflow-x-auto">
+        <Chip on={categoryFilter === "all"} onClick={() => onCategory("all")}>{t("All categories")}</Chip>
+        {categories.map((category) => (
+          <Chip key={category} on={categoryFilter === category} onClick={() => onCategory(category)}>{category}</Chip>
+        ))}
+        <Chip on={false} onClick={onEditCategories}>{t("Edit categories")}</Chip>
+      </div>
+      <div className="mb-2 flex gap-2 overflow-x-auto">
+        <Chip on={currencyFilter === "all"} onClick={() => onCurrency("all")}>{t("All currencies")}</Chip>
+        {currencies.map((currency) => (
+          <Chip key={currency} on={currencyFilter === currency} onClick={() => onCurrency(currency)}>{currency}</Chip>
+        ))}
+      </div>
       <div className="mb-2 flex flex-wrap gap-2">
         <Chip on={classFilter === "all"} onClick={() => onClass("all")}>{t("All")}</Chip>
         <Chip on={classFilter === "recurring"} onClick={() => onClass("recurring")}>{t("Recurring")}</Chip>
@@ -358,11 +483,12 @@ function AccountRows({ rows, onOpen }: { rows: FinanceAccount[]; onOpen: (accoun
   const t = useT();
   return (
     <div className="divide-y divide-border border-y border-border">
-      {rows.map((account) => {
+      {rows.map((account, index) => {
         const money = account.shownBalanceMinor == null ? t("Not set") : formatMoney(account.shownBalanceMinor, account.currency);
-        const owed = account.kind === "credit_card" || account.kind === "loan";
+        const owed = isDebt(account.kind);
         return (
           <RowButton key={account.id} onClick={() => onOpen(account)}>
+            <span className="fin-swatch" style={{ background: displayColor(account.color, index) }} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-base">{account.name}</p>
               <p className="text-sm text-muted-foreground">
@@ -422,11 +548,13 @@ function TransactionSheet({
   finance,
   editing,
   onClose,
+  theme,
 }: {
   open: boolean;
   finance: FinanceState;
   editing: FinanceTransaction | null;
   onClose: () => void;
+  theme: string;
 }) {
   const t = useT();
   const [amount, setAmount] = useState("");
@@ -476,6 +604,8 @@ function TransactionSheet({
       open={open}
       title={editing ? t("Edit transaction") : t("New transaction")}
       onClose={onClose}
+      className="finance"
+      theme={theme}
       footer={
         <div className="flex items-center gap-2">
           {editing && (
@@ -555,12 +685,14 @@ function AccountSheet({
   finance,
   editing,
   onClose,
+  theme,
 }: {
   open: boolean;
   investment: boolean;
   finance: FinanceState;
   editing: FinanceAccount | null;
   onClose: () => void;
+  theme: string;
 }) {
   const t = useT();
   const [name, setName] = useState("");
@@ -576,6 +708,12 @@ function AccountSheet({
   const [contributionCadence, setContributionCadence] = useState("");
   const [contributionDate, setContributionDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [color, setColor] = useState(PALETTE[0]);
+  const [investmentType, setInvestmentType] = useState("custom");
+  const [valueMode, setValueMode] = useState("stated");
+  const [units, setUnits] = useState("");
+  const [unitPrice, setUnitPrice] = useState("");
+  const [leadDays, setLeadDays] = useState(2);
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = `${investment ? "i" : "a"}:${editing?.id || "new"}`;
@@ -595,6 +733,12 @@ function AccountSheet({
     setContributionCadence(editing?.contributionCadence || "");
     setContributionDate(editing?.contributionDate || "");
     setNotes(editing?.notes || "");
+    setColor(editing?.color || PALETTE[0]);
+    setInvestmentType(editing?.investmentType || "custom");
+    setValueMode(editing?.units ? "units" : "stated");
+    setUnits(editing?.units || "");
+    setUnitPrice(majorString(editing?.priceMinor, editing?.currency || finance.snapshot.defaultCurrency || ""));
+    setLeadDays(editing?.leadDays ?? 2);
     setConfirming(false);
   }
   const save = () => {
@@ -603,7 +747,7 @@ function AccountSheet({
       id: editing?.id,
       name,
       kind: investment ? "investment" : kind,
-      balance,
+      balance: valueMode === "units" ? "" : balance,
       currency,
       institution,
       dueDate: investment ? "" : dueDate,
@@ -614,15 +758,24 @@ function AccountSheet({
       contributionCadence: investment ? contributionCadence : "",
       contributionDate: investment ? contributionDate : "",
       notes,
+      color,
+      investmentType: investment ? investmentType : "",
+      units: valueMode === "units" ? units : "",
+      unitPrice: valueMode === "units" ? unitPrice : "",
+      valueMode,
+      leadDays,
+      changeKind: true,
     });
     onClose();
   };
-  const cardOrLoan = kind === "credit_card" || kind === "loan";
+  const cardOrLoan = isDebt(kind);
   return (
     <Sheet
       open={open}
       title={investment ? (editing ? t("Edit investment") : t("New investment")) : editing ? t("Edit account") : t("New account")}
       onClose={onClose}
+      className="finance"
+      theme={theme}
       footer={
         <div className="flex items-center gap-2">
           {editing && (
@@ -694,6 +847,41 @@ function AccountSheet({
             </Field>
           </>
         )}
+        {investment && (
+          <>
+            <Field label={t("Type")}>
+              <div className="flex flex-wrap gap-2">
+                {["stock", "fund", "crypto", "custom"].map((id) => (
+                  <Chip key={id} on={investmentType === id} onClick={() => setInvestmentType(id)}>{t(typeLabel(id))}</Chip>
+                ))}
+              </div>
+            </Field>
+            <Field label={t("Value")}>
+              <div className="flex gap-2">
+                <Chip on={valueMode === "stated"} onClick={() => setValueMode("stated")}>{t("Stated worth")}</Chip>
+                <Chip on={valueMode === "units"} onClick={() => setValueMode("units")}>{t("Units and price")}</Chip>
+              </div>
+            </Field>
+            {valueMode === "units" && (
+              <>
+                <Field label={t("Units")}>
+                  <Input inputMode="decimal" value={units} onChange={(e) => setUnits(e.target.value)} />
+                </Field>
+                <Field label={t("Price each")}>
+                  <Input inputMode="decimal" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+                </Field>
+              </>
+            )}
+          </>
+        )}
+        <ColorField color={color} onChange={setColor} />
+        <Field label={t("Remind me")}>
+          <div className="flex gap-2 overflow-x-auto">
+            {LEADS.map((days) => (
+              <Chip key={days} on={leadDays === days} onClick={() => setLeadDays(days)}>{t(leadLabel(days))}</Chip>
+            ))}
+          </div>
+        </Field>
         <Field label={t("Notes")}>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
@@ -707,11 +895,13 @@ function RuleSheet({
   finance,
   editing,
   onClose,
+  theme,
 }: {
   open: boolean;
   finance: FinanceState;
   editing: FinanceRule | null;
   onClose: () => void;
+  theme: string;
 }) {
   const t = useT();
   const [name, setName] = useState("");
@@ -721,6 +911,7 @@ function RuleSheet({
   const [cadence, setCadence] = useState("monthly");
   const [nextDate, setNextDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [leadDays, setLeadDays] = useState(2);
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = editing?.id || "";
@@ -734,6 +925,7 @@ function RuleSheet({
     setCadence(editing.cadence || "");
     setNextDate(editing.nextDate || "");
     setNotes(editing.notes || "");
+    setLeadDays(editing.leadDays ?? 2);
     setConfirming(false);
   }
   if (!editing) return null;
@@ -742,6 +934,8 @@ function RuleSheet({
       open={open}
       title={editing.name}
       onClose={onClose}
+      className="finance"
+      theme={theme}
       footer={
         <div className="flex items-center gap-2">
           <Button
@@ -758,11 +952,12 @@ function RuleSheet({
             {confirming ? t("Delete this") : t("Delete")}
           </Button>
           <div className="flex-1" />
+          <Button variant="ghost" onClick={() => { finance.markPaid(editing.id); onClose(); }}>{t("Mark paid")}</Button>
           <Button variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
           <Button
             disabled={finance.busy || !name.trim()}
             onClick={() => {
-              finance.saveRule({ id: editing.id, name, amount, currency, direction, cadence, nextDate, notes });
+              finance.saveRule({ id: editing.id, name, amount, currency, direction, cadence, nextDate, notes, leadDays });
               onClose();
             }}
           >
@@ -791,6 +986,13 @@ function RuleSheet({
         <CadenceChips value={cadence} onChange={setCadence} />
         <Field label={t("Date")}>
           <Input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
+        </Field>
+        <Field label={t("Remind me")}>
+          <div className="flex gap-2 overflow-x-auto">
+            {LEADS.map((days) => (
+              <Chip key={days} on={leadDays === days} onClick={() => setLeadDays(days)}>{t(leadLabel(days))}</Chip>
+            ))}
+          </div>
         </Field>
         <Field label={t("Notes")}>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -821,11 +1023,7 @@ function Chip({ on, onClick, wide, children }: { on: boolean; onClick: () => voi
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={cn(
-        "min-h-12 px-3 text-sm leading-5",
-        wide ? "w-full" : "shrink-0",
-        on ? "bg-foreground text-background" : "border border-border text-foreground",
-      )}
+      className={cn("fin-chip", wide ? "w-full" : "shrink-0")}
     >
       {children}
     </button>
@@ -850,4 +1048,100 @@ function classLabel(recurrence: string): string {
   if (recurrence === "recurring") return "Recurring";
   if (recurrence === "irregular") return "Irregular";
   return "Once";
+}
+
+function periodLabel(period: PeriodId): string {
+  if (period === "last") return "Last month";
+  if (period === "six") return "Last 6 months";
+  if (period === "year") return "This year";
+  if (period === "all") return "All time";
+  return "This month";
+}
+
+function leadLabel(days: number): string {
+  if (days === 0) return "On the day";
+  if (days === 1) return "1 day before";
+  if (days === 2) return "2 days before";
+  if (days === 3) return "3 days before";
+  return "A week before";
+}
+
+function relativeWhen(days: number, t: (text: string) => string): string {
+  if (days < 0) return t("Overdue");
+  if (days === 0) return t("Today");
+  if (days === 1) return t("Tomorrow");
+  return fill("In {n} days", { n: days });
+}
+
+function Group({ title, rows, empty, onOpen }: { title: string; rows: FinanceAccount[]; empty: string; onOpen: (account: FinanceAccount) => void }) {
+  return (
+    <section>
+      <h2 className="fin-kicker mb-2">{title}</h2>
+      {rows.length === 0 ? <p className="fin-muted text-base">{empty}</p> : <AccountRows rows={rows} onOpen={onOpen} />}
+    </section>
+  );
+}
+
+function DefaultCurrency({ finance }: { finance: FinanceState }) {
+  const t = useT();
+  const current = finance.snapshot.defaultCurrency || "";
+  const [custom, setCustom] = useState(current);
+  return (
+    <section className="fin-panel">
+      <h2 className="fin-kicker">{t("Default currency")}</h2>
+      <p className="fin-muted mt-2 text-sm leading-5">{t("Used when you do not name a currency. A saved account keeps its own.")}</p>
+      <div className="mt-3 flex gap-2 overflow-x-auto">
+        {["CHF", "EUR", "USD"].map((code) => (
+          <Chip key={code} on={current === code} onClick={() => finance.setDefaultCurrency(code)}>{code}</Chip>
+        ))}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Input value={custom} maxLength={3} onChange={(event) => setCustom(event.target.value.toUpperCase())} />
+        <Button type="button" onClick={() => custom.trim() && finance.setDefaultCurrency(custom.trim())}>{t("Save")}</Button>
+      </div>
+    </section>
+  );
+}
+
+function ColorField({ color, onChange }: { color: string; onChange: (color: string) => void }) {
+  const t = useT();
+  return (
+    <Field label={t("Color")}>
+      <div className="flex flex-wrap gap-2">
+        {PALETTE.map((swatch) => (
+          <button key={swatch} type="button" aria-label={swatch} className="fin-swatch h-11 w-11" style={{ background: swatch, outline: color === swatch ? "2px solid var(--fin-gold)" : undefined }} onClick={() => onChange(swatch)} />
+        ))}
+        <Input aria-label={t("Custom color")} value={color} onChange={(event) => onChange(event.target.value)} className="w-28" />
+      </div>
+    </Field>
+  );
+}
+
+function CategorySheet({ open, finance, onClose, theme }: { open: boolean; finance: FinanceState; onClose: () => void; theme: string }) {
+  const t = useT();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const names = finance.snapshot.categories.map((category) => category.name);
+  return (
+    <Sheet open={open} title={t("Edit categories")} onClose={onClose} className="finance" theme={theme}>
+      <div className="space-y-3">
+        {names.length === 0 && <p className="fin-muted text-sm">{t("A category is saved the first time you use it.")}</p>}
+        {names.map((name) => (
+          <div key={name} className="flex gap-2">
+            <Input value={drafts[name] ?? name} onChange={(event) => setDrafts((current) => ({ ...current, [name]: event.target.value }))} />
+            <Button type="button" onClick={() => finance.renameCategory(name, drafts[name] ?? name)}>{t("Rename")}</Button>
+          </div>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
+function downloadBase64(name: string, data: string) {
+  const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }

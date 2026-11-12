@@ -1079,3 +1079,23 @@ pub fn delete_finance_transaction(app: AppHandle, id: String) -> Result<crate::f
 pub fn delete_finance_rule(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
     app.state::<crate::finance::Finance>().delete_rule(&app, &id).map_err(msg)
 }
+
+#[tauri::command]
+pub fn set_finance_default_currency(app: AppHandle, currency: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().set_default_currency(&app, &currency).map_err(msg)
+}
+
+#[tauri::command]
+pub fn rename_finance_category(app: AppHandle, from: String, to: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().rename_category_name(&app, &from, &to).map_err(msg)
+}
+
+#[tauri::command]
+pub fn mark_finance_paid(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().mark_paid_id(&app, &id).map_err(msg)
+}
+
+#[tauri::command]
+pub fn export_finance_pdf(app: AppHandle, filter: crate::finance::PdfRequest) -> Result<crate::finance::ExportedPdf> {
+    app.state::<crate::finance::Finance>().export_pdf(&app, &filter).map_err(msg)
+}

@@ -36,13 +36,13 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
     listed.extend(crate::local_memory::tool_definitions());
     for tool in &listed {
         let name = tool["name"].as_str().unwrap_or("");
-        if matches!(name, "log_money" | "save_recurring" | "save_account" | "list_finance" | "delete_finance") {
+        if matches!(name, "log_money" | "save_recurring" | "save_account" | "list_finance" | "delete_finance" | "mark_paid" | "export_finance_pdf") {
             continue;
         }
         let desc = brief_tool(tool["description"].as_str().unwrap_or(""));
         tools.push_str(&format!("- {name}: {desc}\n"));
     }
-    tools.push_str("- log_money: expense, income, or payment. Do not invent a balance.\n- save_recurring: bill, payday, or investment.\n- save_account: stated balance only.\n- list_finance: read saved money.\n- delete_finance: confirmed true.\n");
+    tools.push_str("- log_money: expense, income, or payment. Do not invent a balance.\n- save_recurring: bill, payday, or payment.\n- save_account: balance, color, or default currency.\n- list_finance: read saved money.\n- delete_finance: confirmed true.\n- mark_paid: roll a paid bill.\n- export_finance_pdf: PDF. confirmed true.\n");
     let speech_line = if speech == "de" {
         "The user is speaking German. Put the spoken reply in the say field in German. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
     } else if speech == "es" {
@@ -51,7 +51,7 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
         "This session uses English Moonshine Base. It does not understand Spanish or German.\n"
     };
     format!(
-        "{custom}\n\nYou are running on this phone. Reply with one JSON object only: {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. Call the tool before saying a note, reminder, person, setting, alarm, timer, calendar change, or pinned fact is done. create_person and update_person edit People. delete_person and Listen off need confirmed true. get_settings and update_settings change language, Listen, budgets, and notificationDelivery. Never store an API key. remember_fact and forget_fact change on-device memory only. open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item need confirmed true after a clear yes. Nothing is sent until they confirm in that app. play_music uses the saved player. YouTube uses open_youtube. Times are local YYYY-MM-DDTHH:MM. If web_search errors, speak that error. For saved items call list_notes, list_reminders, list_calendar_events, list_people, or list_finance once, with from and to, month, or span. Do not look up one day at a time.\n{speech_line}\nTools:\n{tools}\n{}\n{}"
+        "{custom}\n\nYou are running on this phone. Reply with one JSON object only: {{\"say\":\"short spoken reply\",\"tool\":null,\"args\":{{}}}}. Call the tool before saying a note, reminder, person, setting, alarm, timer, calendar change, or pinned fact is done. create_person and update_person edit People. delete_person and Listen off need confirmed true. get_settings and update_settings change language, Listen, budgets, and notificationDelivery. Never store an API key. remember_fact and forget_fact change on-device memory only. open_browser, open_youtube, open_whatsapp, open_signal, open_email, open_call, open_sms, and share_item need confirmed true after a clear yes. play_music uses the saved player. YouTube uses open_youtube. Times are local YYYY-MM-DDTHH:MM. If web_search errors, speak that error. For saved items call list_notes, list_reminders, list_calendar_events, list_people, or list_finance once, with from and to, month, or span.\n{speech_line}\nTools:\n{tools}\n{}\n{}"
     , clip_chars(memory.trim(), MEMORY_CLIP_CHARS), clip_chars(local_memory.trim(), MEMORY_CLIP_CHARS))
 }
 

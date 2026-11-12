@@ -10,12 +10,16 @@ export function Sheet({
   onClose,
   children,
   footer,
+  className,
+  theme,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  className?: string;
+  theme?: string;
 }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -37,7 +41,7 @@ export function Sheet({
   if (!open) return null;
 
   return (
-    <div className="sheet-root" role="dialog" aria-modal="true" aria-label={title}>
+    <div className={`sheet-root ${className ?? ""}`} data-theme={theme} role="dialog" aria-modal="true" aria-label={title}>
       <button type="button" className="sheet-scrim" aria-label={t("Close")} onClick={onClose} />
       <div className="sheet-panel">
         <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
