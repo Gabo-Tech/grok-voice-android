@@ -474,6 +474,7 @@ impl Finance {
             let store = finance.lock().clone();
             let _ = Self::persist(&finance.path, &store);
         }
+        publish_board(&finance.path, &finance.lock());
         finance
     }
 
@@ -660,10 +661,14 @@ impl Finance {
         link_calendar(app, &mut store, Local::now());
         let snap = snapshot_of(&store, &currency_locale(app, &store), Local::now().date_naive());
         Self::persist(&self.path, &store)?;
+        publish_board(&self.path, &store);
         gc_events(app, &previous, &store);
         gc_reminders(app, &previous, &store);
         *self.lock() = store;
         touch(app);
+        if let Some(bridge) = app.try_state::<crate::native::NativeBridge>() {
+            bridge.refresh_widgets();
+        }
         Ok(snap)
     }
 }
@@ -2368,7 +2373,8 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
     let direction = normalize_direction(&ask.direction).unwrap_or_default();
     let class = if ask.recurrence == "once" { "" } else { ask.recurrence.as_str() };
     let totals = period_totals(&store.transactions, &month, &account_id, &direction, &class);
-    let mut detail = speak_totals(&totals, &month);
+    let display = effective_default(store, &current_locale());
+    let mut detail = speak_totals(store, &totals, &month, &display);
     if !account_id.is_empty() || !kind.is_empty() {
         detail.push(' ');
         detail.push_str(&speak_accounts(store, &kind, &ask.account));
@@ -2376,27 +2382,56 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
     detail
 }
 
-fn speak_totals(totals: &[PeriodTotal], month: &str) -> String {
+fn current_locale() -> String {
+    SPOKEN_LOCALE.with(|cell| {
+        let current = cell.borrow();
+        if current.is_empty() { "en".to_string() } else { current.clone() }
+    })
+}
+
+fn speak_totals(store: &Store, totals: &[PeriodTotal], month: &str, display: &str) -> String {
     if totals.is_empty() {
         return spoken("No income or expenses are saved for {month}.", &[("month", month)]);
     }
-    totals
-        .iter()
-        .map(|row| {
-            let spent = if row.expense_minor == 0 { spoken("nothing", &[]) } else { format_minor(row.expense_minor, &row.currency) };
-            let got = if row.income_minor == 0 { spoken("nothing", &[]) } else { format_minor(row.income_minor, &row.currency) };
-            let mut line = spoken(
-                "Spent {spent} and received {got} in {month} in {code}.",
-                &[("spent", &spent), ("got", &got), ("month", month), ("code", &row.currency)],
-            );
-            if row.payment_minor > 0 {
-                let amount = format_minor(row.payment_minor, &row.currency);
-                line.push_str(&spoken(" Payments were {amount}.", &[("amount", &amount)]));
-            }
-            line
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    let now = Local::now().timestamp_millis();
+    let spent = signed_parts(totals, |row| row.expense_minor);
+    let got = signed_parts(totals, |row| row.income_minor);
+    let paid = signed_parts(totals, |row| row.payment_minor);
+    let mut parts = spent.clone();
+    parts.extend(got.iter().cloned());
+    parts.extend(paid.iter().cloned());
+    let missing = crate::finance_fx::missing_codes(&parts, display, &store.fx);
+    if !missing.is_empty() {
+        let codes = missing.join(", ");
+        return spoken("The combined total needs a rate for {codes}.", &[("codes", &codes)]);
+    }
+    let spent_text = spoken_amount(&spent, display, &store.fx, now);
+    let got_text = spoken_amount(&got, display, &store.fx, now);
+    let mut line = spoken(
+        "Spent {spent} and received {got} in {month}, together in {code}.",
+        &[("spent", &spent_text), ("got", &got_text), ("month", month), ("code", display)],
+    );
+    if let Some(row) = crate::finance_fx::combine(&paid, display, &store.fx, now) {
+        if row.amount_minor != 0 {
+            let amount = format_minor(row.amount_minor, &row.currency);
+            line.push_str(&spoken(" Payments were {amount}.", &[("amount", &amount)]));
+        }
+    }
+    line
+}
+
+fn signed_parts(totals: &[PeriodTotal], pick: impl Fn(&PeriodTotal) -> i64) -> Vec<(i64, String)> {
+    totals.iter().filter_map(|row| {
+        let amount = pick(row);
+        if amount == 0 || row.currency.is_empty() { None } else { Some((amount, row.currency.clone())) }
+    }).collect()
+}
+
+fn spoken_amount(parts: &[(i64, String)], display: &str, book: &crate::finance_fx::FxBook, now: i64) -> String {
+    match crate::finance_fx::combine(parts, display, book, now) {
+        Some(row) => format_minor(row.amount_minor, &row.currency),
+        None => spoken("nothing", &[]),
+    }
 }
 
 fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
@@ -3514,15 +3549,38 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
         }
     }
     nets.sort_by(|a, b| a.0.cmp(&b.0));
+    let display = effective_default(store, locale);
+    let now_ms = Local::now().timestamp_millis();
+    let parts: Vec<(i64, String)> = nets.iter().map(|row| (row.1 + row.3 - row.2, row.0.clone())).filter(|row| row.0 != 0).collect();
     let heading = tr(locale, "Finance summary");
+    let mut notes = vec![tr(locale, "Balances are what you last said.")];
+    let mut numbers = Vec::new();
+    match crate::finance_fx::combine(&parts, &display, &store.fx, now_ms) {
+        Some(combined) => {
+            numbers.push((tr(locale, "Combined total"), format_minor(combined.amount_minor, &combined.currency)));
+            let mut note = tr(locale, "Combined in {code}.").replace("{code}", &combined.currency);
+            if !combined.as_of.is_empty() {
+                note.push(' ');
+                note.push_str(&tr(locale, "As of {date}.").replace("{date}", &combined.as_of));
+            }
+            if combined.stale {
+                note.push(' ');
+                note.push_str(&tr(locale, "Rates are stale."));
+            }
+            notes.push(note);
+        }
+        None if !parts.is_empty() => {
+            let missing = crate::finance_fx::missing_codes(&parts, &display, &store.fx);
+            numbers.push((tr(locale, "Combined total"), tr(locale, "Needs a rate")));
+            notes.push(tr(locale, "Combined total needs a rate for {codes}.").replace("{codes}", &missing.join(", ")));
+        }
+        None => {}
+    }
     let mut summary = Page {
         title: heading,
         subtitle: format!("{} · {}", tr(locale, "On this phone. No bank login."), span.label),
-        notes: vec![tr(locale, "Balances are what you last said."), tr(locale, "No exchange rate is applied.")],
-        numbers: nets
-            .iter()
-            .map(|(currency, money, debt, invest)| (format!("{} {}", tr(locale, "Net worth"), currency), format_minor(money + invest - debt, currency)))
-            .collect(),
+        notes,
+        numbers,
         rows: Vec::new(),
         chart: None,
     };
@@ -3531,38 +3589,33 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
         let amount = shown_balance(account, &store.transactions).map(|minor| format_minor(minor, &account.currency)).unwrap_or_else(|| tr(locale, "Not set"));
         summary.rows.push(Row { name: account.name.clone(), detail: group, amount, color: if account.color.is_empty() { "#C4B5A0".into() } else { account.color.clone() } });
     }
-    let display = effective_default(store, locale);
-    let parts: Vec<(i64, String)> = nets.iter().map(|row| (row.1 + row.3 - row.2, row.0.clone())).filter(|row| row.0 != 0).collect();
-    if let Some(combined) = crate::finance_fx::combine(&parts, &display, &store.fx, Local::now().timestamp_millis()) {
-        if combined.source != "identity" {
-            summary.numbers.push((format!("Combined {}", combined.currency), format_minor(combined.amount_minor, &combined.currency)));
-            let fresh = if combined.stale { " Rates are stale." } else { "" };
-            summary.notes.push(format!("Combined in {} as of {}.{}", combined.currency, if combined.as_of.is_empty() { "the saved rate" } else { combined.as_of.as_str() }, fresh));
-            summary.notes.retain(|note| note != "No exchange rate is applied." && note != &tr(locale, "No exchange rate is applied."));
-        }
-    }
     let mut pages = vec![summary];
-    let currencies: Vec<String> = nets.iter().map(|row| row.0.clone()).collect();
-    for currency in &currencies {
-        let money = nets.iter().find(|row| &row.0 == currency).map(|row| row.1).unwrap_or(0);
-        let debt = nets.iter().find(|row| &row.0 == currency).map(|row| row.2).unwrap_or(0);
-        let invest = nets.iter().find(|row| &row.0 == currency).map(|row| row.3).unwrap_or(0);
+    let money_parts: Vec<(i64, String)> = nets.iter().filter(|row| row.1 != 0).map(|row| (row.1, row.0.clone())).collect();
+    let debt_parts: Vec<(i64, String)> = nets.iter().filter(|row| row.2 != 0).map(|row| (row.2, row.0.clone())).collect();
+    let invest_parts: Vec<(i64, String)> = nets.iter().filter(|row| row.3 != 0).map(|row| (row.3, row.0.clone())).collect();
+    let money = combined_amount(&money_parts, &display, &store.fx, now_ms);
+    let debt = combined_amount(&debt_parts, &display, &store.fx, now_ms);
+    let invest = combined_amount(&invest_parts, &display, &store.fx, now_ms);
+    let net = crate::finance_fx::combine(&parts, &display, &store.fx, now_ms);
+    if let (Some(money), Some(debt), Some(invest), Some(net)) = (money, debt, invest, net) {
         let slices = vec![
-            Slice { label: tr(locale, "Money"), value: money.abs() as f64, color: "#6E8B74".into(), caption: format_minor(money, currency) },
-            Slice { label: tr(locale, "Debts"), value: debt.abs() as f64, color: "#A56B66".into(), caption: format_minor(debt, currency) },
-            Slice { label: tr(locale, "Investments"), value: invest.abs() as f64, color: "#C4B5A0".into(), caption: format_minor(invest, currency) },
+            Slice { label: tr(locale, "Money"), value: money.abs() as f64, color: "#6E8B74".into(), caption: format_minor(money, &display) },
+            Slice { label: tr(locale, "Debts"), value: debt.abs() as f64, color: "#A56B66".into(), caption: format_minor(debt, &display) },
+            Slice { label: tr(locale, "Investments"), value: invest.abs() as f64, color: "#C4B5A0".into(), caption: format_minor(invest, &display) },
         ];
-        if slices.iter().all(|slice| slice.value == 0.0) {
-            continue;
+        if slices.iter().any(|slice| slice.value != 0.0) {
+            pages.push(Page {
+                title: tr(locale, "Money, debts, and investments"),
+                subtitle: span.label.clone(),
+                notes: vec![tr(locale, "Combined in {code}.").replace("{code}", &display)],
+                numbers: vec![],
+                rows: vec![],
+                chart: Some(Chart::Donut { center_label: tr(locale, "Net worth"), center_value: format_minor(net.amount_minor, &display), slices }),
+            });
         }
-        pages.push(Page {
-            title: format!("{} · {currency}", tr(locale, "Money, debts, and investments")),
-            subtitle: span.label.clone(),
-            notes: vec![],
-            numbers: vec![],
-            rows: vec![],
-            chart: Some(Chart::Donut { center_label: tr(locale, "Net worth"), center_value: format_minor(money + invest - debt, currency), slices }),
-        });
+    } else if !parts.is_empty() {
+        let missing = crate::finance_fx::missing_codes(&parts, &display, &store.fx);
+        remember_rate(&mut pages, locale, &missing);
     }
     let bars: Vec<Slice> = accounts
         .iter()
@@ -3576,63 +3629,93 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
     }
     let totals = period_totals_filtered(&txs);
     if !totals.is_empty() {
-        let captions: Vec<String> = totals.iter().map(|row| row.currency.clone()).collect();
-        pages.push(Page {
-            title: tr(locale, "Income and expenses"),
-            subtitle: span.label.clone(),
-            notes: vec![],
-            numbers: vec![],
-            rows: vec![],
-            chart: Some(Chart::Groups {
-                captions,
-                series: vec![tr(locale, "Income"), tr(locale, "Expenses"), tr(locale, "Payments")],
-                values: vec![
-                    totals.iter().map(|row| row.income_minor as f64).collect(),
-                    totals.iter().map(|row| row.expense_minor as f64).collect(),
-                    totals.iter().map(|row| row.payment_minor as f64).collect(),
-                ],
-                colors: vec!["#6E8B74".into(), "#A56B66".into(), "#C4B5A0".into()],
-            }),
-        });
-    }
-    let mut categories: Vec<(String, i64, String)> = Vec::new();
-    for tx in txs.iter().filter(|tx| tx.direction == "expense") {
-        let name = if tx.category.is_empty() { tr(locale, "Expense") } else { tx.category.clone() };
-        if let Some(row) = categories.iter_mut().find(|row| fold(&row.0) == fold(&name) && row.2 == tx.currency) {
-            row.1 += tx.amount_minor;
+        let income_parts = direction_parts(&totals, |row| row.income_minor);
+        let expense_parts = direction_parts(&totals, |row| row.expense_minor);
+        let payment_parts = direction_parts(&totals, |row| row.payment_minor);
+        let income = combined_amount(&income_parts, &display, &store.fx, now_ms);
+        let expense = combined_amount(&expense_parts, &display, &store.fx, now_ms);
+        let payment = combined_amount(&payment_parts, &display, &store.fx, now_ms);
+        if let (Some(income), Some(expense), Some(payment)) = (income, expense, payment) {
+            let left_parts: Vec<(i64, String)> = totals.iter().map(|row| (row.income_minor - row.expense_minor - row.payment_minor, row.currency.clone())).filter(|row| row.0 != 0).collect();
+            let left = crate::finance_fx::combine(&left_parts, &display, &store.fx, now_ms);
+            let mut numbers = Vec::new();
+            if let Some(left) = left {
+                numbers.push((tr(locale, "Combined total"), format_minor(left.amount_minor, &display)));
+            }
+            pages.push(Page {
+                title: tr(locale, "Income and expenses"),
+                subtitle: span.label.clone(),
+                notes: vec![tr(locale, "Combined in {code}.").replace("{code}", &display)],
+                numbers,
+                rows: vec![],
+                chart: Some(Chart::Groups {
+                    captions: vec![display.clone()],
+                    series: vec![tr(locale, "Income"), tr(locale, "Expenses"), tr(locale, "Payments")],
+                    values: vec![vec![income as f64], vec![expense as f64], vec![payment as f64]],
+                    colors: vec!["#6E8B74".into(), "#A56B66".into(), "#C4B5A0".into()],
+                }),
+            });
         } else {
-            let color = store.categories.iter().find(|category| fold(&category.name) == fold(&name)).map(|category| category.color.clone()).unwrap_or_else(|| "#8C6A3F".into());
-            categories.push((name, tx.amount_minor, tx.currency.clone()));
-            let _ = color;
+            let mut flow = income_parts;
+            flow.extend(expense_parts);
+            flow.extend(payment_parts);
+            remember_rate(&mut pages, locale, &crate::finance_fx::missing_codes(&flow, &display, &store.fx));
         }
     }
-    if !categories.is_empty() {
-        let rows = categories
+    let mut category_rows: Vec<(String, i64)> = Vec::new();
+    let mut category_parts: Vec<(i64, String)> = Vec::new();
+    for tx in txs.iter().filter(|tx| tx.direction == "expense" && tx.amount_minor != 0) {
+        let name = if tx.category.is_empty() { tr(locale, "Expense") } else { tx.category.clone() };
+        category_parts.push((tx.amount_minor, tx.currency.clone()));
+        if let Some(converted) = crate::finance_fx::convert(tx.amount_minor, &tx.currency, &display, &store.fx, now_ms) {
+            if let Some(row) = category_rows.iter_mut().find(|row| fold(&row.0) == fold(&name)) {
+                row.1 += converted.amount_minor;
+            } else {
+                category_rows.push((name, converted.amount_minor));
+            }
+        }
+    }
+    let category_missing = crate::finance_fx::missing_codes(&category_parts, &display, &store.fx);
+    if !category_missing.is_empty() {
+        remember_rate(&mut pages, locale, &category_missing);
+    } else if !category_rows.is_empty() {
+        let rows = category_rows
             .iter()
-            .map(|(name, amount, currency)| Slice {
+            .map(|(name, amount)| Slice {
                 label: name.clone(),
                 value: *amount as f64,
                 color: store.categories.iter().find(|category| fold(&category.name) == fold(name)).map(|category| category.color.clone()).unwrap_or_else(|| "#8C6A3F".into()),
-                caption: format_minor(*amount, currency),
+                caption: format_minor(*amount, &display),
             })
             .collect();
-        pages.push(Page { title: tr(locale, "By category"), subtitle: span.label.clone(), notes: vec![], numbers: vec![], rows: vec![], chart: Some(Chart::Bars { rows }) });
+        pages.push(Page { title: tr(locale, "By category"), subtitle: span.label.clone(), notes: vec![tr(locale, "Combined in {code}.").replace("{code}", &display)], numbers: vec![], rows: vec![], chart: Some(Chart::Bars { rows }) });
     }
-    let trend = month_trend(&store.transactions, today, &request);
-    if trend.iter().any(|point| point.1 != 0 || point.2 != 0) {
-        pages.push(Page {
-            title: tr(locale, "Six months"),
-            subtitle: String::new(),
-            notes: vec![],
-            numbers: vec![],
-            rows: vec![],
-            chart: Some(Chart::Trend {
-                labels: trend.iter().map(|point| point.0.clone()).collect(),
-                income: trend.iter().map(|point| point.1 as f64).collect(),
-                expense: trend.iter().map(|point| point.2 as f64).collect(),
-                net: trend.iter().map(|point| (point.1 - point.2) as f64).collect(),
-            }),
-        });
+    match month_trend(&store.transactions, today, &request, &display, &store.fx, now_ms) {
+        Some(trend) if trend.iter().any(|point| point.1 != 0 || point.2 != 0) => {
+            pages.push(Page {
+                title: tr(locale, "Six months"),
+                subtitle: display.clone(),
+                notes: vec![tr(locale, "Combined in {code}.").replace("{code}", &display)],
+                numbers: vec![],
+                rows: vec![],
+                chart: Some(Chart::Trend {
+                    labels: trend.iter().map(|point| point.0.clone()).collect(),
+                    income: trend.iter().map(|point| point.1 as f64).collect(),
+                    expense: trend.iter().map(|point| point.2 as f64).collect(),
+                    net: trend.iter().map(|point| (point.1 - point.2) as f64).collect(),
+                }),
+            });
+        }
+        None => {
+            let mut trend_parts = Vec::new();
+            for tx in &store.transactions {
+                if tx.direction == "income" || tx.direction == "expense" {
+                    trend_parts.push((tx.amount_minor, tx.currency.clone()));
+                }
+            }
+            remember_rate(&mut pages, locale, &crate::finance_fx::missing_codes(&trend_parts, &display, &store.fx));
+        }
+        Some(_) => {}
     }
     let debts: Vec<Slice> = accounts
         .iter()
@@ -3736,14 +3819,14 @@ fn period_totals_filtered(transactions: &[&Transaction]) -> Vec<PeriodTotal> {
     period_totals(&owned, "", "", "", "")
 }
 
-fn month_trend(transactions: &[Transaction], today: NaiveDate, request: &PdfRequest) -> Vec<(String, i64, i64)> {
+fn month_trend(transactions: &[Transaction], today: NaiveDate, request: &PdfRequest, display: &str, book: &crate::finance_fx::FxBook, now_ms: i64) -> Option<Vec<(String, i64, i64)>> {
     let start = add_months(NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today), -5).unwrap_or(today);
     let mut points = Vec::new();
     let mut cursor = start;
     for _ in 0..6 {
         let key = format!("{:04}-{:02}", cursor.year(), cursor.month());
-        let mut income = 0i64;
-        let mut expense = 0i64;
+        let mut income_parts = Vec::new();
+        let mut expense_parts = Vec::new();
         for tx in transactions {
             if !tx.date.starts_with(&key) {
                 continue;
@@ -3754,17 +3837,174 @@ fn month_trend(transactions: &[Transaction], today: NaiveDate, request: &PdfRequ
             if !request.category.trim().is_empty() && fold(&tx.category) != fold(&request.category) {
                 continue;
             }
-            if tx.direction == "income" {
-                income += tx.amount_minor;
+            if tx.direction == "income" && tx.amount_minor != 0 {
+                income_parts.push((tx.amount_minor, tx.currency.clone()));
             }
-            if tx.direction == "expense" {
-                expense += tx.amount_minor;
+            if tx.direction == "expense" && tx.amount_minor != 0 {
+                expense_parts.push((tx.amount_minor, tx.currency.clone()));
             }
         }
+        let income = combined_amount(&income_parts, display, book, now_ms)?;
+        let expense = combined_amount(&expense_parts, display, book, now_ms)?;
         points.push((format!("{:02}", cursor.month()), income, expense));
         cursor = add_months(cursor, 1).unwrap_or(cursor);
     }
-    points
+    Some(points)
+}
+
+fn combined_amount(parts: &[(i64, String)], display: &str, book: &crate::finance_fx::FxBook, now_ms: i64) -> Option<i64> {
+    if parts.iter().all(|part| part.0 == 0) {
+        return Some(0);
+    }
+    crate::finance_fx::combine(parts, display, book, now_ms).map(|row| row.amount_minor)
+}
+
+fn direction_parts(totals: &[PeriodTotal], pick: impl Fn(&PeriodTotal) -> i64) -> Vec<(i64, String)> {
+    totals.iter().filter_map(|row| {
+        let amount = pick(row);
+        if amount == 0 { None } else { Some((amount, row.currency.clone())) }
+    }).collect()
+}
+
+fn remember_rate(pages: &mut [crate::finance_pdf::Page], locale: &str, codes: &[String]) {
+    if codes.is_empty() {
+        return;
+    }
+    let line = tr(locale, "Combined total needs a rate for {codes}.").replace("{codes}", &codes.join(", "));
+    if let Some(page) = pages.first_mut() {
+        if !page.notes.iter().any(|note| note == &line) {
+            page.notes.push(line);
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetFigure {
+    pub state: String,
+    pub text: String,
+    pub missing: String,
+    pub stale: bool,
+    /// Used by tests. The widget file only stores `text`.
+    #[serde(skip)]
+    #[allow(dead_code)]
+    pub minor: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetBoard {
+    pub display: String,
+    pub net: WidgetFigure,
+    pub month: WidgetFigure,
+    #[serde(rename = "in")]
+    pub coming_in: WidgetFigure,
+    #[serde(rename = "out")]
+    pub coming_out: WidgetFigure,
+}
+
+fn widget_figure(parts: &[(i64, String)], display: &str, book: &crate::finance_fx::FxBook, now_ms: i64) -> WidgetFigure {
+    let usable: Vec<(i64, String)> = parts.iter().filter(|part| part.0 != 0 && !part.1.is_empty()).cloned().collect();
+    if usable.is_empty() {
+        return WidgetFigure { state: "empty".into(), text: String::new(), missing: String::new(), stale: false, minor: None };
+    }
+    if let Some(combined) = crate::finance_fx::combine(&usable, display, book, now_ms) {
+        return WidgetFigure {
+            state: "ready".into(),
+            text: format_minor(combined.amount_minor, &combined.currency),
+            missing: String::new(),
+            stale: combined.stale,
+            minor: Some(combined.amount_minor),
+        };
+    }
+    WidgetFigure {
+        state: "needs-rate".into(),
+        text: String::new(),
+        missing: crate::finance_fx::missing_codes(&usable, display, book).join(", "),
+        stale: false,
+        minor: None,
+    }
+}
+
+fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
+    let display = effective_default(store, &store.locale_hint);
+    let accounts: Vec<crate::finance_schedule::WorthAccount> = store
+        .accounts
+        .iter()
+        .map(|account| crate::finance_schedule::WorthAccount {
+            kind: account.kind.clone(),
+            currency: account.currency.clone(),
+            shown_minor: shown_balance(account, &store.transactions),
+        })
+        .collect();
+    let nets = crate::finance_schedule::worth_rows(&accounts);
+    let net_parts: Vec<(i64, String)> = nets.into_iter().map(|row| (row.net_minor, row.currency)).collect();
+    let month_key = format!("{:04}-{:02}", today.year(), today.month());
+    let mut month_by: Vec<(String, i64)> = Vec::new();
+    for tx in &store.transactions {
+        if !tx.date.starts_with(&month_key) || tx.currency.is_empty() {
+            continue;
+        }
+        let delta = match tx.direction.as_str() {
+            "income" => tx.amount_minor,
+            "expense" | "payment" => -tx.amount_minor,
+            _ => 0,
+        };
+        if delta == 0 {
+            continue;
+        }
+        let code = tx.currency.to_ascii_uppercase();
+        if let Some(row) = month_by.iter_mut().find(|row| row.0 == code) {
+            row.1 += delta;
+        } else {
+            month_by.push((code, delta));
+        }
+    }
+    let month_parts: Vec<(i64, String)> = month_by.into_iter().map(|(code, amount)| (amount, code)).collect();
+    let horizon = today + Duration::days(30);
+    let (coming_in, coming_out) = window_parts(store, today, today, horizon);
+    WidgetBoard {
+        display: display.clone(),
+        net: widget_figure(&net_parts, &display, &store.fx, now_ms),
+        month: widget_figure(&month_parts, &display, &store.fx, now_ms),
+        coming_in: widget_figure(&coming_in, &display, &store.fx, now_ms),
+        coming_out: widget_figure(&coming_out, &display, &store.fx, now_ms),
+    }
+}
+
+fn window_parts(store: &Store, today: NaiveDate, from: NaiveDate, to: NaiveDate) -> (Vec<(i64, String)>, Vec<(i64, String)>) {
+    let mut incoming = Vec::new();
+    let mut outgoing = Vec::new();
+    for rule in &store.rules {
+        if matches!(rule.status.as_str(), "paused" | "stopped" | "completed") {
+            continue;
+        }
+        let Some(amount) = rule.amount_minor else { continue };
+        if amount == 0 || rule.currency.trim().is_empty() {
+            continue;
+        }
+        let spec = rule_spec(rule);
+        let settled = settled_dates(store, &rule.id);
+        for date in crate::finance_schedule::occurrence_dates(&spec, today) {
+            if date < from || date > to || settled.contains(&date) || spec.skipped.contains(&date) {
+                continue;
+            }
+            let part = (amount, rule.currency.to_ascii_uppercase());
+            if rule.direction == "income" {
+                incoming.push(part);
+            } else {
+                outgoing.push(part);
+            }
+        }
+    }
+    (incoming, outgoing)
+}
+
+fn publish_board(path: &std::path::Path, store: &Store) {
+    let Some(dir) = path.parent() else { return };
+    let board = widget_board(store, Local::now().date_naive(), Local::now().timestamp_millis());
+    let Ok(bytes) = serde_json::to_vec_pretty(&board) else { return };
+    let _ = crate::files::write_private(&dir.join("widget-finance.json"), &bytes);
 }
 
 fn color_or(color: &str) -> String {
@@ -3788,6 +4028,12 @@ const ES_PDF: &[(&str, &str)] = &[
     ("On this phone. No bank login.", "En este teléfono. Sin acceso al banco."),
     ("Balances are what you last said.", "Los saldos son lo último que dijiste."),
     ("No exchange rate is applied.", "No se aplica ningún tipo de cambio."),
+    ("Combined total", "Total combinado"),
+    ("Combined in {code}.", "Combinado en {code}."),
+    ("As of {date}.", "A fecha de {date}."),
+    ("Rates are stale.", "Los tipos están desfasados."),
+    ("Needs a rate", "Falta un tipo"),
+    ("Combined total needs a rate for {codes}.", "El total combinado necesita un tipo para {codes}."),
     ("Net", "Neto"),
     ("Net worth", "Patrimonio neto"),
     ("Money", "Dinero"),
@@ -3814,6 +4060,12 @@ const DE_PDF: &[(&str, &str)] = &[
     ("On this phone. No bank login.", "Auf diesem Telefon. Kein Bankzugang."),
     ("Balances are what you last said.", "Die Salden sind, was du zuletzt gesagt hast."),
     ("No exchange rate is applied.", "Es wird kein Wechselkurs angewendet."),
+    ("Combined total", "Summe"),
+    ("Combined in {code}.", "Zusammen in {code}."),
+    ("As of {date}.", "Stand {date}."),
+    ("Rates are stale.", "Die Kurse sind veraltet."),
+    ("Needs a rate", "Kurs fehlt"),
+    ("Combined total needs a rate for {codes}.", "Die Summe braucht einen Kurs für {codes}."),
     ("Net", "Saldo"),
     ("Net worth", "Vermögen"),
     ("Money", "Geld"),
@@ -3840,6 +4092,12 @@ const PT_PDF: &[(&str, &str)] = &[
     ("On this phone. No bank login.", "Neste telefone. Sem acesso ao banco."),
     ("Balances are what you last said.", "Os saldos são o que você disse por último."),
     ("No exchange rate is applied.", "Nenhum câmbio é aplicado."),
+    ("Combined total", "Total combinado"),
+    ("Combined in {code}.", "Juntos em {code}."),
+    ("As of {date}.", "Em {date}."),
+    ("Rates are stale.", "As taxas estão desatualizadas."),
+    ("Needs a rate", "Falta uma taxa"),
+    ("Combined total needs a rate for {codes}.", "O total combinado precisa de uma taxa para {codes}."),
     ("Net", "Líquido"),
     ("Net worth", "Patrimônio líquido"),
     ("Money", "Dinheiro"),
@@ -3866,6 +4124,12 @@ const CA_PDF: &[(&str, &str)] = &[
     ("On this phone. No bank login.", "En este telèfon. Sense accés al banc."),
     ("Balances are what you last said.", "Els saldos són l'últim que has dit."),
     ("No exchange rate is applied.", "No s'aplica cap tipus de canvi."),
+    ("Combined total", "Total combinat"),
+    ("Combined in {code}.", "Combinat en {code}."),
+    ("As of {date}.", "A data de {date}."),
+    ("Rates are stale.", "Els tipus estan desfasats."),
+    ("Needs a rate", "Falta un tipus"),
+    ("Combined total needs a rate for {codes}.", "El total combinat necessita un tipus per a {codes}."),
     ("Net", "Saldo"),
     ("Net worth", "Patrimoni net"),
     ("Money", "Diners"),
@@ -4044,9 +4308,11 @@ mod tests {
         assert!(detail.contains("No balance is saved"));
         assert!(store.accounts[0].balance_minor.is_none());
         assert_eq!(store.transactions[0].recurrence, "once");
+        store.default_currency = "EUR".into();
         let spoken = speak(&store, &Ask { view: "summary".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new() }, clock.today);
         assert!(spoken.contains("Spent 12.00 EUR"));
         assert!(spoken.contains("received nothing"));
+        assert!(spoken.contains("together in EUR"));
         let cash = speak(&store, &Ask { view: String::new(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: "cash".into() }, clock.today);
         assert!(cash.contains("no balance saved"));
         rule_from_tool(&mut store, &json!({"name": "Rent", "date": "1", "cadence": "monthly"}), &clock, false).unwrap();
@@ -4276,6 +4542,12 @@ mod tests {
             "On this phone. No bank login.",
             "Balances are what you last said.",
             "No exchange rate is applied.",
+            "Combined total",
+            "Combined in {code}.",
+            "As of {date}.",
+            "Rates are stale.",
+            "Needs a rate",
+            "Combined total needs a rate for {codes}.",
             "Net",
             "Net worth",
             "Money",
@@ -4316,5 +4588,48 @@ mod tests {
         drop(guard);
         let english = spoken("Delete {label}? Say yes and I will remove it.", &[("label", "Cash")]);
         assert!(english.contains("Say yes"));
+    }
+
+    #[test]
+    fn combined_totals_use_a_real_rate() {
+        let mut store = Store::default();
+        store.default_currency = "EUR".into();
+        let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 12).unwrap());
+        account_from_tool(&mut store, &json!({"name": "Euro", "kind": "bank", "balance": "100", "currency": "EUR"}), &clock).unwrap();
+        account_from_tool(&mut store, &json!({"name": "Dollar", "kind": "bank", "balance": "11", "currency": "USD"}), &clock).unwrap();
+        let request = PdfRequest { period: "this_month".into(), account: String::new(), category: String::new(), currency: String::new(), direction: String::new(), from: String::new(), to: String::new(), locale: "en".into() };
+        let blocked = pdf_pages(&store, &request, clock.today, "en");
+        assert_eq!(blocked[0].numbers.len(), 1);
+        assert_eq!(blocked[0].numbers[0].0, "Combined total");
+        assert_eq!(blocked[0].numbers[0].1, "Needs a rate");
+        assert!(blocked[0].notes.iter().any(|note| note.contains("USD")));
+        assert!(blocked[0].rows.iter().any(|row| row.amount.contains("100.00 EUR") || row.amount.contains("100")));
+        let waiting = widget_board(&store, clock.today, 5_000);
+        assert_eq!(waiting.net.state, "needs-rate");
+        assert!(waiting.net.text.is_empty());
+        assert!(waiting.net.minor.is_none());
+        assert!(waiting.net.missing.contains("USD"));
+        crate::finance_fx::upsert_manual(&mut store.fx, "USD", "EUR", 0.5, "2026-11-12").unwrap();
+        let pages = pdf_pages(&store, &request, clock.today, "en");
+        assert_eq!(pages[0].numbers.len(), 1);
+        assert!(pages[0].numbers[0].1.contains("105.50 EUR"), "{}", pages[0].numbers[0].1);
+        assert!(!pages[0].numbers[0].1.contains("111.00"));
+        let ready = widget_board(&store, clock.today, 5_000);
+        assert_eq!(ready.net.state, "ready");
+        assert_eq!(ready.net.minor, Some(10_550));
+        assert_ne!(ready.net.minor, Some(11_100));
+        log_from_tool(&mut store, &json!({"direction": "expense", "amount": "10 euros", "category": "lunch"}), &clock).unwrap();
+        log_from_tool(&mut store, &json!({"direction": "expense", "amount": "11 dollars", "category": "lunch"}), &clock).unwrap();
+        store.fx.manual.clear();
+        let ask = Ask { view: "summary".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new() };
+        let missing = speak(&store, &ask, clock.today);
+        assert!(missing.contains("needs a rate for USD"), "{missing}");
+        assert!(!missing.contains("Spent"), "{missing}");
+        assert!(!missing.contains("11.00 USD"), "{missing}");
+        crate::finance_fx::upsert_manual(&mut store.fx, "USD", "EUR", 0.5, "2026-11-12").unwrap();
+        let spoken = speak(&store, &ask, clock.today);
+        assert!(spoken.contains("15.50 EUR"), "{spoken}");
+        assert!(spoken.contains("together in EUR"), "{spoken}");
+        assert!(!spoken.contains("21.00"), "{spoken}");
     }
 }

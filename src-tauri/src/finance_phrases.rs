@@ -98,6 +98,8 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("Direction is income, expense, or payment.", "La dirección es ingreso, gasto o pago."),
     ("Use a date like 2026-12-01, tomorrow, or the day of the month.", "Usa una fecha como 2026-12-01, mañana o el día del mes."),
     ("Use a color like #E25B45.", "Usa un color como #E25B45."),
+    ("The combined total needs a rate for {codes}.", "El total combinado necesita un tipo para {codes}."),
+    ("Spent {spent} and received {got} in {month}, together in {code}.", "Gastado {spent} y recibido {got} en {month}, juntos en {code}."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -200,6 +202,8 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("Direction is income, expense, or payment.", "Die Richtung ist Einnahme, Ausgabe oder Zahlung."),
     ("Use a date like 2026-12-01, tomorrow, or the day of the month.", "Nimm ein Datum wie 2026-12-01, morgen oder den Tag im Monat."),
     ("Use a color like #E25B45.", "Nimm eine Farbe wie #E25B45."),
+    ("The combined total needs a rate for {codes}.", "Die Summe braucht einen Kurs für {codes}."),
+    ("Spent {spent} and received {got} in {month}, together in {code}.", "{spent} ausgegeben und {got} erhalten im {month}, zusammen in {code}."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -302,6 +306,8 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("Direction is income, expense, or payment.", "A direção é receita, despesa ou pagamento."),
     ("Use a date like 2026-12-01, tomorrow, or the day of the month.", "Use uma data como 2026-12-01, amanhã ou o dia do mês."),
     ("Use a color like #E25B45.", "Use uma cor como #E25B45."),
+    ("The combined total needs a rate for {codes}.", "O total combinado precisa de uma taxa para {codes}."),
+    ("Spent {spent} and received {got} in {month}, together in {code}.", "Gasto {spent} e recebido {got} em {month}, juntos em {code}."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -404,4 +410,6 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("Direction is income, expense, or payment.", "La direcció és ingrés, despesa o pagament."),
     ("Use a date like 2026-12-01, tomorrow, or the day of the month.", "Usa una data com 2026-12-01, demà o el dia del mes."),
     ("Use a color like #E25B45.", "Usa un color com #E25B45."),
+    ("The combined total needs a rate for {codes}.", "El total combinat necessita un tipus per a {codes}."),
+    ("Spent {spent} and received {got} in {month}, together in {code}.", "Gastat {spent} i rebut {got} en {month}, junts en {code}."),
 ];

@@ -201,8 +201,27 @@ export function useFinance() {
 
   const setManualRate = useCallback(
     (base: string, quote: string, rate: string) => {
-      if (!inApp) return;
-      void run(() => api.setFinanceManualRate(base, quote, rate));
+      const b = base.trim().toUpperCase();
+      const q = quote.trim().toUpperCase();
+      if (!inApp) {
+        const value = Number(rate.trim().replace(",", "."));
+        setSnapshot((current) => {
+          const manual = (current.fx?.manual || []).filter((row) => !(row.base.toUpperCase() === b && row.quote.toUpperCase() === q));
+          if (rate.trim() && Number.isFinite(value) && value > 0) manual.push({ base: b, quote: q, rate: value, asOf: current.fx?.asOf || "" });
+          return {
+            ...current,
+            fx: {
+              asOf: current.fx?.asOf || "",
+              fetchedMs: current.fx?.fetchedMs || 0,
+              stale: Boolean(current.fx?.stale),
+              perEur: current.fx?.perEur || [],
+              manual,
+            },
+          };
+        });
+        return;
+      }
+      void run(() => api.setFinanceManualRate(b, q, rate));
     },
     [inApp, run],
   );

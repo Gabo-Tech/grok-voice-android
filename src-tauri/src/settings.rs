@@ -73,10 +73,13 @@ pub struct Settings {
     /// Empty and unknown values stay on files on this phone.
     #[serde(default)]
     pub music_player: String,
-    /// `graphite`, `ink`, `stone`, or `system`. Empty and unknown stay on graphite.
+    /// Preset, `system`, or `custom`. Empty and unknown stay on graphite.
     /// System is never implied for someone who has not picked a theme.
     #[serde(default)]
     pub appearance: String,
+    /// Seven `#RRGGBB` colors: canvas, panel, border, text, accent, income, expense.
+    #[serde(default)]
+    pub custom_theme: String,
 }
 
 impl Default for Settings {
@@ -105,6 +108,7 @@ impl Default for Settings {
             spoken_name: String::new(),
             music_player: crate::music::PLAYER_LOCAL.into(),
             appearance: String::new(),
+            custom_theme: String::new(),
         }
     }
 }
@@ -163,6 +167,7 @@ impl SettingsStore {
         s.spoken_name = crate::notices::sanitize_spoken_name(&s.spoken_name);
         s.music_player = crate::music::stored_player(&s.music_player).to_string();
         s.appearance = stored_appearance(&s.appearance, &self.get().appearance);
+        s.custom_theme = stored_custom_theme(&s.custom_theme, &self.get().custom_theme);
         crate::files::write_private(&self.path, &serde_json::to_vec_pretty(&s)?)?;
         *self.inner.write().unwrap() = s.clone();
         Ok(s)
@@ -178,8 +183,15 @@ mod tests {
         assert_eq!(stored_appearance("", ""), "graphite");
         assert_eq!(stored_appearance("komi", ""), "graphite");
         assert_eq!(stored_appearance("system", ""), "system");
+        assert_eq!(stored_appearance("midnight", ""), "midnight");
+        assert_eq!(stored_appearance("custom", ""), "custom");
+        assert_eq!(stored_appearance("", "plum"), "plum");
         assert_eq!(stored_appearance("", "stone"), "stone");
         assert_eq!(stored_appearance("ink", "stone"), "ink");
+        let graphite = "#0E0F11,#17181B,#9A9690,#EEECE8,#C4B5A0,#7D9A86,#C48984";
+        assert_eq!(stored_custom_theme(graphite, ""), graphite);
+        assert_eq!(stored_custom_theme("nope", graphite), graphite);
+        assert_eq!(stored_custom_theme("", graphite), graphite);
 
         let path = std::env::temp_dir().join(format!("grok-appearance-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
@@ -812,17 +824,43 @@ fn parse_locale(value: &str) -> std::result::Result<String, String> {
     Ok(locale)
 }
 
+const THEMES: &[&str] = &["graphite", "ink", "stone", "midnight", "carbon", "ivory", "sand", "forest", "plum", "system", "custom"];
+
 /// Empty keeps a saved choice. Unknown values, including a first launch, are Graphite.
 pub fn stored_appearance(incoming: &str, previous: &str) -> String {
     let incoming = incoming.trim().to_ascii_lowercase();
-    if matches!(incoming.as_str(), "graphite" | "ink" | "stone" | "system") {
+    if THEMES.contains(&incoming.as_str()) {
         return incoming;
     }
     let previous = previous.trim().to_ascii_lowercase();
-    if incoming.is_empty() && matches!(previous.as_str(), "graphite" | "ink" | "stone" | "system") {
+    if incoming.is_empty() && THEMES.contains(&previous.as_str()) {
         return previous;
     }
     "graphite".into()
+}
+
+/// A valid palette is stored. An empty or broken value keeps the previous palette.
+pub fn stored_custom_theme(incoming: &str, previous: &str) -> String {
+    if let Some(clean) = normalize_custom(incoming) {
+        return clean;
+    }
+    normalize_custom(previous).unwrap_or_default()
+}
+
+fn normalize_custom(value: &str) -> Option<String> {
+    let parts: Vec<&str> = value.split(',').map(str::trim).filter(|part| !part.is_empty()).collect();
+    if parts.len() != 7 {
+        return None;
+    }
+    let mut out = Vec::new();
+    for part in parts {
+        let hex = part.trim_start_matches('#');
+        if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            return None;
+        }
+        out.push(format!("#{hex}").to_ascii_uppercase());
+    }
+    Some(out.join(","))
 }
 
 fn stored_speech(value: &str) -> String {

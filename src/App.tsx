@@ -15,7 +15,7 @@ import { useAgenda } from "@/hooks/useAgenda";
 import { useFinance } from "@/hooks/useFinance";
 import { useVoice } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type Settings, type WakewordStatus } from "@/lib/api";
-import { applyAppearance, choiceFromSettings, readStoredAppearance, rememberAppearance, type AppearanceChoice } from "@/lib/appearance";
+import { applyAppearance, choiceFromSettings, prefersLight, readStoredAppearance, rememberAppearance, rememberCustomTheme, type AppearanceChoice } from "@/lib/appearance";
 import { popUntil, pushStep } from "@/lib/history";
 import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -99,6 +99,7 @@ export default function App() {
       const action = (ev as CustomEvent<string>).detail;
       if (action === "reminders") goTab.current("reminders");
       else if (action === "events") goTab.current("calendar");
+      else if (action === "finance") goTab.current("finance");
       else if (action === "talk") {
         goTab.current("talk");
         void api.startSession().catch(() => {});
@@ -121,20 +122,24 @@ export default function App() {
       .then((s) => {
         setAppLocale(s.locale || "");
         setOnboarded(s.onboarded);
+        if (s.customTheme) rememberCustomTheme(s.customTheme);
         const choice = choiceFromSettings(s.appearance);
         if (choice) {
           rememberAppearance(choice);
           setAppearance(choice);
+          applyAppearance(choice, prefersLight());
         }
       })
       .catch(() => setOnboarded(false));
     let unlisten: (() => void) | undefined;
     void listen<Settings>("voice://settings", (event) => {
       setAppLocale(event.payload.locale || "");
+      if (event.payload.customTheme) rememberCustomTheme(event.payload.customTheme);
       const choice = choiceFromSettings(event.payload.appearance);
       if (choice) {
         rememberAppearance(choice);
         setAppearance(choice);
+        applyAppearance(choice, prefersLight());
       }
     }).then((fn) => {
       unlisten = fn;

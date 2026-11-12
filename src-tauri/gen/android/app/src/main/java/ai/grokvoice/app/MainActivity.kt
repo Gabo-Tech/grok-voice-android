@@ -16,6 +16,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : TauriActivity() {
   companion object {
@@ -98,6 +99,7 @@ class MainActivity : TauriActivity() {
     // In-app history is handled in the WebView. At the root, back leaves the task
     // only when Listen is off. Predictive back (Android 13+) uses this callback.
     onBackPressedDispatcher.addCallback(this, backCallback)
+    paintCanvas(String.format("#%06X", WidgetTheme.canvas(this) and 0xFFFFFF))
     applyWidget(intent)
   }
 
@@ -187,8 +189,15 @@ class MainActivity : TauriActivity() {
     if (!hex.matches(Regex("^#[0-9A-Fa-f]{6}$"))) return
     val color = Color.parseColor(hex)
     runOnUiThread {
-      window?.decorView?.setBackgroundColor(color)
-      findWebView(window?.decorView)?.setBackgroundColor(color)
+      val window = window ?: return@runOnUiThread
+      window.statusBarColor = color
+      window.navigationBarColor = color
+      window.decorView.setBackgroundColor(color)
+      findWebView(window.decorView)?.setBackgroundColor(color)
+      val light = WidgetTheme.lightBars(color)
+      val bars = WindowInsetsControllerCompat(window, window.decorView)
+      bars.isAppearanceLightStatusBars = light
+      bars.isAppearanceLightNavigationBars = light
     }
   }
 
@@ -198,7 +207,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onWebViewCreate(webView: WebView) {
-    webView.setBackgroundColor(Color.parseColor("#0E0F11"))
+    webView.setBackgroundColor(WidgetTheme.canvas(this))
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
     }

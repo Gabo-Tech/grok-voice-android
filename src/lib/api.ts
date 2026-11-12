@@ -208,8 +208,10 @@ export interface Settings {
   spokenName?: string;
   /** `local`, `musify`, `youtube`, `youtube_music`, or `system`. */
   musicPlayer?: string;
-  /** `graphite`, `ink`, `stone`, or `system`. Empty stays on Graphite. */
+  /** Preset id, `system`, or `custom`. Empty stays on Graphite. */
   appearance?: string;
+  /** Seven hex colors: canvas, panel, border, text, accent, income, expense. */
+  customTheme?: string;
 }
 
 export interface MusicPlayerChoice {

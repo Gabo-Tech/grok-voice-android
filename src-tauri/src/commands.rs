@@ -345,10 +345,13 @@ pub fn music_players(app: AppHandle) -> Result<serde_json::Value> {
 }
 
 #[tauri::command]
-pub fn save_settings(store: State<'_, SettingsStore>, engine: State<'_, Engine>, settings: Settings) -> Result<Settings> {
+pub fn save_settings(app: AppHandle, store: State<'_, SettingsStore>, engine: State<'_, Engine>, settings: Settings) -> Result<Settings> {
     let settings = crate::settings::keep_listen_preference(&store.get(), settings);
     let saved = store.save(settings)?;
     engine.send(Ctl::ReloadSettings);
+    if let Some(bridge) = app.try_state::<NativeBridge>() {
+        bridge.refresh_widgets();
+    }
     Ok(saved)
 }
 

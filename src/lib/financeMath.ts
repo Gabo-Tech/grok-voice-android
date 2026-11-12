@@ -726,6 +726,77 @@ export interface MoneyPart {
   currency: string;
 }
 
+export interface Headline {
+  state: "empty" | "ready" | "needs-rate";
+  amountMinor: number;
+  currency: string;
+  asOf: string;
+  stale: boolean;
+  source: Converted["source"] | "";
+  missing: string[];
+}
+
+/** Currencies that cannot be shown in `display`. A missing book is not treated as 1:1. */
+export function missingCodes(parts: MoneyPart[], display: string, book: RateBook | null, nowMs: number): string[] {
+  const target = display.trim().toUpperCase();
+  const codes = new Set<string>();
+  for (const part of parts) {
+    const code = part.currency.trim().toUpperCase();
+    if (!code || part.amountMinor === 0) continue;
+    if (!target || !convertMinor(part.amountMinor, code, target, book, nowMs)) codes.add(code);
+  }
+  return [...codes].sort();
+}
+
+export function nativeParts(parts: MoneyPart[]): MoneyPart[] {
+  const by = new Map<string, number>();
+  for (const part of parts) {
+    const code = part.currency.trim().toUpperCase();
+    if (!code || part.amountMinor === 0) continue;
+    by.set(code, (by.get(code) || 0) + part.amountMinor);
+  }
+  return [...by.entries()].map(([currency, amountMinor]) => ({ currency, amountMinor })).sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+const EMPTY_HEADLINE: Headline = { state: "empty", amountMinor: 0, currency: "", asOf: "", stale: false, source: "", missing: [] };
+
+/** One display-currency total. A missing rate yields no amount, never a 1:1 sum. */
+export function headlineOf(parts: MoneyPart[], display: string, book: RateBook | null, nowMs: number): Headline {
+  const target = display.trim().toUpperCase();
+  const usable = nativeParts(parts);
+  if (!target) {
+    return usable.length === 0 ? EMPTY_HEADLINE : { ...EMPTY_HEADLINE, state: "needs-rate", missing: usable.map((part) => part.currency) };
+  }
+  if (usable.length === 0) return { ...EMPTY_HEADLINE, currency: target };
+  const combined = combinedMinor(usable, target, book, nowMs);
+  if (!combined) {
+    return { state: "needs-rate", amountMinor: 0, currency: target, asOf: "", stale: false, source: "", missing: missingCodes(usable, target, book, nowMs) };
+  }
+  return {
+    state: "ready",
+    amountMinor: combined.amountMinor,
+    currency: combined.currency,
+    asOf: combined.asOf,
+    stale: combined.stale,
+    source: combined.source,
+    missing: [],
+  };
+}
+
+/** Display-currency difference. Either side missing a rate blocks the result. */
+export function subtractHeadlines(left: Headline, right: Headline, display: string): Headline {
+  const target = display.trim().toUpperCase();
+  const missing = [...new Set([...left.missing, ...right.missing])].sort();
+  if (left.state === "needs-rate" || right.state === "needs-rate" || !target) {
+    return { state: missing.length || left.state === "needs-rate" || right.state === "needs-rate" ? "needs-rate" : "empty", amountMinor: 0, currency: target, asOf: "", stale: false, source: "", missing };
+  }
+  if (left.state === "empty" && right.state === "empty") return { ...EMPTY_HEADLINE, currency: target };
+  const amount = (left.state === "ready" ? left.amountMinor : 0) - (right.state === "ready" ? right.amountMinor : 0);
+  const asOf = [left.asOf, right.asOf].filter(Boolean).sort()[0] || "";
+  const source = left.source === "cached" || right.source === "cached" ? "cached" : left.source === "manual" || right.source === "manual" ? "manual" : "identity";
+  return { state: "ready", amountMinor: amount, currency: target, asOf, stale: left.stale || right.stale, source, missing: [] };
+}
+
 /** Combined display total. One missing rate drops the total instead of inventing a 1:1. */
 export function combinedMinor(parts: MoneyPart[], display: string, book: RateBook | null, nowMs: number): Converted | null {
   const target = display.toUpperCase();

@@ -4,6 +4,9 @@ import {
   cashFlow,
   combinedMinor,
   comingRows,
+  headlineOf,
+  missingCodes,
+  subtractHeadlines,
   convertMinor,
   debtPayoff,
   monthBounds,
@@ -296,6 +299,47 @@ assert.equal(convertMinor(1100, "USD", "EUR", manualBook, 1_000)?.amountMinor, 5
 assert.equal(convertMinor(1100, "USD", "EUR", manualBook, 1_000)?.source, "manual");
 assert.equal(convertMinor(-3000, "EUR", "USD", fresh, 1_000)?.amountMinor, -3300);
 assert.equal(combinedMinor([{ amountMinor: 85000, currency: "EUR" }], "EUR", null, 1_000)?.source, "identity");
+
+const mixed = headlineOf(
+  [
+    { amountMinor: 10_000, currency: "EUR" },
+    { amountMinor: 1_100, currency: "USD" },
+  ],
+  "EUR",
+  fresh,
+  1_000,
+);
+assert.equal(mixed.state, "ready");
+assert.equal(mixed.amountMinor, 11_000);
+assert.equal(mixed.currency, "EUR");
+assert.notEqual(mixed.amountMinor, 11_100);
+assert.deepEqual(mixed.missing, []);
+
+const blocked = headlineOf(
+  [
+    { amountMinor: 10_000, currency: "EUR" },
+    { amountMinor: 100, currency: "XMR" },
+  ],
+  "EUR",
+  fresh,
+  1_000,
+);
+assert.equal(blocked.state, "needs-rate");
+assert.equal(blocked.amountMinor, 0);
+assert.deepEqual(blocked.missing, ["XMR"]);
+assert.notEqual(blocked.amountMinor, 10_100);
+assert.deepEqual(missingCodes([{ amountMinor: 10_000, currency: "EUR" }, { amountMinor: 100, currency: "XMR" }], "EUR", fresh, 1_000), ["XMR"]);
+
+const usdOut = headlineOf([{ amountMinor: 1_100, currency: "USD" }], "EUR", fresh, 1_000);
+const eurIn = headlineOf([{ amountMinor: 10_000, currency: "EUR" }], "EUR", fresh, 1_000);
+const net = subtractHeadlines(eurIn, usdOut, "EUR");
+assert.equal(net.state, "ready");
+assert.equal(net.amountMinor, 9_000);
+assert.notEqual(net.amountMinor, 8_900);
+const blockedNet = subtractHeadlines(eurIn, headlineOf([{ amountMinor: 100, currency: "XMR" }], "EUR", fresh, 1_000), "EUR");
+assert.equal(blockedNet.state, "needs-rate");
+assert.equal(blockedNet.amountMinor, 0);
+assert.deepEqual(blockedNet.missing, ["XMR"]);
 const moved = netWorthChange(
   [
     { currency: "EUR", direction: "income", amountMinor: 300000, date: "2026-11-02", accountKind: "bank" },

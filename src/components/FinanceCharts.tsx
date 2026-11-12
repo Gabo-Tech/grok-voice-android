@@ -1,8 +1,14 @@
-import { useRef, useState, type ReactNode } from "react";
-import type { FinanceAccount, FinanceTransaction } from "@/lib/api";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import type { FinanceAccount, FinanceFx, FinanceTransaction } from "@/lib/api";
+import { RatePanel } from "@/components/CombinedTotal";
+import { bookFromStatus, headlineOf, type Headline, type MoneyPart, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
 import { displayColor, isDebt, netByCurrency, sixMonths } from "@/lib/financeView";
-import { useT } from "@/lib/i18n";
+import { fill, useT } from "@/lib/i18n";
+
+const SAGE = "var(--sage)";
+const ROSE = "var(--rose)";
+const GOLD = "var(--gold)";
 
 export interface ChartPick {
   accountId?: string;
@@ -16,17 +22,30 @@ export function FinanceCarousel({
   accounts,
   transactions,
   planned = [],
+  display = "",
+  fx,
+  busy = false,
+  onRefresh,
+  onSaveRate,
   onPick,
 }: {
   accounts: FinanceAccount[];
   transactions: FinanceTransaction[];
   planned?: { currency: string; income: number; expense: number }[];
+  display?: string;
+  fx?: FinanceFx | null;
+  busy?: boolean;
+  onRefresh?: () => void;
+  onSaveRate?: (base: string, quote: string, rate: string) => void;
   onPick: (pick: ChartPick) => void;
 }) {
   const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
-  const cards = buildCards(accounts, transactions, planned, t);
+  const book = useMemo(() => bookFromStatus(fx), [fx]);
+  const nowMs = useMemo(() => Date.now(), [fx, transactions, accounts, planned, display]);
+  let askRate = true;
+  const cards = buildCards();
   if (cards.length === 0) return null;
   const go = (index: number) => {
     const node = scroller.current;
@@ -36,11 +55,11 @@ export function FinanceCarousel({
     setPage(index);
   };
   return (
-    <section>
+    <section className="min-w-0 max-w-full">
       <p className="fin-kicker mb-3">{t("Charts")}</p>
       <div
         ref={scroller}
-        className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2"
+        className="flex max-w-full snap-x snap-mandatory gap-3 overflow-x-auto pb-2"
         onScroll={(event) => {
           const node = event.currentTarget;
           const width = node.clientWidth || 1;
@@ -48,9 +67,9 @@ export function FinanceCarousel({
         }}
       >
         {cards.map((card) => (
-          <article key={card.key} className="fin-panel w-full shrink-0 snap-start">
+          <article key={card.key} className="fin-panel w-full max-w-full shrink-0 snap-start">
             <h3 className="fin-kicker">{card.title}</h3>
-            <div className="mt-4">{card.body}</div>
+            <div className="mt-4 min-w-0">{card.body}</div>
           </article>
         ))}
       </div>
@@ -65,59 +84,144 @@ export function FinanceCarousel({
     </section>
   );
 
-  function buildCards(rows: FinanceAccount[], txs: FinanceTransaction[], plannedRows: { currency: string; income: number; expense: number }[], translate: (text: string) => string) {
+  function claimAsk() {
+    const allowed = askRate;
+    askRate = false;
+    return allowed;
+  }
+
+  function blocked(missing: string[], key: string, title: string) {
+    return {
+      key,
+      title,
+      body: (
+        <NeedRate
+          codes={missing}
+          display={display}
+          busy={busy}
+          ask={claimAsk()}
+          onRefresh={onRefresh}
+          onSave={onSaveRate}
+        />
+      ),
+    };
+  }
+
+  function buildCards() {
     const cards: Array<{ key: string; title: string; body: ReactNode }> = [];
-    const nets = netByCurrency(rows);
-    nets.forEach((net) => {
-      const slices = [
-        { label: translate("Money"), value: Math.abs(net.money), color: "#7D9A86", pick: { currency: net.currency, group: "money" as const } },
-        { label: translate("Debts"), value: Math.abs(net.debt), color: "#C48984", pick: { currency: net.currency, group: "debt" as const } },
-        { label: translate("Investments"), value: Math.abs(net.investment), color: "#C4B5A0", pick: { currency: net.currency, group: "investment" as const } },
-      ].filter((slice) => slice.value > 0);
-      if (slices.length === 0) return;
-      cards.push({
-        key: `ring-${net.currency}`,
-        title: `${translate("Money, debts, and investments")} · ${net.currency}`,
-        body: <Donut slices={slices} center={formatMoney(net.net, net.currency)} onPick={onPick} />,
-      });
-    });
-    const bars = rows
+    const code = display.trim().toUpperCase();
+    const nets = netByCurrency(accounts);
+    if (nets.length > 0) {
+      const money = headlineOf(nets.map((net) => ({ amountMinor: net.money, currency: net.currency })), code, book, nowMs);
+      const debt = headlineOf(nets.map((net) => ({ amountMinor: net.debt, currency: net.currency })), code, book, nowMs);
+      const invest = headlineOf(nets.map((net) => ({ amountMinor: net.investment, currency: net.currency })), code, book, nowMs);
+      const net = headlineOf(nets.map((row) => ({ amountMinor: row.net, currency: row.currency })), code, book, nowMs);
+      const missing = [...new Set([...money.missing, ...debt.missing, ...invest.missing, ...net.missing])];
+      if (missing.length > 0) {
+        cards.push(blocked(missing, "ring", t("Money, debts, and investments")));
+      } else {
+        const slices = [
+          { label: t("Money"), value: Math.abs(money.amountMinor), color: SAGE, pick: { group: "money" as const, currency: code } },
+          { label: t("Debts"), value: Math.abs(debt.amountMinor), color: ROSE, pick: { group: "debt" as const, currency: code } },
+          { label: t("Investments"), value: Math.abs(invest.amountMinor), color: GOLD, pick: { group: "investment" as const, currency: code } },
+        ].filter((slice) => slice.value > 0);
+        if (slices.length > 0 && net.state === "ready") {
+          cards.push({
+            key: "ring",
+            title: t("Money, debts, and investments"),
+            body: <Donut slices={slices} center={formatMoney(net.amountMinor, net.currency)} onPick={onPick} />,
+          });
+        }
+      }
+    }
+    const bars = accounts
       .map((account, index) => ({
         label: account.name,
         value: Math.abs(account.shownBalanceMinor ?? 0),
         color: displayColor(account.color, index),
-        caption: account.shownBalanceMinor == null ? translate("Not set") : formatMoney(account.shownBalanceMinor, account.currency),
+        caption: account.shownBalanceMinor == null ? t("Not set") : formatMoney(account.shownBalanceMinor, account.currency),
         pick: { accountId: account.id, currency: account.currency },
       }))
       .filter((bar) => bar.label);
-    if (bars.length > 0) {
-      cards.push({ key: "bars", title: translate("Every account"), body: <Bars rows={bars} onPick={onPick} /> });
+    if (bars.length > 0) cards.push({ key: "bars", title: t("Every account"), body: <Bars rows={bars} onPick={onPick} /> });
+    if (planned.some((row) => row.income || row.expense)) {
+      const income = headlineOf(planned.map((row) => ({ amountMinor: row.income, currency: row.currency })), code, book, nowMs);
+      const expense = headlineOf(planned.map((row) => ({ amountMinor: row.expense, currency: row.currency })), code, book, nowMs);
+      const missing = [...new Set([...income.missing, ...expense.missing])];
+      cards.push(
+        missing.length
+          ? blocked(missing, "planned", t("Planned, next 12 months"))
+          : {
+              key: "planned",
+              title: t("Planned, next 12 months"),
+              body: (
+                <div>
+                  <p className="stamp mb-3">{t("Not actual")}</p>
+                  <p className="fin-num mb-3 text-3xl leading-none break-words">
+                    {formatMoney((income.state === "ready" ? income.amountMinor : 0) - (expense.state === "ready" ? expense.amountMinor : 0), code)}
+                  </p>
+                  <Grouped rows={[{ currency: code, income: readyAmount(income), expense: readyAmount(expense), payment: 0 }]} onPick={onPick} />
+                </div>
+              ),
+            },
+      );
     }
-    if (plannedRows.some((row) => row.income || row.expense)) {
-      cards.push({
-        key: "planned",
-        title: translate("Planned, next 12 months"),
-        body: (
-          <div>
-            <p className="stamp mb-3">{translate("Not actual")}</p>
-            <Grouped rows={plannedRows.map((row) => ({ ...row, payment: 0 }))} onPick={onPick} />
-          </div>
-        ),
-      });
+    const month = monthParts(transactions);
+    if (month.income.length || month.expense.length || month.payment.length) {
+      const income = headlineOf(month.income, code, book, nowMs);
+      const expense = headlineOf(month.expense, code, book, nowMs);
+      const payment = headlineOf(month.payment, code, book, nowMs);
+      const left = headlineOf(month.left, code, book, nowMs);
+      const missing = [...new Set([...income.missing, ...expense.missing, ...payment.missing, ...left.missing])];
+      cards.push(
+        missing.length
+          ? blocked(missing, "month", t("Income and expenses"))
+          : {
+              key: "month",
+              title: t("Income and expenses"),
+              body: (
+                <div>
+                  {left.state === "ready" ? <p className="fin-num mb-3 text-3xl leading-none break-words">{formatMoney(left.amountMinor, left.currency)}</p> : null}
+                  <Grouped rows={[{ currency: code, income: readyAmount(income), expense: readyAmount(expense), payment: readyAmount(payment) }]} onPick={onPick} />
+                </div>
+              ),
+            },
+      );
     }
-    const month = monthBars(txs);
-    if (month.length > 0) {
-      cards.push({ key: "month", title: translate("Income and expenses"), body: <Grouped rows={month} onPick={onPick} /> });
-    }
-    const categories = categoryBars(txs);
+    const categories = categoryParts(transactions);
     if (categories.length > 0) {
-      cards.push({ key: "category", title: translate("By category"), body: <Bars rows={categories} onPick={onPick} /> });
+      const missing = new Set<string>();
+      const merged = new Map<string, number>();
+      for (const row of categories) {
+        const head = headlineOf([{ amountMinor: row.amountMinor, currency: row.currency }], code, book, nowMs);
+        if (head.state === "needs-rate") head.missing.forEach((item) => missing.add(item));
+        else if (head.state === "ready") merged.set(row.name, (merged.get(row.name) || 0) + head.amountMinor);
+      }
+      cards.push(
+        missing.size
+          ? blocked([...missing], "category", t("By category"))
+          : {
+              key: "category",
+              title: t("By category"),
+              body: (
+                <Bars
+                  rows={[...merged.entries()].map(([name, value], index) => ({
+                    label: name === "Expense" ? t("Expense") : name,
+                    value,
+                    color: displayColor("", index),
+                    caption: formatMoney(value, code),
+                    pick: { category: name, currency: code },
+                  }))}
+                  onPick={onPick}
+                />
+              ),
+            },
+      );
     }
-    const trend = trendPoints(txs);
-    if (trend.some((point) => point.income || point.expense)) {
-      cards.push({ key: "trend", title: translate("Six months"), body: <Trend points={trend} onPick={onPick} /> });
-    }
-    const debts = rows
+    const trend = trendReady(transactions, code, book, nowMs);
+    if (trend.kind === "missing") cards.push(blocked(trend.missing, "trend", t("Six months")));
+    else if (trend.kind === "points") cards.push({ key: "trend", title: t("Six months"), body: <Trend points={trend.points} onPick={onPick} /> });
+    const debts = accounts
       .filter((account) => isDebt(account.kind) && account.shownBalanceMinor != null)
       .map((account, index) => ({
         label: account.name,
@@ -126,75 +230,123 @@ export function FinanceCarousel({
         caption: formatMoney(account.shownBalanceMinor, account.currency),
         pick: { accountId: account.id, currency: account.currency, group: "debt" as const },
       }));
-    if (debts.length > 0) cards.push({ key: "debts", title: translate("Debts owed"), body: <Bars rows={debts} onPick={onPick} /> });
-    const holdings = rows
-      .filter((account) => account.kind === "investment" && account.shownBalanceMinor != null)
-      .map((account, index) => ({
-        label: account.name,
-        value: Math.abs(account.shownBalanceMinor ?? 0),
-        color: displayColor(account.color, index),
-        caption: formatMoney(account.shownBalanceMinor, account.currency),
-        pick: { accountId: account.id, group: "investment" as const },
-      }));
+    if (debts.length > 0) cards.push({ key: "debts", title: t("Debts owed"), body: <Bars rows={debts} onPick={onPick} /> });
+    const holdings = accounts.filter((account) => account.kind === "investment" && account.shownBalanceMinor != null);
     if (holdings.length > 0) {
-      cards.push({
-        key: "holdings",
-        title: translate("Holdings"),
-        body: <Donut slices={holdings.map((row) => ({ ...row, pick: row.pick }))} center="" onPick={onPick} />,
-      });
+      const head = headlineOf(
+        holdings.map((account) => ({ amountMinor: account.shownBalanceMinor || 0, currency: account.currency })),
+        code,
+        book,
+        nowMs,
+      );
+      if (head.state === "needs-rate") cards.push(blocked(head.missing, "holdings", t("Holdings")));
+      else {
+        cards.push({
+          key: "holdings",
+          title: t("Holdings"),
+          body: (
+            <Donut
+              slices={holdings.map((account, index) => ({
+                label: account.name,
+                value: Math.abs(headlineOf([{ amountMinor: account.shownBalanceMinor || 0, currency: account.currency }], code, book, nowMs).amountMinor),
+                color: displayColor(account.color, index),
+                pick: { accountId: account.id, group: "investment" as const },
+              }))}
+              center={head.state === "ready" ? formatMoney(head.amountMinor, head.currency) : ""}
+              onPick={onPick}
+            />
+          ),
+        });
+      }
     }
     return cards;
   }
 }
 
-function monthBars(txs: FinanceTransaction[]) {
+function readyAmount(head: Headline): number {
+  return head.state === "ready" ? head.amountMinor : 0;
+}
+
+function monthParts(txs: FinanceTransaction[]) {
   const now = new Date();
   const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const by = new Map<string, { income: number; expense: number; payment: number }>();
+  const income: MoneyPart[] = [];
+  const expense: MoneyPart[] = [];
+  const payment: MoneyPart[] = [];
+  const left = new Map<string, number>();
   for (const tx of txs) {
-    if (!tx.date.startsWith(key)) continue;
-    const row = by.get(tx.currency) ?? { income: 0, expense: 0, payment: 0 };
-    if (tx.direction === "income") row.income += tx.amountMinor;
-    if (tx.direction === "expense") row.expense += tx.amountMinor;
-    if (tx.direction === "payment") row.payment += tx.amountMinor;
-    by.set(tx.currency, row);
+    if (!tx.date.startsWith(key) || !tx.currency) continue;
+    const part = { amountMinor: tx.amountMinor, currency: tx.currency };
+    if (tx.direction === "income") income.push(part);
+    if (tx.direction === "expense") expense.push(part);
+    if (tx.direction === "payment") payment.push(part);
+    const sign = tx.direction === "income" ? 1 : tx.direction === "expense" || tx.direction === "payment" ? -1 : 0;
+    if (sign) left.set(tx.currency, (left.get(tx.currency) || 0) + sign * tx.amountMinor);
   }
-  return [...by.entries()].map(([currency, row]) => ({ currency, ...row }));
+  return { income, expense, payment, left: [...left.entries()].map(([currency, amountMinor]) => ({ currency, amountMinor })) };
 }
 
-function categoryBars(txs: FinanceTransaction[]) {
+function categoryParts(txs: FinanceTransaction[]) {
   const now = new Date();
   const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const by = new Map<string, { value: number; currency: string }>();
-  txs
-    .filter((tx) => tx.direction === "expense" && tx.date.startsWith(key))
-    .forEach((tx, index) => {
-      const name = tx.category || "Expense";
-      const row = by.get(`${name}:${tx.currency}`) ?? { value: 0, currency: tx.currency };
-      row.value += tx.amountMinor;
-      by.set(`${name}:${tx.currency}`, row);
-      void index;
-    });
-  return [...by.entries()].map(([id, row], index) => ({
-    label: id.split(":")[0],
-    value: row.value,
-    color: displayColor("", index),
-    caption: formatMoney(row.value, row.currency),
-    pick: { category: id.split(":")[0], currency: row.currency },
-  }));
+  const by = new Map<string, { name: string; currency: string; amountMinor: number }>();
+  for (const tx of txs) {
+    if (tx.direction !== "expense" || !tx.date.startsWith(key) || !tx.currency) continue;
+    const name = tx.category || "Expense";
+    const id = `${name}:${tx.currency}`;
+    const row = by.get(id) ?? { name, currency: tx.currency, amountMinor: 0 };
+    row.amountMinor += tx.amountMinor;
+    by.set(id, row);
+  }
+  return [...by.values()];
 }
 
-function trendPoints(txs: FinanceTransaction[]) {
-  return sixMonths().map((key) => {
-    let income = 0;
-    let expense = 0;
+function trendReady(txs: FinanceTransaction[], display: string, book: RateBook | null, nowMs: number):
+  | { kind: "empty" }
+  | { kind: "missing"; missing: string[] }
+  | { kind: "points"; points: Array<{ key: string; label: string; income: number; expense: number; net: number }> } {
+  const missing = new Set<string>();
+  const points = sixMonths().map((key) => {
+    const incomeParts: MoneyPart[] = [];
+    const expenseParts: MoneyPart[] = [];
     for (const tx of txs) {
-      if (!tx.date.startsWith(key)) continue;
-      if (tx.direction === "income") income += tx.amountMinor;
-      if (tx.direction === "expense") expense += tx.amountMinor;
+      if (!tx.date.startsWith(key) || !tx.currency) continue;
+      if (tx.direction === "income") incomeParts.push({ amountMinor: tx.amountMinor, currency: tx.currency });
+      if (tx.direction === "expense") expenseParts.push({ amountMinor: tx.amountMinor, currency: tx.currency });
     }
-    return { key, label: key.slice(5), income, expense, net: income - expense };
+    const income = headlineOf(incomeParts, display, book, nowMs);
+    const expense = headlineOf(expenseParts, display, book, nowMs);
+    income.missing.forEach((code) => missing.add(code));
+    expense.missing.forEach((code) => missing.add(code));
+    const incomeMinor = readyAmount(income);
+    const expenseMinor = readyAmount(expense);
+    return { key, label: key.slice(5), income: incomeMinor, expense: expenseMinor, net: incomeMinor - expenseMinor };
   });
+  if (missing.size > 0) return { kind: "missing", missing: [...missing].sort() };
+  if (!points.some((point) => point.income || point.expense)) return { kind: "empty" };
+  return { kind: "points", points };
+}
+
+function NeedRate({
+  codes,
+  display,
+  busy,
+  ask,
+  onRefresh,
+  onSave,
+}: {
+  codes: string[];
+  display: string;
+  busy: boolean;
+  ask: boolean;
+  onRefresh?: () => void;
+  onSave?: (base: string, quote: string, rate: string) => void;
+}) {
+  useT();
+  if (ask && onRefresh && onSave) {
+    return <RatePanel bare codes={codes} display={display} busy={busy} onRefresh={onRefresh} onSave={onSave} />;
+  }
+  return <p className="text-base leading-6 break-words">{fill("Combined total needs a rate for {codes}.", { codes: codes.join(", ") })}</p>;
 }
 
 function Donut({
@@ -215,22 +367,22 @@ function Donut({
     return { ...slice, path };
   });
   return (
-    <div>
-      <svg viewBox="0 0 240 240" className="mx-auto h-56 w-56">
+    <div className="min-w-0">
+      <svg viewBox="0 0 240 240" className="mx-auto h-56 w-56 max-w-full">
         {paths.map((slice) => (
           <path key={slice.label} d={slice.path} fill={slice.color} onClick={() => onPick(slice.pick)}>
             <title>{slice.label}</title>
           </path>
         ))}
-        <text x="120" y="124" textAnchor="middle" fill="currentColor" fontSize="16" className="fin-num">
+        <text x="120" y="124" textAnchor="middle" fill="currentColor" fontSize={center.length > 14 ? 11 : 16} className="fin-num">
           {center}
         </text>
       </svg>
       <div className="mt-2 space-y-1">
         {slices.map((slice) => (
-          <button key={slice.label} type="button" className="flex min-h-12 w-full items-center gap-3 text-left" onClick={() => onPick(slice.pick)}>
-            <span className="fin-swatch" style={{ background: slice.color }} />
-            <span className="flex-1 text-base">{slice.label}</span>
+          <button key={slice.label} type="button" className="flex min-h-12 w-full min-w-0 items-center gap-3 text-left" onClick={() => onPick(slice.pick)}>
+            <span className="fin-swatch shrink-0" style={{ background: slice.color }} />
+            <span className="min-w-0 flex-1 truncate text-base">{slice.label}</span>
           </button>
         ))}
       </div>
@@ -249,10 +401,10 @@ function Bars({
   return (
     <div className="space-y-3">
       {rows.map((row) => (
-        <button key={`${row.label}-${row.caption}`} type="button" className="block min-h-12 w-full text-left" onClick={() => onPick(row.pick)}>
-          <span className="flex items-baseline justify-between gap-3">
-            <span className="truncate text-base">{row.label}</span>
-            <span className="fin-num text-base">{row.caption}</span>
+        <button key={`${row.label}-${row.caption}`} type="button" className="block min-h-12 w-full min-w-0 text-left" onClick={() => onPick(row.pick)}>
+          <span className="flex min-w-0 items-baseline justify-between gap-3">
+            <span className="min-w-0 truncate text-base">{row.label}</span>
+            <span className="fin-num shrink-0 text-base">{row.caption}</span>
           </span>
           <span className="fin-track mt-1 block">
             <span className="block h-full" style={{ width: `${Math.max(4, (row.value / max) * 100)}%`, background: row.color }} />
@@ -276,18 +428,18 @@ function Grouped({
       {rows.map((row) => {
         const max = Math.max(row.income, row.expense, row.payment, 1);
         const bars = [
-          { label: t("Income"), value: row.income, color: "#7D9A86", direction: "income" },
-          { label: t("Expenses"), value: row.expense, color: "#C48984", direction: "expense" },
-          { label: t("Payments"), value: row.payment, color: "#C4B5A0", direction: "payment" },
+          { label: t("Income"), value: row.income, color: SAGE, direction: "income" },
+          { label: t("Expenses"), value: row.expense, color: ROSE, direction: "expense" },
+          { label: t("Payments"), value: row.payment, color: GOLD, direction: "payment" },
         ];
         return (
-          <div key={row.currency}>
+          <div key={row.currency} className="min-w-0">
             <p className="fin-kicker mb-2">{row.currency}</p>
             {bars.map((bar) => (
               <button key={bar.label} type="button" className="mb-2 block min-h-12 w-full text-left" onClick={() => onPick({ currency: row.currency })}>
-                <span className="flex justify-between text-sm">
+                <span className="flex justify-between gap-3 text-sm">
                   <span>{bar.label}</span>
-                  <span className="fin-num">{formatMoney(bar.value, row.currency)}</span>
+                  <span className="fin-num break-words">{formatMoney(bar.value, row.currency)}</span>
                 </span>
                 <span className="fin-track mt-1 block">
                   <span className="block h-full" style={{ width: `${Math.max(bar.value ? 4 : 0, (bar.value / max) * 100)}%`, background: bar.color }} />
@@ -313,15 +465,15 @@ function Trend({
   const y = (value: number) => 110 - (Math.abs(value) / max) * 90;
   const path = (key: "income" | "expense" | "net") => points.map((point, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(point[key])}`).join(" ");
   return (
-    <div>
-      <svg viewBox="0 0 240 130" className="h-44 w-full">
-        <path d={path("income")} fill="none" stroke="#7D9A86" strokeWidth="2.5" />
-        <path d={path("expense")} fill="none" stroke="#C48984" strokeWidth="2.5" />
-        <path d={path("net")} fill="none" stroke="#C4B5A0" strokeWidth="2.5" />
+    <div className="min-w-0">
+      <svg viewBox="0 0 240 130" className="h-44 w-full max-w-full">
+        <path d={path("income")} fill="none" stroke={SAGE} strokeWidth="2.5" />
+        <path d={path("expense")} fill="none" stroke={ROSE} strokeWidth="2.5" />
+        <path d={path("net")} fill="none" stroke={GOLD} strokeWidth="2.5" />
       </svg>
       <div className="mt-2 flex justify-between gap-1">
         {points.map((point) => (
-          <button key={point.key} type="button" className="min-h-11 flex-1 text-xs" onClick={() => onPick({ month: point.key })}>
+          <button key={point.key} type="button" className="min-h-11 min-w-0 flex-1 text-xs" onClick={() => onPick({ month: point.key })}>
             {point.label}
           </button>
         ))}
