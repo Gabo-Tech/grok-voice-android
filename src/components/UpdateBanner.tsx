@@ -51,7 +51,7 @@ export function UpdateBanner() {
   };
 
   return (
-    <div className="mx-4 mt-3 border border-border px-3 py-3" role="status">
+    <div className="mag-panel mx-4 mt-3" role="status">
       <p className="text-base leading-6 text-foreground">
         {t("A newer version is ready.")} {update.version}
       </p>

@@ -45,7 +45,7 @@ export function Sheet({
       <button type="button" className="sheet-scrim" aria-label={t("Close")} onClick={onClose} />
       <div className="sheet-panel">
         <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <h2 className="text-lg leading-6 font-medium">{title}</h2>
+          <h2 className="masthead text-lg leading-none">{title}</h2>
           <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("Close")}>
             <X />
           </Button>

@@ -290,7 +290,7 @@ function HelloStep() {
     <div className="space-y-5">
       <div
         className="mark pointer-events-none mx-auto"
-        style={{ width: "7rem", height: "7rem", ["--ink" as string]: "#f2f2f2" }}
+        style={{ width: "7rem", height: "7rem" }}
         aria-hidden
       >
         <Sparkles className="size-8 text-primary" />
@@ -316,8 +316,8 @@ function HelloStep() {
 
 function Point({ n, title, children }: { n: string; title: string; children: string }) {
   return (
-    <li className="flex gap-3 rounded-lg border border-primary/15 bg-card/60 px-3 py-2.5">
-      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/15 text-xs text-primary">{n}</span>
+    <li className="flex gap-3 border border-border bg-card px-3 py-3">
+      <span className="stamp size-8 shrink-0 px-0">{n}</span>
       <span>
         <span className="block text-sm font-medium">{title}</span>
         <span className="block text-xs leading-relaxed text-muted-foreground">{children}</span>

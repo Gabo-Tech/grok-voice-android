@@ -208,6 +208,8 @@ export interface Settings {
   spokenName?: string;
   /** `local`, `musify`, `youtube`, `youtube_music`, or `system`. */
   musicPlayer?: string;
+  /** `graphite`, `ink`, `stone`, or `system`. Empty stays on Graphite. */
+  appearance?: string;
 }
 
 export interface MusicPlayerChoice {

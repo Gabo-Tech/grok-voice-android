@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
@@ -10,6 +10,7 @@ import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
 import { displayColor, filterTransactions, groupOf, isDebt, netByCurrency, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
+import { cashFlow, debtPayoff, nextDue } from "@/lib/financeMath";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import "@/finance.css";
@@ -30,7 +31,15 @@ function segmentLabel(segment: Segment): string {
   return "Investments";
 }
 
-export function FinancePage({ finance, active = true }: { finance: FinanceState; active?: boolean }) {
+export function FinancePage({
+  finance,
+  active = true,
+  onOpenCurrency,
+}: {
+  finance: FinanceState;
+  active?: boolean;
+  onOpenCurrency?: () => void;
+}) {
   const t = useT();
   const [segment, setSegment] = useState<Segment>("overview");
   const [sheet, setSheet] = useState<SheetKind | null>(null);
@@ -47,14 +56,8 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
   const [groupFilter, setGroupFilter] = useState("all");
   const [exportNote, setExportNote] = useState("");
   const [categorySheet, setCategorySheet] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-color-scheme: light)");
-    const apply = () => setTheme(query.matches ? "light" : "dark");
-    apply();
-    query.addEventListener("change", apply);
-    return () => query.removeEventListener("change", apply);
-  }, []);
+  const [accountPreset, setAccountPreset] = useState("cash");
+  const [txPreset, setTxPreset] = useState("expense");
 
   const accounts = finance.snapshot.accounts;
   const spending = accounts.filter((account) => account.kind !== "investment");
@@ -113,16 +116,40 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
     setEditingAccount(null);
     setEditingTx(null);
     setEditingRule(null);
-    if (segment === "accounts") setSheet("account");
-    else if (segment === "investments") setSheet("investment");
-    else setSheet("transaction");
+    if (segment === "accounts") {
+      setAccountPreset("cash");
+      setSheet("account");
+    } else if (segment === "investments") setSheet("investment");
+    else {
+      setTxPreset("expense");
+      setSheet("transaction");
+    }
+  };
+  const openBank = () => {
+    setEditingAccount(null);
+    setAccountPreset("bank");
+    setSheet("account");
+  };
+  const openCard = () => {
+    setEditingAccount(null);
+    setAccountPreset("credit_card");
+    setSheet("account");
+  };
+  const openIncome = () => {
+    setEditingTx(null);
+    setTxPreset("income");
+    setSheet("transaction");
+  };
+  const openBill = () => {
+    setEditingRule(null);
+    setSheet("rule");
   };
 
   const addLabel = segment === "accounts" ? "Add account" : segment === "investments" ? "Add investment" : "Add transaction";
   const empty = accounts.length === 0 && finance.snapshot.transactions.length === 0 && finance.snapshot.rules.length === 0;
 
   return (
-    <div className="finance flex min-h-0 flex-1 flex-col" data-theme={theme}>
+    <div className="finance flex min-h-0 flex-1 flex-col">
       <PageChrome
         title={t("Finance")}
         subtitle={t("On this phone. No bank login.")}
@@ -150,7 +177,11 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
             empty={empty}
             accounts={accounts}
             recent={recent}
-            onAdd={openAdd}
+            onBank={openBank}
+            onCard={openCard}
+            onIncome={openIncome}
+            onBill={openBill}
+            onOpenCurrency={onOpenCurrency}
             onPick={pickChart}
             onAccount={(account) => {
               setEditingAccount(account);
@@ -205,11 +236,15 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
         {segment === "accounts" && (
           <AccountList
             rows={spending}
+            transactions={finance.snapshot.transactions}
+            rules={finance.snapshot.rules}
+            onPaid={finance.markPaid}
             emptyTitle={t("No accounts yet")}
             emptyBody={t("Add cash, a bank, a card, or a loan. A nickname is enough.")}
             action={t("Add account")}
             onAdd={() => {
               setEditingAccount(null);
+              setAccountPreset("cash");
               setSheet("account");
             }}
             onOpen={(account) => {
@@ -221,6 +256,9 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
         {segment === "investments" && (
           <AccountList
             rows={investments}
+            transactions={finance.snapshot.transactions}
+            rules={finance.snapshot.rules}
+            onPaid={finance.markPaid}
             emptyTitle={t("No investments yet")}
             emptyBody={t("Say “I invest 200 euros into VT every month”, or tap +.")}
             action={t("Add investment")}
@@ -240,18 +278,18 @@ export function FinancePage({ finance, active = true }: { finance: FinanceState;
         finance={finance}
         editing={editingTx}
         onClose={() => setSheet(null)}
-        theme={theme}
+        presetDirection={txPreset}
       />
       <AccountSheet
         open={sheet === "account" || sheet === "investment"}
         investment={sheet === "investment"}
         finance={finance}
         editing={editingAccount}
+        presetKind={accountPreset}
         onClose={() => setSheet(null)}
-        theme={theme}
       />
-      <RuleSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} theme={theme} />
-      <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} theme={theme} />
+      <RuleSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} />
+      <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} />
     </div>
   );
 }
@@ -261,7 +299,11 @@ function Overview({
   empty,
   accounts,
   recent,
-  onAdd,
+  onBank,
+  onCard,
+  onIncome,
+  onBill,
+  onOpenCurrency,
   onPick,
   onAccount,
   onTransaction,
@@ -271,7 +313,11 @@ function Overview({
   empty: boolean;
   accounts: FinanceAccount[];
   recent: FinanceTransaction[];
-  onAdd: () => void;
+  onBank: () => void;
+  onCard: () => void;
+  onIncome: () => void;
+  onBill: () => void;
+  onOpenCurrency?: () => void;
   onPick: (pick: ChartPick) => void;
   onAccount: (account: FinanceAccount) => void;
   onTransaction: (tx: FinanceTransaction) => void;
@@ -282,16 +328,23 @@ function Overview({
   const money = accounts.filter((account) => groupOf(account.kind) === "money");
   const debts = accounts.filter((account) => groupOf(account.kind) === "debt");
   const investments = accounts.filter((account) => groupOf(account.kind) === "investment");
+  const bounds = periodBounds("this");
+  const flow = cashFlow(finance.snapshot.transactions, bounds.start, bounds.end);
+  const code = (finance.snapshot.defaultCurrency || "").toUpperCase();
   if (empty) {
     return (
-      <div className="space-y-6">
-        <EmptyState
-          title={t("No money saved yet")}
-          body={t("Say “I spent 12 euros on lunch” in Talk, or tap + to add one.")}
-          actionLabel={t("Add transaction")}
-          onAction={onAdd}
-        />
-        <DefaultCurrency finance={finance} />
+      <div className="space-y-4">
+        <div className="mag-panel">
+          <p className="masthead text-xl">{t("No money saved yet")}</p>
+          <p className="mt-2 text-base leading-6 text-muted-foreground">{t("Start with one. A nickname is enough. No bank login.")}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <StartCard title={t("Add a bank")} body={t("A bank or wallet you spend from.")} onClick={onBank} />
+          <StartCard title={t("Add a card")} body={t("A card or loan. Payments reduce what you owe.")} onClick={onCard} />
+          <StartCard title={t("Add income")} body={t("Money coming in.")} onClick={onIncome} />
+          <StartCard title={t("Add a bill")} body={t("Rent, a subscription, or anything with a date.")} onClick={onBill} />
+        </div>
+        <CurrencyLink code={code} onOpen={onOpenCurrency} />
       </div>
     );
   }
@@ -299,44 +352,75 @@ function Overview({
     <div className="fin-stack space-y-6">
       <p className="fin-muted text-sm leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
       <section className="fin-panel">
-        <h2 className="fin-kicker">{t("Net")}</h2>
+        <h2 className="fin-kicker">{t("Cash flow")}</h2>
+        <p className="fin-muted mt-2 text-sm leading-5">{t("This month, in each currency. Nothing is converted.")}</p>
+        {flow.length === 0 ? (
+          <p className="mt-3 text-base">{t("Nothing recorded this month")}</p>
+        ) : (
+          flow.map((row) => (
+            <div key={row.currency} className="mt-4 border-t border-border pt-3">
+              <p className="stamp">{row.currency}</p>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <FlowStat label={t("Incoming")} value={formatMoney(row.incoming, row.currency)} tone="in" />
+                <FlowStat label={t("Outgoing")} value={formatMoney(row.outgoing, row.currency)} tone="out" />
+                <FlowStat label={t("Left")} value={formatMoney(row.left, row.currency)} tone={row.left < 0 ? "out" : "in"} />
+              </div>
+            </div>
+          ))
+        )}
+      </section>
+      <section className="fin-panel">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="fin-kicker">{t("Due soon")}</h2>
+          <button type="button" className="stamp min-h-12" onClick={onBill}>{t("Add a bill")}</button>
+        </div>
+        {finance.snapshot.upcoming.length === 0 ? (
+          <p className="text-base leading-6 text-muted-foreground">{t("Add a bill and it shows here, in Time, and on Calendar.")}</p>
+        ) : (
+          <div className="space-y-3">
+            {finance.snapshot.upcoming.map((row) => (
+              <div key={`${row.source}-${row.id}`} className="border border-border px-3 py-3">
+                <button type="button" className="flex min-h-12 w-full items-baseline justify-between gap-3 text-left" onClick={() => onRule(row.id)}>
+                  <div className="min-w-0">
+                    <p className="truncate text-base">{row.title}</p>
+                    <p className="fin-muted text-sm">
+                      {row.daysUntil <= 2 ? <span className="stamp mr-2">{t("Soon")}</span> : null}
+                      {relativeWhen(row.daysUntil, t)} · {row.date}
+                      {row.calendarEventId ? ` · ${t("On Calendar")}` : ""}
+                    </p>
+                  </div>
+                  <p className="fin-num shrink-0 text-lg">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</p>
+                </button>
+                <button type="button" className="stamp mt-2 min-h-12" onClick={() => finance.markPaid(row.id)}>{t("Mark paid")}</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="fin-panel">
+        <h2 className="fin-kicker">{t("Position")}</h2>
         <p className="fin-muted mt-2 text-sm leading-5">{t("Assets minus debts in this currency. No exchange rate is applied.")}</p>
         {nets.length === 0 ? (
           <p className="mt-3 text-base">{t("No balances stated yet")}</p>
         ) : (
           nets.map((row) => (
-            <p key={row.currency} className="fin-num mt-3 text-4xl leading-tight font-medium">
-              {formatMoney(row.net, row.currency)}
-            </p>
+            <div key={row.currency} className="mt-4 border-t border-border pt-3">
+              <p className="stamp">{row.currency}</p>
+              <p className="fin-num mt-2 text-4xl leading-tight font-medium">{formatMoney(row.net, row.currency)}</p>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                <FlowStat label={t("You own")} value={formatMoney(row.money, row.currency)} />
+                <FlowStat label={t("You owe")} value={formatMoney(row.debt, row.currency)} tone="out" />
+                <FlowStat label={t("Invested")} value={formatMoney(row.investment, row.currency)} />
+              </div>
+            </div>
           ))
         )}
       </section>
       <FinanceCarousel accounts={accounts} transactions={finance.snapshot.transactions} onPick={onPick} />
-      <Group title={t("Money")} rows={money} empty={t("No money in this group")} onOpen={onAccount} />
-      <Group title={t("Debts")} rows={debts} empty={t("No debts saved")} onOpen={onAccount} />
-      <Group title={t("Investments")} rows={investments} empty={t("No investments saved")} onOpen={onAccount} />
-      <DefaultCurrency finance={finance} />
-      <section>
-        <h2 className="fin-kicker mb-2">{t("Upcoming")}</h2>
-        {finance.snapshot.upcoming.length === 0 ? (
-          <p className="text-base leading-6 text-muted-foreground">{t("A due date, payday, or subscription shows here and on Calendar.")}</p>
-        ) : (
-          <div className="divide-y divide-border border-y border-border">
-            {finance.snapshot.upcoming.map((row) => (
-              <button key={`${row.source}-${row.id}`} type="button" className="flex min-h-12 w-full items-baseline justify-between gap-3 py-3 text-left" onClick={() => onRule(row.id)}>
-                <div className="min-w-0">
-                  <p className="truncate text-base">{row.title}</p>
-                  <p className="fin-muted text-sm">
-                    {relativeWhen(row.daysUntil, t)} · {row.date}
-                    {row.calendarEventId ? ` · ${t("On Calendar")}` : ""}
-                  </p>
-                </div>
-                <p className="fin-num shrink-0 text-lg">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</p>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+      <Group title={t("Money")} rows={money} empty={t("No money in this group")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
+      <Group title={t("Debts")} rows={debts} empty={t("No debts saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
+      <Group title={t("Investments")} rows={investments} empty={t("No investments saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
+      <CurrencyLink code={code} onOpen={onOpenCurrency} />
       {recent.length > 0 && (
         <section>
           <h2 className="fin-kicker mb-2">{t("Recent")}</h2>
@@ -344,6 +428,36 @@ function Overview({
         </section>
       )}
     </div>
+  );
+}
+
+function FlowStat({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
+  return (
+    <div>
+      <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className={cn("fin-num mt-1 text-base font-medium", tone === "in" && "fin-in", tone === "out" && "fin-out")}>{value}</p>
+    </div>
+  );
+}
+
+function StartCard({ title, body, onClick }: { title: string; body: string; onClick: () => void }) {
+  return (
+    <button type="button" className="mag-panel min-h-28 text-left" onClick={onClick}>
+      <p className="text-base font-extrabold tracking-wide uppercase">{title}</p>
+      <p className="mt-2 text-sm leading-5 text-muted-foreground">{body}</p>
+    </button>
+  );
+}
+
+function CurrencyLink({ code, onOpen }: { code: string; onOpen?: () => void }) {
+  const t = useT();
+  if (!code) return null;
+  return (
+    <button type="button" className="fin-panel w-full text-left" onClick={onOpen} disabled={!onOpen}>
+      <p className="fin-kicker">{t("Default currency")}</p>
+      <p className="fin-num mt-2 text-3xl">{code}</p>
+      <p className="fin-muted mt-1 text-sm">{t("Change in Settings")}</p>
+    </button>
   );
 }
 
@@ -462,6 +576,9 @@ function Activity({
 
 function AccountList({
   rows,
+  transactions,
+  rules,
+  onPaid,
   emptyTitle,
   emptyBody,
   action,
@@ -469,6 +586,9 @@ function AccountList({
   onOpen,
 }: {
   rows: FinanceAccount[];
+  transactions: FinanceTransaction[];
+  rules: FinanceState["snapshot"]["rules"];
+  onPaid: (id: string) => void;
   emptyTitle: string;
   emptyBody: string;
   action: string;
@@ -476,32 +596,66 @@ function AccountList({
   onOpen: (account: FinanceAccount) => void;
 }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} />;
+  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} />;
 }
 
-function AccountRows({ rows, onOpen }: { rows: FinanceAccount[]; onOpen: (account: FinanceAccount) => void }) {
+function AccountRows({
+  rows,
+  onOpen,
+  transactions,
+  rules,
+  onPaid,
+}: {
+  rows: FinanceAccount[];
+  onOpen: (account: FinanceAccount) => void;
+  transactions: FinanceTransaction[];
+  rules: FinanceState["snapshot"]["rules"];
+  onPaid: (id: string) => void;
+}) {
   const t = useT();
   return (
-    <div className="divide-y divide-border border-y border-border">
+    <div className="space-y-3">
       {rows.map((account, index) => {
         const money = account.shownBalanceMinor == null ? t("Not set") : formatMoney(account.shownBalanceMinor, account.currency);
         const owed = isDebt(account.kind);
+        const payoff = debtPayoff(account, transactions);
+        const due = nextDue(account, rules);
         return (
-          <RowButton key={account.id} onClick={() => onOpen(account)}>
-            <span className="fin-swatch" style={{ background: displayColor(account.color, index) }} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-base">{account.name}</p>
-              <p className="text-sm text-muted-foreground">
-                {t(kindLabel(account.kind))}
-                {owed && account.shownBalanceMinor != null ? ` · ${t("Owed")}` : ""}
-                {account.kind === "investment" && account.shownBalanceMinor != null ? ` · ${t("Worth")}` : ""}
-                {account.dueDate ? ` · ${account.dueDate}` : ""}
-                {account.contributionDate ? ` · ${account.contributionDate}` : ""}
-                {account.calendarEventId ? ` · ${t("On Calendar")}` : ""}
-              </p>
-            </div>
-            <p className={cn("shrink-0 text-right text-xl leading-6 font-medium tabular-nums", account.shownBalanceMinor == null && "text-base font-normal text-muted-foreground")}>{money}</p>
-          </RowButton>
+          <div key={account.id} className="border border-border px-3 py-3">
+            <RowButton onClick={() => onOpen(account)} className="px-0 py-0">
+              <span className="fin-swatch" style={{ background: displayColor(account.color, index) }} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base">{account.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t(kindLabel(account.kind))}
+                  {owed && account.shownBalanceMinor != null ? ` · ${t("Remaining")}` : ""}
+                  {account.kind === "investment" && account.shownBalanceMinor != null ? ` · ${t("Worth")}` : ""}
+                  {account.calendarEventId ? ` · ${t("On Calendar")}` : ""}
+                </p>
+              </div>
+              <p className={cn("shrink-0 text-right text-xl leading-6 font-medium tabular-nums", account.shownBalanceMinor == null && "text-base font-normal text-muted-foreground")}>{money}</p>
+            </RowButton>
+            {owed && payoff && payoff.paid > 0 ? (
+              <div className="mt-2">
+                <span className="fin-track">
+                  <span style={{ width: `${Math.round(payoff.ratio * 100)}%` }} />
+                </span>
+                <p className="fin-muted mt-1 text-sm">{fill("{paid} paid down", { paid: formatMoney(payoff.paid, account.currency) })}</p>
+              </div>
+            ) : null}
+            {owed && due ? (
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {t("Next payment")}
+                  {due.date ? ` · ${due.date}` : ""}
+                  {due.amount != null ? ` · ${formatMoney(due.amount, due.currency || account.currency)}` : ""}
+                </p>
+                {due.id ? (
+                  <button type="button" className="stamp min-h-12 shrink-0" onClick={() => onPaid(due.id)}>{t("Mark paid")}</button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         );
       })}
     </div>
@@ -548,18 +702,18 @@ function TransactionSheet({
   finance,
   editing,
   onClose,
-  theme,
+  presetDirection,
 }: {
   open: boolean;
   finance: FinanceState;
   editing: FinanceTransaction | null;
   onClose: () => void;
-  theme: string;
+  presetDirection: string;
 }) {
   const t = useT();
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency || "USD");
-  const [direction, setDirection] = useState("expense");
+  const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency);
+  const [direction, setDirection] = useState(presetDirection || "expense");
   const [category, setCategory] = useState("");
   const [accountName, setAccountName] = useState("");
   const [date, setDate] = useState("");
@@ -568,13 +722,13 @@ function TransactionSheet({
   const [notes, setNotes] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
-  const key = editing?.id || "new";
+  const key = editing?.id || `new:${presetDirection}`;
   if (!open && seen !== null) setSeen(null);
   if (open && seen !== key) {
     setSeen(key);
     setAmount(editing ? majorString(editing.amountMinor, editing.currency) : "");
-    setCurrency(editing?.currency || finance.snapshot.defaultCurrency || "USD");
-    setDirection(editing?.direction || "expense");
+    setCurrency(editing?.currency || finance.snapshot.defaultCurrency);
+    setDirection(editing?.direction || presetDirection || "expense");
     setCategory(editing?.category || "");
     setAccountName(finance.snapshot.accounts.find((account) => account.id === editing?.accountId)?.name || "");
     setDate(editing?.date || "");
@@ -605,7 +759,6 @@ function TransactionSheet({
       title={editing ? t("Edit transaction") : t("New transaction")}
       onClose={onClose}
       className="finance"
-      theme={theme}
       footer={
         <div className="flex items-center gap-2">
           {editing && (
@@ -684,21 +837,21 @@ function AccountSheet({
   investment,
   finance,
   editing,
+  presetKind,
   onClose,
-  theme,
 }: {
   open: boolean;
   investment: boolean;
   finance: FinanceState;
   editing: FinanceAccount | null;
+  presetKind: string;
   onClose: () => void;
-  theme: string;
 }) {
   const t = useT();
   const [name, setName] = useState("");
   const [kind, setKind] = useState(investment ? "investment" : "cash");
   const [balance, setBalance] = useState("");
-  const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency || "USD");
+  const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency);
   const [institution, setInstitution] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [payment, setPayment] = useState("");
@@ -716,20 +869,20 @@ function AccountSheet({
   const [leadDays, setLeadDays] = useState(2);
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
-  const key = `${investment ? "i" : "a"}:${editing?.id || "new"}`;
+  const key = `${investment ? "i" : "a"}:${editing?.id || presetKind || "new"}`;
   if (!open && seen !== null) setSeen(null);
   if (open && seen !== key) {
     setSeen(key);
     setName(editing?.name || "");
-    setKind(editing?.kind || (investment ? "investment" : "cash"));
-    setBalance(majorString(editing?.balanceMinor, editing?.currency || finance.snapshot.defaultCurrency || "USD"));
-    setCurrency(editing?.currency || finance.snapshot.defaultCurrency || "USD");
+    setKind(editing?.kind || (investment ? "investment" : presetKind || "cash"));
+    setBalance(majorString(editing?.balanceMinor, editing?.currency || finance.snapshot.defaultCurrency));
+    setCurrency(editing?.currency || finance.snapshot.defaultCurrency);
     setInstitution(editing?.institution || "");
     setDueDate(editing?.dueDate || "");
-    setPayment(majorString(editing?.paymentMinor, editing?.currency || finance.snapshot.defaultCurrency || "USD"));
+    setPayment(majorString(editing?.paymentMinor, editing?.currency || finance.snapshot.defaultCurrency));
     setCadence(editing?.cadence || "");
     setTicker(editing?.ticker || "");
-    setContribution(majorString(editing?.contributionMinor, editing?.currency || finance.snapshot.defaultCurrency || "USD"));
+    setContribution(majorString(editing?.contributionMinor, editing?.currency || finance.snapshot.defaultCurrency));
     setContributionCadence(editing?.contributionCadence || "");
     setContributionDate(editing?.contributionDate || "");
     setNotes(editing?.notes || "");
@@ -775,7 +928,6 @@ function AccountSheet({
       title={investment ? (editing ? t("Edit investment") : t("New investment")) : editing ? t("Edit account") : t("New account")}
       onClose={onClose}
       className="finance"
-      theme={theme}
       footer={
         <div className="flex items-center gap-2">
           {editing && (
@@ -895,18 +1047,16 @@ function RuleSheet({
   finance,
   editing,
   onClose,
-  theme,
 }: {
   open: boolean;
   finance: FinanceState;
   editing: FinanceRule | null;
   onClose: () => void;
-  theme: string;
 }) {
   const t = useT();
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency || "USD");
+  const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency);
   const [direction, setDirection] = useState("expense");
   const [cadence, setCadence] = useState("monthly");
   const [nextDate, setNextDate] = useState("");
@@ -914,50 +1064,52 @@ function RuleSheet({
   const [leadDays, setLeadDays] = useState(2);
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
-  const key = editing?.id || "";
+  const key = editing?.id || "new";
   if (!open && seen !== null) setSeen(null);
-  if (open && editing && seen !== key) {
+  if (open && seen !== key) {
     setSeen(key);
-    setName(editing.name);
-    setAmount(majorString(editing.amountMinor, editing.currency));
-    setCurrency(editing.currency || finance.snapshot.defaultCurrency || "USD");
-    setDirection(editing.direction || "expense");
-    setCadence(editing.cadence || "");
-    setNextDate(editing.nextDate || "");
-    setNotes(editing.notes || "");
-    setLeadDays(editing.leadDays ?? 2);
+    setName(editing?.name || "");
+    setAmount(editing ? majorString(editing.amountMinor, editing.currency) : "");
+    setCurrency(editing?.currency || finance.snapshot.defaultCurrency);
+    setDirection(editing?.direction || "expense");
+    setCadence(editing?.cadence || "monthly");
+    setNextDate(editing?.nextDate || "");
+    setNotes(editing?.notes || "");
+    setLeadDays(editing?.leadDays ?? 2);
     setConfirming(false);
   }
-  if (!editing) return null;
   return (
     <Sheet
       open={open}
-      title={editing.name}
+      title={editing ? editing.name : t("New bill")}
       onClose={onClose}
       className="finance"
-      theme={theme}
       footer={
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              if (!confirming) {
-                setConfirming(true);
-                return;
-              }
-              finance.removeRule(editing.id);
-              onClose();
-            }}
-          >
-            {confirming ? t("Delete this") : t("Delete")}
-          </Button>
+          {editing ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (!confirming) {
+                  setConfirming(true);
+                  return;
+                }
+                finance.removeRule(editing.id);
+                onClose();
+              }}
+            >
+              {confirming ? t("Delete this") : t("Delete")}
+            </Button>
+          ) : null}
           <div className="flex-1" />
-          <Button variant="ghost" onClick={() => { finance.markPaid(editing.id); onClose(); }}>{t("Mark paid")}</Button>
+          {editing ? (
+            <Button variant="ghost" onClick={() => { finance.markPaid(editing.id); onClose(); }}>{t("Mark paid")}</Button>
+          ) : null}
           <Button variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
           <Button
             disabled={finance.busy || !name.trim()}
             onClick={() => {
-              finance.saveRule({ id: editing.id, name, amount, currency, direction, cadence, nextDate, notes, leadDays });
+              finance.saveRule({ id: editing?.id, name, amount, currency, direction, cadence, nextDate, notes, leadDays });
               onClose();
             }}
           >
@@ -1073,32 +1225,27 @@ function relativeWhen(days: number, t: (text: string) => string): string {
   return fill("In {n} days", { n: days });
 }
 
-function Group({ title, rows, empty, onOpen }: { title: string; rows: FinanceAccount[]; empty: string; onOpen: (account: FinanceAccount) => void }) {
+function Group({
+  title,
+  rows,
+  empty,
+  onOpen,
+  transactions,
+  rules,
+  onPaid,
+}: {
+  title: string;
+  rows: FinanceAccount[];
+  empty: string;
+  onOpen: (account: FinanceAccount) => void;
+  transactions: FinanceTransaction[];
+  rules: FinanceState["snapshot"]["rules"];
+  onPaid: (id: string) => void;
+}) {
   return (
     <section>
       <h2 className="fin-kicker mb-2">{title}</h2>
-      {rows.length === 0 ? <p className="fin-muted text-base">{empty}</p> : <AccountRows rows={rows} onOpen={onOpen} />}
-    </section>
-  );
-}
-
-function DefaultCurrency({ finance }: { finance: FinanceState }) {
-  const t = useT();
-  const current = finance.snapshot.defaultCurrency || "";
-  const [custom, setCustom] = useState(current);
-  return (
-    <section className="fin-panel">
-      <h2 className="fin-kicker">{t("Default currency")}</h2>
-      <p className="fin-muted mt-2 text-sm leading-5">{t("Used when you do not name a currency. A saved account keeps its own.")}</p>
-      <div className="mt-3 flex gap-2 overflow-x-auto">
-        {["CHF", "EUR", "USD"].map((code) => (
-          <Chip key={code} on={current === code} onClick={() => finance.setDefaultCurrency(code)}>{code}</Chip>
-        ))}
-      </div>
-      <div className="mt-3 flex gap-2">
-        <Input value={custom} maxLength={3} onChange={(event) => setCustom(event.target.value.toUpperCase())} />
-        <Button type="button" onClick={() => custom.trim() && finance.setDefaultCurrency(custom.trim())}>{t("Save")}</Button>
-      </div>
+      {rows.length === 0 ? <p className="fin-muted text-base">{empty}</p> : <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} />}
     </section>
   );
 }
@@ -1117,12 +1264,12 @@ function ColorField({ color, onChange }: { color: string; onChange: (color: stri
   );
 }
 
-function CategorySheet({ open, finance, onClose, theme }: { open: boolean; finance: FinanceState; onClose: () => void; theme: string }) {
+function CategorySheet({ open, finance, onClose }: { open: boolean; finance: FinanceState; onClose: () => void }) {
   const t = useT();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const names = finance.snapshot.categories.map((category) => category.name);
   return (
-    <Sheet open={open} title={t("Edit categories")} onClose={onClose} className="finance" theme={theme}>
+    <Sheet open={open} title={t("Edit categories")} onClose={onClose} className="finance">
       <div className="space-y-3">
         {names.length === 0 && <p className="fin-muted text-sm">{t("A category is saved the first time you use it.")}</p>}
         {names.map((name) => (

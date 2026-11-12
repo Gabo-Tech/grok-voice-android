@@ -35,8 +35,9 @@ export function PageChrome({
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       <header className="shrink-0 px-1 pb-4 pt-1">
         <div className="min-w-0">
-          <h1 className="text-2xl leading-tight font-medium tracking-tight text-foreground">{title}</h1>
-          {subtitle && <p className="mt-1 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
+          <h1 className="masthead text-[1.85rem] text-foreground">{title}</h1>
+          <div className="masthead-rule" />
+          {subtitle && <p className="mt-2 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">{children}</div>
@@ -69,8 +70,8 @@ export function EmptyState({
   onAction?: () => void;
 }) {
   return (
-    <div className="px-1 py-8">
-      <p className="text-lg leading-7 text-foreground">{title}</p>
+    <div className="mag-panel">
+      <p className="masthead text-xl text-foreground">{title}</p>
       <p className="mt-2 text-base leading-6 text-muted-foreground">{body}</p>
       {actionLabel && onAction ? (
         <Button className="mt-4" onClick={onAction}>
@@ -96,7 +97,7 @@ export function Notice({
 }) {
   const t = useT();
   return (
-    <div role="alert" className="mb-3 border border-foreground/40 px-3 py-3">
+    <div role="alert" className="mag-panel mb-3">
       <p className="text-base leading-6 text-foreground">{title}</p>
       {body ? <p className="mt-1 text-sm leading-5 text-muted-foreground">{body}</p> : null}
       {(onAction && actionLabel) || onDismiss ? (
