@@ -13,7 +13,9 @@ mod diagnostics;
 mod error;
 mod files;
 mod finance;
+mod finance_fx;
 mod finance_pdf;
+mod finance_schedule;
 mod http;
 mod i18n;
 mod local;
@@ -204,6 +206,9 @@ pub fn run() {
             commands::rename_finance_category,
             commands::mark_finance_paid,
             commands::export_finance_pdf,
+            commands::refresh_finance_rates,
+            commands::set_finance_manual_rate,
+            commands::finance_schedule_action,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

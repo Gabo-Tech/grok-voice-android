@@ -118,6 +118,17 @@
   overflow: hidden;
 }
 
+.finance .fin-planned {
+  border: var(--frame) dashed var(--fin-line);
+  background: transparent;
+  box-shadow: none;
+}
+
+.finance .fin-hero-num {
+  font-size: 3rem;
+  line-height: 0.95;
+}
+
 .finance .fin-track > span {
   display: block;
   height: 100%;

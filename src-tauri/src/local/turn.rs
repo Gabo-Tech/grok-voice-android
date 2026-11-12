@@ -36,13 +36,13 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
     listed.extend(crate::local_memory::tool_definitions());
     for tool in &listed {
         let name = tool["name"].as_str().unwrap_or("");
-        if matches!(name, "log_money" | "save_recurring" | "save_account" | "list_finance" | "delete_finance" | "mark_paid" | "export_finance_pdf") {
+        if matches!(name, "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "mark_paid" | "export_finance_pdf") {
             continue;
         }
         let desc = brief_tool(tool["description"].as_str().unwrap_or(""));
         tools.push_str(&format!("- {name}: {desc}\n"));
     }
-    tools.push_str("- log_money: expense, income, or payment. Do not invent a balance.\n- save_recurring: bill, payday, or payment.\n- save_account: balance, color, or default currency.\n- list_finance: read saved money.\n- delete_finance: confirmed true.\n- mark_paid: roll a paid bill.\n- export_finance_pdf: PDF. confirmed true.\n");
+    tools.push_str("- log_money: expense or income. Do not invent a balance.\n- save_recurring: bill or payday.\n- save_schedule: course, rent, payout.\n- save_account: balance or currency.\n- list_finance: read saved money.\n- delete_finance: confirmed true.\n- mark_paid: roll a paid bill.\n- export_finance_pdf: PDF. confirmed true.\n");
     let speech_line = if speech == "de" {
         "The user is speaking German. Put the spoken reply in the say field in German. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
     } else if speech == "es" {

@@ -9,8 +9,10 @@ import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
-import { displayColor, filterTransactions, groupOf, isDebt, netByCurrency, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
-import { cashFlow, debtPayoff, nextDue } from "@/lib/financeMath";
+import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
+import { debtPayoff, nextDue, plannedHits } from "@/lib/financeMath";
+import { FinanceDashboard, plannedYearBars, todayIso, type WorthFocus } from "@/components/FinanceDashboard";
+import { ProgramSheet } from "@/components/ProgramSheet";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import "@/finance.css";
@@ -58,6 +60,7 @@ export function FinancePage({
   const [categorySheet, setCategorySheet] = useState(false);
   const [accountPreset, setAccountPreset] = useState("cash");
   const [txPreset, setTxPreset] = useState("expense");
+  const [groupFocus, setGroupFocus] = useState<WorthFocus | "all">("all");
 
   const accounts = finance.snapshot.accounts;
   const spending = accounts.filter((account) => account.kind !== "investment");
@@ -80,6 +83,20 @@ export function FinancePage({
     [finance.snapshot.transactions, bounds, accountFilter, categoryFilter, currencyFilter, directionFilter, classFilter, groupFilter, accounts],
   );
   const recent = activity.slice(0, 5);
+  const today = todayIso();
+  const planned = useMemo(() => {
+    return plannedHits(finance.snapshot.rules, finance.snapshot.transactions, today).filter((hit) => {
+      if (bounds.start && hit.date < bounds.start) return false;
+      if (bounds.end && hit.date > bounds.end) return false;
+      if (accountFilter !== "all" && hit.accountId !== accountFilter) return false;
+      if (categoryFilter !== "all" && hit.category !== categoryFilter) return false;
+      if (currencyFilter !== "all" && hit.currency !== currencyFilter) return false;
+      if (directionFilter !== "all" && hit.direction !== directionFilter) return false;
+      if (classFilter === "once" && hit.purpose !== "one_off") return false;
+      if (classFilter === "recurring" && hit.purpose === "one_off") return false;
+      return true;
+    });
+  }, [finance.snapshot.rules, finance.snapshot.transactions, today, bounds, accountFilter, categoryFilter, currencyFilter, directionFilter, classFilter]);
   const currencies = useMemo(() => [...new Set(accounts.map((account) => account.currency).filter(Boolean))], [accounts]);
   const categories = useMemo(() => {
     const names = new Set(finance.snapshot.categories.map((category) => category.name));
@@ -116,7 +133,11 @@ export function FinancePage({
     setEditingAccount(null);
     setEditingTx(null);
     setEditingRule(null);
-    if (segment === "accounts") {
+    if (segment === "overview") {
+      setEditingRule(null);
+      setSheet("rule");
+    } else if (segment === "accounts") {
+      setGroupFocus("all");
       setAccountPreset("cash");
       setSheet("account");
     } else if (segment === "investments") setSheet("investment");
@@ -145,7 +166,7 @@ export function FinancePage({
     setSheet("rule");
   };
 
-  const addLabel = segment === "accounts" ? "Add account" : segment === "investments" ? "Add investment" : "Add transaction";
+  const addLabel = segment === "overview" ? "Program" : segment === "accounts" ? "Add account" : segment === "investments" ? "Add investment" : "Add transaction";
   const empty = accounts.length === 0 && finance.snapshot.transactions.length === 0 && finance.snapshot.rules.length === 0;
 
   return (
@@ -159,7 +180,7 @@ export function FinancePage({
       >
         <div className="mb-4 grid grid-cols-2 gap-2">
           {SEGMENTS.map((id) => (
-            <Chip key={id} wide on={segment === id} onClick={() => setSegment(id)}>
+            <Chip key={id} wide on={segment === id} onClick={() => { setSegment(id); if (id === "accounts") setGroupFocus("all"); }}>
               {t(segmentLabel(id))}
             </Chip>
           ))}
@@ -181,6 +202,14 @@ export function FinancePage({
             onCard={openCard}
             onIncome={openIncome}
             onBill={openBill}
+            onFocus={(focus) => {
+              if (focus === "invested") {
+                setSegment("investments");
+                return;
+              }
+              setGroupFocus(focus);
+              setSegment("accounts");
+            }}
             onOpenCurrency={onOpenCurrency}
             onPick={pickChart}
             onAccount={(account) => {
@@ -190,12 +219,6 @@ export function FinancePage({
             onTransaction={(tx) => {
               setEditingTx(tx);
               setSheet("transaction");
-            }}
-            onRule={(id) => {
-              const rule = finance.snapshot.rules.find((row) => row.id === id);
-              if (!rule) return;
-              setEditingRule(rule);
-              setSheet("rule");
             }}
           />
         )}
@@ -230,12 +253,13 @@ export function FinancePage({
               setEditingRule(rule);
               setSheet("rule");
             }}
+            planned={planned}
             accounts={accounts}
           />
         )}
         {segment === "accounts" && (
           <AccountList
-            rows={spending}
+            rows={groupFocus === "debt" ? spending.filter((account) => isDebt(account.kind)) : groupFocus === "cash" ? spending.filter((account) => !isDebt(account.kind)) : groupFocus === "owned" ? accounts.filter((account) => !isDebt(account.kind)) : spending}
             transactions={finance.snapshot.transactions}
             rules={finance.snapshot.rules}
             onPaid={finance.markPaid}
@@ -288,7 +312,7 @@ export function FinancePage({
         presetKind={accountPreset}
         onClose={() => setSheet(null)}
       />
-      <RuleSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} />
+      <ProgramSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} />
       <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} />
     </div>
   );
@@ -303,11 +327,11 @@ function Overview({
   onCard,
   onIncome,
   onBill,
+  onFocus,
   onOpenCurrency,
   onPick,
   onAccount,
   onTransaction,
-  onRule,
 }: {
   finance: FinanceState;
   empty: boolean;
@@ -317,20 +341,18 @@ function Overview({
   onCard: () => void;
   onIncome: () => void;
   onBill: () => void;
+  onFocus: (focus: WorthFocus) => void;
   onOpenCurrency?: () => void;
   onPick: (pick: ChartPick) => void;
   onAccount: (account: FinanceAccount) => void;
   onTransaction: (tx: FinanceTransaction) => void;
-  onRule: (id: string) => void;
 }) {
   const t = useT();
-  const nets = netByCurrency(accounts);
   const money = accounts.filter((account) => groupOf(account.kind) === "money");
   const debts = accounts.filter((account) => groupOf(account.kind) === "debt");
   const investments = accounts.filter((account) => groupOf(account.kind) === "investment");
-  const bounds = periodBounds("this");
-  const flow = cashFlow(finance.snapshot.transactions, bounds.start, bounds.end);
   const code = (finance.snapshot.defaultCurrency || "").toUpperCase();
+  const bars = useMemo(() => plannedYearBars(finance.snapshot.rules, finance.snapshot.transactions, todayIso()), [finance.snapshot.rules, finance.snapshot.transactions]);
   if (empty) {
     return (
       <div className="space-y-4">
@@ -351,72 +373,8 @@ function Overview({
   return (
     <div className="fin-stack space-y-6">
       <p className="fin-muted text-sm leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
-      <section className="fin-panel">
-        <h2 className="fin-kicker">{t("Cash flow")}</h2>
-        <p className="fin-muted mt-2 text-sm leading-5">{t("This month, in each currency. Nothing is converted.")}</p>
-        {flow.length === 0 ? (
-          <p className="mt-3 text-base">{t("Nothing recorded this month")}</p>
-        ) : (
-          flow.map((row) => (
-            <div key={row.currency} className="mt-4 border-t border-border pt-3">
-              <p className="stamp">{row.currency}</p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <FlowStat label={t("Incoming")} value={formatMoney(row.incoming, row.currency)} tone="in" />
-                <FlowStat label={t("Outgoing")} value={formatMoney(row.outgoing, row.currency)} tone="out" />
-                <FlowStat label={t("Left")} value={formatMoney(row.left, row.currency)} tone={row.left < 0 ? "out" : "in"} />
-              </div>
-            </div>
-          ))
-        )}
-      </section>
-      <section className="fin-panel">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="fin-kicker">{t("Due soon")}</h2>
-          <button type="button" className="stamp min-h-12" onClick={onBill}>{t("Add a bill")}</button>
-        </div>
-        {finance.snapshot.upcoming.length === 0 ? (
-          <p className="text-base leading-6 text-muted-foreground">{t("Add a bill and it shows here, in Time, and on Calendar.")}</p>
-        ) : (
-          <div className="space-y-3">
-            {finance.snapshot.upcoming.map((row) => (
-              <div key={`${row.source}-${row.id}`} className="border border-border px-3 py-3">
-                <button type="button" className="flex min-h-12 w-full items-baseline justify-between gap-3 text-left" onClick={() => onRule(row.id)}>
-                  <div className="min-w-0">
-                    <p className="truncate text-base">{row.title}</p>
-                    <p className="fin-muted text-sm">
-                      {row.daysUntil <= 2 ? <span className="stamp mr-2">{t("Soon")}</span> : null}
-                      {relativeWhen(row.daysUntil, t)} · {row.date}
-                      {row.calendarEventId ? ` · ${t("On Calendar")}` : ""}
-                    </p>
-                  </div>
-                  <p className="fin-num shrink-0 text-lg">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</p>
-                </button>
-                <button type="button" className="stamp mt-2 min-h-12" onClick={() => finance.markPaid(row.id)}>{t("Mark paid")}</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-      <section className="fin-panel">
-        <h2 className="fin-kicker">{t("Position")}</h2>
-        <p className="fin-muted mt-2 text-sm leading-5">{t("Assets minus debts in this currency. No exchange rate is applied.")}</p>
-        {nets.length === 0 ? (
-          <p className="mt-3 text-base">{t("No balances stated yet")}</p>
-        ) : (
-          nets.map((row) => (
-            <div key={row.currency} className="mt-4 border-t border-border pt-3">
-              <p className="stamp">{row.currency}</p>
-              <p className="fin-num mt-2 text-4xl leading-tight font-medium">{formatMoney(row.net, row.currency)}</p>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                <FlowStat label={t("You own")} value={formatMoney(row.money, row.currency)} />
-                <FlowStat label={t("You owe")} value={formatMoney(row.debt, row.currency)} tone="out" />
-                <FlowStat label={t("Invested")} value={formatMoney(row.investment, row.currency)} />
-              </div>
-            </div>
-          ))
-        )}
-      </section>
-      <FinanceCarousel accounts={accounts} transactions={finance.snapshot.transactions} onPick={onPick} />
+      <FinanceDashboard finance={finance} accounts={accounts} onProgram={onBill} onIncome={onIncome} onFocus={onFocus} />
+      <FinanceCarousel accounts={accounts} transactions={finance.snapshot.transactions} planned={bars} onPick={onPick} />
       <Group title={t("Money")} rows={money} empty={t("No money in this group")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
       <Group title={t("Debts")} rows={debts} empty={t("No debts saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
       <Group title={t("Investments")} rows={investments} empty={t("No investments saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
@@ -427,15 +385,6 @@ function Overview({
           <TxRows rows={recent} accounts={finance.snapshot.accounts} onOpen={onTransaction} />
         </section>
       )}
-    </div>
-  );
-}
-
-function FlowStat({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
-  return (
-    <div>
-      <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className={cn("fin-num mt-1 text-base font-medium", tone === "in" && "fin-in", tone === "out" && "fin-out")}>{value}</p>
     </div>
   );
 }
@@ -482,6 +431,7 @@ function Activity({
   onAdd,
   onTransaction,
   onRule,
+  planned,
   accounts,
 }: {
   rows: FinanceTransaction[];
@@ -504,6 +454,7 @@ function Activity({
   onAdd: () => void;
   onTransaction: (tx: FinanceTransaction) => void;
   onRule: (rule: FinanceRule) => void;
+  planned: { scheduleId: string; name: string; date: string; amountMinor: number | null; currency: string }[];
   accounts: FinanceAccount[];
 }) {
   const t = useT();
@@ -565,11 +516,31 @@ function Activity({
           </div>
         </section>
       )}
-      {rows.length === 0 ? (
+      {planned.length > 0 ? (
+        <section className="mb-6">
+          <h2 className="fin-kicker mb-2">{t("Planned")}</h2>
+          <p className="fin-muted mb-2 text-sm">{t("Not actual")}</p>
+          <div className="space-y-2">
+            {planned.map((hit) => (
+              <button key={`${hit.scheduleId}-${hit.date}`} type="button" className="fin-planned flex min-h-12 w-full items-baseline justify-between gap-3 px-3 py-3 text-left" onClick={() => {
+                const rule = rules.find((row) => row.id === hit.scheduleId);
+                if (rule) onRule(rule);
+              }}>
+                <span>
+                  <span className="block text-base">{hit.name}</span>
+                  <span className="fin-muted text-sm">{hit.date}</span>
+                </span>
+                <span className="fin-num">{hit.amountMinor != null ? formatMoney(hit.amountMinor, hit.currency) : ""}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {rows.length === 0 && planned.length === 0 ? (
         <EmptyState title={t("Nothing in this filter")} body={t("Try another filter, or log it in Talk.")} actionLabel={t("Add transaction")} onAction={onAdd} />
-      ) : (
+      ) : rows.length > 0 ? (
         <TxRows rows={rows} accounts={accounts} onOpen={onTransaction} />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1042,117 +1013,6 @@ function AccountSheet({
   );
 }
 
-function RuleSheet({
-  open,
-  finance,
-  editing,
-  onClose,
-}: {
-  open: boolean;
-  finance: FinanceState;
-  editing: FinanceRule | null;
-  onClose: () => void;
-}) {
-  const t = useT();
-  const [name, setName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency);
-  const [direction, setDirection] = useState("expense");
-  const [cadence, setCadence] = useState("monthly");
-  const [nextDate, setNextDate] = useState("");
-  const [notes, setNotes] = useState("");
-  const [leadDays, setLeadDays] = useState(2);
-  const [confirming, setConfirming] = useState(false);
-  const [seen, setSeen] = useState<string | null>(null);
-  const key = editing?.id || "new";
-  if (!open && seen !== null) setSeen(null);
-  if (open && seen !== key) {
-    setSeen(key);
-    setName(editing?.name || "");
-    setAmount(editing ? majorString(editing.amountMinor, editing.currency) : "");
-    setCurrency(editing?.currency || finance.snapshot.defaultCurrency);
-    setDirection(editing?.direction || "expense");
-    setCadence(editing?.cadence || "monthly");
-    setNextDate(editing?.nextDate || "");
-    setNotes(editing?.notes || "");
-    setLeadDays(editing?.leadDays ?? 2);
-    setConfirming(false);
-  }
-  return (
-    <Sheet
-      open={open}
-      title={editing ? editing.name : t("New bill")}
-      onClose={onClose}
-      className="finance"
-      footer={
-        <div className="flex items-center gap-2">
-          {editing ? (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                if (!confirming) {
-                  setConfirming(true);
-                  return;
-                }
-                finance.removeRule(editing.id);
-                onClose();
-              }}
-            >
-              {confirming ? t("Delete this") : t("Delete")}
-            </Button>
-          ) : null}
-          <div className="flex-1" />
-          {editing ? (
-            <Button variant="ghost" onClick={() => { finance.markPaid(editing.id); onClose(); }}>{t("Mark paid")}</Button>
-          ) : null}
-          <Button variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
-          <Button
-            disabled={finance.busy || !name.trim()}
-            onClick={() => {
-              finance.saveRule({ id: editing?.id, name, amount, currency, direction, cadence, nextDate, notes, leadDays });
-              onClose();
-            }}
-          >
-            {t("Save")}
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-4">
-        <Field label={t("Nickname")}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Field label={t("Amount")}>
-          <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-16 text-3xl tabular-nums" />
-        </Field>
-        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
-          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} autoCapitalize="characters" />
-        </Field>
-        <Field label={t("Direction")}>
-          <div className="flex gap-2 overflow-x-auto">
-            <Chip on={direction === "expense"} onClick={() => setDirection("expense")}>{t("Expense")}</Chip>
-            <Chip on={direction === "income"} onClick={() => setDirection("income")}>{t("Income")}</Chip>
-            <Chip on={direction === "payment"} onClick={() => setDirection("payment")}>{t("Payment")}</Chip>
-          </div>
-        </Field>
-        <CadenceChips value={cadence} onChange={setCadence} />
-        <Field label={t("Date")}>
-          <Input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
-        </Field>
-        <Field label={t("Remind me")}>
-          <div className="flex gap-2 overflow-x-auto">
-            {LEADS.map((days) => (
-              <Chip key={days} on={leadDays === days} onClick={() => setLeadDays(days)}>{t(leadLabel(days))}</Chip>
-            ))}
-          </div>
-        </Field>
-        <Field label={t("Notes")}>
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </Field>
-      </div>
-    </Sheet>
-  );
-}
 
 function CadenceChips({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const t = useT();
@@ -1183,6 +1043,7 @@ function Chip({ on, onClick, wide, children }: { on: boolean; onClick: () => voi
 }
 
 function cadenceLabel(cadence: string): string {
+  if (cadence === "every_n_days") return "Every N days";
   if (cadence === "daily") return "Daily";
   if (cadence === "weekly") return "Weekly";
   if (cadence === "monthly") return "Monthly";
@@ -1216,13 +1077,6 @@ function leadLabel(days: number): string {
   if (days === 2) return "2 days before";
   if (days === 3) return "3 days before";
   return "A week before";
-}
-
-function relativeWhen(days: number, t: (text: string) => string): string {
-  if (days < 0) return t("Overdue");
-  if (days === 0) return t("Today");
-  if (days === 1) return t("Tomorrow");
-  return fill("In {n} days", { n: days });
 }
 
 function Group({
