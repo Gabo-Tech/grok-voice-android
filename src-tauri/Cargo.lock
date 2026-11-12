@@ -2104,7 +2104,7 @@ dependencies = [
 
 [[package]]
 name = "grok-voice"
-version = "0.1.36"
+version = "0.1.37"
 dependencies = [
  "aes-gcm",
  "android_logger",
