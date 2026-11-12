@@ -78,12 +78,16 @@ export function emptyFinance(locale = ""): FinanceSnapshot {
     upcoming: [],
     period,
     defaultCurrency: defaultCurrency(locale),
+    categories: [],
   };
 }
 
 export function shownBalance(account: FinanceAccount, transactions: FinanceTransaction[]): number | null {
   if (account.balanceMinor == null) return null;
-  if (account.kind === "investment") return account.balanceMinor;
+  if (account.kind === "investment") {
+    const priced = unitsWorth(account);
+    return priced ?? account.balanceMinor;
+  }
   let balance = account.balanceMinor;
   const rows = transactions
     .filter((tx) => tx.accountId === account.id || tx.fromAccountId === account.id)
@@ -99,8 +103,14 @@ export function shownBalance(account: FinanceAccount, transactions: FinanceTrans
   return balance;
 }
 
+function unitsWorth(account: FinanceAccount): number | null {
+  const units = Number(String(account.units || "").replace(",", "."));
+  if (!account.units || !Number.isFinite(units) || units <= 0 || account.priceMinor == null) return null;
+  return Math.round(units * account.priceMinor);
+}
+
 function delta(kind: string, direction: string, amount: number): number {
-  if (kind === "credit_card" || kind === "loan") {
+  if (kind === "credit_card" || kind === "loan" || kind === "other_debt") {
     if (direction === "expense") return amount;
     if (direction === "payment") return -amount;
     return 0;
@@ -144,8 +154,19 @@ function upcomingFor(snapshot: FinanceSnapshot): FinanceUpcoming[] {
       currency: rule.currency,
       direction: rule.direction,
       calendarEventId: rule.calendarEventId,
+      daysUntil: daysUntil(rule.nextDate),
+      leadDays: rule.leadDays ?? 2,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function daysUntil(date: string): number {
+  if (!date) return 0;
+  const today = new Date();
+  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const parts = date.split("-").map(Number);
+  const due = Date.UTC(parts[0] || 0, (parts[1] || 1) - 1, parts[2] || 1);
+  return Math.round((due - start) / 86_400_000);
 }
 
 export function kindLabel(kind: string): string {
@@ -153,6 +174,15 @@ export function kindLabel(kind: string): string {
   if (kind === "cash") return "Cash";
   if (kind === "credit_card") return "Credit card";
   if (kind === "loan") return "Loan";
+  if (kind === "other_debt") return "Other debt";
   if (kind === "investment") return "Investment";
   return "Other";
+}
+
+export function typeLabel(kind: string): string {
+  if (kind === "stock") return "Stock";
+  if (kind === "fund") return "Fund";
+  if (kind === "crypto") return "Crypto";
+  if (kind === "custom") return "Custom";
+  return kind;
 }

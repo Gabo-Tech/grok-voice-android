@@ -10,6 +10,7 @@ import {
   type FinanceRuleDraft,
   type FinanceSnapshot,
   type FinanceTransaction,
+  type FinancePdfRequest,
   type FinanceTransactionDraft,
 } from "@/lib/api";
 import { emptyFinance, withShown } from "@/lib/money";
@@ -134,7 +135,60 @@ export function useFinance() {
     [inApp, run],
   );
 
-  return { snapshot, error, busy, inApp, load, saveAccount, saveTransaction, saveRule, removeAccount, removeTransaction, removeRule, setError };
+  const setDefaultCurrency = useCallback(
+    (currency: string) => {
+      if (!inApp) {
+        setSnapshot((current) => ({ ...current, defaultCurrency: currency.toUpperCase() }));
+        return;
+      }
+      void run(() => api.setFinanceDefaultCurrency(currency));
+    },
+    [inApp, run],
+  );
+
+  const renameCategory = useCallback(
+    (from: string, to: string) => {
+      if (!inApp) {
+        setSnapshot((current) => ({
+          ...current,
+          categories: current.categories.map((category) => (category.name === from ? { ...category, name: to } : category)),
+          transactions: current.transactions.map((tx) => (tx.category === from ? { ...tx, category: to } : tx)),
+        }));
+        return;
+      }
+      void run(() => api.renameFinanceCategory(from, to));
+    },
+    [inApp, run],
+  );
+
+  const markPaid = useCallback(
+    (id: string) => {
+      if (!inApp) return;
+      void run(() => api.markFinancePaid(id));
+    },
+    [inApp, run],
+  );
+
+  const exportPdf = useCallback((filter: FinancePdfRequest) => api.exportFinancePdf(filter), []);
+
+  return {
+    snapshot,
+    error,
+    busy,
+    inApp,
+    load,
+    saveAccount,
+    saveTransaction,
+    saveRule,
+    removeAccount,
+    removeTransaction,
+    removeRule,
+    setDefaultCurrency,
+    renameCategory,
+    markPaid,
+    exportPdf,
+    setError,
+  };
 }
 
 export type FinanceState = ReturnType<typeof useFinance>;
@@ -183,6 +237,11 @@ function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): F
     contributionCadence: draft.contributionCadence || "",
     contributionDate: draft.contributionDate || "",
     calendarEventId: draft.dueDate || draft.contributionDate ? `local-fin-${existing?.id || "preview"}` : "",
+    color: draft.color || existing?.color || "#C4B5A0",
+    investmentType: draft.investmentType || existing?.investmentType || "",
+    units: draft.valueMode === "stated" ? "" : draft.units || "",
+    priceMinor: draft.valueMode === "stated" ? null : minorOf(draft.unitPrice || "", currency),
+    leadDays: draft.leadDays ?? existing?.leadDays ?? 2,
     shownBalanceMinor: null,
   };
   const accounts = existing ? current.accounts.map((row) => (row.id === account.id ? account : row)) : [...current.accounts, account];
@@ -196,7 +255,7 @@ function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): F
       name: account.name,
       amountMinor: amount,
       currency: account.currency,
-      direction: account.kind === "credit_card" || account.kind === "loan" || account.kind === "investment" ? "payment" : "expense",
+      direction: account.kind === "credit_card" || account.kind === "loan" || account.kind === "other_debt" || account.kind === "investment" ? "payment" : "expense",
       cadence,
       weekdays: [],
       nextDate: dated,
@@ -206,6 +265,8 @@ function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): F
       calendarEventId: dated ? account.calendarEventId : "",
       updatedMs: now,
       fromAccount: true,
+      leadDays: account.leadDays,
+      reminderId: 0,
     });
   }
   return { ...current, accounts, rules };
@@ -238,6 +299,11 @@ function previewTransaction(current: FinanceSnapshot, draft: FinanceTransactionD
       contributionCadence: "",
       contributionDate: "",
       calendarEventId: "",
+      color: "#C4B5A0",
+      investmentType: "",
+      units: "",
+      priceMinor: null,
+      leadDays: 2,
       shownBalanceMinor: null,
     };
     accounts = [...accounts, named];
@@ -275,6 +341,8 @@ function previewTransaction(current: FinanceSnapshot, draft: FinanceTransactionD
       calendarEventId: draft.date ? "local-fin-preview" : "",
       updatedMs: Date.now(),
       fromAccount: false,
+      leadDays: 2,
+      reminderId: 0,
     };
     rules = [...rules, rule];
   }
@@ -298,6 +366,8 @@ function previewRule(current: FinanceSnapshot, draft: FinanceRuleDraft): Finance
     calendarEventId: draft.nextDate ? "local-fin-preview" : "",
     updatedMs: Date.now(),
     fromAccount: false,
+    leadDays: draft.leadDays ?? 2,
+    reminderId: 0,
   };
   const rules = draft.id ? current.rules.map((row) => (row.id === draft.id ? rule : row)) : [...current.rules, rule];
   return { ...current, rules };

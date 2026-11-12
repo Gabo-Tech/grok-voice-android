@@ -13,6 +13,7 @@ mod diagnostics;
 mod error;
 mod files;
 mod finance;
+mod finance_pdf;
 mod http;
 mod i18n;
 mod local;
@@ -199,6 +200,10 @@ pub fn run() {
             commands::delete_finance_account,
             commands::delete_finance_transaction,
             commands::delete_finance_rule,
+            commands::set_finance_default_currency,
+            commands::rename_finance_category,
+            commands::mark_finance_paid,
+            commands::export_finance_pdf,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

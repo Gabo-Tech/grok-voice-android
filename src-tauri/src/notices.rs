@@ -220,6 +220,12 @@ fn compose_spoken_line(
         }
         return line;
     }
+    if let Some(what) = strip_prefix_ci(&subject, "Pay ") {
+        return pay_line(locale, &address_task(locale, what), due_in_minutes, due_hour, false);
+    }
+    if let Some(what) = strip_prefix_ci(&subject, "Payday ") {
+        return pay_line(locale, &address_task(locale, what), due_in_minutes, due_hour, true);
+    }
     let when = when_phrase(locale, due_in_minutes, due_hour);
     let spoken = if subject.split_whitespace().count() >= 2 { lowercase_task_start(&subject) } else { subject };
     match kind_fold.as_str() {
@@ -264,6 +270,19 @@ fn occasion(locale: &str, which: &str, name: &str, minutes: i64, hour: Option<u3
     };
     let when = when_phrase(locale, minutes, hour).unwrap_or_else(|| say(locale, "when-today", &[]));
     say(locale, &key, &[("name", name), ("when", &when)])
+}
+
+fn pay_line(locale: &str, title: &str, minutes: i64, hour: Option<u32>, payday: bool) -> String {
+    let when = when_phrase(locale, minutes, hour).unwrap_or_else(|| say(locale, "when-today", &[]));
+    let key = match (payday, classify(minutes, hour)) {
+        (true, Span::Now) => "say-payday-today",
+        (true, Span::Tomorrow) => "say-payday-tomorrow",
+        (true, _) => "say-payday-later",
+        (false, Span::Now) => "say-pay-today",
+        (false, Span::Tomorrow) => "say-pay-tomorrow",
+        (false, _) => "say-pay-later",
+    };
+    say(locale, key, &[("title", title), ("when", &when)])
 }
 
 fn task_line(locale: &str, title: &str, when: Option<&str>) -> String {
@@ -1450,6 +1469,18 @@ mod tests {
                 "Gabriel"
             ),
             "Hey Gabriel, remember to brush your teeth."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "reminder", "Pay rent", "", 26 * 60, None, "Gabriel"),
+            "Hey Gabriel, tomorrow you have to pay rent."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "reminder", "Pay the Swiss card", "", 2 * 24 * 60, None, "Gabriel"),
+            "Hey Gabriel, in two days you have to pay the Swiss card."
+        );
+        assert_eq!(
+            spoken_notice_line("en", "event", "Pay rent", "", 0, None, "Gabriel"),
+            "Hey Gabriel, you have to pay rent today."
         );
         assert_eq!(
             spoken_notice_line("en", "reminder", "call my mom", "", 0, None, ""),

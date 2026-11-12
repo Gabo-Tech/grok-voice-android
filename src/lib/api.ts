@@ -270,6 +270,11 @@ export interface FinanceAccount {
   contributionCadence: string;
   contributionDate: string;
   calendarEventId: string;
+  color: string;
+  investmentType: string;
+  units: string;
+  priceMinor: number | null;
+  leadDays: number | null;
   shownBalanceMinor: number | null;
 }
 
@@ -304,6 +309,8 @@ export interface FinanceRule {
   calendarEventId: string;
   updatedMs: number;
   fromAccount: boolean;
+  leadDays: number | null;
+  reminderId: number;
 }
 
 export interface FinanceTotal {
@@ -322,6 +329,8 @@ export interface FinanceUpcoming {
   currency: string;
   direction: string;
   calendarEventId: string;
+  daysUntil: number;
+  leadDays: number;
 }
 
 export interface FinanceSnapshot {
@@ -332,6 +341,12 @@ export interface FinanceSnapshot {
   upcoming: FinanceUpcoming[];
   period: string;
   defaultCurrency: string;
+  categories: FinanceCategory[];
+}
+
+export interface FinanceCategory {
+  name: string;
+  color: string;
 }
 
 export interface FinanceAccountDraft {
@@ -349,6 +364,13 @@ export interface FinanceAccountDraft {
   contribution?: string;
   contributionCadence?: string;
   contributionDate?: string;
+  color?: string;
+  investmentType?: string;
+  units?: string;
+  unitPrice?: string;
+  valueMode?: string;
+  leadDays?: number | null;
+  changeKind?: boolean;
 }
 
 export interface FinanceTransactionDraft {
@@ -380,6 +402,25 @@ export interface FinanceRuleDraft {
   accountName?: string;
   notes?: string;
   weekdays?: number[];
+  leadDays?: number | null;
+}
+
+export interface FinancePdfRequest {
+  period?: string;
+  account?: string;
+  category?: string;
+  currency?: string;
+  direction?: string;
+  from?: string;
+  to?: string;
+  locale?: string;
+}
+
+export interface ExportedFinancePdf {
+  fileName: string;
+  dataB64: string;
+  shared: boolean;
+  pages: number;
 }
 
 export interface LocalFact {
@@ -629,6 +670,10 @@ export const api = {
   deleteFinanceAccount: (id: string) => invoke<FinanceSnapshot>("delete_finance_account", { id }),
   deleteFinanceTransaction: (id: string) => invoke<FinanceSnapshot>("delete_finance_transaction", { id }),
   deleteFinanceRule: (id: string) => invoke<FinanceSnapshot>("delete_finance_rule", { id }),
+  setFinanceDefaultCurrency: (currency: string) => invoke<FinanceSnapshot>("set_finance_default_currency", { currency }),
+  renameFinanceCategory: (from: string, to: string) => invoke<FinanceSnapshot>("rename_finance_category", { from, to }),
+  markFinancePaid: (id: string) => invoke<FinanceSnapshot>("mark_finance_paid", { id }),
+  exportFinancePdf: (filter: FinancePdfRequest) => invoke<ExportedFinancePdf>("export_finance_pdf", { filter }),
 };
 
 export function errorText(e: unknown): string {
