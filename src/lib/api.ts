@@ -294,6 +294,7 @@ export interface FinanceTransaction {
   ruleId: string;
   createdMs: number;
   updatedMs: number;
+  occurrenceDate?: string;
 }
 
 export interface FinanceRule {
@@ -313,6 +314,16 @@ export interface FinanceRule {
   fromAccount: boolean;
   leadDays: number | null;
   reminderId: number;
+  purpose?: string;
+  status?: string;
+  startDate?: string;
+  endKind?: string;
+  endCount?: number;
+  endDate?: string;
+  intervalDays?: number;
+  amountMode?: string;
+  payoutCurrency?: string;
+  skippedDates?: string[];
 }
 
 export interface FinanceTotal {
@@ -344,6 +355,27 @@ export interface FinanceSnapshot {
   period: string;
   defaultCurrency: string;
   categories: FinanceCategory[];
+  fx?: FinanceFx;
+}
+
+export interface FinanceFxLeg {
+  currency: string;
+  perEur: number;
+}
+
+export interface FinanceManualRate {
+  base: string;
+  quote: string;
+  rate: number;
+  asOf: string;
+}
+
+export interface FinanceFx {
+  asOf: string;
+  fetchedMs: number;
+  stale: boolean;
+  perEur: FinanceFxLeg[];
+  manual: FinanceManualRate[];
 }
 
 export interface FinanceCategory {
@@ -405,6 +437,16 @@ export interface FinanceRuleDraft {
   notes?: string;
   weekdays?: number[];
   leadDays?: number | null;
+  purpose?: string;
+  status?: string;
+  startDate?: string;
+  endKind?: string;
+  endCount?: number;
+  endDate?: string;
+  intervalDays?: number;
+  amountMode?: string;
+  payoutCurrency?: string;
+  accountKind?: string;
 }
 
 export interface FinancePdfRequest {
@@ -674,8 +716,13 @@ export const api = {
   deleteFinanceRule: (id: string) => invoke<FinanceSnapshot>("delete_finance_rule", { id }),
   setFinanceDefaultCurrency: (currency: string) => invoke<FinanceSnapshot>("set_finance_default_currency", { currency }),
   renameFinanceCategory: (from: string, to: string) => invoke<FinanceSnapshot>("rename_finance_category", { from, to }),
-  markFinancePaid: (id: string) => invoke<FinanceSnapshot>("mark_finance_paid", { id }),
+  markFinancePaid: (id: string, date?: string) => invoke<FinanceSnapshot>("mark_finance_paid", { id, date: date ?? null }),
   exportFinancePdf: (filter: FinancePdfRequest) => invoke<ExportedFinancePdf>("export_finance_pdf", { filter }),
+  refreshFinanceRates: () => invoke<FinanceSnapshot>("refresh_finance_rates"),
+  setFinanceManualRate: (base: string, quote: string, rate: string) =>
+    invoke<FinanceSnapshot>("set_finance_manual_rate", { base, quote, rate }),
+  financeScheduleAction: (id: string, action: string, date?: string) =>
+    invoke<FinanceSnapshot>("finance_schedule_action", { id, action, date: date ?? null }),
 };
 
 export function errorText(e: unknown): string {

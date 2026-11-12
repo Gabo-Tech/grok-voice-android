@@ -1091,11 +1091,26 @@ pub fn rename_finance_category(app: AppHandle, from: String, to: String) -> Resu
 }
 
 #[tauri::command]
-pub fn mark_finance_paid(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().mark_paid_id(&app, &id).map_err(msg)
+pub fn mark_finance_paid(app: AppHandle, id: String, date: Option<String>) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().mark_paid_on(&app, &id, date.as_deref().unwrap_or("")).map_err(msg)
 }
 
 #[tauri::command]
 pub fn export_finance_pdf(app: AppHandle, filter: crate::finance::PdfRequest) -> Result<crate::finance::ExportedPdf> {
     app.state::<crate::finance::Finance>().export_pdf(&app, &filter).map_err(msg)
+}
+
+#[tauri::command]
+pub fn refresh_finance_rates(app: AppHandle) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().refresh_rates(&app).map_err(msg)
+}
+
+#[tauri::command]
+pub fn set_finance_manual_rate(app: AppHandle, base: String, quote: String, rate: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().set_manual_rate(&app, &base, &quote, &rate).map_err(msg)
+}
+
+#[tauri::command]
+pub fn finance_schedule_action(app: AppHandle, id: String, action: String, date: Option<String>) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().schedule_action(&app, &id, &action, date.as_deref().unwrap_or("")).map_err(msg)
 }

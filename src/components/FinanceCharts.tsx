@@ -15,16 +15,18 @@ export interface ChartPick {
 export function FinanceCarousel({
   accounts,
   transactions,
+  planned = [],
   onPick,
 }: {
   accounts: FinanceAccount[];
   transactions: FinanceTransaction[];
+  planned?: { currency: string; income: number; expense: number }[];
   onPick: (pick: ChartPick) => void;
 }) {
   const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
-  const cards = buildCards(accounts, transactions, t);
+  const cards = buildCards(accounts, transactions, planned, t);
   if (cards.length === 0) return null;
   const go = (index: number) => {
     const node = scroller.current;
@@ -63,7 +65,7 @@ export function FinanceCarousel({
     </section>
   );
 
-  function buildCards(rows: FinanceAccount[], txs: FinanceTransaction[], translate: (text: string) => string) {
+  function buildCards(rows: FinanceAccount[], txs: FinanceTransaction[], plannedRows: { currency: string; income: number; expense: number }[], translate: (text: string) => string) {
     const cards: Array<{ key: string; title: string; body: ReactNode }> = [];
     const nets = netByCurrency(rows);
     nets.forEach((net) => {
@@ -90,6 +92,18 @@ export function FinanceCarousel({
       .filter((bar) => bar.label);
     if (bars.length > 0) {
       cards.push({ key: "bars", title: translate("Every account"), body: <Bars rows={bars} onPick={onPick} /> });
+    }
+    if (plannedRows.some((row) => row.income || row.expense)) {
+      cards.push({
+        key: "planned",
+        title: translate("Planned, next 12 months"),
+        body: (
+          <div>
+            <p className="stamp mb-3">{translate("Not actual")}</p>
+            <Grouped rows={plannedRows.map((row) => ({ ...row, payment: 0 }))} onPick={onPick} />
+          </div>
+        ),
+      });
     }
     const month = monthBars(txs);
     if (month.length > 0) {

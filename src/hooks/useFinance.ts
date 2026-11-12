@@ -13,7 +13,7 @@ import {
   type FinancePdfRequest,
   type FinanceTransactionDraft,
 } from "@/lib/api";
-import { emptyFinance, withShown } from "@/lib/money";
+import { emptyFinance, minorExponent, withShown } from "@/lib/money";
 
 function phoneLocale(): string {
   return typeof navigator === "undefined" ? "" : navigator.language;
@@ -162,9 +162,47 @@ export function useFinance() {
   );
 
   const markPaid = useCallback(
-    (id: string) => {
+    (id: string, date?: string) => {
       if (!inApp) return;
-      void run(() => api.markFinancePaid(id));
+      void run(() => api.markFinancePaid(id, date));
+    },
+    [inApp, run],
+  );
+
+  const scheduleAction = useCallback(
+    (id: string, action: string, date?: string) => {
+      if (!inApp) {
+        setSnapshot((current) => ({
+          ...current,
+          rules: current.rules.map((rule) => {
+            if (rule.id !== id) return rule;
+            if (action === "pause") return { ...rule, status: "paused" };
+            if (action === "stop") return { ...rule, status: "stopped" };
+            if (action === "resume") return { ...rule, status: "active" };
+            if (action === "skip") {
+              const skipped = new Set(rule.skippedDates || []);
+              if (date) skipped.add(date);
+              return { ...rule, skippedDates: [...skipped] };
+            }
+            return rule;
+          }),
+        }));
+        return;
+      }
+      void run(() => api.financeScheduleAction(id, action, date));
+    },
+    [inApp, run],
+  );
+
+  const refreshRates = useCallback(() => {
+    if (!inApp) return;
+    void run(() => api.refreshFinanceRates());
+  }, [inApp, run]);
+
+  const setManualRate = useCallback(
+    (base: string, quote: string, rate: string) => {
+      if (!inApp) return;
+      void run(() => api.setFinanceManualRate(base, quote, rate));
     },
     [inApp, run],
   );
@@ -186,6 +224,9 @@ export function useFinance() {
     setDefaultCurrency,
     renameCategory,
     markPaid,
+    scheduleAction,
+    refreshRates,
+    setManualRate,
     exportPdf,
     setError,
   };
@@ -209,7 +250,7 @@ function minorOf(raw: string, currency: string): number | null {
   if (!cleaned) return null;
   const value = Number(cleaned);
   if (!Number.isFinite(value) || value <= 0) return null;
-  const exp = currency === "JPY" ? 0 : 2;
+  const exp = minorExponent(currency);
   return Math.round(value * 10 ** exp);
 }
 
@@ -366,9 +407,19 @@ function previewRule(current: FinanceSnapshot, draft: FinanceRuleDraft): Finance
     calendarEventId: draft.nextDate ? "local-fin-preview" : "",
     updatedMs: Date.now(),
     fromAccount: false,
-    leadDays: draft.leadDays ?? 2,
-    reminderId: 0,
-  };
+      leadDays: draft.leadDays ?? 2,
+      reminderId: 0,
+      purpose: draft.purpose,
+      status: draft.status || "active",
+      startDate: draft.startDate || draft.nextDate || "",
+      endKind: draft.endKind,
+      endCount: draft.endCount,
+      endDate: draft.endDate,
+      intervalDays: draft.intervalDays,
+      amountMode: draft.amountMode,
+      payoutCurrency: draft.payoutCurrency,
+      skippedDates: [],
+    };
   const rules = draft.id ? current.rules.map((row) => (row.id === draft.id ? rule : row)) : [...current.rules, rule];
   return { ...current, rules };
 }

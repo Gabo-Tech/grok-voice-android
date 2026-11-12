@@ -254,6 +254,7 @@ mod tests {
             "play_local_music",
             "log_money",
             "save_recurring",
+            "save_schedule",
             "save_account",
             "list_finance",
             "delete_finance",

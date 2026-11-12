@@ -27,6 +27,10 @@ pub fn search_redirect() -> reqwest::redirect::Policy {
     ])
 }
 
+pub fn rates_redirect() -> reqwest::redirect::Policy {
+    allow_https(&["api.frankfurter.app", "api.coingecko.com"])
+}
+
 /// A bring-your-own model link. HTTPS only, no embedded password, and no local or private address.
 pub fn custom_download_url(url: &str) -> Result<(), String> {
     if url.len() > 2048 {

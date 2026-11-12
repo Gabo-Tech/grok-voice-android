@@ -44,8 +44,10 @@ export function defaultCurrency(locale: string): string {
 }
 
 export function minorExponent(currency: string): number {
-  if (["JPY", "KRW", "VND", "CLP"].includes(currency)) return 0;
-  if (["BHD", "KWD", "OMR"].includes(currency)) return 3;
+  const code = currency.toUpperCase();
+  if (["JPY", "KRW", "VND", "CLP"].includes(code)) return 0;
+  if (["BHD", "KWD", "OMR"].includes(code)) return 3;
+  if (["BTC", "ETH", "XMR", "SOL", "LTC"].includes(code)) return 8;
   return 2;
 }
 
@@ -53,7 +55,9 @@ export function majorString(minor: number | null | undefined, currency: string):
   if (minor == null) return "";
   const exp = minorExponent(currency);
   const value = minor / 10 ** exp;
-  return exp === 0 ? String(Math.round(value)) : value.toFixed(exp);
+  if (exp === 0) return String(Math.round(value));
+  const text = value.toFixed(exp);
+  return exp > 2 ? text.replace(/(\.\d{2,}?)0+$/, "$1") : text;
 }
 
 export function formatMoney(minor: number | null | undefined, currency: string): string {
@@ -63,7 +67,9 @@ export function formatMoney(minor: number | null | undefined, currency: string):
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
   } catch {
-    return `${value.toFixed(exp)} ${currency}`;
+    const text = value.toFixed(exp);
+    const shown = exp > 2 ? text.replace(/(\.\d{2,}?)0+$/, "$1") : text;
+    return `${shown} ${currency}`;
   }
 }
 
