@@ -196,8 +196,18 @@ export function useFinance() {
 
   const refreshRates = useCallback(() => {
     if (!inApp) return;
-    void run(() => api.refreshFinanceRates());
-  }, [inApp, run]);
+    setBusy(true);
+    void api
+      .refreshFinanceRates()
+      .then((next) => {
+        setSnapshot(next);
+        setError(null);
+      })
+      .catch(() => {
+        /* Keep the last book. A failed fetch stays quiet; headlines can still say the book is stale. */
+      })
+      .finally(() => setBusy(false));
+  }, [inApp]);
 
   const setManualRate = useCallback(
     (base: string, quote: string, rate: string, overrideLive = false) => {

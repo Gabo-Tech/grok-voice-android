@@ -11,26 +11,36 @@ import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api"
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
 import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
 import { debtPayoff, nextDue, plannedHits } from "@/lib/financeMath";
-import { FinanceDashboard, plannedYearBars, todayIso, type WorthFocus } from "@/components/FinanceDashboard";
+import { FinanceDashboard, plannedYearBars, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
+import { FINANCE_TABS, readFinanceTab, type FinanceTab } from "@/lib/financeTabs";
 import { ProgramSheet } from "@/components/ProgramSheet";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import "@/finance.css";
 
-type Segment = "overview" | "activity" | "accounts" | "investments";
 type SheetKind = "transaction" | "account" | "investment" | "rule";
 
-const SEGMENTS: Segment[] = ["overview", "activity", "accounts", "investments"];
+const FINANCE_TAB_KEY = "grok-finance-tab";
+
+function readStoredTab(): string | null {
+  try {
+    return sessionStorage.getItem(FINANCE_TAB_KEY);
+  } catch {
+    return null;
+  }
+}
+
 const KINDS = ["bank", "cash", "credit_card", "loan", "other_debt", "other"] as const;
 const PERIODS: PeriodId[] = ["this", "last", "six", "year", "all"];
 const LEADS = [0, 1, 2, 3, 7] as const;
 const CADENCE = ["", "weekly", "monthly", "yearly"] as const;
 
-function segmentLabel(segment: Segment): string {
-  if (segment === "overview") return "Overview";
-  if (segment === "activity") return "Activity";
-  if (segment === "accounts") return "Accounts";
-  return "Investments";
+function tabLabel(tab: FinanceTab): string {
+  if (tab === "overview") return "Overview";
+  if (tab === "expenses") return "Expenses";
+  if (tab === "income") return "Income";
+  if (tab === "accounts") return "Accounts";
+  return "Charts";
 }
 
 export function FinancePage({
@@ -43,14 +53,20 @@ export function FinancePage({
   onOpenCurrency?: () => void;
 }) {
   const t = useT();
+  useFinanceRateWatch(finance);
   const rateDay = useRef(todayIso());
-  const [segment, setSegment] = useState<Segment>("overview");
+  const [tab, setTab] = useState<FinanceTab>(() => readFinanceTab(readStoredTab()));
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
   const [classFilter, setClassFilter] = useState("all");
-  const [directionFilter, setDirectionFilter] = useState("all");
+  const [directionFilter, setDirectionFilter] = useState(() => {
+    const saved = readFinanceTab(readStoredTab());
+    if (saved === "expenses") return "expense";
+    if (saved === "income") return "income";
+    return "all";
+  });
   const [period, setPeriod] = useState<PeriodId>("this");
   const [focusMonth, setFocusMonth] = useState("");
   const [accountFilter, setAccountFilter] = useState("all");
@@ -64,8 +80,6 @@ export function FinancePage({
   const [groupFocus, setGroupFocus] = useState<WorthFocus | "all">("all");
 
   const accounts = finance.snapshot.accounts;
-  const spending = accounts.filter((account) => account.kind !== "investment");
-  const investments = accounts.filter((account) => account.kind === "investment");
   const rules = finance.snapshot.rules.filter((rule) => rule.cadence || rule.nextDate);
   const bounds = useMemo(() => periodBounds(period, new Date(), focusMonth), [period, focusMonth]);
   const activity = useMemo(
@@ -83,7 +97,7 @@ export function FinancePage({
       }),
     [finance.snapshot.transactions, bounds, accountFilter, categoryFilter, currencyFilter, directionFilter, classFilter, groupFilter, accounts],
   );
-  const recent = activity.slice(0, 5);
+  const recent = finance.snapshot.transactions.slice(0, 5);
   const today = todayIso();
   const planned = useMemo(() => {
     return plannedHits(finance.snapshot.rules, finance.snapshot.transactions, today).filter((hit) => {
@@ -98,6 +112,27 @@ export function FinancePage({
       return true;
     });
   }, [finance.snapshot.rules, finance.snapshot.transactions, today, bounds, accountFilter, categoryFilter, currencyFilter, directionFilter, classFilter]);
+  const chartAccounts = useMemo(
+    () =>
+      accounts.filter((account) => {
+        if (accountFilter !== "all" && account.id !== accountFilter) return false;
+        if (currencyFilter !== "all" && account.currency !== currencyFilter) return false;
+        if (groupFilter !== "all" && groupOf(account.kind) !== groupFilter) return false;
+        return true;
+      }),
+    [accounts, accountFilter, currencyFilter, groupFilter],
+  );
+  const chartRules = useMemo(
+    () =>
+      finance.snapshot.rules.filter((rule) => {
+        if (accountFilter !== "all" && rule.accountId !== accountFilter) return false;
+        if (categoryFilter !== "all" && rule.category !== categoryFilter) return false;
+        if (currencyFilter !== "all" && rule.currency !== currencyFilter) return false;
+        return true;
+      }),
+    [finance.snapshot.rules, accountFilter, categoryFilter, currencyFilter],
+  );
+  const bars = useMemo(() => plannedYearBars(chartRules, finance.snapshot.transactions, today), [chartRules, finance.snapshot.transactions, today]);
   const currencies = useMemo(() => [...new Set(accounts.map((account) => account.currency).filter(Boolean))], [accounts]);
   const categories = useMemo(() => {
     const names = new Set(finance.snapshot.categories.map((category) => category.name));
@@ -110,7 +145,18 @@ export function FinancePage({
     if (pick.currency) setCurrencyFilter(pick.currency);
     if (pick.group) setGroupFilter(pick.group);
     if (pick.month) setFocusMonth(pick.month);
-    setSegment("activity");
+  };
+  const chooseTab = (next: FinanceTab, focus?: WorthFocus | "all") => {
+    setTab(next);
+    try {
+      sessionStorage.setItem(FINANCE_TAB_KEY, next);
+    } catch {
+      /* The tab still changes for this render when storage is blocked. */
+    }
+    if (next === "expenses") setDirectionFilter("expense");
+    if (next === "income") setDirectionFilter("income");
+    if (next === "charts") setDirectionFilter("all");
+    if (next === "accounts") setGroupFocus(focus ?? "all");
   };
   const exportSummary = () => {
     const account = accounts.find((row) => row.id === accountFilter);
@@ -147,17 +193,20 @@ export function FinancePage({
     setEditingAccount(null);
     setEditingTx(null);
     setEditingRule(null);
-    if (segment === "overview") {
-      setEditingRule(null);
-      setSheet("rule");
-    } else if (segment === "accounts") {
-      setGroupFocus("all");
-      setAccountPreset("cash");
-      setSheet("account");
-    } else if (segment === "investments") setSheet("investment");
-    else {
+    if (tab === "income") {
+      setTxPreset("income");
+      setSheet("transaction");
+    } else if (tab === "expenses") {
       setTxPreset("expense");
       setSheet("transaction");
+    } else if (tab === "accounts") {
+      if (groupFocus === "invested") setSheet("investment");
+      else {
+        setAccountPreset(groupFocus === "debt" ? "credit_card" : groupFocus === "cash" ? "cash" : "bank");
+        setSheet("account");
+      }
+    } else if (tab === "overview") {
+      setSheet("rule");
     }
   };
   const openBank = () => {
@@ -179,138 +228,229 @@ export function FinancePage({
     setEditingRule(null);
     setSheet("rule");
   };
+  const openInvestment = () => {
+    setEditingAccount(null);
+    setSheet("investment");
+  };
+  const openAccount = (account: FinanceAccount) => {
+    setEditingAccount(account);
+    setSheet(account.kind === "investment" ? "investment" : "account");
+  };
+  const openTransaction = (tx: FinanceTransaction) => {
+    setEditingTx(tx);
+    setSheet("transaction");
+  };
+  const openRule = (rule: FinanceRule) => {
+    setEditingRule(rule);
+    setSheet("rule");
+  };
 
-  const addLabel = segment === "overview" ? "Program" : segment === "accounts" ? "Add account" : segment === "investments" ? "Add investment" : "Add transaction";
+  const addLabel = tab === "overview" ? "Program" : tab === "accounts" ? (groupFocus === "invested" ? "Add investment" : "Add account") : tab === "income" ? "Add income" : "Add expense";
+  const ledgerRules = (classFilter === "all" || classFilter === "recurring" ? rules : []).filter((rule) => {
+    if (tab === "expenses") return rule.direction !== "income";
+    if (tab === "income") return rule.direction === "income" && rule.purpose !== "investment_payout";
+    return true;
+  });
   const empty = accounts.length === 0 && finance.snapshot.transactions.length === 0 && finance.snapshot.rules.length === 0;
+
+  const ledger = (lock: "expense" | "income") => (
+    <div className="space-y-4">
+      <button type="button" className="fin-chip w-full" onClick={lock === "income" ? openIncome : openAdd}>
+        {t(lock === "income" ? "Add income" : "Add expense")}
+      </button>
+      <button type="button" className="fin-chip w-full" onClick={openBill}>
+        {t(lock === "income" ? "Program income" : "Program a bill")}
+      </button>
+      <Activity
+        rows={activity}
+        rules={ledgerRules}
+        classFilter={classFilter}
+        directionFilter={directionFilter}
+        directionLock={lock}
+        onClass={setClassFilter}
+        onDirection={setDirectionFilter}
+        period={period}
+        onPeriod={(next) => {
+          setFocusMonth("");
+          setPeriod(next);
+        }}
+        accountFilter={accountFilter}
+        onAccountFilter={setAccountFilter}
+        categoryFilter={categoryFilter}
+        onCategory={setCategoryFilter}
+        currencyFilter={currencyFilter}
+        onCurrency={setCurrencyFilter}
+        categories={categories}
+        currencies={currencies}
+        onEditCategories={() => setCategorySheet(true)}
+        onAdd={openAdd}
+        onTransaction={openTransaction}
+        onRule={openRule}
+        planned={planned}
+        showPlanned={false}
+        heading={t("Activity")}
+        accounts={accounts}
+      />
+    </div>
+  );
 
   return (
     <div className="finance flex min-h-0 flex-1 flex-col">
       <PageChrome
         title={t("Finance")}
         subtitle={t("On this phone. No bank login.")}
-        onAdd={openAdd}
+        onAdd={tab === "charts" ? undefined : openAdd}
         addLabel={t(addLabel)}
         active={active}
       >
-        <div className="mb-4 grid w-full min-w-0 grid-cols-1 gap-2">
-          {SEGMENTS.map((id) => (
-            <Chip key={id} wide on={segment === id} onClick={() => { setSegment(id); if (id === "accounts") setGroupFocus("all"); }}>
-              {t(segmentLabel(id))}
-            </Chip>
-          ))}
-        </div>
         {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
-        {(segment === "overview" || segment === "activity") && (
-          <button type="button" className="fin-chip mb-4 w-full" onClick={exportSummary}>
-            {t("Export PDF")}
-          </button>
-        )}
-        {exportNote && <p className="fin-muted mb-4 text-sm leading-5">{exportNote}</p>}
-        {segment === "overview" && (
-          <Overview
-            finance={finance}
-            empty={empty}
-            accounts={accounts}
-            recent={recent}
-            onBank={openBank}
-            onCard={openCard}
-            onIncome={openIncome}
-            onBill={openBill}
-            onFocus={(focus) => {
-              if (focus === "invested") {
-                setSegment("investments");
-                return;
-              }
-              setGroupFocus(focus);
-              setSegment("accounts");
-            }}
-            onOpenCurrency={onOpenCurrency}
-            onPick={pickChart}
-            onAccount={(account) => {
-              setEditingAccount(account);
-              setSheet(account.kind === "investment" ? "investment" : "account");
-            }}
-            onTransaction={(tx) => {
-              setEditingTx(tx);
-              setSheet("transaction");
-            }}
-          />
-        )}
-        {segment === "activity" && (
-          <Activity
-            rows={activity}
-            rules={classFilter === "all" || classFilter === "recurring" ? rules : []}
-            classFilter={classFilter}
-            directionFilter={directionFilter}
-            onClass={setClassFilter}
-            onDirection={setDirectionFilter}
-            period={period}
-            onPeriod={(next) => {
-              setFocusMonth("");
-              setPeriod(next);
-            }}
-            accountFilter={accountFilter}
-            onAccountFilter={setAccountFilter}
-            categoryFilter={categoryFilter}
-            onCategory={setCategoryFilter}
-            currencyFilter={currencyFilter}
-            onCurrency={setCurrencyFilter}
-            categories={categories}
-            currencies={currencies}
-            onEditCategories={() => setCategorySheet(true)}
-            onAdd={openAdd}
-            onTransaction={(tx) => {
-              setEditingTx(tx);
-              setSheet("transaction");
-            }}
-            onRule={(rule) => {
-              setEditingRule(rule);
-              setSheet("rule");
-            }}
-            planned={planned}
-            accounts={accounts}
-          />
-        )}
-        {segment === "accounts" && (
-          <AccountList
-            rows={groupFocus === "debt" ? spending.filter((account) => isDebt(account.kind)) : groupFocus === "cash" ? spending.filter((account) => !isDebt(account.kind)) : groupFocus === "owned" ? accounts.filter((account) => !isDebt(account.kind)) : spending}
-            transactions={finance.snapshot.transactions}
-            rules={finance.snapshot.rules}
-            onPaid={finance.markPaid}
-            emptyTitle={t("No accounts yet")}
-            emptyBody={t("Add cash, a bank, a card, or a loan. A nickname is enough.")}
-            action={t("Add account")}
-            onAdd={() => {
-              setEditingAccount(null);
-              setAccountPreset("cash");
-              setSheet("account");
-            }}
-            onOpen={(account) => {
-              setEditingAccount(account);
-              setSheet("account");
-            }}
-          />
-        )}
-        {segment === "investments" && (
-          <AccountList
-            rows={investments}
-            transactions={finance.snapshot.transactions}
-            rules={finance.snapshot.rules}
-            onPaid={finance.markPaid}
-            emptyTitle={t("No investments yet")}
-            emptyBody={t("Say “I invest 200 euros into VT every month”, or tap +.")}
-            action={t("Add investment")}
-            onAdd={() => {
-              setEditingAccount(null);
-              setSheet("investment");
-            }}
-            onOpen={(account) => {
-              setEditingAccount(account);
-              setSheet("investment");
-            }}
-          />
-        )}
+        {tab === "overview" ? (
+          <div role="tabpanel" id="finance-panel-overview" aria-labelledby="finance-tab-overview" data-finance-tabpanel="overview">
+            <Overview
+              finance={finance}
+              empty={empty}
+              accounts={accounts}
+              recent={recent}
+              onBank={openBank}
+              onCard={openCard}
+              onIncome={openIncome}
+              onBill={openBill}
+              onFocus={(focus) => chooseTab("accounts", focus)}
+              onOpenExpenses={() => chooseTab("expenses")}
+              onOpenIncome={() => chooseTab("income")}
+              onTransaction={openTransaction}
+            />
+          </div>
+        ) : null}
+        {tab === "expenses" ? (
+          <div role="tabpanel" id="finance-panel-expenses" aria-labelledby="finance-tab-expenses" data-finance-tabpanel="expenses">
+            <FinanceDashboard
+              finance={finance}
+              accounts={accounts}
+              place="expenses"
+              onProgram={openBill}
+              onIncome={openIncome}
+              onFocus={(focus) => chooseTab("accounts", focus)}
+            >
+              {ledger("expense")}
+            </FinanceDashboard>
+          </div>
+        ) : null}
+        {tab === "income" ? (
+          <div role="tabpanel" id="finance-panel-income" aria-labelledby="finance-tab-income" data-finance-tabpanel="income">
+            <FinanceDashboard
+              finance={finance}
+              accounts={accounts}
+              place="income"
+              onProgram={openBill}
+              onIncome={openBill}
+              onPayout={openBill}
+              onFocus={(focus) => chooseTab("accounts", focus)}
+            >
+              {ledger("income")}
+            </FinanceDashboard>
+          </div>
+        ) : null}
+        {tab === "accounts" ? (
+          <div role="tabpanel" id="finance-panel-accounts" aria-labelledby="finance-tab-accounts" data-finance-tabpanel="accounts">
+            <AccountsBoard
+              accounts={accounts}
+              focus={groupFocus}
+              transactions={finance.snapshot.transactions}
+              rules={finance.snapshot.rules}
+              onPaid={finance.markPaid}
+              onOpen={openAccount}
+              onAddAccount={() => {
+                setEditingAccount(null);
+                setAccountPreset("bank");
+                setSheet("account");
+              }}
+              onAddCash={() => {
+                setEditingAccount(null);
+                setAccountPreset("cash");
+                setSheet("account");
+              }}
+              onAddDebt={() => {
+                setEditingAccount(null);
+                setAccountPreset("credit_card");
+                setSheet("account");
+              }}
+              onAddInvestment={openInvestment}
+            />
+          </div>
+        ) : null}
+        {tab === "charts" ? (
+          <div role="tabpanel" id="finance-panel-charts" aria-labelledby="finance-tab-charts" data-finance-tabpanel="charts">
+            <Activity
+              rows={activity}
+              rules={[]}
+              classFilter={classFilter}
+              directionFilter={directionFilter}
+              directionLock="any"
+              filtersOnly
+              onClass={setClassFilter}
+              onDirection={setDirectionFilter}
+              period={period}
+              onPeriod={(next) => {
+                setFocusMonth("");
+                setPeriod(next);
+              }}
+              accountFilter={accountFilter}
+              onAccountFilter={setAccountFilter}
+              categoryFilter={categoryFilter}
+              onCategory={setCategoryFilter}
+              currencyFilter={currencyFilter}
+              onCurrency={setCurrencyFilter}
+              categories={categories}
+              currencies={currencies}
+              onEditCategories={() => setCategorySheet(true)}
+              onAdd={openAdd}
+              onTransaction={openTransaction}
+              onRule={openRule}
+              planned={[]}
+              accounts={accounts}
+            />
+            {groupFilter !== "all" ? (
+              <button type="button" className="fin-chip mb-2" onClick={() => setGroupFilter("all")}>
+                {t("All")}
+              </button>
+            ) : null}
+            <button type="button" className="fin-chip mb-4 w-full" onClick={exportSummary}>
+              {t("Export PDF")}
+            </button>
+            {exportNote ? <p className="fin-muted mb-4 text-sm leading-5">{exportNote}</p> : null}
+            {chartAccounts.length === 0 && activity.length === 0 && bars.every((row) => !row.income && !row.expense) ? (
+              <p className="fin-muted text-sm leading-5">{t("Nothing in this filter")}</p>
+            ) : null}
+            <FinanceCarousel
+              accounts={chartAccounts}
+              transactions={activity}
+              planned={bars}
+              display={finance.snapshot.defaultCurrency}
+              fx={finance.snapshot.fx}
+              busy={finance.busy}
+              onOpenSettings={onOpenCurrency}
+              onPick={pickChart}
+            />
+          </div>
+        ) : null}
       </PageChrome>
+      <div role="tablist" aria-label={t("Finance")} className="fin-tabs">
+        {FINANCE_TABS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`finance-tab-${id}`}
+            aria-selected={tab === id}
+            aria-controls={`finance-panel-${id}`}
+            className="fin-tab"
+            onClick={() => chooseTab(id)}
+          >
+            {t(tabLabel(id))}
+          </button>
+        ))}
+      </div>
       <TransactionSheet
         open={sheet === "transaction"}
         finance={finance}
@@ -342,9 +482,8 @@ function Overview({
   onIncome,
   onBill,
   onFocus,
-  onOpenCurrency,
-  onPick,
-  onAccount,
+  onOpenExpenses,
+  onOpenIncome,
   onTransaction,
 }: {
   finance: FinanceState;
@@ -356,58 +495,42 @@ function Overview({
   onIncome: () => void;
   onBill: () => void;
   onFocus: (focus: WorthFocus) => void;
-  onOpenCurrency?: () => void;
-  onPick: (pick: ChartPick) => void;
-  onAccount: (account: FinanceAccount) => void;
+  onOpenExpenses: () => void;
+  onOpenIncome: () => void;
   onTransaction: (tx: FinanceTransaction) => void;
 }) {
   const t = useT();
-  const money = accounts.filter((account) => groupOf(account.kind) === "money");
-  const debts = accounts.filter((account) => groupOf(account.kind) === "debt");
-  const investments = accounts.filter((account) => groupOf(account.kind) === "investment");
-  const code = (finance.snapshot.defaultCurrency || "").toUpperCase();
-  const bars = useMemo(() => plannedYearBars(finance.snapshot.rules, finance.snapshot.transactions, todayIso()), [finance.snapshot.rules, finance.snapshot.transactions]);
-  if (empty) {
-    return (
-      <div className="space-y-4">
-        <div className="mag-panel w-full">
-          <p className="masthead text-xl">{t("No money saved yet")}</p>
-          <p className="mt-2 text-base leading-6 text-muted-foreground">{t("Start with one. A nickname is enough. No bank login.")}</p>
-        </div>
+  return (
+    <div className="fin-stack w-full min-w-0 space-y-6">
+      <FinanceDashboard
+        finance={finance}
+        accounts={accounts}
+        place="overview"
+        onProgram={onBill}
+        onIncome={onIncome}
+        onFocus={onFocus}
+        onOpenExpenses={onOpenExpenses}
+        onOpenIncome={onOpenIncome}
+      />
+      {empty ? (
         <div className="fin-stack w-full min-w-0 space-y-3">
+          <div className="mag-panel w-full">
+            <p className="masthead text-xl">{t("No money saved yet")}</p>
+            <p className="mt-2 text-base leading-6 text-muted-foreground">{t("Start with one. A nickname is enough. No bank login.")}</p>
+          </div>
           <StartCard title={t("Add a bank")} body={t("A bank or wallet you spend from.")} onClick={onBank} />
           <StartCard title={t("Add a card")} body={t("A card or loan. Payments reduce what you owe.")} onClick={onCard} />
           <StartCard title={t("Add income")} body={t("Money coming in.")} onClick={onIncome} />
           <StartCard title={t("Add a bill")} body={t("Rent, a subscription, or anything with a date.")} onClick={onBill} />
         </div>
-        <CurrencyLink code={code} onOpen={onOpenCurrency} />
-      </div>
-    );
-  }
-  return (
-    <div className="fin-stack w-full min-w-0 space-y-6">
+      ) : null}
       <p className="fin-muted text-sm leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
-      <FinanceDashboard finance={finance} accounts={accounts} onProgram={onBill} onIncome={onIncome} onFocus={onFocus} onOpenSettings={onOpenCurrency} />
-      <FinanceCarousel
-        accounts={accounts}
-        transactions={finance.snapshot.transactions}
-        planned={bars}
-        display={finance.snapshot.defaultCurrency}
-        fx={finance.snapshot.fx}
-        busy={finance.busy}
-        onOpenSettings={onOpenCurrency}
-        onPick={onPick}
-      />
-      <Group title={t("Money")} rows={money} empty={t("No money in this group")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
-      <Group title={t("Debts")} rows={debts} empty={t("No debts saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
-      <Group title={t("Investments")} rows={investments} empty={t("No investments saved")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
-      <CurrencyLink code={code} onOpen={onOpenCurrency} />
-      {recent.length > 0 && (
+      {recent.length > 0 ? (
         <section>
           <h2 className="fin-kicker mb-2">{t("Recent")}</h2>
-          <TxRows rows={recent} accounts={finance.snapshot.accounts} onOpen={onTransaction} />
+          <TxRows rows={recent} accounts={accounts} onOpen={onTransaction} />
         </section>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -417,18 +540,6 @@ function StartCard({ title, body, onClick }: { title: string; body: string; onCl
     <button type="button" className="fin-panel w-full min-h-28 text-left" onClick={onClick}>
       <p className="text-base font-extrabold tracking-wide uppercase">{title}</p>
       <p className="mt-2 text-sm leading-5 text-muted-foreground">{body}</p>
-    </button>
-  );
-}
-
-function CurrencyLink({ code, onOpen }: { code: string; onOpen?: () => void }) {
-  const t = useT();
-  if (!code) return null;
-  return (
-    <button type="button" className="fin-panel w-full text-left" onClick={onOpen} disabled={!onOpen}>
-      <p className="fin-kicker">{t("Default currency")}</p>
-      <p className="fin-num mt-2 text-3xl">{code}</p>
-      <p className="fin-muted mt-1 text-sm">{t("Change in Settings")}</p>
     </button>
   );
 }
@@ -456,6 +567,10 @@ function Activity({
   onRule,
   planned,
   accounts,
+  directionLock = "any",
+  filtersOnly = false,
+  showPlanned = true,
+  heading = "",
 }: {
   rows: FinanceTransaction[];
   rules: FinanceRule[];
@@ -463,6 +578,10 @@ function Activity({
   directionFilter: string;
   onClass: (value: string) => void;
   onDirection: (value: string) => void;
+  directionLock?: "expense" | "income" | "any";
+  filtersOnly?: boolean;
+  showPlanned?: boolean;
+  heading?: string;
   period: PeriodId;
   onPeriod: (value: PeriodId) => void;
   accountFilter: string;
@@ -513,13 +632,15 @@ function Activity({
         <Chip on={classFilter === "once"} onClick={() => onClass("once")}>{t("Once")}</Chip>
         <Chip on={classFilter === "irregular"} onClick={() => onClass("irregular")}>{t("Irregular")}</Chip>
       </div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Chip on={directionFilter === "all"} onClick={() => onDirection("all")}>{t("All")}</Chip>
-        <Chip on={directionFilter === "expense"} onClick={() => onDirection("expense")}>{t("Expense")}</Chip>
-        <Chip on={directionFilter === "income"} onClick={() => onDirection("income")}>{t("Income")}</Chip>
-        <Chip on={directionFilter === "payment"} onClick={() => onDirection("payment")}>{t("Payment")}</Chip>
-      </div>
-      {rules.length > 0 && (
+      {directionLock === "income" ? null : (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {directionLock === "any" ? <Chip on={directionFilter === "all"} onClick={() => onDirection("all")}>{t("All")}</Chip> : null}
+          <Chip on={directionFilter === "expense"} onClick={() => onDirection("expense")}>{t("Expense")}</Chip>
+          {directionLock === "any" ? <Chip on={directionFilter === "income"} onClick={() => onDirection("income")}>{t("Income")}</Chip> : null}
+          <Chip on={directionFilter === "payment"} onClick={() => onDirection("payment")}>{t("Payment")}</Chip>
+        </div>
+      )}
+      {filtersOnly ? null : rules.length > 0 && (
         <section className="mb-6">
           <h2 className="mb-2 text-sm text-muted-foreground">{t("Rules")}</h2>
           <div className="divide-y divide-border border-y border-border">
@@ -539,7 +660,7 @@ function Activity({
           </div>
         </section>
       )}
-      {planned.length > 0 ? (
+      {filtersOnly || !showPlanned || planned.length === 0 ? null : (
         <section className="mb-6">
           <h2 className="fin-kicker mb-2">{t("Planned")}</h2>
           <p className="fin-muted mb-2 text-sm">{t("Not actual")}</p>
@@ -558,12 +679,16 @@ function Activity({
             ))}
           </div>
         </section>
-      ) : null}
-      {rows.length === 0 && planned.length === 0 ? (
+      )}
+      {filtersOnly || directionLock !== "any" || rows.length > 0 || rules.length > 0 || (showPlanned && planned.length > 0) ? null : (
         <EmptyState title={t("Nothing in this filter")} body={t("Try another filter, or log it in Talk.")} actionLabel={t("Add transaction")} onAction={onAdd} />
-      ) : rows.length > 0 ? (
-        <TxRows rows={rows} accounts={accounts} onOpen={onTransaction} />
-      ) : null}
+      )}
+      {filtersOnly || rows.length === 0 ? null : (
+        <section>
+          {heading ? <h2 className="fin-kicker mb-2">{heading}</h2> : null}
+          <TxRows rows={rows} accounts={accounts} onOpen={onTransaction} />
+        </section>
+      )}
     </div>
   );
 }
@@ -1102,28 +1227,62 @@ function leadLabel(days: number): string {
   return "A week before";
 }
 
-function Group({
-  title,
-  rows,
-  empty,
-  onOpen,
+function AccountsBoard({
+  accounts,
+  focus,
   transactions,
   rules,
   onPaid,
+  onOpen,
+  onAddAccount,
+  onAddCash,
+  onAddDebt,
+  onAddInvestment,
 }: {
-  title: string;
-  rows: FinanceAccount[];
-  empty: string;
-  onOpen: (account: FinanceAccount) => void;
+  accounts: FinanceAccount[];
+  focus: WorthFocus | "all";
   transactions: FinanceTransaction[];
   rules: FinanceState["snapshot"]["rules"];
   onPaid: (id: string) => void;
+  onOpen: (account: FinanceAccount) => void;
+  onAddAccount: () => void;
+  onAddCash: () => void;
+  onAddDebt: () => void;
+  onAddInvestment: () => void;
 }) {
-  return (
-    <section>
+  const t = useT();
+  const bank = accounts.filter((account) => account.kind === "bank" || account.kind === "other");
+  const cash = accounts.filter((account) => account.kind === "cash");
+  const invested = accounts.filter((account) => account.kind === "investment");
+  const debt = accounts.filter((account) => isDebt(account.kind));
+  const show = (section: "accounts" | "cash" | "invested" | "debt") => {
+    if (focus === "all") return true;
+    if (focus === "owned") return section !== "debt";
+    if (focus === "cash") return section === "cash";
+    if (focus === "invested") return section === "invested";
+    return section === "debt";
+  };
+  const block = (title: string, rows: FinanceAccount[], emptyTitle: string, emptyBody: string, action: string, onAdd: () => void) => (
+    <section key={title}>
       <h2 className="fin-kicker mb-2">{title}</h2>
-      {rows.length === 0 ? <p className="fin-muted text-base">{empty}</p> : <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} />}
+      <AccountList rows={rows} transactions={transactions} rules={rules} onPaid={onPaid} emptyTitle={emptyTitle} emptyBody={emptyBody} action={action} onAdd={onAdd} onOpen={onOpen} />
     </section>
+  );
+  return (
+    <div className="fin-stack w-full min-w-0 space-y-6">
+      {show("accounts")
+        ? block(t("Accounts"), bank, t("No accounts yet"), t("Add cash, a bank, a card, or a loan. A nickname is enough."), t("Add account"), onAddAccount)
+        : null}
+      {show("cash")
+        ? block(t("Cash & savings"), cash, t("No accounts yet"), t("Add cash, a bank, a card, or a loan. A nickname is enough."), t("Add account"), onAddCash)
+        : null}
+      {show("invested")
+        ? block(t("Investments"), invested, t("No investments yet"), t("Say “I invest 200 euros into VT every month”, or tap +."), t("Add investment"), onAddInvestment)
+        : null}
+      {show("debt")
+        ? block(t("You owe"), debt, t("No debts saved"), t("A card or loan. Payments reduce what you owe."), t("Add account"), onAddDebt)
+        : null}
+    </div>
   );
 }
 

@@ -25,6 +25,7 @@ import {
   type ScheduleShape,
 } from "./financeMath.ts";
 import { catalogHas, catalogStats } from "./i18n.ts";
+import { financePanels, FINANCE_TABS, readFinanceTab } from "./financeTabs.ts";
 import { readFileSync } from "node:fs";
 import { resolveInset, scrollDelta } from "./keyboard.ts";
 
@@ -413,12 +414,79 @@ for (const key of [
 
 const dashboard = readFileSync(new URL("../components/FinanceDashboard.tsx", import.meta.url), "utf8");
 const charts = readFileSync(new URL("../components/FinanceCharts.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../components/FinancePage.tsx", import.meta.url), "utf8");
+const combined = readFileSync(new URL("../components/CombinedTotal.tsx", import.meta.url), "utf8");
 const settings = readFileSync(new URL("../components/CurrencyEditor.tsx", import.meta.url), "utf8");
+const more = readFileSync(new URL("../components/MorePage.tsx", import.meta.url), "utf8");
+const math = readFileSync(new URL("./financeMath.ts", import.meta.url), "utf8");
 assert.equal(dashboard.includes("setManualRate"), false);
 assert.equal(dashboard.includes("RatePanel"), false);
 assert.equal(charts.includes("RatePanel"), false);
 assert.equal(settings.includes("Manual rates"), true);
 assert.equal(settings.includes("Use this instead of the live rate"), true);
 assert.equal(settings.includes('inputMode="decimal"'), true);
+
+assert.deepEqual(financePanels("overview"), ["net-worth", "expenses", "income", "result", "upcoming"]);
+assert.deepEqual(financePanels("expenses"), ["expenses", "activity", "coming-expenses"]);
+assert.deepEqual(financePanels("income"), ["income", "activity", "coming-income", "payouts"]);
+let panelAt = -1;
+for (const id of financePanels("overview")) {
+  const token = `data-finance-panel="${id}"`;
+  const next = dashboard.indexOf(token);
+  assert.ok(next > panelAt, token);
+  panelAt = next;
+}
+assert.ok(dashboard.indexOf('t("Net worth")') < dashboard.indexOf('t("This month\'s expenses")'));
+assert.ok(dashboard.indexOf('t("This month\'s expenses")') < dashboard.indexOf('t("This month\'s income")'));
+assert.ok(dashboard.indexOf('t("This month\'s income")') < dashboard.indexOf('t("This month\'s result")'));
+assert.ok(dashboard.includes("financePanels(place)"));
+assert.equal(dashboard.includes("LiveRates"), false);
+
+const rateSurfaces = [dashboard, charts, page, combined];
+for (const src of rateSurfaces) {
+  assert.equal(src.includes("LiveRates"), false, "LiveRates");
+  assert.equal(src.includes("RatePanel"), false, "RatePanel");
+  assert.equal(src.includes("Today's rate"), false, "Today's rate");
+  assert.equal(src.includes("1 {code} = {rate} {quote}"), false, "rate book");
+}
+assert.equal(page.includes("CurrencyEditor"), false);
+assert.equal(more.includes("<CurrencyEditor"), true);
+assert.equal(settings.includes("Today's rate"), true);
+assert.equal(settings.includes("Manual rates"), true);
+
+assert.deepEqual([...FINANCE_TABS], ["overview", "expenses", "income", "accounts", "charts"]);
+assert.equal(readFinanceTab(null), "overview");
+assert.equal(readFinanceTab("charts"), "charts");
+assert.equal(readFinanceTab("activity"), "overview");
+assert.equal(readFinanceTab("rates"), "overview");
+for (const id of FINANCE_TABS) {
+  assert.ok(page.includes(`tab === "${id}"`), id);
+  assert.ok(page.includes(`data-finance-tabpanel="${id}"`), id);
+  assert.ok(page.includes("role=\"tablist\""), id);
+}
+assert.ok(page.includes("sessionStorage"));
+assert.ok(page.includes("grok-finance-tab"));
+assert.ok(page.includes("useFinanceRateWatch"));
+assert.ok(page.includes("refreshRates"));
+
+const overrideAt = math.indexOf("manualQuote(book, sourceCode, target, true)");
+const cachedAt = math.indexOf("cachedQuote(book, sourceCode, target)");
+const fallbackAt = math.indexOf("manualQuote(book, sourceCode, target, false)");
+assert.ok(overrideAt > 0 && overrideAt < cachedAt && cachedAt < fallbackAt);
+assert.ok(math.includes("sourceCode === target"));
+
+for (const key of [
+  "This month's expenses",
+  "This month's income",
+  "This month's result",
+  "Paid this month.",
+  "Received this month.",
+  "Still ahead. Open a tab for the full list.",
+  "Add expense",
+  "Investment payouts",
+  "Tap a chart to filter this screen.",
+]) {
+  assert.equal(catalogHas(key), true, key);
+}
 
 console.log("inset and finance math ok");

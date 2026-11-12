@@ -76,7 +76,7 @@ export function FinanceCarousel({
           </button>
         ))}
       </div>
-      <p className="fin-muted mt-1 text-center text-sm">{t("Tap a chart to open it in Activity.")}</p>
+      <p className="fin-muted mt-1 text-center text-sm">{t("Tap a chart to filter this screen.")}</p>
     </section>
   );
 
