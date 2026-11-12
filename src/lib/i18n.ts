@@ -1043,6 +1043,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Manual rate": "Tipo manual",
     "1 of the first currency equals this many of the second.": "1 de la primera moneda equivale a esta cantidad de la segunda.",
     "Clear rate": "Borrar tipo",
+    "Mark received": "Marcar recibido",
+    Subscription: "Suscripción",
+    Category: "Categoría",
   },
   de: {
     Talk: "Sprechen",
@@ -2084,6 +2087,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Manual rate": "Eigener Kurs",
     "1 of the first currency equals this many of the second.": "1 der ersten Währung entspricht so viel der zweiten.",
     "Clear rate": "Kurs löschen",
+    "Mark received": "Als erhalten markieren",
+    Subscription: "Abo",
+    Category: "Kategorie",
   },
   pt: {
     Talk: "Falar",
@@ -3125,6 +3131,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Manual rate": "Taxa manual",
     "1 of the first currency equals this many of the second.": "1 da primeira moeda equivale a esta quantidade da segunda.",
     "Clear rate": "Apagar taxa",
+    "Mark received": "Marcar recebido",
+    Subscription: "Assinatura",
+    Category: "Categoria",
   },
   "ca-ES-valencia": {
     Talk: "Parlar",
@@ -4166,6 +4175,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Manual rate": "Tipus manual",
     "1 of the first currency equals this many of the second.": "1 de la primera moneda equival a esta quantitat de la segona.",
     "Clear rate": "Esborrar tipus",
+    "Mark received": "Marcar rebut",
+    Subscription: "Subscripció",
+    Category: "Categoria",
   },
 };
 
