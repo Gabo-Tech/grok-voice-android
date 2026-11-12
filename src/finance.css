@@ -32,8 +32,20 @@
   text-transform: uppercase;
 }
 
+.finance .fin-stack,
+.finance .fin-column {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .finance .fin-panel {
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
   background: var(--fin-panel);
   border: var(--frame) solid var(--fin-line);
   box-shadow: var(--fin-shadow);
@@ -63,16 +75,28 @@
   border-width: 0 1.5px 1.5px 0;
 }
 
-.finance .fin-stack > .fin-panel:nth-child(even) {
-  margin-left: 8px;
-  width: calc(100% - 8px);
+.finance .fin-stack > .fin-panel,
+.finance .fin-stack > .fin-window,
+.finance .fin-column > .fin-panel,
+.finance .fin-column > .fin-window {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .finance .fin-window {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
   background: var(--fin-panel-2);
   border: var(--frame) solid var(--fin-line);
-  border-left: 6px solid var(--fin-gold);
-  padding: 0.95rem 0.95rem 1.05rem;
+  border-left-color: var(--fin-gold);
+  box-shadow: var(--fin-shadow);
+  padding: 1.05rem 1rem 1.15rem;
 }
 
 .finance .fin-num {
@@ -128,9 +152,30 @@
 }
 
 .finance .fin-planned {
-  border: var(--frame) dashed var(--fin-line);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  border-style: dashed;
+  border-width: var(--frame);
   background: transparent;
-  box-shadow: none;
+  box-shadow: var(--fin-shadow);
+}
+
+.finance .fin-carousel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  gap: 0;
+}
+
+.finance .fin-carousel > .fin-panel {
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
 }
 
 .finance .fin-hero-num {

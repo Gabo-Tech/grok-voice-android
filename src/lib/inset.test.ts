@@ -1,11 +1,14 @@
 /// <reference types="node" />
 import assert from "node:assert/strict";
 import {
+  bookIsStale,
   cashFlow,
   combinedMinor,
   comingRows,
   headlineOf,
   missingCodes,
+  quoteRate,
+  sameLocalDay,
   subtractHeadlines,
   convertMinor,
   debtPayoff,
@@ -21,6 +24,8 @@ import {
   type RateBook,
   type ScheduleShape,
 } from "./financeMath.ts";
+import { catalogHas, catalogStats } from "./i18n.ts";
+import { readFileSync } from "node:fs";
 import { resolveInset, scrollDelta } from "./keyboard.ts";
 
 const overlay = resolveInset(800, 800, 400, 0, 400);
@@ -295,8 +300,12 @@ const staleBook: RateBook = { ...fresh, fetchedMs: 1_000 - 49 * 60 * 60 * 1000 }
 assert.equal(convertMinor(1100, "USD", "EUR", staleBook, 1_000)?.stale, true);
 assert.equal(convertMinor(1100, "USD", "EUR", staleBook, 1_000)?.amountMinor, 1000);
 const manualBook: RateBook = { ...fresh, manual: [{ base: "USD", quote: "EUR", rate: 0.5, asOf: "2026-01-01" }] };
-assert.equal(convertMinor(1100, "USD", "EUR", manualBook, 1_000)?.amountMinor, 550);
-assert.equal(convertMinor(1100, "USD", "EUR", manualBook, 1_000)?.source, "manual");
+assert.equal(convertMinor(1100, "USD", "EUR", manualBook, 1_000)?.amountMinor, 1000);
+assert.equal(convertMinor(1100, "USD", "EUR", manualBook, 1_000)?.source, "cached");
+assert.notEqual(convertMinor(1100, "USD", "EUR", manualBook, 1_000)?.amountMinor, 550);
+const overrideBook: RateBook = { ...fresh, manual: [{ base: "USD", quote: "EUR", rate: 0.5, asOf: "2026-01-01", overrideLive: true }] };
+assert.equal(convertMinor(1100, "USD", "EUR", overrideBook, 1_000)?.amountMinor, 550);
+assert.equal(convertMinor(1100, "USD", "EUR", overrideBook, 1_000)?.source, "manual");
 assert.equal(convertMinor(-3000, "EUR", "USD", fresh, 1_000)?.amountMinor, -3300);
 assert.equal(combinedMinor([{ amountMinor: 85000, currency: "EUR" }], "EUR", null, 1_000)?.source, "identity");
 
@@ -350,5 +359,66 @@ const moved = netWorthChange(
   month.end,
 );
 assert.equal(moved[0].change, 260000);
+
+const now = Date.now();
+const start = new Date(now);
+start.setHours(0, 0, 0, 0);
+const yesterdayMs = start.getTime() - 60_000;
+assert.equal(sameLocalDay(now, now), true);
+assert.equal(sameLocalDay(yesterdayMs, now), false);
+assert.equal(now - yesterdayMs < 48 * 60 * 60 * 1000, true);
+const yesterdayBook: RateBook = { ...fresh, fetchedMs: yesterdayMs, manual: [{ base: "USD", quote: "EUR", rate: 0.5, asOf: "2026-01-01" }] };
+assert.equal(bookIsStale(yesterdayBook, now), true);
+assert.equal(convertMinor(1100, "USD", "EUR", yesterdayBook, now)?.amountMinor, 1000);
+assert.equal(convertMinor(1100, "USD", "EUR", yesterdayBook, now)?.stale, true);
+assert.equal(convertMinor(1100, "USD", "EUR", yesterdayBook, now)?.source, "cached");
+assert.notEqual(convertMinor(1100, "USD", "EUR", yesterdayBook, now)?.amountMinor, 550);
+const todayBook: RateBook = { ...fresh, fetchedMs: now, manual: yesterdayBook.manual };
+assert.equal(bookIsStale(todayBook, now), false);
+assert.equal(quoteRate("USD", "EUR", todayBook, now)?.source, "cached");
+assert.notEqual(quoteRate("USD", "EUR", todayBook, now)?.rate, 1);
+assert.equal(quoteRate("USD", "XMR", todayBook, now), null);
+const fallbackOnly: RateBook = { asOf: "", fetchedMs: 0, perEur: {}, manual: [{ base: "XMR", quote: "EUR", rate: 150, asOf: "2026-01-01" }] };
+assert.equal(convertMinor(100_000_000, "XMR", "EUR", fallbackOnly, now)?.amountMinor, 15_000);
+assert.equal(convertMinor(100_000_000, "XMR", "EUR", fallbackOnly, now)?.source, "manual");
+assert.equal(convertMinor(1100, "USD", "EUR", fallbackOnly, now), null);
+const stillBlocked = headlineOf(
+  [
+    { amountMinor: 10_000, currency: "EUR" },
+    { amountMinor: 1_100, currency: "USD" },
+  ],
+  "EUR",
+  fallbackOnly,
+  now,
+);
+assert.equal(stillBlocked.state, "needs-rate");
+assert.equal(stillBlocked.amountMinor, 0);
+assert.notEqual(stillBlocked.amountMinor, 11_100);
+
+const counts = catalogStats();
+assert.equal(new Set(counts.map((row) => row.count)).size, 1);
+for (const key of [
+  "Today's rate",
+  "Fetched {time}",
+  "Live rate for the day. Native amounts stay on each item.",
+  "1 {code} = {rate} {quote}",
+  "Manual rates",
+  "A fallback when today's rate is missing.",
+  "Use this instead of the live rate",
+  "Set a manual rate in Settings.",
+  "Using your rate",
+]) {
+  assert.equal(catalogHas(key), true, key);
+}
+
+const dashboard = readFileSync(new URL("../components/FinanceDashboard.tsx", import.meta.url), "utf8");
+const charts = readFileSync(new URL("../components/FinanceCharts.tsx", import.meta.url), "utf8");
+const settings = readFileSync(new URL("../components/CurrencyEditor.tsx", import.meta.url), "utf8");
+assert.equal(dashboard.includes("setManualRate"), false);
+assert.equal(dashboard.includes("RatePanel"), false);
+assert.equal(charts.includes("RatePanel"), false);
+assert.equal(settings.includes("Manual rates"), true);
+assert.equal(settings.includes("Use this instead of the live rate"), true);
+assert.equal(settings.includes('inputMode="decimal"'), true);
 
 console.log("inset and finance math ok");

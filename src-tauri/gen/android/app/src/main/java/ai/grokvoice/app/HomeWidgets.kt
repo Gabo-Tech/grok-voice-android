@@ -44,11 +44,11 @@ object HomeWidgets {
       bindRows(context, views, theme, text.getString(R.string.widget_schedule_title), scheduleLines(context), text.getString(R.string.widget_schedule_empty), "events", rowsFor(heightOf(mgr, id)))
     }
     push(context, mgr, NetWorthWidget::class.java) { views, _ ->
-      bindFigure(context, views, theme, text.getString(R.string.widget_net_title), figureText(context, finance?.optJSONObject("net"), R.string.widget_net_empty), "", "finance", theme.ink, 11)
+      bindFigure(context, views, theme, text.getString(R.string.widget_net_title), figureText(context, finance?.optJSONObject("net"), R.string.widget_net_empty, finance), "", "finance", theme.ink, 11)
     }
     push(context, mgr, MonthWidget::class.java) { views, _ ->
       val node = finance?.optJSONObject("month")
-      val value = figureText(context, node, R.string.widget_month_empty)
+      val value = figureText(context, node, R.string.widget_month_empty, finance)
       val color = when {
         node?.optString("state") == "ready" && node.optString("text").startsWith("-") -> theme.expense
         node?.optString("state") == "ready" -> theme.income
@@ -70,8 +70,8 @@ object HomeWidgets {
         val missing = needs.map { it?.optString("missing").orEmpty() }.filter { it.isNotBlank() }.distinct().joinToString(", ")
         bindFigure(context, views, theme, text.getString(R.string.widget_window_title), text.getString(R.string.widget_needs_rate, missing), "", "finance", theme.ink, 13)
       } else {
-        val incoming = figureText(context, incomingNode, R.string.widget_window_empty)
-        val outgoing = figureText(context, outgoingNode, R.string.widget_window_empty)
+        val incoming = figureText(context, incomingNode, R.string.widget_window_empty, finance)
+        val outgoing = figureText(context, outgoingNode, R.string.widget_window_empty, finance)
         bindFigure(
           context,
           views,
@@ -180,17 +180,27 @@ object HomeWidgets {
     bindFigure(context, views, theme, text.getString(R.string.widget_next_title), value, note, tab, theme.ink, 14)
   }
 
-  private fun figureText(context: Context, node: org.json.JSONObject?, empty: Int): String {
+  private fun figureText(context: Context, node: org.json.JSONObject?, empty: Int, board: org.json.JSONObject? = null): String {
     val text = AppLocale.wrap(context)
     if (node == null) return text.getString(R.string.widget_finance_empty)
     return when (node.optString("state")) {
       "ready" -> {
         val amount = node.optString("text")
-        if (node.optBoolean("stale")) "$amount · ${text.getString(R.string.widget_rates_stale)}" else amount
+        if (rateIsStale(node, board?.optLong("fetchedMs") ?: 0L)) "$amount · ${text.getString(R.string.widget_rates_stale)}" else amount
       }
       "needs-rate" -> text.getString(R.string.widget_needs_rate, node.optString("missing"))
       else -> text.getString(empty)
     }
+  }
+
+  /** Labels a precomputed total when the fetch is from an earlier local day. Does not convert money. */
+  private fun rateIsStale(node: org.json.JSONObject, fetchedMs: Long): Boolean {
+    if (node.optBoolean("stale")) return true
+    if (fetchedMs <= 0L) return false
+    val fetched = java.util.Calendar.getInstance().apply { timeInMillis = fetchedMs }
+    val now = java.util.Calendar.getInstance()
+    return fetched.get(java.util.Calendar.YEAR) != now.get(java.util.Calendar.YEAR) ||
+      fetched.get(java.util.Calendar.DAY_OF_YEAR) != now.get(java.util.Calendar.DAY_OF_YEAR)
   }
 
   private fun openIntent(context: Context, tab: String, request: Int): PendingIntent =

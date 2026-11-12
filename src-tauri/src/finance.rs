@@ -13,7 +13,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
-use chrono::{Datelike, Duration, Local, NaiveDate};
+use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
@@ -620,14 +620,14 @@ impl Finance {
         self.commit(app, store)
     }
 
-    pub fn set_manual_rate(&self, app: &AppHandle, base: &str, quote: &str, rate: &str) -> Result<Snapshot, String> {
+    pub fn set_manual_rate(&self, app: &AppHandle, base: &str, quote: &str, rate: &str, override_live: bool) -> Result<Snapshot, String> {
         let mut store = self.lock().clone();
         if rate.trim().is_empty() {
             store.fx.manual.retain(|row| !(row.base.eq_ignore_ascii_case(base) && row.quote.eq_ignore_ascii_case(quote)));
         } else {
             let value: f64 = rate.trim().parse().map_err(|_| "The rate has to be a number above zero.".to_string())?;
             let as_of = store.fx.as_of.clone();
-            crate::finance_fx::upsert_manual(&mut store.fx, base, quote, value, &as_of)?;
+            crate::finance_fx::upsert_manual(&mut store.fx, base, quote, value, &as_of, override_live)?;
         }
         self.commit(app, store)
     }
@@ -3563,9 +3563,18 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
                 note.push(' ');
                 note.push_str(&tr(locale, "As of {date}.").replace("{date}", &combined.as_of));
             }
+            if combined.source == "cached" && !combined.stale {
+                note.push(' ');
+                note.push_str(&tr(locale, "Today's rate."));
+            }
             if combined.stale {
                 note.push(' ');
                 note.push_str(&tr(locale, "Rates are stale."));
+            }
+            let fetched = fetched_clock(store.fx.fetched_ms);
+            if !fetched.is_empty() {
+                note.push(' ');
+                note.push_str(&tr(locale, "Fetched {time}.").replace("{time}", &fetched));
             }
             notes.push(note);
         }
@@ -3895,6 +3904,8 @@ pub struct WidgetFigure {
 #[serde(rename_all = "camelCase")]
 pub struct WidgetBoard {
     pub display: String,
+    #[serde(default)]
+    pub fetched_ms: i64,
     pub net: WidgetFigure,
     pub month: WidgetFigure,
     #[serde(rename = "in")]
@@ -3965,6 +3976,7 @@ fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
     let (coming_in, coming_out) = window_parts(store, today, today, horizon);
     WidgetBoard {
         display: display.clone(),
+        fetched_ms: store.fx.fetched_ms,
         net: widget_figure(&net_parts, &display, &store.fx, now_ms),
         month: widget_figure(&month_parts, &display, &store.fx, now_ms),
         coming_in: widget_figure(&coming_in, &display, &store.fx, now_ms),
@@ -4011,6 +4023,13 @@ fn color_or(color: &str) -> String {
     if color.trim().is_empty() { "#C4B5A0".into() } else { color.to_string() }
 }
 
+fn fetched_clock(ms: i64) -> String {
+    if ms <= 0 {
+        return String::new();
+    }
+    chrono::Local.timestamp_millis_opt(ms).single().map(|dt| dt.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
+}
+
 fn tr(locale: &str, key: &str) -> String {
     let lang = crate::i18n::normalize(locale);
     let table: &[(&str, &str)] = match lang {
@@ -4032,6 +4051,8 @@ const ES_PDF: &[(&str, &str)] = &[
     ("Combined in {code}.", "Combinado en {code}."),
     ("As of {date}.", "A fecha de {date}."),
     ("Rates are stale.", "Los tipos están desfasados."),
+    ("Today's rate.", "Tipo de hoy."),
+    ("Fetched {time}.", "Obtenido {time}."),
     ("Needs a rate", "Falta un tipo"),
     ("Combined total needs a rate for {codes}.", "El total combinado necesita un tipo para {codes}."),
     ("Net", "Neto"),
@@ -4064,6 +4085,8 @@ const DE_PDF: &[(&str, &str)] = &[
     ("Combined in {code}.", "Zusammen in {code}."),
     ("As of {date}.", "Stand {date}."),
     ("Rates are stale.", "Die Kurse sind veraltet."),
+    ("Today's rate.", "Kurs von heute."),
+    ("Fetched {time}.", "Geholt {time}."),
     ("Needs a rate", "Kurs fehlt"),
     ("Combined total needs a rate for {codes}.", "Die Summe braucht einen Kurs für {codes}."),
     ("Net", "Saldo"),
@@ -4096,6 +4119,8 @@ const PT_PDF: &[(&str, &str)] = &[
     ("Combined in {code}.", "Juntos em {code}."),
     ("As of {date}.", "Em {date}."),
     ("Rates are stale.", "As taxas estão desatualizadas."),
+    ("Today's rate.", "Taxa de hoje."),
+    ("Fetched {time}.", "Obtida {time}."),
     ("Needs a rate", "Falta uma taxa"),
     ("Combined total needs a rate for {codes}.", "O total combinado precisa de uma taxa para {codes}."),
     ("Net", "Líquido"),
@@ -4128,6 +4153,8 @@ const CA_PDF: &[(&str, &str)] = &[
     ("Combined in {code}.", "Combinat en {code}."),
     ("As of {date}.", "A data de {date}."),
     ("Rates are stale.", "Els tipus estan desfasats."),
+    ("Today's rate.", "Tipus d'hui."),
+    ("Fetched {time}.", "Obtingut {time}."),
     ("Needs a rate", "Falta un tipus"),
     ("Combined total needs a rate for {codes}.", "El total combinat necessita un tipus per a {codes}."),
     ("Net", "Saldo"),
@@ -4546,6 +4573,8 @@ mod tests {
             "Combined in {code}.",
             "As of {date}.",
             "Rates are stale.",
+            "Today's rate.",
+            "Fetched {time}.",
             "Needs a rate",
             "Combined total needs a rate for {codes}.",
             "Net",
@@ -4609,7 +4638,7 @@ mod tests {
         assert!(waiting.net.text.is_empty());
         assert!(waiting.net.minor.is_none());
         assert!(waiting.net.missing.contains("USD"));
-        crate::finance_fx::upsert_manual(&mut store.fx, "USD", "EUR", 0.5, "2026-11-12").unwrap();
+        crate::finance_fx::upsert_manual(&mut store.fx, "USD", "EUR", 0.5, "2026-11-12", false).unwrap();
         let pages = pdf_pages(&store, &request, clock.today, "en");
         assert_eq!(pages[0].numbers.len(), 1);
         assert!(pages[0].numbers[0].1.contains("105.50 EUR"), "{}", pages[0].numbers[0].1);
@@ -4626,7 +4655,7 @@ mod tests {
         assert!(missing.contains("needs a rate for USD"), "{missing}");
         assert!(!missing.contains("Spent"), "{missing}");
         assert!(!missing.contains("11.00 USD"), "{missing}");
-        crate::finance_fx::upsert_manual(&mut store.fx, "USD", "EUR", 0.5, "2026-11-12").unwrap();
+        crate::finance_fx::upsert_manual(&mut store.fx, "USD", "EUR", 0.5, "2026-11-12", false).unwrap();
         let spoken = speak(&store, &ask, clock.today);
         assert!(spoken.contains("15.50 EUR"), "{spoken}");
         assert!(spoken.contains("together in EUR"), "{spoken}");

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
@@ -43,6 +43,7 @@ export function FinancePage({
   onOpenCurrency?: () => void;
 }) {
   const t = useT();
+  const rateDay = useRef(todayIso());
   const [segment, setSegment] = useState<Segment>("overview");
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
@@ -129,6 +130,19 @@ export function FinancePage({
       .catch(() => setExportNote(t("Could not write the PDF.")));
   };
 
+  useEffect(() => {
+    if (!active || !finance.inApp) return;
+    rateDay.current = todayIso();
+    finance.refreshRates();
+    const id = window.setInterval(() => {
+      const next = todayIso();
+      if (next === rateDay.current) return;
+      rateDay.current = next;
+      finance.refreshRates();
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [active, finance.inApp, finance.refreshRates]);
+
   const openAdd = () => {
     setEditingAccount(null);
     setEditingTx(null);
@@ -178,7 +192,7 @@ export function FinancePage({
         addLabel={t(addLabel)}
         active={active}
       >
-        <div className="mb-4 grid grid-cols-2 gap-2">
+        <div className="mb-4 grid w-full min-w-0 grid-cols-1 gap-2">
           {SEGMENTS.map((id) => (
             <Chip key={id} wide on={segment === id} onClick={() => { setSegment(id); if (id === "accounts") setGroupFocus("all"); }}>
               {t(segmentLabel(id))}
@@ -356,11 +370,11 @@ function Overview({
   if (empty) {
     return (
       <div className="space-y-4">
-        <div className="mag-panel">
+        <div className="mag-panel w-full">
           <p className="masthead text-xl">{t("No money saved yet")}</p>
           <p className="mt-2 text-base leading-6 text-muted-foreground">{t("Start with one. A nickname is enough. No bank login.")}</p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="fin-stack w-full min-w-0 space-y-3">
           <StartCard title={t("Add a bank")} body={t("A bank or wallet you spend from.")} onClick={onBank} />
           <StartCard title={t("Add a card")} body={t("A card or loan. Payments reduce what you owe.")} onClick={onCard} />
           <StartCard title={t("Add income")} body={t("Money coming in.")} onClick={onIncome} />
@@ -371,9 +385,9 @@ function Overview({
     );
   }
   return (
-    <div className="fin-stack space-y-6">
+    <div className="fin-stack w-full min-w-0 space-y-6">
       <p className="fin-muted text-sm leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
-      <FinanceDashboard finance={finance} accounts={accounts} onProgram={onBill} onIncome={onIncome} onFocus={onFocus} />
+      <FinanceDashboard finance={finance} accounts={accounts} onProgram={onBill} onIncome={onIncome} onFocus={onFocus} onOpenSettings={onOpenCurrency} />
       <FinanceCarousel
         accounts={accounts}
         transactions={finance.snapshot.transactions}
@@ -381,8 +395,7 @@ function Overview({
         display={finance.snapshot.defaultCurrency}
         fx={finance.snapshot.fx}
         busy={finance.busy}
-        onRefresh={() => finance.refreshRates()}
-        onSaveRate={(base, quote, rate) => finance.setManualRate(base, quote, rate)}
+        onOpenSettings={onOpenCurrency}
         onPick={onPick}
       />
       <Group title={t("Money")} rows={money} empty={t("No money in this group")} onOpen={onAccount} transactions={finance.snapshot.transactions} rules={finance.snapshot.rules} onPaid={finance.markPaid} />
@@ -401,7 +414,7 @@ function Overview({
 
 function StartCard({ title, body, onClick }: { title: string; body: string; onClick: () => void }) {
   return (
-    <button type="button" className="mag-panel min-h-28 text-left" onClick={onClick}>
+    <button type="button" className="fin-panel w-full min-h-28 text-left" onClick={onClick}>
       <p className="text-base font-extrabold tracking-wide uppercase">{title}</p>
       <p className="mt-2 text-sm leading-5 text-muted-foreground">{body}</p>
     </button>

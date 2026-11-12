@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import type { FinanceAccount, FinanceFx, FinanceTransaction } from "@/lib/api";
-import { RatePanel } from "@/components/CombinedTotal";
 import { bookFromStatus, headlineOf, type Headline, type MoneyPart, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
 import { displayColor, isDebt, netByCurrency, sixMonths } from "@/lib/financeView";
@@ -25,8 +24,7 @@ export function FinanceCarousel({
   display = "",
   fx,
   busy = false,
-  onRefresh,
-  onSaveRate,
+  onOpenSettings,
   onPick,
 }: {
   accounts: FinanceAccount[];
@@ -35,8 +33,7 @@ export function FinanceCarousel({
   display?: string;
   fx?: FinanceFx | null;
   busy?: boolean;
-  onRefresh?: () => void;
-  onSaveRate?: (base: string, quote: string, rate: string) => void;
+  onOpenSettings?: () => void;
   onPick: (pick: ChartPick) => void;
 }) {
   const t = useT();
@@ -44,7 +41,6 @@ export function FinanceCarousel({
   const [page, setPage] = useState(0);
   const book = useMemo(() => bookFromStatus(fx), [fx]);
   const nowMs = useMemo(() => Date.now(), [fx, transactions, accounts, planned, display]);
-  let askRate = true;
   const cards = buildCards();
   if (cards.length === 0) return null;
   const go = (index: number) => {
@@ -55,11 +51,11 @@ export function FinanceCarousel({
     setPage(index);
   };
   return (
-    <section className="min-w-0 max-w-full">
+    <section className="w-full min-w-0 max-w-full">
       <p className="fin-kicker mb-3">{t("Charts")}</p>
       <div
         ref={scroller}
-        className="flex max-w-full snap-x snap-mandatory gap-3 overflow-x-auto pb-2"
+        className="fin-carousel flex w-full min-w-0 max-w-full snap-x snap-mandatory overflow-x-auto pb-2"
         onScroll={(event) => {
           const node = event.currentTarget;
           const width = node.clientWidth || 1;
@@ -84,26 +80,11 @@ export function FinanceCarousel({
     </section>
   );
 
-  function claimAsk() {
-    const allowed = askRate;
-    askRate = false;
-    return allowed;
-  }
-
   function blocked(missing: string[], key: string, title: string) {
     return {
       key,
       title,
-      body: (
-        <NeedRate
-          codes={missing}
-          display={display}
-          busy={busy}
-          ask={claimAsk()}
-          onRefresh={onRefresh}
-          onSave={onSaveRate}
-        />
-      ),
+      body: <NeedRate codes={missing} busy={busy} onOpenSettings={onOpenSettings} />,
     };
   }
 
@@ -327,26 +308,20 @@ function trendReady(txs: FinanceTransaction[], display: string, book: RateBook |
   return { kind: "points", points };
 }
 
-function NeedRate({
-  codes,
-  display,
-  busy,
-  ask,
-  onRefresh,
-  onSave,
-}: {
-  codes: string[];
-  display: string;
-  busy: boolean;
-  ask: boolean;
-  onRefresh?: () => void;
-  onSave?: (base: string, quote: string, rate: string) => void;
-}) {
-  useT();
-  if (ask && onRefresh && onSave) {
-    return <RatePanel bare codes={codes} display={display} busy={busy} onRefresh={onRefresh} onSave={onSave} />;
-  }
-  return <p className="text-base leading-6 break-words">{fill("Combined total needs a rate for {codes}.", { codes: codes.join(", ") })}</p>;
+function NeedRate({ codes, busy, onOpenSettings }: { codes: string[]; busy: boolean; onOpenSettings?: () => void }) {
+  const t = useT();
+  const label = codes.join(", ");
+  return (
+    <div className="max-w-full">
+      <p className="text-base leading-6 break-words">{busy ? fill("Checking the rate for {codes}.", { codes: label }) : fill("Combined total needs a rate for {codes}.", { codes: label })}</p>
+      {busy ? null : <p className="fin-muted mt-2 text-sm leading-5">{t("Set a manual rate in Settings.")}</p>}
+      {onOpenSettings && !busy ? (
+        <button type="button" className="stamp mt-3 min-h-12 px-3" onClick={onOpenSettings}>
+          {t("Settings")}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function Donut({

@@ -370,6 +370,7 @@ export interface FinanceManualRate {
   quote: string;
   rate: number;
   asOf: string;
+  overrideLive?: boolean;
 }
 
 export interface FinanceFx {
@@ -721,8 +722,8 @@ export const api = {
   markFinancePaid: (id: string, date?: string) => invoke<FinanceSnapshot>("mark_finance_paid", { id, date: date ?? null }),
   exportFinancePdf: (filter: FinancePdfRequest) => invoke<ExportedFinancePdf>("export_finance_pdf", { filter }),
   refreshFinanceRates: () => invoke<FinanceSnapshot>("refresh_finance_rates"),
-  setFinanceManualRate: (base: string, quote: string, rate: string) =>
-    invoke<FinanceSnapshot>("set_finance_manual_rate", { base, quote, rate }),
+  setFinanceManualRate: (base: string, quote: string, rate: string, overrideLive = false) =>
+    invoke<FinanceSnapshot>("set_finance_manual_rate", { base, quote, rate, overrideLive }),
   financeScheduleAction: (id: string, action: string, date?: string) =>
     invoke<FinanceSnapshot>("finance_schedule_action", { id, action, date: date ?? null }),
 };
