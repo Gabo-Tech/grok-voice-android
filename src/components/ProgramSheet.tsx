@@ -154,7 +154,7 @@ export function ProgramSheet({
       onClose={onClose}
       className="finance"
       footer={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {editing ? (
             <Button
               variant="ghost"
@@ -214,9 +214,9 @@ export function ProgramSheet({
           </Field>
           {purpose === "investment_payout" ? (
             <>
-              <div className="flex gap-2">
-                <Chip on={amountMode === "fixed"} onClick={() => setAmountMode("fixed")}>{t("Fixed amount in that currency")}</Chip>
-                <Chip on={amountMode === "quote"} onClick={() => setAmountMode("quote")}>{t("A value in one currency, paid in another")}</Chip>
+              <div className="flex flex-col gap-2">
+                <Chip wide on={amountMode === "fixed"} onClick={() => setAmountMode("fixed")}>{t("Fixed amount in that currency")}</Chip>
+                <Chip wide on={amountMode === "quote"} onClick={() => setAmountMode("quote")}>{t("A value in one currency, paid in another")}</Chip>
               </div>
               {amountMode === "quote" ? (
                 <Field label={t("Payout currency")}>
@@ -251,10 +251,10 @@ export function ProgramSheet({
             <p className="text-base">{t("One time")}</p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-2">
-                <Chip on={endKind === "after_count"} onClick={() => setEndKind("after_count")}>{t("A set number of times")}</Chip>
-                <Chip on={endKind === "on_date"} onClick={() => setEndKind("on_date")}>{t("Until a date")}</Chip>
-                <Chip on={endKind === "none"} onClick={() => setEndKind("none")}>{t("Until I stop it")}</Chip>
+              <div className="flex flex-col gap-2">
+                <Chip wide on={endKind === "after_count"} onClick={() => setEndKind("after_count")}>{t("A set number of times")}</Chip>
+                <Chip wide on={endKind === "on_date"} onClick={() => setEndKind("on_date")}>{t("Until a date")}</Chip>
+                <Chip wide on={endKind === "none"} onClick={() => setEndKind("none")}>{t("Until I stop it")}</Chip>
               </div>
               {endKind === "after_count" ? (
                 <Field label={t("Times")}>
@@ -291,9 +291,9 @@ export function ProgramSheet({
             <Input value={category} onChange={(event) => setCategory(event.target.value)} />
           </Field>
           <Field label={t("Remind me")}>
-            <div className="flex gap-2 overflow-x-auto">
+            <div className="flex flex-wrap gap-2">
               {[0, 1, 2, 7].map((days) => (
-                <Chip key={days} on={leadDays === days} onClick={() => setLeadDays(days)}>{days === 0 ? t("On the day") : days === 2 ? t("2 days before") : String(days)}</Chip>
+                <Chip key={days} on={leadDays === days} onClick={() => setLeadDays(days)}>{leadText(days, t)}</Chip>
               ))}
             </div>
           </Field>
@@ -303,12 +303,20 @@ export function ProgramSheet({
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: string }) {
+function Chip({ on, onClick, wide, children }: { on: boolean; onClick: () => void; wide?: boolean; children: string }) {
   return (
-    <button type="button" aria-pressed={on} className={cn("fin-chip", on && "min-h-12")} onClick={onClick}>
+    <button type="button" aria-pressed={on} className={cn("fin-chip h-auto whitespace-normal text-left leading-5", wide && "w-full", on && "min-h-12")} onClick={onClick}>
       {children}
     </button>
   );
+}
+
+function leadText(days: number, t: (text: string) => string): string {
+  if (days === 0) return t("On the day");
+  if (days === 1) return t("1 day before");
+  if (days === 2) return t("2 days before");
+  if (days === 7) return t("A week before");
+  return String(days);
 }
 
 function presetOf(rule: FinanceRule | null): Preset {
