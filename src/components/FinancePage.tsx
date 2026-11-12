@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
@@ -10,6 +11,7 @@ import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
 import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
+import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
 import { debtPayoff, nextDue, plannedHits } from "@/lib/financeMath";
 import { FinanceDashboard, plannedYearBars, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
 import { FINANCE_TABS, readFinanceTab, type FinanceTab } from "@/lib/financeTabs";
@@ -255,12 +257,6 @@ export function FinancePage({
 
   const ledger = (lock: "expense" | "income") => (
     <div className="space-y-4">
-      <button type="button" className="fin-chip w-full" onClick={lock === "income" ? openIncome : openAdd}>
-        {t(lock === "income" ? "Add income" : "Add expense")}
-      </button>
-      <button type="button" className="fin-chip w-full" onClick={openBill}>
-        {t(lock === "income" ? "Program income" : "Program a bill")}
-      </button>
       <Activity
         rows={activity}
         rules={ledgerRules}
@@ -404,17 +400,14 @@ export function FinancePage({
               categories={categories}
               currencies={currencies}
               onEditCategories={() => setCategorySheet(true)}
+              groupFilter={groupFilter}
+              onGroup={setGroupFilter}
               onAdd={openAdd}
               onTransaction={openTransaction}
               onRule={openRule}
               planned={[]}
               accounts={accounts}
             />
-            {groupFilter !== "all" ? (
-              <button type="button" className="fin-chip mb-2" onClick={() => setGroupFilter("all")}>
-                {t("All")}
-              </button>
-            ) : null}
             <button type="button" className="fin-chip mb-4 w-full" onClick={exportSummary}>
               {t("Export PDF")}
             </button>
@@ -435,6 +428,16 @@ export function FinancePage({
           </div>
         ) : null}
       </PageChrome>
+      {tab === "expenses" || tab === "income" ? (
+        <div className="fin-actions">
+          <button type="button" className="fin-chip" onClick={tab === "income" ? openIncome : openAdd}>
+            {t(tab === "income" ? "Add income" : "Add expense")}
+          </button>
+          <button type="button" className="fin-chip" onClick={openBill}>
+            {t(tab === "income" ? "Program income" : "Program a bill")}
+          </button>
+        </div>
+      ) : null}
       <div role="tablist" aria-label={t("Finance")} className="fin-tabs">
         {FINANCE_TABS.map((id) => (
           <button
@@ -559,6 +562,8 @@ function Activity({
   onCategory,
   currencyFilter,
   onCurrency,
+  groupFilter = "all",
+  onGroup,
   categories,
   currencies,
   onEditCategories,
@@ -590,6 +595,8 @@ function Activity({
   onCategory: (value: string) => void;
   currencyFilter: string;
   onCurrency: (value: string) => void;
+  groupFilter?: string;
+  onGroup?: (value: string) => void;
   categories: string[];
   currencies: string[];
   onEditCategories: () => void;
@@ -600,46 +607,118 @@ function Activity({
   accounts: FinanceAccount[];
 }) {
   const t = useT();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filters: LedgerFilters = {
+    account: accountFilter,
+    category: categoryFilter,
+    currency: currencyFilter,
+    recurrence: classFilter,
+    direction: directionFilter,
+    group: groupFilter,
+  };
+  const applied = appliedFilters(
+    filters,
+    {
+      account: accounts.find((account) => account.id === accountFilter)?.name || accountFilter,
+      category: categoryFilter,
+      currency: currencyFilter,
+      recurrence: t(classLabel(classFilter)),
+      direction: t(directionLabel(directionFilter)),
+      group: t(groupLabel(groupFilter)),
+    },
+    directionLock,
+  );
+  const clearOne = (id: FilterId) => {
+    const next = withoutFilter(filters, id, directionLock);
+    if (id === "account") onAccountFilter(next.account);
+    if (id === "category") onCategory(next.category);
+    if (id === "currency") onCurrency(next.currency);
+    if (id === "recurrence") onClass(next.recurrence);
+    if (id === "direction") onDirection(next.direction);
+    if (id === "group") onGroup?.(next.group);
+  };
+  const clearAll = () => {
+    const next = clearedFilters(directionLock);
+    onAccountFilter(next.account);
+    onCategory(next.category);
+    onCurrency(next.currency);
+    onClass(next.recurrence);
+    onDirection(next.direction);
+    onGroup?.("all");
+  };
   return (
-    <div>
-      <div className="mb-2 flex gap-2 overflow-x-auto">
+    <div className="min-w-0">
+      <div className="chip-scroller mb-2">
         {PERIODS.map((id) => (
           <Chip key={id} on={period === id} onClick={() => onPeriod(id)}>{t(periodLabel(id))}</Chip>
         ))}
       </div>
-      <div className="mb-2 flex gap-2 overflow-x-auto">
-        <Chip on={accountFilter === "all"} onClick={() => onAccountFilter("all")}>{t("All accounts")}</Chip>
-        {accounts.map((account) => (
-          <Chip key={account.id} on={accountFilter === account.id} onClick={() => onAccountFilter(account.id)}>{account.name}</Chip>
-        ))}
+      <div className="mb-2 flex min-w-0 items-center gap-2">
+        <button type="button" className="fin-chip shrink-0" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}>
+          {applied.length > 0 ? `${t("Filters")} ${applied.length}` : t("Filters")}
+        </button>
       </div>
-      <div className="mb-2 flex gap-2 overflow-x-auto">
-        <Chip on={categoryFilter === "all"} onClick={() => onCategory("all")}>{t("All categories")}</Chip>
-        {categories.map((category) => (
-          <Chip key={category} on={categoryFilter === category} onClick={() => onCategory(category)}>{category}</Chip>
-        ))}
-        <Chip on={false} onClick={onEditCategories}>{t("Edit categories")}</Chip>
-      </div>
-      <div className="mb-2 flex gap-2 overflow-x-auto">
-        <Chip on={currencyFilter === "all"} onClick={() => onCurrency("all")}>{t("All currencies")}</Chip>
-        {currencies.map((currency) => (
-          <Chip key={currency} on={currencyFilter === currency} onClick={() => onCurrency(currency)}>{currency}</Chip>
-        ))}
-      </div>
-      <div className="mb-2 flex flex-wrap gap-2">
-        <Chip on={classFilter === "all"} onClick={() => onClass("all")}>{t("All")}</Chip>
-        <Chip on={classFilter === "recurring"} onClick={() => onClass("recurring")}>{t("Recurring")}</Chip>
-        <Chip on={classFilter === "once"} onClick={() => onClass("once")}>{t("Once")}</Chip>
-        <Chip on={classFilter === "irregular"} onClick={() => onClass("irregular")}>{t("Irregular")}</Chip>
-      </div>
-      {directionLock === "income" ? null : (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {directionLock === "any" ? <Chip on={directionFilter === "all"} onClick={() => onDirection("all")}>{t("All")}</Chip> : null}
-          <Chip on={directionFilter === "expense"} onClick={() => onDirection("expense")}>{t("Expense")}</Chip>
-          {directionLock === "any" ? <Chip on={directionFilter === "income"} onClick={() => onDirection("income")}>{t("Income")}</Chip> : null}
-          <Chip on={directionFilter === "payment"} onClick={() => onDirection("payment")}>{t("Payment")}</Chip>
+      {applied.length > 0 ? (
+        <div className="chip-scroller mb-3">
+          {applied.map((chip) => (
+            <button key={chip.id} type="button" className="fin-chip" onClick={() => clearOne(chip.id)} aria-label={`${t("Remove filter")}: ${chip.label}`}>
+              {chip.label} ×
+            </button>
+          ))}
         </div>
-      )}
+      ) : null}
+      {typeof document !== "undefined"
+        ? createPortal(
+      <Sheet open={filtersOpen} title={t("Filters")} onClose={() => setFiltersOpen(false)} className="finance" footer={
+        <Button type="button" variant="outline" className="w-full" onClick={clearAll}>{t("Clear filters")}</Button>
+      }>
+        <div className="space-y-5">
+          <FilterGroup label={t("Accounts")}>
+            <Chip on={accountFilter === "all"} onClick={() => onAccountFilter("all")}>{t("All accounts")}</Chip>
+            {accounts.map((account) => (
+              <Chip key={account.id} on={accountFilter === account.id} onClick={() => onAccountFilter(account.id)}>{account.name}</Chip>
+            ))}
+          </FilterGroup>
+          <FilterGroup label={t("Categories")}>
+            <Chip on={categoryFilter === "all"} onClick={() => onCategory("all")}>{t("All categories")}</Chip>
+            {categories.map((category) => (
+              <Chip key={category} on={categoryFilter === category} onClick={() => onCategory(category)}>{category}</Chip>
+            ))}
+            <Chip on={false} onClick={onEditCategories}>{t("Edit categories")}</Chip>
+          </FilterGroup>
+          <FilterGroup label={t("Currencies")}>
+            <Chip on={currencyFilter === "all"} onClick={() => onCurrency("all")}>{t("All currencies")}</Chip>
+            {currencies.map((currency) => (
+              <Chip key={currency} on={currencyFilter === currency} onClick={() => onCurrency(currency)}>{currency}</Chip>
+            ))}
+          </FilterGroup>
+          <FilterGroup label={t("How often")}>
+            <Chip on={classFilter === "all"} onClick={() => onClass("all")}>{t("All")}</Chip>
+            <Chip on={classFilter === "recurring"} onClick={() => onClass("recurring")}>{t("Recurring")}</Chip>
+            <Chip on={classFilter === "once"} onClick={() => onClass("once")}>{t("Once")}</Chip>
+            <Chip on={classFilter === "irregular"} onClick={() => onClass("irregular")}>{t("Irregular")}</Chip>
+          </FilterGroup>
+          {directionLock === "income" ? null : (
+            <FilterGroup label={t("Type")}>
+              {directionLock === "any" ? <Chip on={directionFilter === "all"} onClick={() => onDirection("all")}>{t("All")}</Chip> : null}
+              <Chip on={directionFilter === "expense"} onClick={() => onDirection("expense")}>{t("Expense")}</Chip>
+              {directionLock === "any" ? <Chip on={directionFilter === "income"} onClick={() => onDirection("income")}>{t("Income")}</Chip> : null}
+              <Chip on={directionFilter === "payment"} onClick={() => onDirection("payment")}>{t("Payment")}</Chip>
+            </FilterGroup>
+          )}
+          {onGroup ? (
+            <FilterGroup label={t("Holdings")}>
+              <Chip on={groupFilter === "all"} onClick={() => onGroup("all")}>{t("All")}</Chip>
+              <Chip on={groupFilter === "money"} onClick={() => onGroup("money")}>{t("Money")}</Chip>
+              <Chip on={groupFilter === "debt"} onClick={() => onGroup("debt")}>{t("You owe")}</Chip>
+              <Chip on={groupFilter === "investment"} onClick={() => onGroup("investment")}>{t("Investments")}</Chip>
+            </FilterGroup>
+          ) : null}
+        </div>
+      </Sheet>,
+            document.body,
+          )
+        : null}
       {filtersOnly ? null : rules.length > 0 && (
         <section className="mb-6">
           <h2 className="mb-2 text-sm text-muted-foreground">{t("Rules")}</h2>
@@ -906,7 +985,7 @@ function TransactionSheet({
           <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-16 text-3xl tabular-nums" autoFocus />
         </Field>
         <Field label={t("Direction")}>
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="chip-scroller">
             <Chip on={direction === "expense"} onClick={() => setDirection("expense")}>{t("Expense")}</Chip>
             <Chip on={direction === "income"} onClick={() => setDirection("income")}>{t("Income")}</Chip>
             <Chip on={direction === "payment"} onClick={() => setDirection("payment")}>{t("Payment")}</Chip>
@@ -930,14 +1009,14 @@ function TransactionSheet({
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
         <Field label={t("How often")}>
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="chip-scroller">
             <Chip on={recurrence === "once"} onClick={() => setRecurrence("once")}>{t("Once")}</Chip>
             <Chip on={recurrence === "recurring"} onClick={() => setRecurrence("recurring")}>{t("Recurring")}</Chip>
             <Chip on={recurrence === "irregular"} onClick={() => setRecurrence("irregular")}>{t("Irregular")}</Chip>
           </div>
         </Field>
         {recurrence === "recurring" && (
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="chip-scroller">
             {CADENCE.filter(Boolean).map((id) => (
               <Chip key={id} on={cadence === id} onClick={() => setCadence(id)}>{t(cadenceLabel(id))}</Chip>
             ))}
@@ -1077,7 +1156,7 @@ function AccountSheet({
         </Field>
         {!investment && (
           <Field label={t("Kind")}>
-            <div className="flex flex-wrap gap-2">
+            <div className="chip-scroller">
               {KINDS.map((id) => (
                 <Chip key={id} on={kind === id} onClick={() => setKind(id)}>{t(kindLabel(id))}</Chip>
               ))}
@@ -1121,14 +1200,14 @@ function AccountSheet({
         {investment && (
           <>
             <Field label={t("Type")}>
-              <div className="flex flex-wrap gap-2">
+              <div className="chip-scroller">
                 {["stock", "fund", "crypto", "custom"].map((id) => (
                   <Chip key={id} on={investmentType === id} onClick={() => setInvestmentType(id)}>{t(typeLabel(id))}</Chip>
                 ))}
               </div>
             </Field>
             <Field label={t("Value")}>
-              <div className="flex gap-2">
+              <div className="fin-filter-list">
                 <Chip on={valueMode === "stated"} onClick={() => setValueMode("stated")}>{t("Stated worth")}</Chip>
                 <Chip on={valueMode === "units"} onClick={() => setValueMode("units")}>{t("Units and price")}</Chip>
               </div>
@@ -1147,7 +1226,7 @@ function AccountSheet({
         )}
         <ColorField color={color} onChange={setColor} />
         <Field label={t("Remind me")}>
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="chip-scroller">
             {LEADS.map((days) => (
               <Chip key={days} on={leadDays === days} onClick={() => setLeadDays(days)}>{t(leadLabel(days))}</Chip>
             ))}
@@ -1166,7 +1245,7 @@ function CadenceChips({ value, onChange }: { value: string; onChange: (value: st
   const t = useT();
   return (
     <Field label={t("How often")}>
-      <div className="flex gap-2 overflow-x-auto">
+      <div className="chip-scroller">
         {CADENCE.map((id) => (
           <Chip key={id || "none"} on={value === id} onClick={() => onChange(id)}>
             {id ? t(cadenceLabel(id)) : t("Once")}
@@ -1209,6 +1288,22 @@ function classLabel(recurrence: string): string {
   if (recurrence === "recurring") return "Recurring";
   if (recurrence === "irregular") return "Irregular";
   return "Once";
+}
+
+function groupLabel(group: string): string {
+  if (group === "debt") return "You owe";
+  if (group === "investment") return "Investments";
+  if (group === "money") return "Money";
+  return "All";
+}
+
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="fin-kicker mb-2">{label}</p>
+      <div className="fin-filter-list">{children}</div>
+    </div>
+  );
 }
 
 function periodLabel(period: PeriodId): string {

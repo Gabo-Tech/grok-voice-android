@@ -344,6 +344,26 @@ input[type="time"] {
   z-index: 5;
 }
 
+.chip-scroller {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.chip-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-scroller > * {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .bottom-nav {
   position: fixed;
   right: 0;

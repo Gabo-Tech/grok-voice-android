@@ -179,7 +179,7 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
             {t("New countdown")}
           </button>
         </div>
-        <div className="mb-4 flex gap-2 overflow-x-auto">
+        <div className="chip-scroller mb-4">
           {(["all", ...KINDS] as const).map((item) => (
             <button
               key={item}

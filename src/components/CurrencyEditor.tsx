@@ -27,7 +27,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
       <p className="mt-2 text-sm leading-5 text-muted-foreground">
         {t("Used when you do not name a currency. A saved account keeps its own.")}
       </p>
-      <div className="mt-3 flex gap-2 overflow-x-auto">
+      <div className="chip-scroller mt-3">
         {COMMON.map((code) => (
           <button
             key={code}
@@ -83,7 +83,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
         disabled={finance.busy}
         onClick={() => {
           setNote("");
-          finance.refreshRates();
+          finance.refreshRates(true);
           setNote(t("Rates stay on this phone."));
         }}
       >

@@ -614,10 +614,26 @@ impl Finance {
         })
     }
 
-    pub fn refresh_rates(&self, app: &AppHandle) -> Result<Snapshot, String> {
-        let mut store = self.lock().clone();
-        store.fx = crate::finance_fx::fetch_book(&store.fx, Local::now().timestamp_millis())?;
-        self.commit(app, store)
+    pub fn refresh_rates(&self, app: &AppHandle, force: bool) -> Result<Snapshot, String> {
+        let store = self.lock().clone();
+        let now_ms = Local::now().timestamp_millis();
+        if !crate::finance_fx::needs_live_fetch(&store.fx, now_ms, force) {
+            return Ok(snapshot_of(&store, &currency_locale(app, &store), Local::now().date_naive()));
+        }
+        match crate::finance_fx::fetch_book(&store.fx, now_ms) {
+            Ok(book) => {
+                let mut store = store;
+                store.fx = book;
+                self.commit(app, store)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Unsettled finance occurrences inside [start, end). Reminders stay on their own alarms.
+    pub fn calendar_events(&self, start_ms: i64, end_ms: i64) -> Vec<CalEvent> {
+        let store = self.lock().clone();
+        calendar_money_events(&store, start_ms, end_ms, Local::now().date_naive())
     }
 
     pub fn set_manual_rate(&self, app: &AppHandle, base: &str, quote: &str, rate: &str, override_live: bool) -> Result<Snapshot, String> {
@@ -2668,6 +2684,117 @@ fn link_calendar(app: &AppHandle, store: &mut Store, now: chrono::DateTime<Local
     }
 }
 
+/// Due dates for the in-app calendar. Paid, skipped, paused, and stopped rows stay off the grid.
+/// `local-fin-*` events remain for reminders; the calendar hides those and shows these instead.
+fn calendar_money_events(store: &Store, start_ms: i64, end_ms: i64, today: NaiveDate) -> Vec<CalEvent> {
+    let mut out = Vec::new();
+    for rule in &store.rules {
+        if !shows_on_calendar(&rule.status) {
+            continue;
+        }
+        if rule.name.trim().is_empty() {
+            continue;
+        }
+        if rule.start_date.is_empty() && rule.next_date.is_empty() {
+            continue;
+        }
+        let spec = rule_spec(rule);
+        let settled = settled_dates(store, &rule.id);
+        push_due_events(&mut out, &format!("fin-due-{}", rule.id), &rule.name, rule.amount_minor, &rule.currency, &spec, &settled, today, start_ms, end_ms);
+    }
+    for account in &store.accounts {
+        if account_has_rule(store, &account.id) {
+            continue;
+        }
+        if account.kind == "investment" {
+            if let Some(start) = parse_iso_date(&account.contribution_date) {
+                let spec = account_spec(start, &account.contribution_cadence);
+                let title = format!("Invest in {}", account.name);
+                push_due_events(&mut out, &format!("fin-acct-{}", account.id), &title, account.contribution_minor, &account.currency, &spec, &[], today, start_ms, end_ms);
+            }
+        } else if let Some(start) = parse_iso_date(&account.due_date) {
+            let spec = account_spec(start, &account.cadence);
+            push_due_events(&mut out, &format!("fin-acct-{}", account.id), &account.name, account.payment_minor, &account.currency, &spec, &[], today, start_ms, end_ms);
+        }
+    }
+    out.sort_by(|a, b| a.start_ms.cmp(&b.start_ms).then_with(|| a.title.cmp(&b.title)));
+    out
+}
+
+fn shows_on_calendar(status: &str) -> bool {
+    !matches!(status, "paused" | "stopped" | "completed")
+}
+
+fn account_has_rule(store: &Store, account_id: &str) -> bool {
+    if account_id.is_empty() {
+        return false;
+    }
+    store.rules.iter().any(|rule| rule.account_id == account_id && shows_on_calendar(&rule.status) && (!rule.start_date.is_empty() || !rule.next_date.is_empty()))
+}
+
+fn account_spec(start: NaiveDate, cadence: &str) -> crate::finance_schedule::Spec {
+    let cadence = normalize_cadence(cadence);
+    let repeating = schedule_repeats(&cadence, 0);
+    crate::finance_schedule::Spec {
+        cadence: if repeating { cadence } else { String::new() },
+        interval_days: 0,
+        start,
+        end_kind: if repeating { "none".into() } else { "after_count".into() },
+        end_count: if repeating { 0 } else { 1 },
+        end_date: None,
+        amount_minor: None,
+        skipped: Vec::new(),
+        status: "active".into(),
+    }
+}
+
+fn push_due_events(
+    out: &mut Vec<CalEvent>,
+    id_prefix: &str,
+    name: &str,
+    amount: Option<i64>,
+    currency: &str,
+    spec: &crate::finance_schedule::Spec,
+    settled: &[NaiveDate],
+    today: NaiveDate,
+    start_ms: i64,
+    end_ms: i64,
+) {
+    let name = name.trim();
+    if name.is_empty() {
+        return;
+    }
+    for date in crate::finance_schedule::occurrence_dates(spec, today) {
+        let Some(when) = local_midnight(date) else { continue };
+        if when < start_ms || when >= end_ms {
+            continue;
+        }
+        if spec.skipped.contains(&date) || settled.contains(&date) {
+            continue;
+        }
+        let end = local_midnight(date + Duration::days(1)).unwrap_or(when.saturating_add(86_400_000));
+        out.push(CalEvent {
+            id: format!("{id_prefix}-{}", iso(date)),
+            title: clamp(name, 80),
+            start_ms: when,
+            end_ms: end,
+            location: amount.map(|value| format_minor(value, currency)).unwrap_or_default(),
+            all_day: true,
+            source: "finance".into(),
+            recurrence: String::new(),
+            weekdays: Vec::new(),
+            until_ms: 0,
+            alarm_id: 0,
+            rrule: String::new(),
+        });
+    }
+}
+
+fn local_midnight(date: NaiveDate) -> Option<i64> {
+    let naive = date.and_hms_opt(0, 0, 0)?;
+    Some(naive.and_local_timezone(Local).earliest().or_else(|| naive.and_local_timezone(Local).latest())?.timestamp_millis())
+}
+
 fn plan_to_event(plan: &Plan, id: String) -> CalEvent {
     CalEvent {
         id,
@@ -4226,6 +4353,37 @@ mod tests {
         account
     }
 
+    fn due_rule(id: &str, name: &str, direction: &str, cadence: &str, start: &str, interval: u32, amount: Option<i64>, purpose: &str) -> Rule {
+        Rule {
+            id: id.into(),
+            name: name.into(),
+            amount_minor: amount,
+            currency: "EUR".into(),
+            direction: direction.into(),
+            cadence: cadence.into(),
+            weekdays: Vec::new(),
+            next_date: start.into(),
+            category: String::new(),
+            account_id: String::new(),
+            notes: String::new(),
+            calendar_event_id: String::new(),
+            updated_ms: 0,
+            from_account: false,
+            lead_days: Some(2),
+            reminder_id: 7,
+            purpose: purpose.into(),
+            status: "active".into(),
+            start_date: start.into(),
+            end_kind: if cadence.is_empty() { "after_count".into() } else { "none".into() },
+            end_count: if cadence.is_empty() { 1 } else { 0 },
+            end_date: String::new(),
+            interval_days: interval,
+            amount_mode: "fixed".into(),
+            payout_currency: String::new(),
+            skipped_dates: Vec::new(),
+        }
+    }
+
     fn tx(direction: &str, amount: i64, account: &str, from: &str, date: &str, created: i64) -> Transaction {
         Transaction {
             id: format!("ft{created}"),
@@ -4319,6 +4477,45 @@ mod tests {
         let next = chrono::DateTime::from_timestamp_millis(past.when_ms).unwrap().with_timezone(&Local);
         assert_eq!(next.date_naive(), NaiveDate::from_ymd_opt(2026, 12, 1).unwrap());
         assert!(plan_event("Lunch", "2026-11-01", "", &[], "", now).is_none());
+    }
+
+    #[test]
+    fn scheduled_money_lands_on_the_calendar_day() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let start = local_midnight(NaiveDate::from_ymd_opt(2026, 11, 1).unwrap()).unwrap();
+        let end = local_midnight(NaiveDate::from_ymd_opt(2026, 12, 1).unwrap()).unwrap();
+        let mut store = Store::default();
+        store.rules.push(due_rule("rent", "Rent", "expense", "monthly", "2026-01-20", 0, Some(120_000), "recurring"));
+        store.rules.push(due_rule("eggs", "Nitroeggs", "income", "every_n_days", "2026-11-10", 10, Some(1_400), "investment_payout"));
+        store.rules.push(due_rule("once", "Bonus", "income", "", "2026-11-20", 0, Some(50_000), "one_off"));
+        let mut skipped = due_rule("skip", "Gym", "expense", "monthly", "2026-11-20", 0, Some(4_000), "recurring");
+        skipped.skipped_dates = vec!["2026-11-20".into()];
+        store.rules.push(skipped);
+        let mut paused = due_rule("pause", "Paused", "expense", "monthly", "2026-11-20", 0, Some(1), "recurring");
+        paused.status = "paused".into();
+        store.rules.push(paused);
+        let mut paid = tx("income", 1_400, "", "", "2026-11-10", 1);
+        paid.rule_id = "eggs".into();
+        paid.occurrence_date = "2026-11-10".into();
+        store.transactions.push(paid);
+        let events = calendar_money_events(&store, start, end, today);
+        let titles = events.iter().map(|event| format!("{} {}", event.title, event.location)).collect::<Vec<_>>();
+        assert!(events.iter().any(|event| event.title == "Rent" && event.source == "finance" && event.all_day && event.location.contains("1200.00")));
+        assert_eq!(events.iter().filter(|event| event.title == "Rent").count(), 1);
+        let rent = events.iter().find(|event| event.title == "Rent").unwrap();
+        let rent_day = chrono::DateTime::from_timestamp_millis(rent.start_ms).unwrap().with_timezone(&Local).date_naive();
+        assert_eq!(rent_day, NaiveDate::from_ymd_opt(2026, 11, 20).unwrap());
+        assert!(events.iter().any(|event| event.title == "Nitroeggs" && event.id.ends_with("2026-11-20")));
+        assert!(!events.iter().any(|event| event.id.contains("eggs") && event.id.ends_with("2026-11-10")), "a paid payout is not a second copy");
+        assert!(events.iter().any(|event| event.title == "Bonus" && event.id.ends_with("2026-11-20")));
+        assert!(!events.iter().any(|event| event.title == "Gym"));
+        assert!(!events.iter().any(|event| event.title == "Paused"));
+        assert!(titles.iter().all(|row| !row.contains("1:1")));
+        let december_start = end;
+        let december_end = local_midnight(NaiveDate::from_ymd_opt(2027, 1, 1).unwrap()).unwrap();
+        let december = calendar_money_events(&store, december_start, december_end, today);
+        assert!(december.iter().any(|event| event.title == "Rent" && event.id.ends_with("2026-12-20")));
+        assert!(december.iter().any(|event| event.title == "Gym" && event.id.ends_with("2026-12-20")));
     }
 
     #[test]

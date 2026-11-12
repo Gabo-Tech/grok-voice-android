@@ -721,7 +721,7 @@ export const api = {
   renameFinanceCategory: (from: string, to: string) => invoke<FinanceSnapshot>("rename_finance_category", { from, to }),
   markFinancePaid: (id: string, date?: string) => invoke<FinanceSnapshot>("mark_finance_paid", { id, date: date ?? null }),
   exportFinancePdf: (filter: FinancePdfRequest) => invoke<ExportedFinancePdf>("export_finance_pdf", { filter }),
-  refreshFinanceRates: () => invoke<FinanceSnapshot>("refresh_finance_rates"),
+  refreshFinanceRates: (force = false) => invoke<FinanceSnapshot>("refresh_finance_rates", { force }),
   setFinanceManualRate: (base: string, quote: string, rate: string, overrideLive = false) =>
     invoke<FinanceSnapshot>("set_finance_manual_rate", { base, quote, rate, overrideLive }),
   financeScheduleAction: (id: string, action: string, date?: string) =>

@@ -236,7 +236,7 @@ export default function App() {
         </div>
       )}
 
-      <section className="flex min-h-0 flex-1 flex-col px-4 pt-3">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-3">
         <div className={tab === "talk" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
           <AssistantView
             voice={voice}

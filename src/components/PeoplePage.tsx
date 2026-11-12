@@ -561,7 +561,7 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
                     type="button"
                     onClick={() => setDraft({ ...draft, preferredChannel: item.id })}
                     className={cn(
-                      "h-12 border px-2 text-sm",
+                      "min-h-12 h-auto border px-1 py-2 text-center text-sm leading-4 whitespace-normal",
                       draft.preferredChannel === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
                     )}
                   >

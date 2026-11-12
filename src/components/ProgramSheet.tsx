@@ -230,7 +230,7 @@ export function ProgramSheet({
       ) : null}
       {step === 2 ? (
         <Field label={t("How often")}>
-          <div className="flex flex-wrap gap-2">
+          <div className="chip-scroller">
             <Chip on={cadence === ""} onClick={() => { setCadence(""); setPurpose("one_off"); setEndKind("after_count"); setTimes("1"); }}>{t("Once")}</Chip>
             <Chip on={cadence === "weekly"} onClick={() => setCadence("weekly")}>{t("Weekly")}</Chip>
             <Chip on={cadence === "monthly"} onClick={() => setCadence("monthly")}>{t("Monthly")}</Chip>
@@ -280,7 +280,7 @@ export function ProgramSheet({
             <Input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
           </Field>
           <Field label={t("Which account")}>
-            <div className="flex gap-2 overflow-x-auto">
+            <div className="chip-scroller">
               <Chip on={accountId === ""} onClick={() => setAccountId("")}>{t("No account")}</Chip>
               {accounts.map((account) => (
                 <Chip key={account.id} on={accountId === account.id} onClick={() => setAccountId(account.id)}>{account.name}</Chip>
@@ -291,7 +291,7 @@ export function ProgramSheet({
             <Input value={category} onChange={(event) => setCategory(event.target.value)} />
           </Field>
           <Field label={t("Remind me")}>
-            <div className="flex flex-wrap gap-2">
+            <div className="chip-scroller">
               {[0, 1, 2, 7].map((days) => (
                 <Chip key={days} on={leadDays === days} onClick={() => setLeadDays(days)}>{leadText(days, t)}</Chip>
               ))}

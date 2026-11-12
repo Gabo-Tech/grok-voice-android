@@ -591,33 +591,38 @@ impl Agenda {
 
     pub fn snapshot(&self, app: &AppHandle) -> AgendaSnapshot {
         self.sweep(app);
-        let store = self.lock();
+        let (start, end, _) = day_bounds(None).unwrap_or((0, 0, String::new()));
+        let money = finance_occurrences(app, start, end);
         let (mut events, calendar) = match calendar_range(app, None) {
             Ok((events, calendar)) => (events, calendar),
             Err(_) => (Vec::new(), "denied".into()),
         };
-        let (start, end, _) = day_bounds(None).unwrap_or((0, 0, String::new()));
-        events.extend(local_in_range(&store.events, start, end));
-        events.sort_by_key(|e| e.start_ms);
         let now = Local::now();
-        AgendaSnapshot {
-            notes: store.notes.clone(),
-            reminders: store.items.iter().filter(|item| shows_on_time_list(item, now)).cloned().collect(),
-            events,
-            calendar,
-        }
+        let (notes, reminders) = {
+            let store = self.lock();
+            events.extend(local_in_range(&store.events, start, end));
+            (
+                store.notes.clone(),
+                store.items.iter().filter(|item| shows_on_time_list(item, now)).cloned().collect(),
+            )
+        };
+        present_calendar(&mut events, money);
+        AgendaSnapshot { notes, reminders, events, calendar }
     }
 
     /// Events overlapping [start, end), from the phone calendar when it is readable
-    /// and always from events stored in the app.
+    /// and always from events stored in the app. Finance due dates are included here.
     pub fn events_between(&self, app: &AppHandle, start: i64, end: i64) -> (Vec<CalEvent>, String) {
+        let money = finance_occurrences(app, start, end);
         let (mut events, calendar) = match read_phone_range(app, start, end) {
             Ok((events, calendar)) => (events, calendar),
             Err(_) => (Vec::new(), "unavailable".into()),
         };
-        let store = self.lock();
-        events.extend(local_in_range(&store.events, start, end));
-        events.sort_by_key(|e| e.start_ms);
+        {
+            let store = self.lock();
+            events.extend(local_in_range(&store.events, start, end));
+        }
+        present_calendar(&mut events, money);
         (events, calendar)
     }
 
@@ -2159,6 +2164,17 @@ fn read_events(bridge: &NativeBridge, start: i64, end: i64) -> Result<(Vec<CalEv
     Ok((events, v["truncated"].as_bool().unwrap_or(false)))
 }
 
+fn finance_occurrences(app: &AppHandle, start: i64, end: i64) -> Vec<CalEvent> {
+    app.try_state::<crate::finance::Finance>().map(|finance| finance.calendar_events(start, end)).unwrap_or_default()
+}
+
+/// The stored `local-fin-*` row still drives reminders. The calendar shows one finance item per due date.
+fn present_calendar(events: &mut Vec<CalEvent>, money: Vec<CalEvent>) {
+    events.retain(|event| !event.id.starts_with("local-fin-"));
+    events.extend(money);
+    events.sort_by(|a, b| a.start_ms.cmp(&b.start_ms).then_with(|| a.title.cmp(&b.title)).then_with(|| a.id.cmp(&b.id)));
+}
+
 fn local_in_range(events: &[CalEvent], start: i64, end: i64) -> Vec<CalEvent> {
     let mut out = Vec::new();
     for event in events {
@@ -2338,7 +2354,12 @@ fn list_calendar_events(app: &AppHandle, agenda: &Agenda, args: &Value) -> Resul
     } else {
         let (phone, truncated) = phone_events(app, window.start_ms, window.end_ms)?;
         let local = agenda.lock().events.clone();
-        (collect_calendar(&phone, &local, window.start_ms, window.end_ms, recurring_only), truncated)
+        let mut rows = collect_calendar(&phone, &local, window.start_ms, window.end_ms, recurring_only);
+        if !recurring_only {
+            rows.retain(|event| !event.id.starts_with("local-fin-"));
+            rows.extend(finance_occurrences(app, window.start_ms, window.end_ms));
+        }
+        (rows, truncated)
     };
     if let Some(query) = arg_text(args, "query") {
         let query = query.to_ascii_lowercase();

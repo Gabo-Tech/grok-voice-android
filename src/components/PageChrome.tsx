@@ -40,7 +40,7 @@ export function PageChrome({
           {subtitle && <p className="mt-2 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
         </div>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2">{children}</div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-4">{children}</div>
     </div>
   );
 }
