@@ -1109,8 +1109,8 @@ pub fn refresh_finance_rates(app: AppHandle) -> Result<crate::finance::Snapshot>
 }
 
 #[tauri::command]
-pub fn set_finance_manual_rate(app: AppHandle, base: String, quote: String, rate: String) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().set_manual_rate(&app, &base, &quote, &rate).map_err(msg)
+pub fn set_finance_manual_rate(app: AppHandle, base: String, quote: String, rate: String, override_live: Option<bool>) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>().set_manual_rate(&app, &base, &quote, &rate, override_live.unwrap_or(false)).map_err(msg)
 }
 
 #[tauri::command]

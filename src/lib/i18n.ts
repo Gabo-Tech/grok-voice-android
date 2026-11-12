@@ -1068,6 +1068,15 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Rates stay on this phone.": "Los tipos se quedan en este teléfono.",
     "Refresh rates": "Actualizar tipos",
     "Manual rate": "Tipo manual",
+    "Today's rate": "Tipo de hoy",
+    "Fetched {time}": "Obtenido {time}",
+    "Live rate for the day. Native amounts stay on each item.": "Tipo del día en vivo. Los importes nativos se quedan en cada partida.",
+    "1 {code} = {rate} {quote}": "1 {code} = {rate} {quote}",
+    "Manual rates": "Tipos manuales",
+    "A fallback when today's rate is missing.": "Un respaldo cuando falta el tipo de hoy.",
+    "Use this instead of the live rate": "Usar este en lugar del tipo en vivo",
+    "Set a manual rate in Settings.": "Pon un tipo manual en Ajustes.",
+    "Using your rate": "Usando tu tipo",
     "1 of the first currency equals this many of the second.": "1 de la primera moneda equivale a esta cantidad de la segunda.",
     "Clear rate": "Borrar tipo",
     "Mark received": "Marcar recibido",
@@ -2163,6 +2172,15 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Rates stay on this phone.": "Die Kurse bleiben auf diesem Telefon.",
     "Refresh rates": "Kurse aktualisieren",
     "Manual rate": "Eigener Kurs",
+    "Today's rate": "Kurs von heute",
+    "Fetched {time}": "Geholt {time}",
+    "Live rate for the day. Native amounts stay on each item.": "Tageskurs, live. Die Beträge bleiben in ihrer Währung bei jedem Posten.",
+    "1 {code} = {rate} {quote}": "1 {code} = {rate} {quote}",
+    "Manual rates": "Eigene Kurse",
+    "A fallback when today's rate is missing.": "Ein Ersatz, wenn der Kurs von heute fehlt.",
+    "Use this instead of the live rate": "Diesen statt des Live-Kurses verwenden",
+    "Set a manual rate in Settings.": "Trag einen eigenen Kurs in den Einstellungen ein.",
+    "Using your rate": "Dein Kurs",
     "1 of the first currency equals this many of the second.": "1 der ersten Währung entspricht so viel der zweiten.",
     "Clear rate": "Kurs löschen",
     "Mark received": "Als erhalten markieren",
@@ -3258,6 +3276,15 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Rates stay on this phone.": "As taxas ficam neste telefone.",
     "Refresh rates": "Atualizar taxas",
     "Manual rate": "Taxa manual",
+    "Today's rate": "Taxa de hoje",
+    "Fetched {time}": "Obtida {time}",
+    "Live rate for the day. Native amounts stay on each item.": "Taxa do dia, ao vivo. Os valores originais ficam em cada item.",
+    "1 {code} = {rate} {quote}": "1 {code} = {rate} {quote}",
+    "Manual rates": "Taxas manuais",
+    "A fallback when today's rate is missing.": "Uma reserva quando falta a taxa de hoje.",
+    "Use this instead of the live rate": "Usar esta em vez da taxa ao vivo",
+    "Set a manual rate in Settings.": "Defina uma taxa manual em Ajustes.",
+    "Using your rate": "A usar a sua taxa",
     "1 of the first currency equals this many of the second.": "1 da primeira moeda equivale a esta quantidade da segunda.",
     "Clear rate": "Apagar taxa",
     "Mark received": "Marcar recebido",
@@ -4353,6 +4380,15 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Rates stay on this phone.": "Els tipus es queden en este telèfon.",
     "Refresh rates": "Actualitzar tipus",
     "Manual rate": "Tipus manual",
+    "Today's rate": "Tipus d'hui",
+    "Fetched {time}": "Obtingut {time}",
+    "Live rate for the day. Native amounts stay on each item.": "Tipus del dia, en directe. Els imports natius es queden en cada partida.",
+    "1 {code} = {rate} {quote}": "1 {code} = {rate} {quote}",
+    "Manual rates": "Tipus manuals",
+    "A fallback when today's rate is missing.": "Una reserva quan falta el tipus d'hui.",
+    "Use this instead of the live rate": "Fes servir este en lloc del tipus en directe",
+    "Set a manual rate in Settings.": "Posa un tipus manual en Configuració.",
+    "Using your rate": "Amb el teu tipus",
     "1 of the first currency equals this many of the second.": "1 de la primera moneda equival a esta quantitat de la segona.",
     "Clear rate": "Esborrar tipus",
     "Mark received": "Marcar rebut",
@@ -4410,6 +4446,17 @@ export function setAppLocale(tag: string) {
 
 export function activeLocale(): LocaleId {
   return current;
+}
+
+export function catalogStats(): { locale: string; count: number }[] {
+  return (Object.keys(catalogs) as Array<keyof typeof catalogs>).map((locale) => ({
+    locale,
+    count: Object.keys(catalogs[locale]).length,
+  }));
+}
+
+export function catalogHas(english: string): boolean {
+  return (Object.keys(catalogs) as Array<keyof typeof catalogs>).every((locale) => Object.prototype.hasOwnProperty.call(catalogs[locale], english));
 }
 
 export function translate(english: string): string {

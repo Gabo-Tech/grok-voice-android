@@ -1,6 +1,7 @@
 //! Display-only exchange rates. Native amounts stay in finance.json.
 //! A missing pair is omitted. A cached pair is labeled when it is old.
 
+use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
 
 pub const STALE_MS: i64 = 48 * 60 * 60 * 1000;
@@ -35,6 +36,9 @@ pub struct ManualRate {
     pub rate: f64,
     #[serde(default)]
     pub as_of: String,
+    /// When true, this pair replaces today's live rate. Otherwise it is only a fallback.
+    #[serde(default)]
+    pub override_live: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -62,7 +66,24 @@ pub fn stale(book: &FxBook, now_ms: i64) -> bool {
     if book.fetched_ms <= 0 {
         return true;
     }
+    if !same_local_day(book.fetched_ms, now_ms) {
+        return true;
+    }
     now_ms.saturating_sub(book.fetched_ms) > STALE_MS
+}
+
+/// A fetch counts as today's rate only on the device's local calendar day.
+pub fn same_local_day(a_ms: i64, b_ms: i64) -> bool {
+    if a_ms <= 0 || b_ms <= 0 {
+        return false;
+    }
+    let Some(a) = chrono::Local.timestamp_millis_opt(a_ms).single() else {
+        return false;
+    };
+    let Some(b) = chrono::Local.timestamp_millis_opt(b_ms).single() else {
+        return false;
+    };
+    a.date_naive() == b.date_naive()
 }
 
 pub fn convert(amount_minor: i64, from: &str, to: &str, book: &FxBook, now_ms: i64) -> Option<Converted> {
@@ -134,16 +155,16 @@ pub fn combine(parts: &[(i64, String)], display: &str, book: &FxBook, now_ms: i6
         if !converted.as_of.is_empty() && (as_of.is_empty() || converted.as_of < as_of) {
             as_of = converted.as_of;
         }
-        if converted.source == "cached" {
-            source = "cached";
-        } else if converted.source == "manual" && source != "cached" {
+        if converted.source == "manual" {
             source = "manual";
+        } else if converted.source == "cached" && source != "manual" {
+            source = "cached";
         }
     }
     Some(Converted { amount_minor: total, currency: display, as_of, stale: stale_rate, source })
 }
 
-pub fn upsert_manual(book: &mut FxBook, base: &str, quote: &str, rate: f64, as_of: &str) -> Result<(), String> {
+pub fn upsert_manual(book: &mut FxBook, base: &str, quote: &str, rate: f64, as_of: &str, override_live: bool) -> Result<(), String> {
     if !rate.is_finite() || rate <= 0.0 {
         return Err("The rate has to be a number above zero.".into());
     }
@@ -153,7 +174,7 @@ pub fn upsert_manual(book: &mut FxBook, base: &str, quote: &str, rate: f64, as_o
         return Err("Say two currencies, such as 1 USD in EUR.".into());
     }
     book.manual.retain(|row| !(row.base.eq_ignore_ascii_case(&base) && row.quote.eq_ignore_ascii_case(&quote)));
-    book.manual.push(ManualRate { base, quote, rate, as_of: as_of.to_string() });
+    book.manual.push(ManualRate { base, quote, rate, as_of: as_of.to_string(), override_live });
     Ok(())
 }
 
@@ -235,16 +256,33 @@ pub fn parse_coingecko(body: &str) -> Result<Vec<(String, f64)>, String> {
     Ok(legs)
 }
 
+/// Precedence: an explicit override, then a fetched pair (fresh or labeled stale), then a manual fallback.
+/// EUR's 1.0 leg is the Frankfurter base, not a cross-currency 1:1. A missing leg stays missing.
 fn rate_of(from: &str, to: &str, book: &FxBook) -> Option<(f64, &'static str, String)> {
-    if let Some(row) = book.manual.iter().find(|row| row.base.eq_ignore_ascii_case(from) && row.quote.eq_ignore_ascii_case(to) && row.rate > 0.0) {
+    if let Some(found) = manual_rate(book, from, to, true) {
+        return Some(found);
+    }
+    if let Some(rate) = cached_rate(book, from, to) {
+        return Some((rate, "cached", book.as_of.clone()));
+    }
+    manual_rate(book, from, to, false)
+}
+
+fn manual_rate(book: &FxBook, from: &str, to: &str, override_live: bool) -> Option<(f64, &'static str, String)> {
+    if let Some(row) = book.manual.iter().find(|row| row.override_live == override_live && row.base.eq_ignore_ascii_case(from) && row.quote.eq_ignore_ascii_case(to) && row.rate > 0.0) {
         return Some((row.rate, "manual", if row.as_of.is_empty() { book.as_of.clone() } else { row.as_of.clone() }));
     }
-    if let Some(row) = book.manual.iter().find(|row| row.base.eq_ignore_ascii_case(to) && row.quote.eq_ignore_ascii_case(from) && row.rate > 0.0) {
+    if let Some(row) = book.manual.iter().find(|row| row.override_live == override_live && row.base.eq_ignore_ascii_case(to) && row.quote.eq_ignore_ascii_case(from) && row.rate > 0.0) {
         return Some((1.0 / row.rate, "manual", if row.as_of.is_empty() { book.as_of.clone() } else { row.as_of.clone() }));
     }
+    None
+}
+
+fn cached_rate(book: &FxBook, from: &str, to: &str) -> Option<f64> {
     let from_per = if from == "EUR" { Some(1.0) } else { leg(book, from) };
     let to_per = if to == "EUR" { Some(1.0) } else { leg(book, to) };
-    Some((to_per? / from_per?, "cached", book.as_of.clone()))
+    let rate = to_per? / from_per?;
+    if rate.is_finite() && rate > 0.0 { Some(rate) } else { None }
 }
 
 fn leg(book: &FxBook, currency: &str) -> Option<f64> {
@@ -306,12 +344,55 @@ mod tests {
         assert!(stale_rate.stale);
         assert_eq!(stale_rate.amount_minor, 1_000);
         let mut manual = fresh.clone();
-        upsert_manual(&mut manual, "USD", "EUR", 0.5, "2026-01-01").unwrap();
+        upsert_manual(&mut manual, "USD", "EUR", 0.5, "2026-01-01", false).unwrap();
+        let live = convert(1_100, "USD", "EUR", &manual, 1_000).unwrap();
+        assert_eq!(live.amount_minor, 1_000);
+        assert_eq!(live.source, "cached");
+        assert_ne!(live.amount_minor, 550);
+        upsert_manual(&mut manual, "USD", "EUR", 0.5, "2026-01-01", true).unwrap();
         let overridden = convert(1_100, "USD", "EUR", &manual, 1_000).unwrap();
         assert_eq!(overridden.amount_minor, 550);
         assert_eq!(overridden.source, "manual");
         assert_eq!(convert(-3_000, "EUR", "USD", &fresh, 1_000).unwrap().amount_minor, -3_300);
-        assert!(upsert_manual(&mut manual, "USD", "EUR", 0.0, "").is_err());
+        assert!(upsert_manual(&mut manual, "USD", "EUR", 0.0, "", false).is_err());
+    }
+
+    #[test]
+    fn live_today_beats_a_stale_cache_and_a_manual_fallback() {
+        let now = chrono::Local::now();
+        let now_ms = now.timestamp_millis();
+        let yesterday = now.date_naive().pred_opt().unwrap().and_hms_opt(12, 0, 0).unwrap();
+        let yesterday_ms = yesterday.and_local_timezone(chrono::Local).earliest().expect("yesterday").timestamp_millis();
+        assert!(now_ms - yesterday_ms < STALE_MS);
+        assert!(!same_local_day(yesterday_ms, now_ms));
+        assert!(same_local_day(now_ms, now_ms));
+
+        let mut live = book();
+        live.fetched_ms = now_ms;
+        upsert_manual(&mut live, "USD", "EUR", 0.5, "2026-01-01", false).unwrap();
+        let today = convert(1_100, "USD", "EUR", &live, now_ms).unwrap();
+        assert_eq!(today.amount_minor, 1_000);
+        assert!(!today.stale);
+        assert_eq!(today.source, "cached");
+        assert_ne!(today.amount_minor, 1_100);
+
+        let mut stale_book = live.clone();
+        stale_book.fetched_ms = yesterday_ms;
+        let stale_rate = convert(1_100, "USD", "EUR", &stale_book, now_ms).unwrap();
+        assert!(stale_rate.stale);
+        assert_eq!(stale_rate.amount_minor, 1_000);
+        assert_eq!(stale_rate.source, "cached");
+        assert_ne!(stale_rate.amount_minor, 550);
+
+        let mut missing = FxBook::default();
+        assert!(convert(1_100, "USD", "EUR", &missing, now_ms).is_none());
+        assert!(combine(&[(10_000, "EUR".into()), (1_100, "USD".into())], "EUR", &missing, now_ms).is_none());
+        upsert_manual(&mut missing, "USD", "EUR", 0.5, "2026-01-01", false).unwrap();
+        let fallback = convert(1_100, "USD", "EUR", &missing, now_ms).unwrap();
+        assert_eq!(fallback.amount_minor, 550);
+        assert_eq!(fallback.source, "manual");
+        let stored: ManualRate = serde_json::from_str(r#"{"base":"USD","quote":"EUR","rate":0.5,"asOf":"2026-01-01"}"#).unwrap();
+        assert!(!stored.override_live);
     }
 
     #[test]

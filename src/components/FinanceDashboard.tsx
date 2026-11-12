@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
-import { CombinedHeadline, RatePanel, StaticHeadline } from "@/components/CombinedTotal";
+import { CombinedHeadline, LiveRates, StaticHeadline } from "@/components/CombinedTotal";
 import {
   addDays,
   addMonths,
@@ -46,12 +46,14 @@ export function FinanceDashboard({
   onProgram,
   onIncome,
   onFocus,
+  onOpenSettings,
 }: {
   finance: FinanceState;
   accounts: FinanceAccount[];
   onProgram: () => void;
   onIncome: () => void;
   onFocus: (focus: WorthFocus) => void;
+  onOpenSettings?: () => void;
 }) {
   const t = useT();
   const today = todayIso();
@@ -130,11 +132,18 @@ export function FinanceDashboard({
     finance.refreshRates();
   }, [gapKey, finance.inApp, finance.refreshRates]);
 
+  const rateCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const part of [...worthParts, ...flowParts, ...expenseParts, ...incomeParts, ...planParts]) {
+      const code = part.currency.trim().toUpperCase();
+      if (code) codes.add(code);
+    }
+    return [...codes].sort();
+  }, [worthParts, flowParts, expenseParts, incomeParts, planParts]);
+
   return (
-    <div className="fin-stack space-y-6">
-      {gapCodes.length > 0 ? (
-        <RatePanel codes={gapCodes} display={display} busy={finance.busy} onRefresh={() => finance.refreshRates()} onSave={finance.setManualRate} />
-      ) : null}
+    <div className="fin-stack w-full min-w-0 space-y-6">
+      <LiveRates codes={rateCodes} display={display} book={book} nowMs={nowMs} busy={finance.busy} missing={gapCodes} onOpenSettings={onOpenSettings} />
 
       <section className="fin-panel">
         <h2 className="fin-kicker">{t("Net worth")}</h2>
@@ -144,7 +153,7 @@ export function FinanceDashboard({
         ) : (
           <>
             <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid w-full min-w-0 grid-cols-2 gap-2">
               <FocusChip label={t("You own")} onClick={() => onFocus("owned")} />
               <FocusChip label={t("You owe")} onClick={() => onFocus("debt")} />
               <FocusChip label={t("Invested")} onClick={() => onFocus("invested")} />
@@ -223,9 +232,9 @@ export function FinanceDashboard({
           <span className="stamp">{t("Not actual")}</span>
         </div>
         <p className="fin-muted mt-2 text-sm leading-5">{t("This month if the plan happens. Not a lifetime total.")}</p>
-        {monthPlan.length === 0 ? <p className="mt-4 text-base">{t("Nothing planned in this window")}</p> : <StaticHeadline head={heads.plan} size="text-4xl" />}
+        {monthPlan.length === 0 ? <p className="mt-4 text-base">{t("Nothing planned in this window")}</p> : <StaticHeadline head={heads.plan} fetchedMs={book?.fetchedMs || 0} size="text-4xl" />}
       </section>
-      <NextThirty nextIn={heads.nextIn} nextOut={heads.nextOut} net={heads.next} overdueIn={heads.overdueIn} overdueOut={heads.overdueOut} />
+      <NextThirty nextIn={heads.nextIn} nextOut={heads.nextOut} net={heads.next} overdueIn={heads.overdueIn} overdueOut={heads.overdueOut} fetchedMs={book?.fetchedMs || 0} />
     </div>
   );
 }
@@ -236,12 +245,14 @@ function NextThirty({
   net,
   overdueIn,
   overdueOut,
+  fetchedMs,
 }: {
   nextIn: Headline;
   nextOut: Headline;
   net: Headline;
   overdueIn: Headline;
   overdueOut: Headline;
+  fetchedMs: number;
 }) {
   const t = useT();
   const quiet = [net, nextIn, nextOut, overdueIn, overdueOut].every((head) => head.state === "empty");
@@ -250,9 +261,9 @@ function NextThirty({
     <section className="fin-window">
       <h2 className="fin-kicker">{t("Next 30 days")}</h2>
       <p className="fin-muted mt-2 text-sm leading-5">{t("Planned in and out for the next 30 days, plus anything overdue. Not this month's leftover.")}</p>
-      <StaticHeadline head={net} size="text-4xl" />
+      <StaticHeadline head={net} fetchedMs={fetchedMs} size="text-4xl" />
       {nextIn.state === "ready" || nextOut.state === "ready" ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid w-full min-w-0 grid-cols-2 gap-2">
           {nextIn.state === "ready" ? <Mini label={t("Incoming")} value={formatMoney(nextIn.amountMinor, nextIn.currency)} tone="in" /> : null}
           {nextOut.state === "ready" ? <Mini label={t("Outgoing")} value={formatMoney(nextOut.amountMinor, nextOut.currency)} tone="out" /> : null}
         </div>

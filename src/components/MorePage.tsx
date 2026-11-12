@@ -591,7 +591,7 @@ export function MorePage({
         <h2 className="masthead px-1 text-2xl">{t("Finance")}</h2>
         <div className="masthead-rule mx-1" />
         <p className="mt-3 mb-4 px-1 text-sm leading-6 text-muted-foreground">
-          {t("Native amounts stay. A combined total needs a saved rate.")}
+          {t("Live rate for the day. Native amounts stay on each item.")}
         </p>
         <CurrencyEditor finance={finance} />
       </div>

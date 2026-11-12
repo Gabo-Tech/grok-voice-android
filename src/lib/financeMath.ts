@@ -651,18 +651,27 @@ export function netWorthChange(moves: WorthMove[], start: string, end: string): 
 
 export const STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 
+export interface ManualRate {
+  base: string;
+  quote: string;
+  rate: number;
+  asOf: string;
+  /** When true, this pair replaces today's live rate. Otherwise it is only a fallback. */
+  overrideLive?: boolean;
+}
+
 export interface RateBook {
   asOf: string;
   fetchedMs: number;
   perEur: Record<string, number>;
-  manual: { base: string; quote: string; rate: number; asOf: string }[];
+  manual: ManualRate[];
 }
 
 export function bookFromStatus(fx?: {
   asOf: string;
   fetchedMs: number;
   perEur?: { currency: string; perEur: number }[];
-  manual?: { base: string; quote: string; rate: number; asOf: string }[];
+  manual?: ManualRate[];
 } | null): RateBook | null {
   if (!fx) return null;
   const perEur: Record<string, number> = {};
@@ -681,44 +690,84 @@ export interface Converted {
   source: "identity" | "manual" | "cached";
 }
 
-function bookStale(book: RateBook, nowMs: number): boolean {
-  if (!book.fetchedMs) return Object.keys(book.perEur).length > 0;
+export function sameLocalDay(aMs: number, bMs: number): boolean {
+  if (!aMs || !bMs || aMs <= 0 || bMs <= 0) return false;
+  const a = new Date(aMs);
+  const b = new Date(bMs);
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+export function bookIsStale(book: RateBook, nowMs: number): boolean {
+  if (Object.keys(book.perEur).length === 0) return false;
+  if (!book.fetchedMs || book.fetchedMs <= 0) return true;
+  if (!sameLocalDay(book.fetchedMs, nowMs)) return true;
   return nowMs - book.fetchedMs > STALE_AFTER_MS;
+}
+
+export function formatRate(rate: number): string {
+  if (!Number.isFinite(rate) || rate <= 0) return "";
+  return rate.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+export function formatFetched(ms: number): string {
+  if (!ms || ms <= 0) return "";
+  const date = new Date(ms);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export interface RateQuote {
+  rate: number;
+  asOf: string;
+  stale: boolean;
+  source: Converted["source"];
+  override: boolean;
+}
+
+/** Pair rate. Missing pairs return null. Identity 1 is only the same currency. */
+export function quoteRate(from: string, to: string, book: RateBook | null, nowMs: number): RateQuote | null {
+  const sourceCode = from.trim().toUpperCase();
+  const target = to.trim().toUpperCase();
+  if (!sourceCode || !target) return null;
+  if (sourceCode === target) return { rate: 1, asOf: "", stale: false, source: "identity", override: false };
+  if (!book) return null;
+  const override = manualQuote(book, sourceCode, target, true);
+  if (override) return { rate: override.rate, asOf: override.asOf || book.asOf, stale: false, source: "manual", override: true };
+  const cached = cachedQuote(book, sourceCode, target);
+  if (cached != null) return { rate: cached, asOf: book.asOf, stale: bookIsStale(book, nowMs), source: "cached", override: false };
+  const fallback = manualQuote(book, sourceCode, target, false);
+  if (fallback) return { rate: fallback.rate, asOf: fallback.asOf || book.asOf, stale: false, source: "manual", override: false };
+  return null;
+}
+
+function manualQuote(book: RateBook, from: string, to: string, override: boolean): { rate: number; asOf: string } | null {
+  const direct = book.manual.find((row) => Boolean(row.overrideLive) === override && row.base.toUpperCase() === from && row.quote.toUpperCase() === to && row.rate > 0);
+  if (direct) return { rate: direct.rate, asOf: direct.asOf };
+  const inverse = book.manual.find((row) => Boolean(row.overrideLive) === override && row.base.toUpperCase() === to && row.quote.toUpperCase() === from && row.rate > 0);
+  if (inverse && inverse.rate > 0) return { rate: 1 / inverse.rate, asOf: inverse.asOf };
+  return null;
+}
+
+function cachedQuote(book: RateBook, from: string, to: string): number | null {
+  const fromPer = from === "EUR" ? 1 : book.perEur[from];
+  const toPer = to === "EUR" ? 1 : book.perEur[to];
+  if (!fromPer || !toPer || fromPer <= 0 || toPer <= 0) return null;
+  const rate = toPer / fromPer;
+  if (!Number.isFinite(rate) || rate <= 0) return null;
+  return rate;
 }
 
 /** Display conversion. Missing rates return null. A stale cache is labeled and still usable. */
 export function convertMinor(amountMinor: number, from: string, to: string, book: RateBook | null, nowMs: number): Converted | null {
   const sourceCode = from.toUpperCase();
   const target = to.toUpperCase();
-  if (!sourceCode || !target) return null;
-  if (sourceCode === target) {
-    return { amountMinor, currency: target, asOf: "", stale: false, source: "identity" };
-  }
-  if (!book) return null;
-  const manual = book.manual.find((row) => row.base.toUpperCase() === sourceCode && row.quote.toUpperCase() === target && row.rate > 0);
-  const inverse = book.manual.find((row) => row.base.toUpperCase() === target && row.quote.toUpperCase() === sourceCode && row.rate > 0);
-  let rate: number | null = null;
-  let source: Converted["source"] = "cached";
-  let asOf = book.asOf;
-  if (manual) {
-    rate = manual.rate;
-    source = "manual";
-    asOf = manual.asOf || book.asOf;
-  } else if (inverse) {
-    rate = 1 / inverse.rate;
-    source = "manual";
-    asOf = inverse.asOf || book.asOf;
-  } else {
-    const fromPer = sourceCode === "EUR" ? 1 : book.perEur[sourceCode];
-    const toPer = target === "EUR" ? 1 : book.perEur[target];
-    if (!fromPer || !toPer || fromPer <= 0 || toPer <= 0) return null;
-    rate = toPer / fromPer;
-  }
-  if (rate == null || !Number.isFinite(rate) || rate <= 0) return null;
+  const quote = quoteRate(sourceCode, target, book, nowMs);
+  if (!quote) return null;
+  if (quote.source === "identity") return { amountMinor, currency: target, asOf: "", stale: false, source: "identity" };
   const major = amountMinor / 10 ** minorExp(sourceCode);
-  const minor = Math.round(major * rate * 10 ** minorExp(target));
+  const minor = Math.round(major * quote.rate * 10 ** minorExp(target));
   if (!Number.isFinite(minor)) return null;
-  return { amountMinor: minor, currency: target, asOf, stale: source === "cached" && bookStale(book, nowMs), source };
+  return { amountMinor: minor, currency: target, asOf: quote.asOf, stale: quote.stale, source: quote.source };
 }
 
 export interface MoneyPart {
@@ -793,7 +842,7 @@ export function subtractHeadlines(left: Headline, right: Headline, display: stri
   if (left.state === "empty" && right.state === "empty") return { ...EMPTY_HEADLINE, currency: target };
   const amount = (left.state === "ready" ? left.amountMinor : 0) - (right.state === "ready" ? right.amountMinor : 0);
   const asOf = [left.asOf, right.asOf].filter(Boolean).sort()[0] || "";
-  const source = left.source === "cached" || right.source === "cached" ? "cached" : left.source === "manual" || right.source === "manual" ? "manual" : "identity";
+  const source = left.source === "manual" || right.source === "manual" ? "manual" : left.source === "cached" || right.source === "cached" ? "cached" : "identity";
   return { state: "ready", amountMinor: amount, currency: target, asOf, stale: left.stale || right.stale, source, missing: [] };
 }
 
@@ -813,8 +862,8 @@ export function combinedMinor(parts: MoneyPart[], display: string, book: RateBoo
     total += converted.amountMinor;
     stale = stale || converted.stale;
     if (converted.asOf && (!asOf || converted.asOf < asOf)) asOf = converted.asOf;
-    if (converted.source === "cached") source = "cached";
-    else if (converted.source === "manual" && source !== "cached") source = "manual";
+    if (converted.source === "manual") source = "manual";
+    else if (converted.source === "cached" && source !== "manual") source = "cached";
   }
   return { amountMinor: total, currency: target, asOf, stale, source };
 }

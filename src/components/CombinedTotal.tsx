@@ -1,9 +1,20 @@
-import { useState } from "react";
 import type { RateBook } from "@/lib/financeMath";
-import { headlineOf, nativeParts, type Headline, type MoneyPart } from "@/lib/financeMath";
+import { bookIsStale, formatFetched, formatRate, headlineOf, nativeParts, quoteRate, type Headline, type MoneyPart } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+
+function rateCaption(head: Headline, fetchedMs: number, t: (english: string) => string): string {
+  if (head.source === "identity") return head.currency;
+  const bits: string[] = [];
+  if (head.source === "manual") bits.push(t("Using your rate"));
+  else if (!head.stale) bits.push(t("Today's rate"));
+  bits.push(fill("Together in {code}", { code: head.currency }));
+  if (head.asOf) bits.push(fill("As of {date}", { date: head.asOf }));
+  if (fetchedMs > 0 && head.source === "cached") bits.push(fill("Fetched {time}", { time: formatFetched(fetchedMs) }));
+  if (head.stale) bits.push(t("Rates are stale"));
+  return bits.join(" · ");
+}
 
 export function CombinedHeadline({
   parts,
@@ -30,6 +41,7 @@ export function CombinedHeadline({
     return (
       <div className="mt-4 max-w-full">
         <p className="text-base leading-6 break-words">{busy ? fill("Checking the rate for {codes}.", { codes }) : fill("Combined total needs a rate for {codes}.", { codes })}</p>
+        {busy ? null : <p className="fin-muted mt-2 text-sm leading-5">{t("Set a manual rate in Settings.")}</p>}
         <NativeAside parts={parts} display={display} />
       </div>
     );
@@ -40,30 +52,27 @@ export function CombinedHeadline({
       <p className={cn("fin-num leading-none font-medium break-words", size, signed === "in" && "fin-in", signed === "out" && "fin-out")}>
         {formatMoney(head.amountMinor, head.currency)}
       </p>
-      <p className="fin-muted mt-2 text-sm leading-5 break-words">
-        {head.source === "identity" ? head.currency : fill("Together in {code}", { code: head.currency })}
-        {head.asOf ? ` · ${fill("As of {date}", { date: head.asOf })}` : ""}
-        {head.stale ? ` · ${t("Rates are stale")}` : ""}
-      </p>
+      <p className="fin-muted mt-2 text-sm leading-5 break-words">{rateCaption(head, book?.fetchedMs || 0, t)}</p>
       <NativeAside parts={parts} display={display} />
     </div>
   );
 }
 
-export function StaticHeadline({ head, size = "text-4xl" }: { head: Headline; size?: string }) {
+export function StaticHeadline({ head, fetchedMs = 0, size = "text-4xl" }: { head: Headline; fetchedMs?: number; size?: string }) {
   const t = useT();
   if (head.state === "empty") return null;
   if (head.state === "needs-rate") {
-    return <p className="mt-4 text-base leading-6 break-words">{fill("Combined total needs a rate for {codes}.", { codes: head.missing.join(", ") })}</p>;
+    return (
+      <div className="mt-4 max-w-full">
+        <p className="text-base leading-6 break-words">{fill("Combined total needs a rate for {codes}.", { codes: head.missing.join(", ") })}</p>
+        <p className="fin-muted mt-2 text-sm leading-5">{t("Set a manual rate in Settings.")}</p>
+      </div>
+    );
   }
   return (
     <div className="mt-4 max-w-full">
       <p className={cn("fin-num leading-none font-medium break-words", size, head.amountMinor < 0 && "fin-out")}>{formatMoney(head.amountMinor, head.currency)}</p>
-      <p className="fin-muted mt-2 text-sm leading-5 break-words">
-        {fill("Together in {code}", { code: head.currency })}
-        {head.asOf ? ` · ${fill("As of {date}", { date: head.asOf })}` : ""}
-        {head.stale ? ` · ${t("Rates are stale")}` : ""}
-      </p>
+      <p className="fin-muted mt-2 text-sm leading-5 break-words">{rateCaption(head, fetchedMs, t)}</p>
     </div>
   );
 }
@@ -80,69 +89,69 @@ function NativeAside({ parts, display }: { parts: MoneyPart[]; display: string }
   );
 }
 
-export function RatePanel({
+export function LiveRates({
   codes,
   display,
+  book,
+  nowMs,
   busy,
-  onRefresh,
-  onSave,
-  bare = false,
+  missing,
+  onOpenSettings,
 }: {
   codes: string[];
   display: string;
+  book: RateBook | null;
+  nowMs: number;
   busy: boolean;
-  onRefresh: () => void;
-  onSave: (base: string, quote: string, rate: string) => void;
-  bare?: boolean;
+  missing: string[];
+  onOpenSettings?: () => void;
 }) {
   const t = useT();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const quote = display.trim().toUpperCase();
-  if (codes.length === 0) return null;
-  const label = codes.join(", ");
-  const body = (
-    <>
-      {bare ? null : <h2 className="fin-kicker">{t("Rates")}</h2>}
-      {busy ? (
-        <p className="mt-3 text-base leading-6 break-words">{fill("Checking the rate for {codes}.", { codes: label })}</p>
+  const pairs = [...new Set(codes.map((code) => code.trim().toUpperCase()).filter((code) => code && code !== quote))].sort();
+  if (pairs.length === 0 && missing.length === 0) return null;
+  const stale = book ? bookIsStale(book, nowMs) : false;
+  return (
+    <section className="fin-panel w-full">
+      <h2 className="fin-kicker">{t("Today's rate")}</h2>
+      <p className="fin-muted mt-2 text-sm leading-5">{t("Live rate for the day. Native amounts stay on each item.")}</p>
+      {book && (book.asOf || book.fetchedMs > 0) ? (
+        <p className="mt-2 text-sm leading-5 break-words">
+          {book.asOf ? fill("As of {date}", { date: book.asOf }) : ""}
+          {book.fetchedMs > 0 ? `${book.asOf ? " · " : ""}${fill("Fetched {time}", { time: formatFetched(book.fetchedMs) })}` : ""}
+          {stale ? ` · ${t("Rates are stale")}` : ""}
+        </p>
       ) : (
-        <>
-          <p className="mt-3 text-base leading-6 break-words">{fill("Combined total needs a rate for {codes}.", { codes: label })}</p>
-          <button type="button" className="stamp mt-3 min-h-12 px-3" onClick={onRefresh}>
-            {t("Refresh rates")}
-          </button>
-          <div className="mt-4 space-y-4">
-            {codes.map((code) => (
-              <div key={code} className="min-w-0">
-                <p className="text-sm font-extrabold tracking-wide uppercase">{fill("Need a rate for {code}", { code })}</p>
-                <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="text-sm whitespace-nowrap">{fill("1 {code} =", { code })}</span>
-                  <input
-                    aria-label={fill("Need a rate for {code}", { code })}
-                    inputMode="decimal"
-                    value={drafts[code] || ""}
-                    placeholder="0.92"
-                    className="h-12 min-w-0 flex-1 border-[2.5px] border-border bg-transparent px-3 text-base"
-                    onChange={(event) => setDrafts((current) => ({ ...current, [code]: event.target.value }))}
-                  />
-                  <span className="text-sm font-extrabold">{quote}</span>
-                  <button
-                    type="button"
-                    className="stamp min-h-12 px-3"
-                    disabled={!drafts[code]?.trim()}
-                    onClick={() => onSave(code, quote, drafts[code].trim())}
-                  >
-                    {t("Save rate")}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="fin-muted mt-3 text-sm leading-5">{t("1 of the first currency equals this many of the second.")}</p>
-        </>
+        <p className="mt-2 text-sm leading-5">{busy ? fill("Checking the rate for {codes}.", { codes: (missing.length ? missing : pairs).join(", ") }) : t("No rate is saved yet.")}</p>
       )}
-    </>
+      {pairs.length > 0 ? (
+        <ul className="mt-3 space-y-1">
+          {pairs.map((code) => {
+            const row = quoteRate(code, quote, book, nowMs);
+            return (
+              <li key={code} className="fin-num text-base break-words">
+                {row && row.source !== "identity"
+                  ? fill("1 {code} = {rate} {quote}", { code, rate: formatRate(row.rate), quote })
+                  : fill("Combined total needs a rate for {codes}.", { codes: code })}
+                {row?.source === "manual" ? ` · ${t("Using your rate")}` : ""}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {missing.length > 0 ? (
+        <div className="mt-3">
+          <p className="text-base leading-6 break-words">
+            {busy ? fill("Checking the rate for {codes}.", { codes: missing.join(", ") }) : fill("Combined total needs a rate for {codes}.", { codes: missing.join(", ") })}
+          </p>
+          {busy ? null : <p className="fin-muted mt-2 text-sm leading-5">{t("Set a manual rate in Settings.")}</p>}
+          {onOpenSettings && !busy ? (
+            <button type="button" className="stamp mt-3 min-h-12 px-3" onClick={onOpenSettings}>
+              {t("Settings")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
-  if (bare) return <div className="max-w-full">{body}</div>;
-  return <section className="fin-panel">{body}</section>;
 }

@@ -200,14 +200,14 @@ export function useFinance() {
   }, [inApp, run]);
 
   const setManualRate = useCallback(
-    (base: string, quote: string, rate: string) => {
+    (base: string, quote: string, rate: string, overrideLive = false) => {
       const b = base.trim().toUpperCase();
       const q = quote.trim().toUpperCase();
       if (!inApp) {
         const value = Number(rate.trim().replace(",", "."));
         setSnapshot((current) => {
           const manual = (current.fx?.manual || []).filter((row) => !(row.base.toUpperCase() === b && row.quote.toUpperCase() === q));
-          if (rate.trim() && Number.isFinite(value) && value > 0) manual.push({ base: b, quote: q, rate: value, asOf: current.fx?.asOf || "" });
+          if (rate.trim() && Number.isFinite(value) && value > 0) manual.push({ base: b, quote: q, rate: value, asOf: current.fx?.asOf || "", overrideLive });
           return {
             ...current,
             fx: {
@@ -221,7 +221,7 @@ export function useFinance() {
         });
         return;
       }
-      void run(() => api.setFinanceManualRate(b, q, rate));
+      void run(() => api.setFinanceManualRate(b, q, rate, overrideLive));
     },
     [inApp, run],
   );
