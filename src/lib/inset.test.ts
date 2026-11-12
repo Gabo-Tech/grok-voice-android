@@ -260,6 +260,15 @@ const leftover = projectWindow(monthFlow, plannedHits([rent], [], "2026-11-12"),
 assert.equal(leftover.find((row) => row.currency === "EUR")?.projected, 260000);
 assert.equal(leftover.find((row) => row.currency === "CHF")?.comingOut, 200000);
 assert.equal(leftover.find((row) => row.currency === "CHF")?.projected, -200000);
+const rentAhead = plannedHits([rent], [], "2026-11-12");
+const nextThirty = projectWindow([], rentAhead, "2026-11-12", "2026-12-12", "2026-11-12", false);
+const nextChf = nextThirty.find((row) => row.currency === "CHF");
+assert.equal(nextChf?.actualLeft, 0);
+assert.equal(nextChf?.comingOut, 200000);
+assert.equal(nextThirty.find((row) => row.currency === "EUR"), undefined);
+const overdueOnly = projectWindow([], rentAhead, "1970-01-01", "2026-11-11", "2026-11-12", false);
+assert.equal(overdueOnly.find((row) => row.currency === "CHF")?.comingOut, 200000);
+assert.equal(overdueOnly.find((row) => row.currency === "CHF")?.actualLeft, 0);
 
 const fresh: RateBook = { asOf: "2026-11-12", fetchedMs: 1_000, perEur: { EUR: 1, USD: 1.1, CHF: 0.95 }, manual: [] };
 const changed = convertMinor(1100, "USD", "EUR", fresh, 1_000);

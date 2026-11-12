@@ -65,6 +65,14 @@
 
 .finance .fin-stack > .fin-panel:nth-child(even) {
   margin-left: 8px;
+  width: calc(100% - 8px);
+}
+
+.finance .fin-window {
+  background: var(--fin-panel-2);
+  border: var(--frame) solid var(--fin-line);
+  border-left: 6px solid var(--fin-gold);
+  padding: 0.95rem 0.95rem 1.05rem;
 }
 
 .finance .fin-num {

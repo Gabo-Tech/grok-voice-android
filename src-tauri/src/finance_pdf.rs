@@ -315,20 +315,65 @@ fn winansi(ch: char) -> u8 {
         '’' | '‘' => b'\'',
         '“' | '”' => b'"',
         '…' => b'.',
-        'á' | 'à' | 'ä' | 'â' => 0xE1,
-        'é' | 'è' | 'ë' | 'ê' => 0xE9,
-        'í' | 'ì' | 'ï' | 'î' => 0xED,
-        'ó' | 'ò' | 'ö' | 'ô' => 0xF3,
-        'ú' | 'ù' | 'ü' | 'û' => 0xFA,
-        'ñ' => 0xF1,
-        'ç' => 0xE7,
+        '¡' => 0xA1,
+        '¿' => 0xBF,
+        '·' => 0xB7,
+        'ª' => 0xAA,
+        'º' => 0xBA,
+        'À' => 0xC0,
         'Á' => 0xC1,
+        'Â' => 0xC2,
+        'Ã' => 0xC3,
+        'Ä' => 0xC4,
+        'Å' => 0xC5,
+        'Æ' => 0xC6,
+        'Ç' => 0xC7,
+        'È' => 0xC8,
         'É' => 0xC9,
+        'Ê' => 0xCA,
+        'Ë' => 0xCB,
+        'Ì' => 0xCC,
         'Í' => 0xCD,
-        'Ó' => 0xD3,
-        'Ú' | 'Ü' => 0xDA,
+        'Î' => 0xCE,
+        'Ï' => 0xCF,
         'Ñ' => 0xD1,
+        'Ò' => 0xD2,
+        'Ó' => 0xD3,
+        'Ô' => 0xD4,
+        'Õ' => 0xD5,
+        'Ö' => 0xD6,
+        'Ù' => 0xD9,
+        'Ú' => 0xDA,
+        'Û' => 0xDB,
+        'Ü' => 0xDC,
         'ß' => 0xDF,
+        'à' => 0xE0,
+        'á' => 0xE1,
+        'â' => 0xE2,
+        'ã' => 0xE3,
+        'ä' => 0xE4,
+        'å' => 0xE5,
+        'æ' => 0xE6,
+        'ç' => 0xE7,
+        'è' => 0xE8,
+        'é' => 0xE9,
+        'ê' => 0xEA,
+        'ë' => 0xEB,
+        'ì' => 0xEC,
+        'í' => 0xED,
+        'î' => 0xEE,
+        'ï' => 0xEF,
+        'ñ' => 0xF1,
+        'ò' => 0xF2,
+        'ó' => 0xF3,
+        'ô' => 0xF4,
+        'õ' => 0xF5,
+        'ö' => 0xF6,
+        'ù' => 0xF9,
+        'ú' => 0xFA,
+        'û' => 0xFB,
+        'ü' => 0xFC,
+        'ÿ' => 0xFF,
         other if other.is_ascii() => other as u8,
         _ => b'?',
     }
@@ -395,4 +440,23 @@ fn assemble(streams: &[String]) -> Vec<u8> {
     }
     out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes());
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pdf_text;
+
+    #[test]
+    fn winansi_keeps_distinct_letters() {
+        assert_eq!(pdf_text("ä"), "\\344");
+        assert_eq!(pdf_text("ö"), "\\366");
+        assert_eq!(pdf_text("ü"), "\\374");
+        assert_eq!(pdf_text("Ä"), "\\304");
+        assert_eq!(pdf_text("é"), "\\351");
+        assert_eq!(pdf_text("à"), "\\340");
+        assert_eq!(pdf_text("ñ"), "\\361");
+        assert_eq!(pdf_text("ç"), "\\347");
+        assert_eq!(pdf_text("ß"), "\\337");
+        assert_eq!(pdf_text("¿"), "\\277");
+    }
 }

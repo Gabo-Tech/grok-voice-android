@@ -23,6 +23,9 @@ pub fn normalize(tag: &str) -> &'static str {
 
 pub fn line(locale: &str, key: &str) -> String {
     let locale = normalize(locale);
+    if let Some(text) = finance_phrase(locale, key) {
+        return text.to_string();
+    }
     let table: &[(&str, &str, &str)] = match locale {
         "es" => ES,
         "de" => DE,
@@ -37,6 +40,17 @@ pub fn line(locale: &str, key: &str) -> String {
         .unwrap_or_else(|| {
             EN.iter().find(|(id, _, _)| *id == key).map(|(_, _, text)| (*text).to_string()).unwrap_or_else(|| key.to_string())
         })
+}
+
+fn finance_phrase(locale: &str, key: &str) -> Option<&'static str> {
+    let table: &[(&str, &str)] = match locale {
+        "es" => ES_FINANCE,
+        "de" => DE_FINANCE,
+        "pt" => PT_FINANCE,
+        "ca-ES-valencia" => CA_FINANCE,
+        _ => return None,
+    };
+    table.iter().find(|(id, _)| *id == key).map(|(_, text)| *text)
 }
 
 /// Replace `{name}` style holes in a spoken line.
@@ -588,6 +602,8 @@ const CA: &[(&str, &str, &str)] = &[
     ("media-bad", "", "Usa reproduir, pausa, aturar, següent, anterior o aleatori."),
 ];
 
+include!("finance_phrases.rs");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,5 +622,39 @@ mod tests {
         assert!(line("pt", "keys-refused").contains("Ajustes"));
         assert!(fill("ca-ES-valencia", "person-delete-ask", &[("name", "Ana")]).contains("Ana"));
         assert!(fill("ca-ES-valencia", "listen-off-ask", &[]).contains("s'atura"));
+    }
+
+    #[test]
+    fn finance_phrases_match_across_locales() {
+        fn keys<'a>(table: &'a [(&'a str, &'a str)]) -> Vec<&'a str> {
+            let mut keys: Vec<&str> = table.iter().map(|row| row.0).collect();
+            keys.sort();
+            keys
+        }
+        fn holes(text: &str) -> Vec<&str> {
+            let mut found = Vec::new();
+            let mut rest = text;
+            while let Some(start) = rest.find('{') {
+                let after = &rest[start + 1..];
+                let Some(end) = after.find('}') else { break };
+                found.push(&after[..end]);
+                rest = &after[end + 1..];
+            }
+            found.sort();
+            found
+        }
+        assert_eq!(keys(ES_FINANCE), keys(DE_FINANCE));
+        assert_eq!(keys(ES_FINANCE), keys(PT_FINANCE));
+        assert_eq!(keys(ES_FINANCE), keys(CA_FINANCE));
+        for table in [ES_FINANCE, DE_FINANCE, PT_FINANCE, CA_FINANCE] {
+            for (key, text) in table {
+                assert_eq!(holes(key), holes(text), "{key}");
+                assert_ne!(text, key, "{key}");
+            }
+        }
+        assert_eq!(
+            fill("en", "Delete {label}? Say yes and I will remove it.", &[("label", "Cash")]),
+            "Delete Cash? Say yes and I will remove it."
+        );
     }
 }

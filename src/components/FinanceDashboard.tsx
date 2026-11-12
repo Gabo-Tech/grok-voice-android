@@ -14,6 +14,7 @@ import {
   plannedHits,
   projectWindow,
   type ComingRow,
+  type Projection,
   type RateBook,
 } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
@@ -61,7 +62,10 @@ export function FinanceDashboard({
   const income = useMemo(() => comingRows(rules, txs, today, "in"), [rules, txs, today]);
   const planned = useMemo(() => plannedHits(rules, txs, today), [rules, txs, today]);
   const monthPlan = useMemo(() => projectWindow(flow, planned, today, bounds.end, today, true), [flow, planned, today, bounds.end]);
-  const nextPlan = useMemo(() => projectWindow(flow, planned, today, addDays(today, 30), today, true), [flow, planned, today]);
+  const horizon = addDays(today, 30);
+  const yesterday = addDays(today, -1);
+  const nextPlan = useMemo(() => projectWindow([], planned, today, horizon, today, false), [planned, today, horizon]);
+  const overduePlan = useMemo(() => projectWindow([], planned, "1970-01-01", yesterday, today, false), [planned, today, yesterday]);
   const nowMs = finance.snapshot.fx?.fetchedMs ? Date.now() : Date.now();
   const hero = useMemo(
     () => combinedMinor(worth.map((row) => ({ amountMinor: row.net, currency: row.currency })), display, book, nowMs),
@@ -229,18 +233,50 @@ export function FinanceDashboard({
             </div>
           ))
         )}
-        {nextPlan.length > 0 ? (
-          <div className="mt-4">
-            <p className="text-sm font-medium">{t("Next 30 days")}</p>
-            {nextPlan.map((row) => (
-              <p key={row.currency} className="fin-muted mt-1 text-sm">
-                {formatMoney(row.projected, row.currency)} · {t("Includes anything still unpaid.")}
-              </p>
-            ))}
-          </div>
-        ) : null}
       </section>
+      <NextThirty next={nextPlan} overdue={overduePlan} />
     </div>
+  );
+}
+
+function NextThirty({ next, overdue }: { next: Projection[]; overdue: Projection[] }) {
+  const t = useT();
+  const codes = [...new Set([...next.map((row) => row.currency), ...overdue.map((row) => row.currency)])].sort();
+  const rows = codes
+    .map((currency) => {
+      const coming = next.find((row) => row.currency === currency);
+      const late = overdue.find((row) => row.currency === currency);
+      return {
+        currency,
+        comingIn: coming?.comingIn ?? 0,
+        comingOut: coming?.comingOut ?? 0,
+        overdueIn: late?.comingIn ?? 0,
+        overdueOut: late?.comingOut ?? 0,
+      };
+    })
+    .filter((row) => row.comingIn || row.comingOut || row.overdueIn || row.overdueOut);
+  if (rows.length === 0) return null;
+  return (
+    <section className="fin-window">
+      <h2 className="fin-kicker">{t("Next 30 days")}</h2>
+      <p className="fin-muted mt-2 text-sm leading-5">{t("Planned in and out for the next 30 days, plus anything overdue. Not this month's leftover.")}</p>
+      {rows.map((row) => (
+        <div key={row.currency} className="mt-4 border-t border-border pt-3">
+          <p className="stamp">{row.currency}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Mini label={t("Incoming")} value={formatMoney(row.comingIn, row.currency)} tone="in" />
+            <Mini label={t("Outgoing")} value={formatMoney(row.comingOut, row.currency)} tone="out" />
+          </div>
+          {row.overdueIn || row.overdueOut ? (
+            <p className="fin-muted mt-2 text-sm leading-5">
+              {t("Overdue still open")}
+              {row.overdueIn ? ` · ${t("Incoming")} ${formatMoney(row.overdueIn, row.currency)}` : ""}
+              {row.overdueOut ? ` · ${t("Outgoing")} ${formatMoney(row.overdueOut, row.currency)}` : ""}
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -375,11 +411,11 @@ function ComingLine({
           {row.amountMode === "quote" && row.payoutCurrency ? ` · ${fill("Worth of {code}", { code: row.payoutCurrency })}` : ""}
         </p>
       ) : null}
-      <div className="mt-2 flex gap-2">
-        <button type="button" className="stamp min-h-12" onClick={() => onPaid(row.id, row.date)}>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className="stamp min-h-12 max-w-full px-3 whitespace-normal text-center leading-4" onClick={() => onPaid(row.id, row.date)}>
           {paidLabel}
         </button>
-        <button type="button" className="stamp min-h-12" onClick={() => onSkip(row.id, row.date)}>
+        <button type="button" className="stamp min-h-12 px-3" onClick={() => onSkip(row.id, row.date)}>
           {t("Skip")}
         </button>
       </div>
@@ -398,7 +434,7 @@ function FocusChip({ label, onClick }: { label: string; onClick: () => void }) {
 function Mini({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
   return (
     <div>
-      <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="text-xs leading-4 tracking-wide break-words text-muted-foreground uppercase">{label}</p>
       <p className={cn("fin-num mt-1 text-base font-medium", tone === "in" && "fin-in", tone === "out" && "fin-out")}>{value}</p>
     </div>
   );

@@ -25,6 +25,53 @@ use crate::{
 
 const SECRET: &str = "Use a short nickname. Card numbers, account numbers, and PINs are not saved.";
 
+thread_local! {
+    static SPOKEN_LOCALE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+struct LocaleGuard(String);
+
+impl Drop for LocaleGuard {
+    fn drop(&mut self) {
+        let prev = std::mem::take(&mut self.0);
+        SPOKEN_LOCALE.with(|cell| *cell.borrow_mut() = prev);
+    }
+}
+
+fn push_locale(locale: &str) -> LocaleGuard {
+    let next = if locale.trim().is_empty() { "en".to_string() } else { locale.to_string() };
+    let prev = SPOKEN_LOCALE.with(|cell| cell.replace(next));
+    LocaleGuard(prev)
+}
+
+fn spoken(template: &str, pairs: &[(&str, &str)]) -> String {
+    let locale = SPOKEN_LOCALE.with(|cell| {
+        let current = cell.borrow();
+        if current.is_empty() { "en".to_string() } else { current.clone() }
+    });
+    crate::i18n::fill(&locale, template, pairs)
+}
+
+fn and_list<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
+    let mut out = String::new();
+    for (index, name) in names.into_iter().enumerate() {
+        if index > 0 {
+            out.push_str(&spoken(" and ", &[]));
+        }
+        out.push_str(name);
+    }
+    out
+}
+
+fn cadence_spoken(cadence: &str) -> String {
+    let key = match cadence {
+        "daily" | "weekly" | "monthly" | "yearly" => cadence,
+        "every_n_days" => "every few days",
+        _ => return cadence.to_string(),
+    };
+    spoken(key, &[])
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
@@ -891,6 +938,22 @@ pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Valu
     ) {
         return Ok(None);
     }
+    let locale = {
+        let finance = app.state::<Finance>();
+        let store = finance.lock().clone();
+        currency_locale(app, &store)
+    };
+    let _guard = push_locale(&locale);
+    try_tool_inner(app, name, args).map_err(|err| crate::i18n::line(&locale, &err))
+}
+
+fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
+    if !matches!(
+        name,
+        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "mark_paid" | "export_finance_pdf"
+    ) {
+        return Ok(None);
+    }
     let finance = app.state::<Finance>();
     if name == "export_finance_pdf" {
         return export_from_tool(app, &finance, args);
@@ -947,7 +1010,7 @@ pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Valu
             } else if matches!(fold(args["action"].as_str().unwrap_or("")).as_str(), "pause" | "stop" | "resume") {
                 phrase_action(&mut store, &crate::finance_schedule::parse_phrase(&format!("{} {}", args["action"].as_str().unwrap_or(""), args["name"].as_str().unwrap_or("")), clock.today, &clock.default_currency)?, &clock)?
             } else {
-                rule_from_tool(&mut store, args, &clock)?
+                rule_from_tool(&mut store, args, &clock, false)?
             }
         }
         "save_account" => account_from_tool(&mut store, args, &clock)?,
@@ -1039,7 +1102,11 @@ fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Strin
     let future = parse_iso_date(&date).is_some_and(|value| value > clock.today);
     if future && linked {
         let label = if category.is_empty() { direction } else { category };
-        return Ok(format!("Programmed {label} of {} on {date}. It stays planned until you mark it.", format_minor(amount_minor, &currency)));
+        let amount = format_minor(amount_minor, &currency);
+        return Ok(spoken(
+            "Programmed {label} of {amount} on {date}. It stays planned until you mark it.",
+            &[("label", &label), ("amount", &amount), ("date", &date)],
+        ));
     }
     let id = alloc(store, "ft");
     store.transactions.push(Transaction {
@@ -1059,9 +1126,10 @@ fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Strin
         occurrence_date: String::new(),
     });
     let label = if category.is_empty() { direction.clone() } else { category.clone() };
-    let mut detail = format!("Saved {label} of {} on {date}.", format_minor(amount_minor, &currency));
+    let amount = format_minor(amount_minor, &currency);
+    let mut detail = spoken("Saved {label} of {amount} on {date}.", &[("label", &label), ("amount", &amount), ("date", &date)]);
     if let Some(name) = account_name(store, &account_id) {
-        detail.push_str(&format!(" Account: {name}."));
+        detail.push_str(&spoken(" Account: {name}.", &[("name", &name)]));
         detail.push_str(&balance_clause(store, &account_id));
     }
     if linked {
@@ -1075,7 +1143,7 @@ fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Strin
     Ok(detail)
 }
 
-fn rule_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, String> {
+fn rule_from_tool(store: &mut Store, args: &Value, clock: &Clock, programmed: bool) -> Result<String, String> {
     let name = clean_text(first_str(args, &["name", "title"]), 80)?;
     if name.is_empty() {
         return Err("A recurring item needs a name.".into());
@@ -1112,11 +1180,13 @@ fn rule_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Stri
     remember_category(store, &category);
     let money = match amount {
         Some(minor) => format_minor(minor, if currency.is_empty() { &clock.default_currency } else { &currency }),
-        None => "no amount".into(),
+        None => spoken("no amount", &[]),
     };
-    let mut detail = format!("Saved {name}, {money}.");
+    let template = if programmed { "Programmed {name}, {money}." } else { "Saved {name}, {money}." };
+    let mut detail = spoken(template, &[("name", &name), ("money", &money)]);
     if recurrence::is_repeating(&cadence) {
-        detail.push_str(&format!(" Repeats {cadence}."));
+        let word = cadence_spoken(&cadence);
+        detail.push_str(&spoken(" Repeats {cadence}.", &[("cadence", &word)]));
     }
     detail.push_str(&calendar_clause(&cadence, &date_raw));
     let _ = saved;
@@ -1202,7 +1272,7 @@ fn phrase_schedule(store: &mut Store, parsed: &crate::finance_schedule::Parsed, 
         "payoutCurrency": parsed.payout_currency,
         "openEnded": parsed.end_kind == "none"
     });
-    let detail = rule_from_tool(store, &args, clock)?;
+    let detail = rule_from_tool(store, &args, clock, true)?;
     if let Some(rule) = store.rules.iter_mut().rev().find(|rule| fold(&rule.name) == fold(&parsed.name)) {
         rule.start_date = parsed.start_date.clone();
         rule.next_date = parsed.start_date.clone();
@@ -1211,13 +1281,15 @@ fn phrase_schedule(store: &mut Store, parsed: &crate::finance_schedule::Parsed, 
             rule.end_count = 0;
         }
     }
-    Ok(detail.replacen("Saved", "Programmed", 1))
+    Ok(detail)
 }
 
 fn phrase_payout(store: &mut Store, parsed: &crate::finance_schedule::Parsed, clock: &Clock) -> Result<String, String> {
     if let Some(found) = locate_account(store, "", &parsed.account_name, "investment")? {
         if store.accounts[found.index].kind != "investment" {
-            return Err(format!("{} is already a {}. Say if that should change.", store.accounts[found.index].name, store.accounts[found.index].kind));
+            let found_name = store.accounts[found.index].name.clone();
+            let found_kind = store.accounts[found.index].kind.clone();
+            return Err(spoken("{name} is already a {kind}. Say if that should change.", &[("name", &found_name), ("kind", &found_kind)]));
         }
     }
     account_from_tool(
@@ -1232,7 +1304,7 @@ fn phrase_payout(store: &mut Store, parsed: &crate::finance_schedule::Parsed, cl
         clock,
     )?;
     let mut detail = phrase_schedule(store, parsed, clock)?;
-    detail.push_str(" Principal stays the amount you entered.");
+    detail.push_str(&spoken(" Principal stays the amount you entered.", &[]));
     Ok(detail)
 }
 
@@ -1246,7 +1318,12 @@ fn phrase_action(store: &mut Store, parsed: &crate::finance_schedule::Parsed, cl
     store.rules[index].status = status.into();
     store.rules[index].updated_ms = clock.ms;
     let name = store.rules[index].name.clone();
-    Ok(format!("{name} is {status}."))
+    let word = match status {
+        "paused" => spoken("paused", &[]),
+        "stopped" => spoken("stopped", &[]),
+        _ => spoken("active", &[]),
+    };
+    Ok(spoken("{name} is {status}.", &[("name", &name), ("status", &word)]))
 }
 
 fn rule_by_name(store: &Store, name: &str) -> Result<usize, String> {
@@ -1256,7 +1333,8 @@ fn rule_by_name(store: &Store, name: &str) -> Result<usize, String> {
         return Ok(exact[0]);
     }
     if exact.len() > 1 {
-        return Err(format!("Which payment? I found {}.", exact.iter().map(|index| store.rules[*index].name.as_str()).collect::<Vec<_>>().join(" and ")));
+        let names = and_list(exact.iter().map(|index| store.rules[*index].name.as_str()));
+        return Err(spoken("Which payment? I found {names}.", &[("names", &names)]));
     }
     let hits: Vec<usize> = store
         .rules
@@ -1271,7 +1349,10 @@ fn rule_by_name(store: &Store, name: &str) -> Result<usize, String> {
     match hits.len() {
         1 => Ok(hits[0]),
         0 => Err("Which payment?".into()),
-        _ => Err(format!("Which payment? I found {}.", hits.iter().map(|index| store.rules[*index].name.as_str()).collect::<Vec<_>>().join(" and "))),
+        _ => {
+            let names = and_list(hits.iter().map(|index| store.rules[*index].name.as_str()));
+            Err(spoken("Which payment? I found {names}.", &[("names", &names)]))
+        }
     }
 }
 
@@ -1279,7 +1360,7 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
     if let Some(code) = args.get("defaultCurrency").and_then(|value| value.as_str()).filter(|value| !value.trim().is_empty()) {
         store.default_currency = canonical_currency(code)?;
         if args["name"].as_str().unwrap_or("").trim().is_empty() {
-            return Ok(format!("Default currency is {} when you do not name one.", store.default_currency));
+            return Ok(spoken("Default currency is {code} when you do not name one.", &[("code", &store.default_currency)]));
         }
     }
     let name = clean_text(args["name"].as_str().unwrap_or(""), 80)?;
@@ -1563,16 +1644,19 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
 }
 
 fn account_detail(account: &Account) -> String {
-    let mut parts = vec![format!("Saved {}.", account.name)];
+    let mut parts = vec![spoken("Saved {name}.", &[("name", &account.name)])];
     match account.balance_minor {
-        Some(minor) => parts.push(format!("Stated balance {}.", format_minor(minor, &account.currency))),
-        None => parts.push("No balance was stated.".into()),
+        Some(minor) => {
+            let amount = format_minor(minor, &account.currency);
+            parts.push(spoken("Stated balance {amount}.", &[("amount", &amount)]));
+        }
+        None => parts.push(spoken("No balance was stated.", &[])),
     }
     let dated = if account.kind == "investment" { account.contribution_date.as_str() } else { account.due_date.as_str() };
     if dated.is_empty() {
-        parts.push("No due date was set, so Calendar was left alone.".into());
+        parts.push(spoken("No due date was set, so Calendar was left alone.", &[]));
     } else {
-        parts.push(format!("Date {dated} is on this app's Calendar."));
+        parts.push(spoken("Date {dated} is on this app's Calendar.", &[("dated", dated)]));
     }
     parts.join(" ")
 }
@@ -1943,7 +2027,7 @@ fn apply_delete(store: &mut Store, args: &Value) -> Result<String, String> {
             let label = store.accounts[index].name.clone();
             let id = store.accounts[index].id.clone();
             remove_account(store, &id)?;
-            Ok(format!("Deleted the account {label}. Transactions stay in Activity."))
+            Ok(spoken("Deleted the account {label}. Transactions stay in Activity.", &[("label", &label)]))
         }
         "transaction" | "entry" => {
             let before = store.transactions.len();
@@ -1951,7 +2035,7 @@ fn apply_delete(store: &mut Store, args: &Value) -> Result<String, String> {
             if store.transactions.len() == before {
                 return Err("No transaction with that id.".into());
             }
-            Ok("Deleted that transaction.".into())
+            Ok(spoken("Deleted that transaction.", &[]))
         }
         "rule" | "recurring" => {
             let id = if id.is_empty() {
@@ -1964,7 +2048,7 @@ fn apply_delete(store: &mut Store, args: &Value) -> Result<String, String> {
             if store.rules.len() == before {
                 return Err("No recurring item with that id.".into());
             }
-            Ok("Deleted that recurring item and its Calendar date.".into())
+            Ok(spoken("Deleted that recurring item and its Calendar date.", &[]))
         }
         _ => Err("Kind is account, transaction, or rule.".into()),
     }
@@ -1986,7 +2070,7 @@ fn describe_delete(store: &Store, args: &Value) -> Result<String, String> {
         }
         _ => return Err("Kind is account, transaction, or rule.".into()),
     };
-    Ok(format!("Delete {label}? Say yes and I will remove it."))
+    Ok(spoken("Delete {label}? Say yes and I will remove it.", &[("label", &label)]))
 }
 
 #[derive(Debug)]
@@ -2041,7 +2125,8 @@ fn locate_account(store: &Store, id: &str, name: &str, kind: &str) -> Result<Opt
 
 fn which_account(store: &Store, indexes: &[usize]) -> String {
     let names: Vec<&str> = indexes.iter().map(|index| store.accounts[*index].name.as_str()).collect();
-    format!("Which account? I found {}.", names.join(" and "))
+    let found = and_list(names);
+    spoken("Which account? I found {names}.", &[("names", &found)])
 }
 
 fn resolve_account(store: &mut Store, id: &str, name: &str, kind: &str, currency: &str, clock: &Clock, create: bool) -> Result<String, String> {
@@ -2293,16 +2378,20 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
 
 fn speak_totals(totals: &[PeriodTotal], month: &str) -> String {
     if totals.is_empty() {
-        return format!("No income or expenses are saved for {month}.");
+        return spoken("No income or expenses are saved for {month}.", &[("month", month)]);
     }
     totals
         .iter()
         .map(|row| {
-            let spent = if row.expense_minor == 0 { "nothing".into() } else { format_minor(row.expense_minor, &row.currency) };
-            let got = if row.income_minor == 0 { "nothing".into() } else { format_minor(row.income_minor, &row.currency) };
-            let mut line = format!("Spent {spent} and received {got} in {month} in {}.", row.currency);
+            let spent = if row.expense_minor == 0 { spoken("nothing", &[]) } else { format_minor(row.expense_minor, &row.currency) };
+            let got = if row.income_minor == 0 { spoken("nothing", &[]) } else { format_minor(row.income_minor, &row.currency) };
+            let mut line = spoken(
+                "Spent {spent} and received {got} in {month} in {code}.",
+                &[("spent", &spent), ("got", &got), ("month", month), ("code", &row.currency)],
+            );
             if row.payment_minor > 0 {
-                line.push_str(&format!(" Payments were {}.", format_minor(row.payment_minor, &row.currency)));
+                let amount = format_minor(row.payment_minor, &row.currency);
+                line.push_str(&spoken(" Payments were {amount}.", &[("amount", &amount)]));
             }
             line
         })
@@ -2321,13 +2410,13 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
         .collect();
     if indexes.is_empty() {
         return match kind {
-            "cash" => "No cash account is saved.".into(),
-                    "credit_card" => "No credit card is saved.".into(),
-                    "loan" => "No loan is saved.".into(),
-                    "other_debt" => "No other debt is saved.".into(),
-            "investment" => "No investment is saved.".into(),
-            "bank" => "No bank account is saved.".into(),
-            _ => "No matching account is saved.".into(),
+            "cash" => spoken("No cash account is saved.", &[]),
+            "credit_card" => spoken("No credit card is saved.", &[]),
+            "loan" => spoken("No loan is saved.", &[]),
+            "other_debt" => spoken("No other debt is saved.", &[]),
+            "investment" => spoken("No investment is saved.", &[]),
+            "bank" => spoken("No bank account is saved.", &[]),
+            _ => spoken("No matching account is saved.", &[]),
         };
     }
     indexes
@@ -2335,12 +2424,15 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
         .map(|index| {
             let account = &store.accounts[index];
             match shown_balance(account, &store.transactions) {
-                None => format!("{} has no balance saved.", account.name),
-                Some(minor) => match account.kind.as_str() {
-                    "credit_card" | "loan" | "other_debt" => format!("{} owes {}.", account.name, format_minor(minor, &account.currency)),
-                    "investment" => format!("{} is worth {}.", account.name, format_minor(minor, &account.currency)),
-                    _ => format!("{} is {}.", account.name, format_minor(minor, &account.currency)),
-                },
+                None => spoken("{name} has no balance saved.", &[("name", &account.name)]),
+                Some(minor) => {
+                    let amount = format_minor(minor, &account.currency);
+                    match account.kind.as_str() {
+                        "credit_card" | "loan" | "other_debt" => spoken("{name} owes {amount}.", &[("name", &account.name), ("amount", &amount)]),
+                        "investment" => spoken("{name} is worth {amount}.", &[("name", &account.name), ("amount", &amount)]),
+                        _ => spoken("{name} is {amount}.", &[("name", &account.name), ("amount", &amount)]),
+                    }
+                }
             }
         })
         .collect::<Vec<_>>()
@@ -2349,20 +2441,27 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
 
 fn speak_upcoming(rows: &[Upcoming]) -> String {
     if rows.is_empty() {
-        return "Nothing is scheduled.".into();
+        return spoken("Nothing is scheduled.", &[]);
     }
     let body = rows
         .iter()
         .take(3)
-        .map(|row| match row.amount_minor {
-            Some(amount) if amount > 0 && !row.currency.is_empty() => {
-                format!("{} on {} ({}, {})", row.title, row.date, format_minor(amount, &row.currency), relative_days(row.days_until))
+        .map(|row| {
+            let when = relative_days(row.days_until);
+            match row.amount_minor {
+                Some(amount) if amount > 0 && !row.currency.is_empty() => {
+                    let money = format_minor(amount, &row.currency);
+                    spoken(
+                        "{title} on {date} ({amount}, {when})",
+                        &[("title", &row.title), ("date", &row.date), ("amount", &money), ("when", &when)],
+                    )
+                }
+                _ => spoken("{title} on {date} ({when})", &[("title", &row.title), ("date", &row.date), ("when", &when)]),
             }
-            _ => format!("{} on {} ({})", row.title, row.date, relative_days(row.days_until)),
         })
         .collect::<Vec<_>>()
         .join("; ");
-    format!("Next: {body}.")
+    spoken("Next: {body}.", &[("body", &body)])
 }
 
 fn balance_clause(store: &Store, account_id: &str) -> String {
@@ -2370,8 +2469,11 @@ fn balance_clause(store: &Store, account_id: &str) -> String {
         return String::new();
     };
     match shown_balance(account, &store.transactions) {
-        Some(minor) => format!(" Shown balance {}.", format_minor(minor, &account.currency)),
-        None => " No balance is saved, so none was invented.".into(),
+        Some(minor) => {
+            let amount = format_minor(minor, &account.currency);
+            spoken(" Shown balance {amount}.", &[("amount", &amount)])
+        }
+        None => spoken(" No balance is saved, so none was invented.", &[]),
     }
 }
 
@@ -2384,11 +2486,11 @@ fn is_link_date(date: &str, direction: &str, today: NaiveDate) -> bool {
 
 fn calendar_clause(cadence: &str, date: &str) -> String {
     if date.is_empty() {
-        " No date was set, so Calendar was left alone.".into()
+        spoken(" No date was set, so Calendar was left alone.", &[])
     } else if recurrence::is_repeating(cadence) {
-        " That date repeats on this app's Calendar.".into()
+        spoken(" That date repeats on this app's Calendar.", &[])
     } else {
-        " That date is on this app's Calendar.".into()
+        spoken(" That date is on this app's Calendar.", &[])
     }
 }
 
@@ -3150,7 +3252,8 @@ fn roll_schedule(store: &mut Store, index: usize, extra: Option<NaiveDate>, cloc
             if store.rules[index].status == "completed" {
                 store.rules[index].status = "active".into();
             }
-            format!("Next {name} is {}.", iso(next))
+            let date = iso(next);
+            spoken("Next {name} is {date}.", &[("name", &name), ("date", &date)])
         }
         None => {
             store.rules[index].next_date.clear();
@@ -3158,7 +3261,11 @@ fn roll_schedule(store: &mut Store, index: usize, extra: Option<NaiveDate>, cloc
             if spec.end_kind == "after_count" || spec.cadence.is_empty() {
                 store.rules[index].status = "completed".into();
             }
-            format!("{name} is marked paid.")
+            if store.rules[index].direction == "income" {
+                spoken("{name} is marked received.", &[("name", &name)])
+            } else {
+                spoken("{name} is marked paid.", &[("name", &name)])
+            }
         }
     }
 }
@@ -3198,7 +3305,10 @@ fn mark_paid(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, S
         match hits.len() {
             1 => hits[0],
             0 => return Err("Which payment?".into()),
-            _ => return Err(format!("Which payment? I found {}.", hits.iter().map(|index| store.rules[*index].name.as_str()).collect::<Vec<_>>().join(" and "))),
+            _ => {
+                let names = and_list(hits.iter().map(|index| store.rules[*index].name.as_str()));
+                return Err(spoken("Which payment? I found {names}.", &[("names", &names)]));
+            }
         }
     };
     let rule = store.rules[index].clone();
@@ -3219,7 +3329,7 @@ fn mark_paid(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, S
         iso(clock.today)
     };
     if store.transactions.iter().any(|tx| tx.rule_id == rule.id && tx.occurrence_date == occurrence) {
-        return Ok(format!("{} is already marked for {occurrence}.", rule.name));
+        return Ok(spoken("{name} is already marked for {date}.", &[("name", &rule.name), ("date", &occurrence)]));
     }
     let posted = if explicit.is_empty() { iso(clock.today) } else { explicit };
     let id = alloc(store, "ft");
@@ -3240,16 +3350,23 @@ fn mark_paid(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, S
         occurrence_date: occurrence.clone(),
     });
     let rolled = roll_schedule(store, index, parse_iso_date(&occurrence), clock);
-    let verb = if direction == "income" { "received" } else { "paid" };
-    Ok(format!("Marked {} {verb}, {}. {rolled}", rule.name, format_minor(amount, &currency)))
+    let verb = spoken(if direction == "income" { "received" } else { "paid" }, &[]);
+    let amount_label = format_minor(amount, &currency);
+    Ok(spoken(
+        "Marked {name} {verb}, {amount}. {rolled}",
+        &[("name", &rule.name), ("verb", &verb), ("amount", &amount_label), ("rolled", &rolled)],
+    ))
 }
 
 fn relative_days(days: i64) -> String {
     match days {
-        i64::MIN..=-1 => "overdue".into(),
-        0 => "today".into(),
-        1 => "tomorrow".into(),
-        n => format!("in {n} days"),
+        i64::MIN..=-1 => spoken("overdue", &[]),
+        0 => spoken("today", &[]),
+        1 => spoken("tomorrow", &[]),
+        n => {
+            let count = n.to_string();
+            spoken("in {n} days", &[("n", &count)])
+        }
     }
 }
 
@@ -3656,64 +3773,119 @@ fn color_or(color: &str) -> String {
 
 fn tr(locale: &str, key: &str) -> String {
     let lang = crate::i18n::normalize(locale);
-    let line = match (lang, key) {
-        ("es", "Finance summary") => "Resumen de finanzas",
-        ("es", "On this phone. No bank login.") => "En este telefono. Sin acceso al banco.",
-        ("es", "Balances are what you last said.") => "Los saldos son lo ultimo que dijiste.",
-        ("es", "No exchange rate is applied.") => "No se aplica ningun tipo de cambio.",
-        ("es", "Net") => "Neto",
-        ("es", "Net worth") => "Patrimonio neto",
-        ("de", "Net worth") => "Vermoegen",
-        ("pt", "Net worth") => "Patrimonio liquido",
-        ("ca", "Net worth") => "Patrimoni net",
-        ("es", "Money") => "Dinero",
-        ("es", "Debts") => "Deudas",
-        ("es", "Investments") => "Inversiones",
-        ("es", "Not set") => "Sin indicar",
-        ("es", "Money, debts, and investments") => "Dinero, deudas e inversiones",
-        ("es", "Every account") => "Cada cuenta",
-        ("es", "Income and expenses") => "Ingresos y gastos",
-        ("es", "Income") => "Ingresos",
-        ("es", "Expenses") => "Gastos",
-        ("es", "Payments") => "Pagos",
-        ("es", "By category") => "Por categoria",
-        ("es", "Expense") => "Gasto",
-        ("es", "Six months") => "Seis meses",
-        ("es", "Debts owed") => "Deudas",
-        ("es", "Holdings") => "Posiciones",
-        ("es", "Worth") => "Valor",
-        ("es", "Activity") => "Movimientos",
-        ("de", "Finance summary") => "Finanzueberblick",
-        ("de", "Net") => "Saldo",
-        ("de", "Money") => "Geld",
-        ("de", "Debts") => "Schulden",
-        ("de", "Investments") => "Anlagen",
-        ("de", "Income") => "Einnahmen",
-        ("de", "Expenses") => "Ausgaben",
-        ("de", "Payments") => "Zahlungen",
-        ("de", "Activity") => "Bewegungen",
-        ("de", "Six months") => "Sechs Monate",
-        ("de", "No exchange rate is applied.") => "Es wird kein Wechselkurs angewendet.",
-        ("pt", "Finance summary") => "Resumo financeiro",
-        ("pt", "Net") => "Liquido",
-        ("pt", "Money") => "Dinheiro",
-        ("pt", "Debts") => "Dividas",
-        ("pt", "Investments") => "Investimentos",
-        ("pt", "Income") => "Receitas",
-        ("pt", "Expenses") => "Gastos",
-        ("pt", "Activity") => "Movimentos",
-        ("ca-ES-valencia", "Finance summary") => "Resum de finances",
-        ("ca-ES-valencia", "Net") => "Net",
-        ("ca-ES-valencia", "Money") => "Diners",
-        ("ca-ES-valencia", "Debts") => "Deutes",
-        ("ca-ES-valencia", "Investments") => "Inversions",
-        ("ca-ES-valencia", "Income") => "Ingressos",
-        ("ca-ES-valencia", "Expenses") => "Despeses",
-        ("ca-ES-valencia", "Activity") => "Moviments",
-        _ => key,
+    let table: &[(&str, &str)] = match lang {
+        "es" => ES_PDF,
+        "de" => DE_PDF,
+        "pt" => PT_PDF,
+        "ca-ES-valencia" => CA_PDF,
+        _ => &[],
     };
-    line.to_string()
+    table.iter().find(|(id, _)| *id == key).map(|(_, text)| (*text).to_string()).unwrap_or_else(|| key.to_string())
 }
+
+const ES_PDF: &[(&str, &str)] = &[
+    ("Finance summary", "Resumen de finanzas"),
+    ("On this phone. No bank login.", "En este teléfono. Sin acceso al banco."),
+    ("Balances are what you last said.", "Los saldos son lo último que dijiste."),
+    ("No exchange rate is applied.", "No se aplica ningún tipo de cambio."),
+    ("Net", "Neto"),
+    ("Net worth", "Patrimonio neto"),
+    ("Money", "Dinero"),
+    ("Debts", "Deudas"),
+    ("Investments", "Inversiones"),
+    ("Not set", "Sin indicar"),
+    ("Money, debts, and investments", "Dinero, deudas e inversiones"),
+    ("Every account", "Cada cuenta"),
+    ("Income and expenses", "Ingresos y gastos"),
+    ("Income", "Ingresos"),
+    ("Expenses", "Gastos"),
+    ("Payments", "Pagos"),
+    ("By category", "Por categoría"),
+    ("Expense", "Gasto"),
+    ("Six months", "Seis meses"),
+    ("Debts owed", "Deudas pendientes"),
+    ("Holdings", "Posiciones"),
+    ("Worth", "Valor"),
+    ("Activity", "Movimientos"),
+];
+
+const DE_PDF: &[(&str, &str)] = &[
+    ("Finance summary", "Finanzüberblick"),
+    ("On this phone. No bank login.", "Auf diesem Telefon. Kein Bankzugang."),
+    ("Balances are what you last said.", "Die Salden sind, was du zuletzt gesagt hast."),
+    ("No exchange rate is applied.", "Es wird kein Wechselkurs angewendet."),
+    ("Net", "Saldo"),
+    ("Net worth", "Vermögen"),
+    ("Money", "Geld"),
+    ("Debts", "Schulden"),
+    ("Investments", "Anlagen"),
+    ("Not set", "Nicht angegeben"),
+    ("Money, debts, and investments", "Geld, Schulden und Anlagen"),
+    ("Every account", "Jedes Konto"),
+    ("Income and expenses", "Einnahmen und Ausgaben"),
+    ("Income", "Einnahmen"),
+    ("Expenses", "Ausgaben"),
+    ("Payments", "Zahlungen"),
+    ("By category", "Nach Kategorie"),
+    ("Expense", "Ausgabe"),
+    ("Six months", "Sechs Monate"),
+    ("Debts owed", "Offene Schulden"),
+    ("Holdings", "Bestände"),
+    ("Worth", "Wert"),
+    ("Activity", "Bewegungen"),
+];
+
+const PT_PDF: &[(&str, &str)] = &[
+    ("Finance summary", "Resumo financeiro"),
+    ("On this phone. No bank login.", "Neste telefone. Sem acesso ao banco."),
+    ("Balances are what you last said.", "Os saldos são o que você disse por último."),
+    ("No exchange rate is applied.", "Nenhum câmbio é aplicado."),
+    ("Net", "Líquido"),
+    ("Net worth", "Patrimônio líquido"),
+    ("Money", "Dinheiro"),
+    ("Debts", "Dívidas"),
+    ("Investments", "Investimentos"),
+    ("Not set", "Não indicado"),
+    ("Money, debts, and investments", "Dinheiro, dívidas e investimentos"),
+    ("Every account", "Cada conta"),
+    ("Income and expenses", "Receitas e despesas"),
+    ("Income", "Receitas"),
+    ("Expenses", "Despesas"),
+    ("Payments", "Pagamentos"),
+    ("By category", "Por categoria"),
+    ("Expense", "Despesa"),
+    ("Six months", "Seis meses"),
+    ("Debts owed", "Dívidas em aberto"),
+    ("Holdings", "Posições"),
+    ("Worth", "Valor"),
+    ("Activity", "Movimentos"),
+];
+
+const CA_PDF: &[(&str, &str)] = &[
+    ("Finance summary", "Resum de finances"),
+    ("On this phone. No bank login.", "En este telèfon. Sense accés al banc."),
+    ("Balances are what you last said.", "Els saldos són l'últim que has dit."),
+    ("No exchange rate is applied.", "No s'aplica cap tipus de canvi."),
+    ("Net", "Saldo"),
+    ("Net worth", "Patrimoni net"),
+    ("Money", "Diners"),
+    ("Debts", "Deutes"),
+    ("Investments", "Inversions"),
+    ("Not set", "Sense indicar"),
+    ("Money, debts, and investments", "Diners, deutes i inversions"),
+    ("Every account", "Cada compte"),
+    ("Income and expenses", "Ingressos i despeses"),
+    ("Income", "Ingressos"),
+    ("Expenses", "Despeses"),
+    ("Payments", "Pagaments"),
+    ("By category", "Per categoria"),
+    ("Expense", "Despesa"),
+    ("Six months", "Sis mesos"),
+    ("Debts owed", "Deutes pendents"),
+    ("Holdings", "Posicions"),
+    ("Worth", "Valor"),
+    ("Activity", "Moviments"),
+];
 
 fn export_from_tool(app: &AppHandle, finance: &Finance, args: &Value) -> Result<Option<Value>, String> {
     if !args["confirmed"].as_bool().unwrap_or(false) {
@@ -3721,7 +3893,7 @@ fn export_from_tool(app: &AppHandle, finance: &Finance, args: &Value) -> Result<
         return Ok(Some(json!({
             "ok": false,
             "needsConfirm": true,
-            "detail": format!("Export the Finance summary for {period} as a PDF and open the share sheet? Say yes. Nothing is uploaded.")
+            "detail": spoken("Export the Finance summary for {period} as a PDF and open the share sheet? Say yes. Nothing is uploaded.", &[("period", period)])
         })));
     }
     let request = PdfRequest {
@@ -3737,7 +3909,7 @@ fn export_from_tool(app: &AppHandle, finance: &Finance, args: &Value) -> Result<
     let exported = finance.export_pdf(app, &request)?;
     Ok(Some(json!({
         "ok": true,
-        "detail": format!("Saved {}. The share sheet is open. Nothing was uploaded.", exported.file_name),
+        "detail": spoken("Saved {file}. The share sheet is open. Nothing was uploaded.", &[("file", &exported.file_name)]),
         "fileName": exported.file_name,
         "shared": exported.shared
     })))
@@ -3877,7 +4049,7 @@ mod tests {
         assert!(spoken.contains("received nothing"));
         let cash = speak(&store, &Ask { view: String::new(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: "cash".into() }, clock.today);
         assert!(cash.contains("no balance saved"));
-        rule_from_tool(&mut store, &json!({"name": "Rent", "date": "1", "cadence": "monthly"}), &clock).unwrap();
+        rule_from_tool(&mut store, &json!({"name": "Rent", "date": "1", "cadence": "monthly"}), &clock, false).unwrap();
         let rent = store.rules.iter().find(|rule| rule.name == "Rent").unwrap();
         assert!(rent.amount_minor.is_none());
         assert_eq!(rent.next_date, "2026-12-01");
@@ -3995,7 +4167,7 @@ mod tests {
     fn rent_reminder_rolls_forward_when_marked_paid() {
         let mut store = Store::default();
         let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 10).unwrap());
-        rule_from_tool(&mut store, &json!({"name": "Rent", "amount": "1200", "currency": "CHF", "cadence": "monthly", "date": "2026-12-01", "direction": "payment", "leadDays": 2}), &clock).unwrap();
+        rule_from_tool(&mut store, &json!({"name": "Rent", "amount": "1200", "currency": "CHF", "cadence": "monthly", "date": "2026-12-01", "direction": "payment", "leadDays": 2}), &clock, false).unwrap();
         let rent = store.rules.iter().find(|rule| rule.name == "Rent").unwrap();
         assert_eq!(rent.lead_days, Some(2));
         assert_eq!(pay_title(rent), "Pay Rent");
@@ -4095,5 +4267,54 @@ mod tests {
         let again = mark_paid(&mut store, &json!({"name": "Course", "date": "2026-11-12"}), &clock).unwrap();
         assert!(again.contains("already marked"));
         assert_eq!(store.transactions.iter().filter(|tx| tx.rule_id == store.rules.iter().find(|rule| rule.name == "Course").unwrap().id && tx.occurrence_date == "2026-11-12").count(), 1);
+    }
+
+    #[test]
+    fn pdf_labels_leave_english_only_for_english() {
+        let keys = [
+            "Finance summary",
+            "On this phone. No bank login.",
+            "Balances are what you last said.",
+            "No exchange rate is applied.",
+            "Net",
+            "Net worth",
+            "Money",
+            "Debts",
+            "Investments",
+            "Not set",
+            "Money, debts, and investments",
+            "Every account",
+            "Income and expenses",
+            "Income",
+            "Expenses",
+            "Payments",
+            "By category",
+            "Expense",
+            "Six months",
+            "Debts owed",
+            "Holdings",
+            "Worth",
+            "Activity",
+        ];
+        for locale in ["es", "de", "pt", "ca-ES-valencia"] {
+            for key in keys {
+                let line = tr(locale, key);
+                assert_ne!(line, key, "{locale} left {key} in English");
+            }
+        }
+        assert_eq!(tr("en", "Net worth"), "Net worth");
+        assert!(tr("de", "Net worth").contains('ö'));
+        assert!(tr("ca-ES-valencia", "Net worth").contains("Patrimoni"));
+    }
+
+    #[test]
+    fn spoken_confirmation_follows_the_app_locale() {
+        let guard = push_locale("es");
+        let line = spoken("Delete {label}? Say yes and I will remove it.", &[("label", "Caja")]);
+        assert!(line.contains("Caja"));
+        assert!(!line.contains("Say yes"), "{line}");
+        drop(guard);
+        let english = spoken("Delete {label}? Say yes and I will remove it.", &[("label", "Cash")]);
+        assert!(english.contains("Say yes"));
     }
 }
