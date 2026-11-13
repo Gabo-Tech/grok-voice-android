@@ -60,7 +60,8 @@ function pin(visibleBottom: number) {
   const el = document.activeElement;
   if (!isField(el)) return;
   const rect = el.getBoundingClientRect();
-  const delta = scrollDelta(rect.bottom, visibleBottom, 12);
+  const inSheet = Boolean(el.closest(".sheet-panel"));
+  const delta = scrollDelta(rect.bottom, visibleBottom, inSheet ? 96 : 12);
   const topGap = rect.top < 8 ? rect.top - 8 : 0;
   const move = delta !== 0 ? delta : topGap;
   if (move === 0) return;

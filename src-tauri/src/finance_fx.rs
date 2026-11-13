@@ -13,7 +13,8 @@ pub const STALE_MS: i64 = 48 * 60 * 60 * 1000;
 
 /// Fiat, first success wins. Frankfurter is called on its current host, not the redirecting one.
 pub const FIAT_PROVIDERS: &[&str] = &["frankfurter", "open-er-api", "ecb", "currency-api", "currency-api-pages"];
-/// Crypto, first success wins. Each value is coins per 1 EUR.
+/// Crypto providers, in order. Earlier books win for a code; later books only fill gaps
+/// so a five-coin primary does not hide every other ticker.
 pub const CRYPTO_PROVIDERS: &[&str] = &["coingecko", "coinbase", "kraken", "currency-api", "currency-api-pages"];
 
 const FIAT_CODES: &[&str] = &[
@@ -66,10 +67,11 @@ pub struct Converted {
 }
 
 pub fn exponent(currency: &str) -> u32 {
-    match currency {
+    let code = currency.to_ascii_uppercase();
+    match code.as_str() {
         "JPY" | "KRW" | "VND" | "CLP" => 0,
         "BHD" | "KWD" | "OMR" => 3,
-        "BTC" | "ETH" | "XMR" | "SOL" | "LTC" => 8,
+        _ if is_crypto(&code) => 8,
         _ => 2,
     }
 }
@@ -217,7 +219,7 @@ pub fn fetch_book(previous: &FxBook, now_ms: i64) -> Result<FxBook, String> {
 pub fn fetch_book_with(previous: &FxBook, now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>) -> Result<FxBook, String> {
     let mut next = previous.clone();
     let fiat_ok = first_ok(FIAT_PROVIDERS, get, |id, body| apply_fiat(id, body, &mut next));
-    let crypto_ok = first_ok(CRYPTO_PROVIDERS, get, |id, body| apply_crypto(id, body, &mut next));
+    let crypto_ok = merge_crypto(get, &mut next);
     if !fiat_ok && !crypto_ok {
         return Err("Could not refresh rates. Native amounts stay.".into());
     }
@@ -226,6 +228,18 @@ pub fn fetch_book_with(previous: &FxBook, now_ms: i64, get: &dyn Fn(&str) -> Res
         next.fiat_fetched_ms = now_ms;
     }
     Ok(next)
+}
+
+fn merge_crypto(get: &dyn Fn(&str) -> Result<String, String>, book: &mut FxBook) -> bool {
+    let mut any = false;
+    for id in CRYPTO_PROVIDERS {
+        let Some(url) = provider_url(id) else { continue };
+        let Ok(body) = get(url) else { continue };
+        if apply_crypto(id, &body, book) {
+            any = true;
+        }
+    }
+    any
 }
 
 fn first_ok(ids: &[&str], get: &dyn Fn(&str) -> Result<String, String>, mut apply: impl FnMut(&str, &str) -> bool) -> bool {
@@ -290,6 +304,9 @@ fn apply_crypto(id: &str, body: &str, book: &mut FxBook) -> bool {
         return false;
     }
     for (code, per) in legs {
+        if book.per_eur.iter().any(|row| row.currency.eq_ignore_ascii_case(&code)) {
+            continue;
+        }
         put_leg(book, &code, per);
     }
     true
@@ -302,8 +319,40 @@ fn invert_price(code: &str, eur_price: f64) -> Option<(String, f64)> {
     Some((code.to_string(), 1.0 / eur_price))
 }
 
+pub fn is_fiat(code: &str) -> bool {
+    let code = code.to_ascii_uppercase();
+    FIAT_CODES.iter().any(|fiat| *fiat == code)
+}
+
+/// A crypto ticker, not a closed list of five coins. Three-letter codes must be known
+/// here so an ISO fiat code is not treated as a coin. Longer tickers are crypto.
 pub fn is_crypto(code: &str) -> bool {
-    matches!(code.to_ascii_uppercase().as_str(), "BTC" | "ETH" | "XMR" | "SOL" | "LTC")
+    let code = code.to_ascii_uppercase();
+    if code.is_empty() || is_fiat(&code) {
+        return false;
+    }
+    const KNOWN: &[&str] = &[
+        "BTC", "ETH", "XMR", "SOL", "LTC", "BCH", "XRP", "XLM", "DOGE", "ADA", "DOT", "AVAX", "ATOM", "LINK", "UNI", "AAVE", "MATIC", "POL", "NEAR", "APT", "SUI", "TON", "TRX", "ETC", "FIL", "ICP", "HBAR", "ALGO", "EOS", "XTZ", "DASH", "ZEC", "NEO", "USDT", "USDC", "DAI", "SHIB", "PEPE", "ARB", "OP", "INJ", "TIA", "SEI", "RENDER", "FET", "WLD", "BONK", "FLOKI",
+    ];
+    if KNOWN.contains(&code.as_str()) {
+        return true;
+    }
+    const DENY: &[&str] = &[
+        "CREDIT", "BALANCE", "WORTH", "CUSTOM", "PROPERTY", "COLLECTIBLE", "STAKE", "INCOME", "EXPENSE", "PAYMENT", "WALLET", "HOLDING", "ACCOUNT", "ASSET", "OWED", "DEBT", "CASH", "CARD", "LOAN", "FUND", "STOCK", "ABOUT", "UNITS", "BITCOIN", "ETHEREUM", "MONERO", "SOLANA", "DOGECOIN", "LITECOIN",
+    ];
+    if DENY.contains(&code.as_str()) {
+        return false;
+    }
+    let len = code.len();
+    (4..=12).contains(&len) && code.chars().all(|ch| ch.is_ascii_alphabetic())
+}
+
+pub fn is_currency_code(code: &str) -> bool {
+    let code = code.to_ascii_uppercase();
+    if is_fiat(&code) || is_crypto(&code) {
+        return true;
+    }
+    code.len() == 3 && code.chars().all(|ch| ch.is_ascii_alphabetic())
 }
 
 pub fn parse_frankfurter(body: &str) -> Result<(String, Vec<(String, f64)>), String> {
@@ -706,7 +755,7 @@ mod tests {
         assert!(!seen.iter().any(|url| url.contains("ecb.europa.eu")), "a later fiat host stays unused after a real book");
         assert!(seen.iter().any(|url| url.contains("coingecko")));
         assert!(seen.iter().any(|url| url.contains("coinbase")));
-        assert!(!seen.iter().any(|url| url.contains("kraken")));
+        assert!(seen.iter().any(|url| url.contains("kraken")), "later crypto books fill tickers the first book missed");
         let usd = convert(1_100, "USD", "EUR", &book, 5_000).unwrap();
         assert_eq!(usd.amount_minor, 1_000);
         assert_ne!(usd.amount_minor, 1_100);

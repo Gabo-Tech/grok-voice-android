@@ -8,6 +8,8 @@ import {
   cardDueDate,
   comingCashRows,
   comingRows,
+  cardDisplayMinor,
+  cardPosture,
   paymentFits,
   utilization,
   headlineOf,
@@ -633,11 +635,39 @@ assert.ok(cashComing.some((row) => row.name === "Rent"));
 assert.equal(cashComing.some((row) => row.name === "Groceries"), false);
 assert.ok(cashComing.some((row) => row.name === "Visa payment" && row.date === "2026-11-20" && row.amountMinor === 8000));
 assert.equal(cardDueDate(visa, today), "2026-11-20");
-assert.equal(paymentFits(8000, 8001), "over");
+assert.equal(paymentFits(8000, 8001), "ok");
 assert.equal(paymentFits(8000, 8000), "ok");
+assert.equal(paymentFits(-3000, 1000), "ok");
 assert.equal(paymentFits(null, 100), "unknown");
 assert.equal(utilization(4000, 8000), 0.5);
 assert.equal(utilization(4000, null), null);
+assert.equal(utilization(-139365, 1_500_000), 0);
+assert.ok((utilization(1_644_365, 1_500_000) ?? 0) > 1);
+assert.equal(cardPosture(-139365), "credit");
+assert.equal(cardDisplayMinor(-139365), 139365);
+assert.notEqual(cardDisplayMinor(-139365), 1_500_000 - -139365);
+const creditWorth = netWorth([
+  { kind: "bank", currency: "EUR", shownBalanceMinor: 42_000 },
+  { kind: "credit_card", currency: "EUR", shownBalanceMinor: -3_000 },
+]);
+assert.equal(creditWorth[0].net, 45_000);
+assert.equal(creditWorth[0].owed, -3_000);
+const overpayFlow = cashFlow(
+  [
+    { currency: "EUR", direction: "expense", amountMinor: 3_000, date: "2026-11-12" },
+    { currency: "EUR", direction: "payment", amountMinor: 8_000, date: "2026-11-12" },
+  ],
+  "2026-11-01",
+  "2026-11-30",
+);
+assert.equal(overpayFlow[0].outgoing, 3_000);
+assert.equal(overpayFlow[0].incoming, 0);
+const quietCard = { ...visa, shownBalanceMinor: -100 };
+const noBill = comingCashRows([rentDue], [], [quietCard], today, "out");
+assert.equal(noBill.some((row) => row.name === "Visa payment"), false);
+const customWorth = netWorth([{ kind: "investment", currency: "EUR", shownBalanceMinor: 450_000 }]);
+assert.equal(customWorth[0].invested, 450_000);
+assert.equal(customWorth[0].net, 450_000);
 
 const incomeSoon: ScheduleShape = { ...inWindow, id: "pay", name: "Payday", direction: "income", startDate: "2026-12-01" };
 const incomeLate: ScheduleShape = { ...incomeSoon, id: "late", name: "Later pay", startDate: addDays(today, 31) };

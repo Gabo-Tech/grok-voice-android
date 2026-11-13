@@ -121,6 +121,18 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("Coming income, next 30 days: {body}.", "Ingresos que vienen, próximos 30 días: {body}."),
     ("{name} is {percent} of its limit.", "{name} está al {percent} de su límite."),
     ("Next payment {amount} on {date}.", "Próximo pago {amount} el {date}."),
+    ("{name} has a credit of {amount}.", "{name} tiene un saldo a favor de {amount}."),
+    ("{name} is paid up.", "{name} está pagada."),
+    ("{name} is in credit.", "{name} está a favor."),
+    ("That card is already in credit.", "Esa tarjeta ya está a favor."),
+    ("That card is already paid.", "Esa tarjeta ya está pagada."),
+    (" Shown credit {amount}.", " Saldo a favor {amount}."),
+    ("{name} now has a credit of {amount}.", "{name} ahora tiene un saldo a favor de {amount}."),
+    ("That is more than {name} holds ({have}).", "Eso es más de lo que tiene {name} ({have})."),
+    ("1 {base} is {amount}.", "1 {base} son {amount}."),
+    ("That is your manual rate.", "Ese es tu tipo manual."),
+    ("That rate is stale.", "Ese tipo está desactualizado."),
+    ("No rate is saved for {base} in {quote}. Refresh rates, or set a manual rate in Settings.", "No hay un tipo guardado de {base} a {quote}. Actualiza los tipos, o pon un tipo manual en Ajustes."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -246,6 +258,18 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("Coming income, next 30 days: {body}.", "Kommende Einnahmen, nächste 30 Tage: {body}."),
     ("{name} is {percent} of its limit.", "{name} ist bei {percent} des Limits."),
     ("Next payment {amount} on {date}.", "Nächste Zahlung {amount} am {date}."),
+    ("{name} has a credit of {amount}.", "{name} hat ein Guthaben von {amount}."),
+    ("{name} is paid up.", "{name} ist ausgeglichen."),
+    ("{name} is in credit.", "{name} ist im Plus."),
+    ("That card is already in credit.", "Diese Karte hat schon ein Guthaben."),
+    ("That card is already paid.", "Diese Karte ist schon bezahlt."),
+    (" Shown credit {amount}.", " Guthaben {amount}."),
+    ("{name} now has a credit of {amount}.", "{name} hat jetzt ein Guthaben von {amount}."),
+    ("That is more than {name} holds ({have}).", "Das ist mehr, als {name} hält ({have})."),
+    ("1 {base} is {amount}.", "1 {base} ist {amount}."),
+    ("That is your manual rate.", "Das ist dein manueller Kurs."),
+    ("That rate is stale.", "Dieser Kurs ist veraltet."),
+    ("No rate is saved for {base} in {quote}. Refresh rates, or set a manual rate in Settings.", "Für {base} in {quote} ist kein Kurs gespeichert. Kurse aktualisieren, oder in den Einstellungen einen manuellen Kurs setzen."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -371,6 +395,18 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("Coming income, next 30 days: {body}.", "Receitas a caminho, próximos 30 dias: {body}."),
     ("{name} is {percent} of its limit.", "{name} está em {percent} do limite."),
     ("Next payment {amount} on {date}.", "Próximo pagamento {amount} em {date}."),
+    ("{name} has a credit of {amount}.", "{name} tem um crédito de {amount}."),
+    ("{name} is paid up.", "{name} está paga."),
+    ("{name} is in credit.", "{name} está a favor."),
+    ("That card is already in credit.", "Esse cartão já está a favor."),
+    ("That card is already paid.", "Esse cartão já está pago."),
+    (" Shown credit {amount}.", " Crédito de {amount}."),
+    ("{name} now has a credit of {amount}.", "{name} agora tem um crédito de {amount}."),
+    ("That is more than {name} holds ({have}).", "Isso é mais do que {name} tem ({have})."),
+    ("1 {base} is {amount}.", "1 {base} é {amount}."),
+    ("That is your manual rate.", "Essa é a sua taxa manual."),
+    ("That rate is stale.", "Essa taxa está desatualizada."),
+    ("No rate is saved for {base} in {quote}. Refresh rates, or set a manual rate in Settings.", "Não há taxa salva de {base} para {quote}. Atualiza as taxas, ou define uma taxa manual em Ajustes."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -496,4 +532,16 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("Coming income, next 30 days: {body}.", "Ingressos que venen, propers 30 dies: {body}."),
     ("{name} is {percent} of its limit.", "{name} està al {percent} del límit."),
     ("Next payment {amount} on {date}.", "Pròxim pagament {amount} el {date}."),
+    ("{name} has a credit of {amount}.", "{name} té un saldo a favor de {amount}."),
+    ("{name} is paid up.", "{name} està pagada."),
+    ("{name} is in credit.", "{name} està a favor."),
+    ("That card is already in credit.", "Eixa targeta ja està a favor."),
+    ("That card is already paid.", "Eixa targeta ja està pagada."),
+    (" Shown credit {amount}.", " Saldo a favor {amount}."),
+    ("{name} now has a credit of {amount}.", "{name} ara té un saldo a favor de {amount}."),
+    ("That is more than {name} holds ({have}).", "Això és més del que té {name} ({have})."),
+    ("1 {base} is {amount}.", "1 {base} és {amount}."),
+    ("That is your manual rate.", "Eixa és la teua taxa manual."),
+    ("That rate is stale.", "Eixa taxa està desfasada."),
+    ("No rate is saved for {base} in {quote}. Refresh rates, or set a manual rate in Settings.", "No hi ha una taxa guardada de {base} a {quote}. Actualitza les taxes, o posa una taxa manual a Ajustos."),
 ];

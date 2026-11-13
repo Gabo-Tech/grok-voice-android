@@ -203,10 +203,10 @@ export function FinanceCarousel({
     if (trend.kind === "missing") cards.push(blocked(trend.missing, "trend", t("Six months")));
     else if (trend.kind === "points") cards.push({ key: "trend", title: t("Six months"), body: <Trend points={trend.points} onPick={onPick} /> });
     const debts = accounts
-      .filter((account) => isDebt(account.kind) && account.shownBalanceMinor != null)
+      .filter((account) => isDebt(account.kind) && (account.shownBalanceMinor ?? 0) > 0)
       .map((account, index) => ({
         label: account.name,
-        value: Math.abs(account.shownBalanceMinor ?? 0),
+        value: account.shownBalanceMinor ?? 0,
         color: displayColor(account.color, index),
         caption: formatMoney(account.shownBalanceMinor, account.currency),
         pick: { accountId: account.id, currency: account.currency, group: "debt" as const },

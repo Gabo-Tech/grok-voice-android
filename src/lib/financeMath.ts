@@ -109,7 +109,8 @@ export function minorExp(currency: string): number {
   const code = currency.toUpperCase();
   if (code === "JPY" || code === "KRW" || code === "VND" || code === "CLP") return 0;
   if (code === "BHD" || code === "KWD" || code === "OMR") return 3;
-  if (code === "BTC" || code === "ETH" || code === "XMR" || code === "SOL" || code === "LTC") return 8;
+  if (code.length >= 4 && code.length <= 12 && /^[A-Z]+$/.test(code)) return 8;
+  if (["BTC", "ETH", "XMR", "SOL", "LTC", "DOGE", "BCH", "XRP"].includes(code)) return 8;
   return 2;
 }
 
@@ -525,16 +526,31 @@ export function cardDueDate(card: CardAccount, today: string): string {
   return card.dueDate || "";
 }
 
-/** Overpay is rejected. An unknown balance is not treated as zero owed. */
-export function paymentFits(owed: number | null, pay: number): "ok" | "over" | "unknown" {
-  if (owed == null) return "unknown";
-  if (pay > Math.max(0, owed)) return "over";
+/** Overpay is allowed and leaves a credit. An unknown balance is not treated as zero owed. */
+export function paymentFits(owed: number | null, pay: number): "ok" | "unknown" {
+  if (owed == null || !Number.isFinite(pay)) return "unknown";
   return "ok";
+}
+
+export type CardPosture = "unset" | "credit" | "paid" | "owed";
+
+export function cardPosture(owed: number | null): CardPosture {
+  if (owed == null) return "unset";
+  if (owed < 0) return "credit";
+  if (owed === 0) return "paid";
+  return "owed";
+}
+
+/** Amount to print. A credit is the positive credit, never the limit minus a negative owed. */
+export function cardDisplayMinor(owed: number | null): number | null {
+  if (owed == null) return null;
+  return owed < 0 ? -owed : owed;
 }
 
 export function utilization(owed: number | null, limit: number | null): number | null {
   if (owed == null || limit == null || limit <= 0) return null;
-  return Math.max(0, owed) / limit;
+  if (owed <= 0) return 0;
+  return owed / limit;
 }
 
 export function cardPaymentName(name: string): string {
@@ -554,12 +570,15 @@ export function comingCashRows(schedules: ScheduleShape[], txs: LinkedTx[], acco
     .filter((row) => {
       if (side !== "out") return true;
       const account = accounts.find((item) => item.id === row.accountId);
-      return !(account?.kind === "credit_card" && row.direction !== "payment");
+      if (account?.kind === "credit_card" && row.direction !== "payment") return false;
+      if (account?.kind === "credit_card" && row.direction === "payment" && account.shownBalanceMinor != null && account.shownBalanceMinor <= 0) return false;
+      return true;
     })
     .map((row) => labelCardPayment(row, accounts));
   if (side !== "out") return rows;
   for (const card of accounts) {
     if (card.kind !== "credit_card") continue;
+    if (card.shownBalanceMinor != null && card.shownBalanceMinor <= 0) continue;
     if (rows.some((row) => row.accountId === card.id && row.direction === "payment")) continue;
     const due = cardDueDate(card, today);
     if (!due || due < today || due > end) continue;

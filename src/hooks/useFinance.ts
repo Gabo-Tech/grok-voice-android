@@ -283,6 +283,19 @@ function minorOf(raw: string, currency: string): number | null {
   return Math.round(value * 10 ** exp);
 }
 
+/** Card statement balances may be zero or negative. "200 in credit" is a credit. */
+function balanceMinorOf(raw: string, currency: string): number | null {
+  const credit = /\bcredit\b/i.test(raw) && !/credit\s+(card|limit)/i.test(raw);
+  const cleaned = raw.replace(/\b(in|a|of|is|credit)\b/gi, " ").trim().replace(",", ".");
+  if (!cleaned) return null;
+  const value = Number(cleaned);
+  if (!Number.isFinite(value)) return null;
+  const exp = minorExponent(currency);
+  const minor = Math.round(Math.abs(value) * 10 ** exp);
+  if (value === 0) return 0;
+  return value < 0 || credit ? -minor : minor;
+}
+
 function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): FinanceSnapshot {
   const currency = (draft.currency || current.defaultCurrency).toUpperCase();
   const balance = minorOf(draft.balance || "", currency);
@@ -293,7 +306,7 @@ function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): F
     name: draft.name.trim(),
     kind: draft.kind || "other",
     institution: draft.institution || "",
-    balanceMinor: draft.balance?.trim() ? balance : null,
+    balanceMinor: draft.balance?.trim() ? (draft.kind === "credit_card" ? balanceMinorOf(draft.balance, currency) : balance) : null,
     currency,
     balanceAsOf: draft.balance?.trim() ? today() : "",
     balanceUpdatedMs: draft.balance?.trim() ? now : 0,

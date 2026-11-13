@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { FinanceAccount } from "@/lib/api";
+import { isCrypto } from "@/lib/money";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -18,14 +19,22 @@ export function PayWith({
   mode: "pay" | "deposit" | "fund";
 }) {
   const t = useT();
-  const cash = accounts.filter((account) => account.kind === "cash");
-  const banks = accounts.filter((account) => account.kind === "bank" || account.kind === "other" || account.kind === "savings");
+  const crypto = accounts.filter((account) => isCrypto(account.currency) && account.kind !== "credit_card" && account.kind !== "loan" && account.kind !== "other_debt");
+  const cash = accounts.filter((account) => account.kind === "cash" && !isCrypto(account.currency));
+  const banks = accounts.filter((account) => (account.kind === "bank" || account.kind === "other" || account.kind === "savings") && !isCrypto(account.currency));
   const cards = accounts.filter((account) => account.kind === "credit_card");
   const showCards = mode !== "fund";
   const label = mode === "deposit" ? t("Deposit to") : mode === "fund" ? t("From") : t("Pay with");
   return (
     <div className="space-y-3">
       <p className="text-sm leading-5 text-muted-foreground">{label}</p>
+      {crypto.length > 0 ? (
+        <ChipGroup title={t("Crypto")}>
+          {crypto.map((account) => (
+            <Chip key={account.id} on={value === account.id} onClick={() => onChange(account.id)}>{account.name}</Chip>
+          ))}
+        </ChipGroup>
+      ) : null}
       <ChipGroup title={t("Cash")}>
         {cash.map((account) => (
           <Chip key={account.id} on={value === account.id} onClick={() => onChange(account.id)}>{account.name}</Chip>

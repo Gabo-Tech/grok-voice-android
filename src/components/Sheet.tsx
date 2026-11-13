@@ -44,13 +44,13 @@ export function Sheet({
     <div className={`sheet-root ${className ?? ""}`} data-theme={theme} role="dialog" aria-modal="true" aria-label={title}>
       <button type="button" className="sheet-scrim" aria-label={t("Close")} onClick={onClose} />
       <div className="sheet-panel">
-        <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <h2 className="masthead text-lg leading-none">{title}</h2>
+        <header className="sheet-head flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h2 className="sheet-title min-w-0 flex-1 text-lg">{title}</h2>
           <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("Close")}>
             <X />
           </Button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
+        <div className="sheet-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
         {footer && <footer className="thumb-actions shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
       </div>
     </div>
