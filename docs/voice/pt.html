@@ -55,6 +55,15 @@
       <li>«Qual é o meu património?» «Quanto gastei este mês?» «O que vem nos próximos 30 dias?»</li>
       <li>Os próximos 30 dias: contas pagas em dinheiro ou num banco, e o pagamento do cartão se ainda deves. Os gastos avulsos do cartão não aparecem um a um.</li>
     </ul>
+    <h2>Finanças — várias despesas, alterações e mudanças</h2>
+    <ul>
+      <li>«Gastei 179 francos num aspirador com o Swiss card, depois 6,95 numa esfregona, depois 63,96 num purificador.» Uma frase guarda cada despesa. O Grok nomeia só as que foram guardadas, com o id.</li>
+      <li>«79,95, não, espera, 63,96 num purificador.» Só se guarda 63,96.</li>
+      <li>«Swiss card» usa o cartão que já se chama Swisscard. Espaços, hífens e um pequeno engano coincidem quando um cartão é claramente o mais próximo. O Grok não cria um cartão ao lançar uma despesa. Se dois nomes estão perto, ou nenhum coincide, pergunta e diz os mais próximos. Um cartão novo só é adicionado quando pedes para o adicionar.</li>
+      <li>«A esfregona foi 6,95, não 695.» Altera a esfregona guardada. Não acrescenta outra despesa.</li>
+      <li>«Move essas despesas do Swiss card para Dinheiro.» Os saldos e o que o cartão deve são recalculados. A mesma despesa não conta duas vezes.</li>
+      <li>«Apaga o Swiss card.» Se tem despesas, o Grok diz quantas e pergunta para onde as mover. Não diz que não há nenhuma se a lista não está vazia.</li>
+    </ul>
     <h2>Finanças — contas, cartões e crédito</h2>
     <ul>
       <li>«Adiciona um banco chamado Conta com 500 euros.»</li>

@@ -55,6 +55,15 @@
       <li>«Quin és el meu patrimoni net?» «Quant he gastat este mes?» «Què ve en els pròxims 30 dies?»</li>
       <li>Els pròxims 30 dies: factures des d’efectiu o un banc, i el pagament de la targeta si encara deus. Els càrrecs solts de la targeta no es lligen un a un.</li>
     </ul>
+    <h2>Finances — diverses despeses, canvis i trasllats</h2>
+    <ul>
+      <li>«He gastat 179 francs en una aspiradora amb la Swiss card, després 6,95 en una baieta, després 63,96 en un purificador.» Una frase guarda cada despesa. Grok anomena només les que s’han guardat, amb el seu id.</li>
+      <li>«79,95, no, espera, 63,96 en un purificador.» Només es guarda 63,96.</li>
+      <li>«Swiss card» usa la targeta que ja es diu Swisscard. Espais, guions i una petita relliscada coincideixen si una targeta és clarament la més propera. Grok no crea una targeta en anotar una despesa. Si dos noms s’acosten, o cap no coincideix, pregunta i diu els més propers. Una targeta nova només s’afig quan demanes d’afegir-la.</li>
+      <li>«La baieta van ser 6,95, no 695.» Canvia la baieta guardada. No afig una altra despesa.</li>
+      <li>«Mou eixes despeses de Swiss card a Efectiu.» Els saldos i el que es deu es recalculen. La mateixa despesa no es compta dues voltes.</li>
+      <li>«Esborra Swiss card.» Si té despeses, Grok diu quantes i pregunta on moure-les. No diu que no n’hi ha cap si la llista no està buida.</li>
+    </ul>
     <h2>Finances — comptes, targetes i crèdit</h2>
     <ul>
       <li>«Afig un banc anomenat Compte amb 500 euros.»</li>

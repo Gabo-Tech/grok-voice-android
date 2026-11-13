@@ -706,6 +706,7 @@ impl Session<'_> {
         );
         s.push_str(" share_item sends a note, reminder, or event as a draft after a clear yes. read_notifications, set_dnd, go_home, and phone_status run on this phone. Do not guess the battery or the next alarm.");
         s.push_str(crate::actions::lookup_hint());
+        s.push_str(crate::finance::voice_money_hint());
         s.push_str(&self.app.state::<crate::memory::Memory>().prompt());
         s
     }
