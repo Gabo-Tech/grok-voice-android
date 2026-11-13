@@ -3,6 +3,8 @@ import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { CASH_WALLET, PayWith } from "@/components/PayWith";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceRule } from "@/lib/api";
 import { todayIso } from "@/components/FinanceDashboard";
@@ -44,13 +46,14 @@ export function ProgramSheet({
   const [accountId, setAccountId] = useState("");
   const [leadDays, setLeadDays] = useState(2);
   const [category, setCategory] = useState("");
+  const [notes, setNotes] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = editing?.id || "new";
   if (!open && seen !== null) setSeen(null);
   if (open && seen !== key) {
     setSeen(key);
-    setStep(editing ? 4 : 0);
+    setStep(editing ? 1 : 0);
     setPreset(presetOf(editing));
     setName(editing?.name || "");
     setAmount(editing ? majorString(editing.amountMinor, editing.currency) : "");
@@ -68,6 +71,7 @@ export function ProgramSheet({
     setAccountId(editing?.accountId || "");
     setLeadDays(editing?.leadDays ?? 2);
     setCategory(editing?.category || "");
+    setNotes(editing?.notes || "");
     setConfirming(false);
   }
 
@@ -117,7 +121,8 @@ export function ProgramSheet({
   const save = () => {
     if (!name.trim() || !amount.trim()) return;
     const when = start || todayIso();
-    const account = finance.snapshot.accounts.find((row) => row.id === accountId);
+    const cash = accountId === CASH_WALLET;
+    const account = cash ? undefined : finance.snapshot.accounts.find((row) => row.id === accountId);
     finance.saveRule({
       id: editing?.id,
       name: name.trim(),
@@ -128,24 +133,25 @@ export function ProgramSheet({
       nextDate: when,
       startDate: when,
       purpose,
-      endKind: purpose === "one_off" ? "after_count" : endKind,
-      endCount: purpose === "one_off" || endKind === "after_count" ? Number(times) || 1 : 0,
+      endKind: purpose === "one_off" || cadence === "" ? "after_count" : endKind,
+      endCount: purpose === "one_off" || cadence === "" || endKind === "after_count" ? Number(times) || 1 : 0,
       endDate: endKind === "on_date" ? endDate : "",
       intervalDays: cadence === "every_n_days" ? Number(interval) || 10 : 0,
       amountMode: purpose === "investment_payout" ? amountMode : "fixed",
       payoutCurrency: purpose === "investment_payout" ? payoutCurrency : "",
       accountId: account?.id || "",
-      accountName: account?.name || "",
-      accountKind: purpose === "investment_payout" ? "investment" : "",
+      accountName: cash ? "Cash" : account?.name || "",
+      accountKind: purpose === "investment_payout" ? "investment" : cash ? "cash" : account?.kind || "",
       category,
+      notes,
       leadDays,
       status: editing?.status === "paused" || editing?.status === "stopped" ? editing.status : "active",
     });
     onClose();
   };
 
-  const investments = finance.snapshot.accounts.filter((account) => account.kind === "investment");
-  const accounts = purpose === "investment_payout" ? investments : finance.snapshot.accounts;
+  const repeating = Boolean(cadence) && purpose !== "one_off";
+  const payMode = direction === "income" ? "deposit" : "pay";
 
   return (
     <Sheet
@@ -158,6 +164,7 @@ export function ProgramSheet({
           {editing ? (
             <Button
               variant="ghost"
+              className="min-h-12"
               onClick={() => {
                 if (!confirming) {
                   setConfirming(true);
@@ -170,24 +177,23 @@ export function ProgramSheet({
               {confirming ? t("Delete this") : t("Delete")}
             </Button>
           ) : null}
-          {step > 0 ? (
-            <Button variant="ghost" onClick={() => setStep((value) => Math.max(0, value - 1))}>
+          {step > 0 && !editing ? (
+            <Button variant="ghost" className="min-h-12" onClick={() => setStep(0)}>
               {t("Back")}
             </Button>
           ) : null}
           <div className="flex-1" />
           {editing && editing.status !== "stopped" ? (
-            <Button variant="ghost" onClick={() => { finance.scheduleAction(editing.id, editing.status === "paused" ? "resume" : "pause"); onClose(); }}>
+            <Button variant="ghost" className="min-h-12" onClick={() => { finance.scheduleAction(editing.id, editing.status === "paused" ? "resume" : "pause"); onClose(); }}>
               {editing.status === "paused" ? t("Resume") : t("Pause")}
             </Button>
           ) : null}
           {editing && editing.status !== "stopped" ? (
-            <Button variant="ghost" onClick={() => { finance.scheduleAction(editing.id, "stop"); onClose(); }}>
+            <Button variant="ghost" className="min-h-12" onClick={() => { finance.scheduleAction(editing.id, "stop"); onClose(); }}>
               {t("Stop")}
             </Button>
           ) : null}
-          {step < 4 ? <Button onClick={() => setStep((value) => value + 1)}>{t("Next")}</Button> : null}
-          <Button disabled={finance.busy || !name.trim() || !amount.trim()} onClick={save}>
+          <Button className="min-h-12" disabled={finance.busy || !name.trim() || !amount.trim()} onClick={save}>
             {t("Save")}
           </Button>
         </div>
@@ -203,15 +209,20 @@ export function ProgramSheet({
             </button>
           ))}
         </div>
-      ) : null}
-      {step === 1 ? (
+      ) : (
         <div className="space-y-4">
+          <Field label={t("Name this")}>
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </Field>
           <Field label={t("Amount")}>
             <Input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-16 text-3xl tabular-nums" />
           </Field>
           <Field label={t("Currency")}>
             <Input value={currency} maxLength={8} autoCapitalize="characters" onChange={(event) => setCurrency(event.target.value.toUpperCase())} />
           </Field>
+          {editing && repeating ? (
+            <p className="fin-muted text-sm leading-5">{t("This amount applies to future unpaid occurrences. Paid ones stay as recorded.")}</p>
+          ) : null}
           {purpose === "investment_payout" ? (
             <>
               <div className="flex flex-col gap-2">
@@ -226,31 +237,26 @@ export function ProgramSheet({
               <p className="fin-muted text-sm leading-5">{t("The principal stays what you entered.")}</p>
             </>
           ) : null}
-        </div>
-      ) : null}
-      {step === 2 ? (
-        <Field label={t("How often")}>
-          <div className="chip-scroller">
-            <Chip on={cadence === ""} onClick={() => { setCadence(""); setPurpose("one_off"); setEndKind("after_count"); setTimes("1"); }}>{t("Once")}</Chip>
-            <Chip on={cadence === "weekly"} onClick={() => setCadence("weekly")}>{t("Weekly")}</Chip>
-            <Chip on={cadence === "monthly"} onClick={() => setCadence("monthly")}>{t("Monthly")}</Chip>
-            <Chip on={cadence === "yearly"} onClick={() => setCadence("yearly")}>{t("Yearly")}</Chip>
-            <Chip on={cadence === "every_n_days"} onClick={() => setCadence("every_n_days")}>{t("Every N days")}</Chip>
-          </div>
+          <Field label={t("Start date")}>
+            <Input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
+          </Field>
+          <Field label={t("How often")}>
+            <div className="chip-scroller">
+              <Chip on={cadence === ""} onClick={() => { setCadence(""); setPurpose("one_off"); setEndKind("after_count"); setTimes("1"); }}>{t("Once")}</Chip>
+              <Chip on={cadence === "weekly"} onClick={() => { setCadence("weekly"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Weekly")}</Chip>
+              <Chip on={cadence === "monthly"} onClick={() => { setCadence("monthly"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Monthly")}</Chip>
+              <Chip on={cadence === "yearly"} onClick={() => { setCadence("yearly"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Yearly")}</Chip>
+              <Chip on={cadence === "every_n_days"} onClick={() => { setCadence("every_n_days"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Every N days")}</Chip>
+            </div>
+          </Field>
           {cadence === "every_n_days" ? (
             <Field label={t("Days apart")}>
               <Input inputMode="numeric" value={interval} onChange={(event) => setInterval(event.target.value)} />
             </Field>
           ) : null}
-        </Field>
-      ) : null}
-      {step === 3 ? (
-        <div className="space-y-4">
-          <p className="fin-kicker">{t("How long")}</p>
-          {purpose === "one_off" || cadence === "" ? (
-            <p className="text-base">{t("One time")}</p>
-          ) : (
-            <>
+          {repeating ? (
+            <div className="space-y-3">
+              <p className="fin-kicker">{t("How long")}</p>
               <div className="flex flex-col gap-2">
                 <Chip wide on={endKind === "after_count"} onClick={() => setEndKind("after_count")}>{t("A set number of times")}</Chip>
                 <Chip wide on={endKind === "on_date"} onClick={() => setEndKind("on_date")}>{t("Until a date")}</Chip>
@@ -267,26 +273,11 @@ export function ProgramSheet({
                 </Field>
               ) : null}
               {endKind === "none" ? <p className="fin-muted text-sm leading-5">{t("No end date. The next 12 months are shown, not a lifetime total.")}</p> : null}
-            </>
-          )}
-        </div>
-      ) : null}
-      {step === 4 ? (
-        <div className="space-y-4">
-          <Field label={t("Name this")}>
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
-          </Field>
-          <Field label={t("Start date")}>
-            <Input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
-          </Field>
-          <Field label={t("Which account")}>
-            <div className="chip-scroller">
-              <Chip on={accountId === ""} onClick={() => setAccountId("")}>{t("No account")}</Chip>
-              {accounts.map((account) => (
-                <Chip key={account.id} on={accountId === account.id} onClick={() => setAccountId(account.id)}>{account.name}</Chip>
-              ))}
             </div>
-          </Field>
+          ) : (
+            <p className="text-base">{t("One time")}</p>
+          )}
+          <PayWith accounts={finance.snapshot.accounts} value={accountId} onChange={setAccountId} mode={payMode} />
           <Field label={t("Category")}>
             <Input value={category} onChange={(event) => setCategory(event.target.value)} />
           </Field>
@@ -297,15 +288,18 @@ export function ProgramSheet({
               ))}
             </div>
           </Field>
+          <Field label={t("Notes")}>
+            <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </Field>
         </div>
-      ) : null}
+      )}
     </Sheet>
   );
 }
 
 function Chip({ on, onClick, wide, children }: { on: boolean; onClick: () => void; wide?: boolean; children: string }) {
   return (
-    <button type="button" aria-pressed={on} className={cn("fin-chip h-auto whitespace-normal text-left leading-5", wide && "w-full", on && "min-h-12")} onClick={onClick}>
+    <button type="button" aria-pressed={on} className={cn("fin-chip min-h-12 shrink-0 whitespace-nowrap", wide && "w-full whitespace-normal")} onClick={onClick}>
       {children}
     </button>
   );

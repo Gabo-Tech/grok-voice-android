@@ -4,7 +4,12 @@ import {
   bookIsStale,
   cashFlow,
   combinedMinor,
+  addDays,
+  cardDueDate,
+  comingCashRows,
   comingRows,
+  paymentFits,
+  utilization,
   headlineOf,
   missingCodes,
   quoteRate,
@@ -67,7 +72,7 @@ const flow = cashFlow(
   "2026-11-30",
 );
 assert.deepEqual(flow, [
-  { currency: "CHF", incoming: 500000, outgoing: 200000, left: 300000 },
+  { currency: "CHF", incoming: 500000, outgoing: 120000, left: 380000 },
   { currency: "EUR", incoming: 20000, outgoing: 0, left: 20000 },
 ]);
 
@@ -212,7 +217,7 @@ const stipend: ScheduleShape = {
   status: "active",
 };
 assert.equal(cashFlow([{ currency: "EUR", direction: "income", amountMinor: 50000, date: "2027-06-01" }], "2026-11-01", "2026-11-30").length, 0);
-assert.equal(comingRows([stipend], [], "2026-11-12", "in").length, 1);
+assert.equal(comingRows([stipend], [], "2026-11-12", "in").length, 0);
 assert.equal(plannedHits([stipend], [], "2026-11-12")[0].date, "2027-06-01");
 const onceProgress = scheduleProgress(stipend, [], "2026-11-12");
 assert.equal(onceProgress.mode, "once");
@@ -265,7 +270,7 @@ assert.ok(bills.some((row) => row.name === "Course" && row.progress.paidCount ==
 assert.ok(bills.some((row) => row.name === "Rent" && row.progress.remainingMinor === null));
 const incomeComing = comingRows([eggs, stipend], [], "2026-11-12", "in");
 assert.ok(incomeComing.some((row) => row.name === "Nitroeggs"));
-assert.ok(incomeComing.some((row) => row.name === "June"));
+assert.equal(incomeComing.some((row) => row.name === "June"), false);
 const leftover = projectWindow(monthFlow, plannedHits([rent], [], "2026-11-12"), month.start, month.end, "2026-11-12", true);
 assert.equal(leftover.find((row) => row.currency === "EUR")?.projected, 260000);
 assert.equal(leftover.find((row) => row.currency === "CHF")?.comingOut, 200000);
@@ -534,5 +539,110 @@ for (const key of [
 ]) {
   assert.equal(catalogHas(key), true, key);
 }
+
+const today = "2026-11-12";
+const inWindow: ScheduleShape = {
+  id: "soon",
+  name: "Soon",
+  direction: "expense",
+  amountMinor: 1500,
+  currency: "EUR",
+  cadence: "",
+  startDate: "2026-12-12",
+  endKind: "after_count",
+  endCount: 1,
+  status: "active",
+};
+const day31: ScheduleShape = { ...inWindow, id: "day31", name: "Day 31", startDate: addDays(today, 31) };
+const travel: ScheduleShape = {
+  id: "travel",
+  name: "Renew travel card",
+  direction: "expense",
+  amountMinor: 9000,
+  currency: "EUR",
+  cadence: "yearly",
+  startDate: "2025-10-12",
+  endKind: "none",
+  status: "active",
+};
+const windowRows = comingRows([inWindow, day31, travel], [], today, "out");
+assert.ok(windowRows.some((row) => row.name === "Soon" && row.date === "2026-12-12"));
+assert.equal(windowRows.some((row) => row.name === "Day 31"), false);
+assert.equal(windowRows.some((row) => row.name === "Renew travel card"), false);
+
+const bankMove = netWorthChange(
+  [{ currency: "EUR", direction: "expense", amountMinor: 4000, date: today, accountKind: "bank" }],
+  today,
+  today,
+);
+const cardMove = netWorthChange(
+  [{ currency: "EUR", direction: "expense", amountMinor: 4000, date: today, accountKind: "credit_card" }],
+  today,
+  today,
+);
+assert.equal(bankMove[0].change, -4000);
+assert.equal(cardMove[0].change, -4000);
+const payMove = netWorthChange(
+  [{ currency: "EUR", direction: "payment", amountMinor: 4000, date: today, accountKind: "credit_card", fromKind: "bank" }],
+  today,
+  today,
+);
+assert.equal(payMove[0].change, 0);
+const result = cashFlow(
+  [
+    { currency: "EUR", direction: "expense", amountMinor: 4000, date: today },
+    { currency: "EUR", direction: "payment", amountMinor: 4000, date: today },
+  ],
+  today,
+  today,
+);
+assert.equal(result[0].outgoing, 4000);
+assert.equal(result[0].left, -4000);
+
+const visa = { id: "visa", name: "Visa", kind: "credit_card", currency: "EUR", shownBalanceMinor: 8000, paymentMinor: null, dueDate: "2026-11-20", dueDay: 20 };
+const rentDue: ScheduleShape = {
+  id: "rent-bank",
+  name: "Rent",
+  direction: "expense",
+  amountMinor: 2000,
+  currency: "EUR",
+  cadence: "",
+  startDate: "2026-11-18",
+  accountId: "bank",
+  status: "active",
+};
+const grocery: ScheduleShape = {
+  id: "groceries",
+  name: "Groceries",
+  direction: "expense",
+  amountMinor: 3000,
+  currency: "EUR",
+  cadence: "",
+  startDate: "2026-11-15",
+  accountId: "visa",
+  status: "active",
+};
+const cashComing = comingCashRows(
+  [rentDue, grocery],
+  [],
+  [visa, { id: "bank", name: "Checking", kind: "bank", currency: "EUR", shownBalanceMinor: 50000, paymentMinor: null, dueDate: "", dueDay: null }],
+  today,
+  "out",
+);
+assert.ok(cashComing.some((row) => row.name === "Rent"));
+assert.equal(cashComing.some((row) => row.name === "Groceries"), false);
+assert.ok(cashComing.some((row) => row.name === "Visa payment" && row.date === "2026-11-20" && row.amountMinor === 8000));
+assert.equal(cardDueDate(visa, today), "2026-11-20");
+assert.equal(paymentFits(8000, 8001), "over");
+assert.equal(paymentFits(8000, 8000), "ok");
+assert.equal(paymentFits(null, 100), "unknown");
+assert.equal(utilization(4000, 8000), 0.5);
+assert.equal(utilization(4000, null), null);
+
+const incomeSoon: ScheduleShape = { ...inWindow, id: "pay", name: "Payday", direction: "income", startDate: "2026-12-01" };
+const incomeLate: ScheduleShape = { ...incomeSoon, id: "late", name: "Later pay", startDate: addDays(today, 31) };
+const incomeRows = comingRows([incomeSoon, incomeLate], [], today, "in");
+assert.ok(incomeRows.some((row) => row.name === "Payday"));
+assert.equal(incomeRows.some((row) => row.name === "Later pay"), false);
 
 console.log("inset and finance math ok");

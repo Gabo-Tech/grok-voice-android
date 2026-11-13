@@ -123,6 +123,18 @@ pub struct Account {
     /// Days before the due date to remind. Missing means two days, and again on the day.
     #[serde(default)]
     pub lead_days: Option<u32>,
+    /// Credit limit in minor units. Only meaningful for a credit card.
+    #[serde(default)]
+    pub credit_limit_minor: Option<i64>,
+    /// Payment due day of the month, 1 through 31. Empty when unset.
+    #[serde(default)]
+    pub due_day: Option<u32>,
+    /// Statement day of the month, 1 through 31. Empty when unset.
+    #[serde(default)]
+    pub statement_day: Option<u32>,
+    /// Last four digits only. Never a full card number.
+    #[serde(default)]
+    pub last_four: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -364,6 +376,22 @@ pub struct AccountDraft {
     #[serde(default)]
     #[allow(dead_code)]
     pub change_kind: bool,
+    #[serde(default)]
+    pub credit_limit: String,
+    #[serde(default)]
+    pub due_day: Option<u32>,
+    #[serde(default)]
+    pub statement_day: Option<u32>,
+    #[serde(default)]
+    pub last_four: String,
+    #[serde(default)]
+    pub edit_limit: bool,
+    #[serde(default)]
+    pub edit_due_day: bool,
+    #[serde(default)]
+    pub edit_statement_day: bool,
+    #[serde(default)]
+    pub edit_last_four: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -382,9 +410,13 @@ pub struct TransactionDraft {
     #[serde(default)]
     pub account_name: String,
     #[serde(default)]
+    pub account_kind: String,
+    #[serde(default)]
     pub from_account_id: String,
     #[serde(default)]
     pub from_account_name: String,
+    #[serde(default)]
+    pub from_account_kind: String,
     #[serde(default)]
     pub date: String,
     #[serde(default)]
@@ -631,7 +663,8 @@ impl Finance {
     }
 
     /// Unsettled finance occurrences inside [start, end). Reminders stay on their own alarms.
-    pub fn calendar_events(&self, start_ms: i64, end_ms: i64) -> Vec<CalEvent> {
+    pub fn calendar_events(&self, start_ms: i64, end_ms: i64, locale: &str) -> Vec<CalEvent> {
+        let _guard = push_locale(locale);
         let store = self.lock().clone();
         calendar_money_events(&store, start_ms, end_ms, Local::now().date_naive())
     }
@@ -674,6 +707,8 @@ impl Finance {
     fn commit(&self, app: &AppHandle, mut store: Store) -> Result<Snapshot, String> {
         let _ = hydrate_store(&mut store);
         let previous = self.lock().clone();
+        let locale = currency_locale(app, &store);
+        let _spoken = push_locale(&locale);
         link_calendar(app, &mut store, Local::now());
         let snap = snapshot_of(&store, &currency_locale(app, &store), Local::now().date_naive());
         Self::persist(&self.path, &store)?;
@@ -780,7 +815,7 @@ pub fn tool_definitions() -> Value {
     json!([
         fn_tool(
             "log_money",
-            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list.",
+            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list. id edits that one saved transaction and does not rewrite other ones. payInFull true pays the balance owed. Charging a card is direction expense with account set to the card: card debt rises, the bank does not move, and it counts as an expense. Paying a card is direction payment with fromAccount: it is not an expense. Do not pay more than the balance owed. If the card, the funding account, or the amount is missing, or two names match, the error is the one question to ask.",
             json!({
                 "type": "object",
                 "properties": {
@@ -795,7 +830,10 @@ pub fn tool_definitions() -> Value {
                     "recurrence": { "type": "string" },
                     "cadence": { "type": "string" },
                     "leadDays": { "type": "integer" },
-                    "notes": { "type": "string" }
+                    "notes": { "type": "string" },
+                    "id": { "type": "string" },
+                    "payInFull": { "type": "boolean" },
+                    "fromAccountKind": { "type": "string" }
                 },
                 "required": ["direction", "amount"]
             })
@@ -818,14 +856,18 @@ pub fn tool_definitions() -> Value {
                     "account": { "type": "string" },
                     "accountKind": { "type": "string" },
                     "leadDays": { "type": "integer" },
-                    "notes": { "type": "string" }
+                    "notes": { "type": "string" },
+                    "intervalDays": { "type": "integer" },
+                    "endDate": { "type": "string" },
+                    "occurrences": { "type": "integer" },
+                    "openEnded": { "type": "boolean" }
                 },
                 "required": ["name"]
             })
         ),
         fn_tool(
             "save_schedule",
-            "Program income or an expense on this phone: a fixed run such as a course for 9 months, open-ended rent, a subscription, a one-off, planned future income, or an investment payout. Pass phrase as the user's sentence when you can, for example a course for 9 months at 270 euros, rent for as long as they live there, or 700 dollars in Nitroeggs that pays 14 dollars every 10 days in XMR. phrase programs the plan and does not mark it paid. Structured fields: name, amount, currency, direction expense or income, purpose one_off, recurring, subscription, or investment_payout, cadence, intervalDays, occurrences, openEnded, date, payoutCurrency, amountMode fixed or quote, account, accountKind. action pause, stop, or resume with name. Do not invent a price for the investment or an exchange rate. A future item stays planned until mark_paid.",
+            "Program income or an expense on this phone: a fixed run such as a course for 9 months, open-ended rent, a subscription, a one-off, planned future income, or an investment payout. Pass phrase as the user's sentence when you can, for example a course for 9 months at 270 euros, rent for as long as they live there, or 700 dollars in Nitroeggs that pays 14 dollars every 10 days in XMR. phrase programs the plan and does not mark it paid. Structured fields: name, amount, currency, direction expense or income, purpose one_off, recurring, subscription, or investment_payout, cadence, intervalDays, occurrences, openEnded, date, payoutCurrency, amountMode fixed or quote, account, accountKind. action pause, stop, or resume with name. Do not invent a price for the investment or an exchange rate. A future item stays planned until mark_paid. Omitting amount on an existing name keeps the saved amount. Changing the amount applies only to future unpaid occurrences. Paid history stays. account can be cash, a bank, or a credit card.",
             json!({
                 "type": "object",
                 "properties": {
@@ -846,13 +888,16 @@ pub fn tool_definitions() -> Value {
                     "accountKind": { "type": "string" },
                     "action": { "type": "string" },
                     "category": { "type": "string" },
-                    "leadDays": { "type": "integer" }
+                    "leadDays": { "type": "integer" },
+                    "id": { "type": "string" },
+                    "notes": { "type": "string" },
+                    "endDate": { "type": "string" }
                 }
             })
         ),
         fn_tool(
             "save_account",
-            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. units and unitPrice are a stated count times a stated price, such as 2 at 50 CHF. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN.",
+            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. units and unitPrice are a stated count times a stated price, such as 2 at 50 CHF. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN. lastFour is only four digits. creditLimit, dueDay, and statementDay are for a credit card. Do not turn a loan or an investment into a card unless changeKind is true because they said to change that same nickname.",
             json!({
                 "type": "object",
                 "properties": {
@@ -877,14 +922,18 @@ pub fn tool_definitions() -> Value {
                     "changeKind": { "type": "boolean" },
                     "defaultCurrency": { "type": "string" },
                     "leadDays": { "type": "integer" },
-                    "notes": { "type": "string" }
+                    "notes": { "type": "string" },
+                    "creditLimit": { "type": "string" },
+                    "dueDay": { "type": "integer" },
+                    "statementDay": { "type": "integer" },
+                    "lastFour": { "type": "string" }
                 },
                 "required": ["name"]
             })
         ),
         fn_tool(
             "list_finance",
-            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. Do not invent a balance that is not in the result.",
+            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt, utilization when a limit is saved, and the next card payment. Do not invent a balance or a rate that is not in the result.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1064,35 +1113,156 @@ struct Ask {
     query: String,
 }
 
+fn ensure_cash(store: &mut Store, currency: &str, clock: &Clock) -> Result<String, String> {
+    if let Some(account) = store.accounts.iter().find(|account| account.kind == "cash") {
+        return Ok(account.id.clone());
+    }
+    resolve_account(store, "", "Cash", "cash", currency, clock, true)
+}
+
+fn resolve_pay_account(store: &mut Store, name: &str, kind: &str, currency: &str, clock: &Clock) -> Result<String, String> {
+    let kind_norm = normalize_kind(kind);
+    let folded = fold(name);
+    let want_cash = kind_norm == "cash" || folded == "cash";
+    if want_cash {
+        if !name.trim().is_empty() && folded != "cash" {
+            if let Some(found) = locate_account(store, "", name, "cash")? {
+                return Ok(store.accounts[found.index].id.clone());
+            }
+        }
+        return ensure_cash(store, currency, clock);
+    }
+    if name.trim().is_empty() && kind_norm.is_empty() {
+        return Ok(String::new());
+    }
+    resolve_account(store, "", name, kind, currency, clock, true)
+}
+
+fn guard_payment(store: &Store, direction: &str, account_id: &str, from_id: &str, amount: i64, currency: &str, clock: &Clock) -> Result<(), String> {
+    if direction != "payment" || account_id.is_empty() {
+        return Ok(());
+    }
+    let Some(account) = store.accounts.iter().find(|account| account.id == account_id) else {
+        return Err("Which card?".into());
+    };
+    if !is_debt(&account.kind) {
+        return Ok(());
+    }
+    if from_id.is_empty() {
+        return Err(spoken("Which account pays {name}?", &[("name", &account.name)]));
+    }
+    let pay = amount_for_account(
+        &Transaction {
+            id: String::new(),
+            amount_minor: amount,
+            currency: currency.to_string(),
+            direction: "payment".into(),
+            category: String::new(),
+            account_id: account_id.to_string(),
+            from_account_id: from_id.to_string(),
+            date: String::new(),
+            notes: String::new(),
+            recurrence: "once".into(),
+            rule_id: String::new(),
+            created_ms: 0,
+            updated_ms: 0,
+            occurrence_date: String::new(),
+        },
+        account,
+        &store.fx,
+        clock.ms,
+    );
+    let Some(pay) = pay else {
+        return Err(spoken("The payment needs a rate for {codes}.", &[("codes", currency)]));
+    };
+    if let Some(owed) = shown_with_fx(account, &store.transactions, &store.fx, clock.ms) {
+        if pay > owed.max(0) {
+            let owed_text = format_minor(owed, &account.currency);
+            return Err(spoken("That is more than {name} owes ({owed}).", &[("name", &account.name), ("owed", &owed_text)]));
+        }
+    }
+    Ok(())
+}
+
+fn edit_logged(store: &mut Store, id: &str, args: &Value, clock: &Clock) -> Result<String, String> {
+    let index = store.transactions.iter().position(|tx| tx.id == id).ok_or("No transaction with that id.")?;
+    let mut tx = store.transactions[index].clone();
+    if !amount_text(args.get("amount")).trim().is_empty() {
+        let (minor, currency) = money_for(&amount_text(args.get("amount")), args["currency"].as_str().unwrap_or(&tx.currency), &tx.currency, &clock.default_currency)?;
+        tx.amount_minor = minor;
+        tx.currency = currency;
+    } else if let Some(code) = args["currency"].as_str().map(str::trim).filter(|value| !value.is_empty()) {
+        tx.currency = canonical_currency(code)?;
+    }
+    if let Some(direction) = args["direction"].as_str().map(str::trim).filter(|value| !value.is_empty()) {
+        tx.direction = normalize_direction(direction)?;
+    }
+    if args.get("category").is_some() {
+        tx.category = clean_text(args["category"].as_str().unwrap_or(""), 80)?;
+    }
+    if args.get("notes").is_some() {
+        tx.notes = clean_text(args["notes"].as_str().unwrap_or(""), 500)?;
+    }
+    if args.get("date").is_some() {
+        let date = require_date(args["date"].as_str().unwrap_or(""), "", clock.today)?;
+        if !date.is_empty() {
+            tx.date = date;
+        }
+    }
+    if args.get("account").is_some() || args.get("accountKind").is_some() {
+        tx.account_id = resolve_pay_account(store, args["account"].as_str().unwrap_or(""), args["accountKind"].as_str().unwrap_or(""), &tx.currency, clock)?;
+    }
+    if args.get("fromAccount").is_some() || args.get("fromAccountKind").is_some() {
+        tx.from_account_id = resolve_pay_account(store, args["fromAccount"].as_str().unwrap_or(""), args["fromAccountKind"].as_str().unwrap_or(""), &tx.currency, clock)?;
+    }
+    if tx.direction == "payment" {
+        guard_payment(store, &tx.direction, &tx.account_id, &tx.from_account_id, tx.amount_minor, &tx.currency, clock)?;
+    }
+    tx.updated_ms = clock.ms;
+    let label = if tx.category.is_empty() { tx.direction.clone() } else { tx.category.clone() };
+    let amount = format_minor(tx.amount_minor, &tx.currency);
+    store.transactions[index] = tx;
+    Ok(spoken("Updated {name} to {amount}.", &[("name", &label), ("amount", &amount)]))
+}
+
 fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, String> {
+    if let Some(id) = args.get("id").and_then(|value| value.as_str()).map(str::trim).filter(|id| !id.is_empty()) {
+        return edit_logged(store, id, args, clock);
+    }
     let direction = normalize_direction(args["direction"].as_str().unwrap_or(""))?;
+    if direction.is_empty() {
+        return Err("Direction is income, expense, or payment.".into());
+    }
     let account_label = args["account"].as_str().unwrap_or("");
     let account_kind = args["accountKind"].as_str().unwrap_or("");
     let known = locate_account(store, "", account_label, account_kind)?;
     let saved_currency = known.map(|found| store.accounts[found.index].currency.clone()).unwrap_or_default();
-    let (amount_minor, currency) = money_for(&amount_text(args.get("amount")), args["currency"].as_str().unwrap_or(""), &saved_currency, &clock.default_currency)?;
+    let pay_full = args["payInFull"].as_bool().unwrap_or(false) || matches!(fold(&amount_text(args.get("amount"))).as_str(), "full" | "in full" | "balance" | "pay in full");
+    let (mut amount_minor, mut currency) = if pay_full {
+        (0, saved_currency.clone())
+    } else if amount_text(args.get("amount")).trim().is_empty() {
+        return Err("Say the amount, or say pay in full.".into());
+    } else {
+        money_for(&amount_text(args.get("amount")), args["currency"].as_str().unwrap_or(""), &saved_currency, &clock.default_currency)?
+    };
     let cadence = normalize_cadence(args["cadence"].as_str().unwrap_or(""));
     let class = classify(args["recurrence"].as_str().unwrap_or(""), &cadence);
     let provided = require_date(args["date"].as_str().unwrap_or(""), &cadence, clock.today)?;
     let date = if provided.is_empty() { iso(clock.today) } else { provided.clone() };
-    let account_id = resolve_account(
-        store,
-        "",
-        args["account"].as_str().unwrap_or(""),
-        args["accountKind"].as_str().unwrap_or(""),
-        &currency,
-        clock,
-        true,
-    )?;
-    let from_account_id = resolve_account(
-        store,
-        "",
-        args["fromAccount"].as_str().unwrap_or(""),
-        "",
-        &currency,
-        clock,
-        true,
-    )?;
+    let account_id = resolve_pay_account(store, args["account"].as_str().unwrap_or(""), args["accountKind"].as_str().unwrap_or(""), &currency, clock)?;
+    let from_account_id = if args["fromAccount"].as_str().unwrap_or("").trim().is_empty() && args["fromAccountKind"].as_str().unwrap_or("").trim().is_empty() {
+        String::new()
+    } else {
+        resolve_pay_account(store, args["fromAccount"].as_str().unwrap_or(""), args["fromAccountKind"].as_str().unwrap_or(""), &currency, clock)?
+    };
+    if pay_full {
+        let account = store.accounts.iter().find(|account| account.id == account_id).ok_or("Which card?")?;
+        let owed = shown_with_fx(account, &store.transactions, &store.fx, clock.ms).filter(|amount| *amount > 0);
+        let owed = owed.ok_or("Say the amount, or say pay in full.")?;
+        amount_minor = owed;
+        currency = account.currency.clone();
+    }
+    guard_payment(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
     let category = clean_text(args["category"].as_str().unwrap_or(""), 80)?;
     let notes = clean_text(args["notes"].as_str().unwrap_or(""), 500)?;
     let link = class == "recurring" || is_link_date(&provided, &direction, clock.today);
@@ -1137,7 +1307,7 @@ fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Strin
         direction: direction.clone(),
         category: category.clone(),
         account_id: account_id.clone(),
-        from_account_id,
+        from_account_id: from_account_id.clone(),
         date: date.clone(),
         notes,
         recurrence: class.into(),
@@ -1149,7 +1319,17 @@ fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Strin
     let label = if category.is_empty() { direction.clone() } else { category.clone() };
     let amount = format_minor(amount_minor, &currency);
     let mut detail = spoken("Saved {label} of {amount} on {date}.", &[("label", &label), ("amount", &amount), ("date", &date)]);
-    if let Some(name) = account_name(store, &account_id) {
+    if direction == "payment" {
+        if let (Some(card), Some(from_name)) = (account_name(store, &account_id), account_name(store, &from_account_id)) {
+            detail = spoken("Paid {amount} toward {card} from {account}.", &[("amount", &amount), ("card", &card), ("account", &from_name)]);
+            detail.push_str(&balance_clause(store, &account_id));
+        }
+    } else if store.accounts.iter().any(|row| row.id == account_id && row.kind == "credit_card") && direction == "expense" {
+        if let Some(name) = account_name(store, &account_id) {
+            detail = spoken("Charged {amount} to {name}.", &[("amount", &amount), ("name", &name)]);
+            detail.push_str(&balance_clause(store, &account_id));
+        }
+    } else if let Some(name) = account_name(store, &account_id) {
         detail.push_str(&spoken(" Account: {name}.", &[("name", &name)]));
         detail.push_str(&balance_clause(store, &account_id));
     }
@@ -1186,18 +1366,65 @@ fn rule_from_tool(store: &mut Store, args: &Value, clock: &Clock, programmed: bo
         let (minor, currency) = resolve_money(&amount_text(args.get("amount")), args["currency"].as_str().unwrap_or(""), &clock.default_currency)?;
         (Some(minor), currency)
     };
-    let direction = if args["direction"].as_str().map(str::trim).filter(|s| !s.is_empty()).is_some() {
+    let id = args["id"].as_str().unwrap_or("").trim().to_string();
+    let existing = if !id.is_empty() {
+        store.rules.iter().find(|rule| rule.id == id).cloned()
+    } else {
+        let hits: Vec<Rule> = store.rules.iter().filter(|rule| fold(&rule.name) == fold(&name)).cloned().collect();
+        if hits.len() > 1 {
+            let names = and_list(hits.iter().map(|rule| rule.name.as_str()));
+            return Err(spoken("Which payment? I found {names}.", &[("names", &names)]));
+        }
+        hits.into_iter().next()
+    };
+    let mut direction = if args["direction"].as_str().map(str::trim).filter(|s| !s.is_empty()).is_some() {
         normalize_direction(args["direction"].as_str().unwrap_or(""))?
+    } else if let Some(rule) = &existing {
+        rule.direction.clone()
     } else if fold(&name).contains("salary") || fold(&name).contains("paycheck") {
         "income".into()
     } else {
         "expense".into()
     };
-    let account_id = resolve_account(store, "", args["account"].as_str().unwrap_or(""), args["accountKind"].as_str().unwrap_or(""), if currency.is_empty() { &clock.default_currency } else { &currency }, clock, true)?;
-    let category = clean_text(args["category"].as_str().unwrap_or(""), 80)?;
-    let notes = clean_text(args["notes"].as_str().unwrap_or(""), 500)?;
-    let id = args["id"].as_str().unwrap_or("").trim().to_string();
+    let mut cadence = cadence;
+    let mut date_raw = date_raw;
+    let mut amount = amount;
+    let mut currency = currency;
+    let mut category = clean_text(args["category"].as_str().unwrap_or(""), 80)?;
+    let mut notes = clean_text(args["notes"].as_str().unwrap_or(""), 500)?;
+    let mut account_id = if args.get("account").is_some() || args.get("accountKind").is_some() {
+        resolve_pay_account(store, args["account"].as_str().unwrap_or(""), args["accountKind"].as_str().unwrap_or(""), if currency.is_empty() { &clock.default_currency } else { &currency }, clock)?
+    } else {
+        String::new()
+    };
+    if let Some(rule) = &existing {
+        if amount.is_none() {
+            amount = rule.amount_minor;
+        }
+        if currency.is_empty() {
+            currency = rule.currency.clone();
+        }
+        if cadence.is_empty() && args.get("cadence").is_none() {
+            cadence = rule.cadence.clone();
+        }
+        if date_raw.is_empty() && args.get("date").is_none() && args.get("dueDate").is_none() && args.get("nextDate").is_none() && args.get("day").is_none() {
+            date_raw = rule.next_date.clone();
+        }
+        if args.get("direction").is_none() {
+            direction = rule.direction.clone();
+        }
+        if args.get("category").is_none() {
+            category = rule.category.clone();
+        }
+        if args.get("notes").is_none() {
+            notes = rule.notes.clone();
+        }
+        if account_id.is_empty() && args.get("account").is_none() && args.get("accountKind").is_none() {
+            account_id = rule.account_id.clone();
+        }
+    }
     let saved = upsert_named_rule(store, &id, &name, amount, &currency, &direction, &cadence, &date_raw, &category, &account_id, &notes, &[], false, lead_arg(args), clock)?;
+    let amount_changed = existing.as_ref().is_some_and(|rule| rule.amount_minor != amount) && amount.is_some();
     remember_category(store, &category);
     let money = match amount {
         Some(minor) => format_minor(minor, if currency.is_empty() { &clock.default_currency } else { &currency }),
@@ -1214,6 +1441,12 @@ fn rule_from_tool(store: &mut Store, args: &Value, clock: &Clock, programmed: bo
     if let Some(rule) = store.rules.iter_mut().find(|rule| rule.id == saved) {
         paint_schedule_args(rule, args);
         let _ = hydrate_rule(rule);
+    }
+    if amount_changed {
+        detail = spoken(
+            "Updated {name} to {amount}. Future unpaid occurrences use this. Paid ones stay as recorded.",
+            &[("name", &name), ("amount", &money)],
+        );
     }
     Ok(detail)
 }
@@ -1429,6 +1662,14 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
         new_name: String::new(),
         lead_days: lead_arg(args),
         change_kind: allow_kind,
+        credit_limit: String::new(),
+        due_day: None,
+        statement_day: None,
+        last_four: String::new(),
+        edit_limit: false,
+        edit_due_day: false,
+        edit_statement_day: false,
+        edit_last_four: false,
     };
     if args.get("units").is_some() && args.get("unitPrice").is_some() {
         draft.value_mode = "units".into();
@@ -1453,6 +1694,28 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
     }
     if args.get("contributionDate").is_some() {
         draft.contribution_date = require_date(args["contributionDate"].as_str().unwrap_or(""), &draft.contribution_cadence, clock.today)?;
+    }
+    if args.get("creditLimit").is_some() {
+        draft.credit_limit = amount_text(args.get("creditLimit"));
+        draft.edit_limit = true;
+    }
+    if let Some(day) = args.get("dueDay").and_then(|value| value.as_u64()) {
+        draft.due_day = Some(day as u32);
+        draft.edit_due_day = true;
+    } else if args.get("dueDay").is_some() {
+        draft.due_day = None;
+        draft.edit_due_day = true;
+    }
+    if let Some(day) = args.get("statementDay").and_then(|value| value.as_u64()) {
+        draft.statement_day = Some(day as u32);
+        draft.edit_statement_day = true;
+    } else if args.get("statementDay").is_some() {
+        draft.statement_day = None;
+        draft.edit_statement_day = true;
+    }
+    if args.get("lastFour").is_some() {
+        draft.last_four = args["lastFour"].as_str().unwrap_or("").to_string();
+        draft.edit_last_four = true;
     }
     let present_balance = balance_value.is_some();
     let present_due = args.get("dueDate").is_some();
@@ -1497,6 +1760,49 @@ struct FieldMask {
     units: bool,
     price: bool,
     lead: bool,
+}
+
+fn apply_card_fields(account: &mut Account, draft: &AccountDraft, clock: &Clock) -> Result<(), String> {
+    if draft.edit_limit {
+        account.credit_limit_minor = if draft.credit_limit.trim().is_empty() {
+            None
+        } else {
+            Some(resolve_money(&draft.credit_limit, &account.currency, &clock.default_currency)?.0)
+        };
+    }
+    if draft.edit_due_day {
+        account.due_day = match draft.due_day {
+            Some(day) if (1..=31).contains(&day) => Some(day),
+            Some(_) => return Err("Day of the month, 1 to 31.".into()),
+            None => None,
+        };
+    }
+    if draft.edit_statement_day {
+        account.statement_day = match draft.statement_day {
+            Some(day) if (1..=31).contains(&day) => Some(day),
+            Some(_) => return Err("Day of the month, 1 to 31.".into()),
+            None => None,
+        };
+    }
+    if draft.edit_last_four {
+        let digits: String = draft.last_four.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            account.last_four.clear();
+        } else if digits.len() == 4 {
+            account.last_four = digits;
+        } else {
+            return Err("Use the last four digits only.".into());
+        }
+    }
+    if account.kind == "credit_card" && account.due_date.is_empty() {
+        if let Some(day) = account.due_day {
+            account.due_date = iso(next_month_day(day, clock.today));
+            if account.cadence.is_empty() {
+                account.cadence = "monthly".into();
+            }
+        }
+    }
+    Ok(())
 }
 
 fn apply_account_form(store: &mut Store, draft: &AccountDraft, clock: &Clock) -> Result<String, String> {
@@ -1652,6 +1958,7 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
             Some(resolve_money(&draft.contribution, &account.currency, &clock.default_currency)?.0)
         };
     }
+    apply_card_fields(&mut account, draft, clock)?;
     account.updated_ms = clock.ms;
     let id = account.id.clone();
     let detail = account_detail(&account);
@@ -1751,8 +2058,19 @@ fn apply_transaction_form(store: &mut Store, draft: &TransactionDraft, clock: &C
     let class = classify(&draft.recurrence, &cadence);
     let provided = require_date(&draft.date, &cadence, clock.today)?;
     let date = if provided.is_empty() { iso(clock.today) } else { provided.clone() };
-    let account_id = resolve_account(store, &draft.account_id, &draft.account_name, "", &currency, clock, true)?;
-    let from_account_id = resolve_account(store, &draft.from_account_id, &draft.from_account_name, "", &currency, clock, true)?;
+    let account_id = if !draft.account_id.trim().is_empty() {
+        resolve_account(store, &draft.account_id, "", "", &currency, clock, false)?
+    } else {
+        resolve_pay_account(store, &draft.account_name, &draft.account_kind, &currency, clock)?
+    };
+    let from_account_id = if draft.from_account_id.trim().is_empty() && draft.from_account_name.trim().is_empty() && draft.from_account_kind.trim().is_empty() {
+        String::new()
+    } else if !draft.from_account_id.trim().is_empty() {
+        resolve_account(store, &draft.from_account_id, "", "", &currency, clock, false)?
+    } else {
+        resolve_pay_account(store, &draft.from_account_name, &draft.from_account_kind, &currency, clock)?
+    };
+    guard_payment(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
     let category = clean_text(&draft.category, 80)?;
     let notes = clean_text(&draft.notes, 500)?;
     let link = class == "recurring" || is_link_date(&provided, &direction, clock.today);
@@ -2204,6 +2522,10 @@ fn empty_account(id: String) -> Account {
         units: String::new(),
         price_minor: None,
         lead_days: None,
+        credit_limit_minor: None,
+        due_day: None,
+        statement_day: None,
+        last_four: String::new(),
     }
 }
 
@@ -2216,6 +2538,10 @@ fn alloc(store: &mut Store, prefix: &str) -> String {
 }
 
 pub fn shown_balance(account: &Account, transactions: &[Transaction]) -> Option<i64> {
+    shown_with_fx(account, transactions, &crate::finance_fx::FxBook::default(), 0)
+}
+
+fn shown_with_fx(account: &Account, transactions: &[Transaction], book: &crate::finance_fx::FxBook, now_ms: i64) -> Option<i64> {
     if account.kind == "investment" {
         if !account.units.is_empty() {
             if let Some(price) = account.price_minor {
@@ -2229,9 +2555,7 @@ pub fn shown_balance(account: &Account, transactions: &[Transaction]) -> Option<
     rows.sort_by_key(|tx| (tx.date.clone(), tx.created_ms));
     let mut balance = balance;
     for tx in rows {
-        if !account.currency.is_empty() && !tx.currency.is_empty() && tx.currency != account.currency {
-            continue;
-        }
+        let Some(amount) = amount_for_account(tx, account, book, now_ms) else { continue };
         if account.balance_updated_ms > 0 && tx.created_ms <= account.balance_updated_ms {
             continue;
         }
@@ -2239,9 +2563,17 @@ pub fn shown_balance(account: &Account, transactions: &[Transaction]) -> Option<
             continue;
         }
         let role = if tx.account_id == account.id { Role::Primary } else { Role::Source };
-        balance = step_balance(balance, &account.kind, role, &tx.direction, tx.amount_minor);
+        balance = step_balance(balance, &account.kind, role, &tx.direction, amount);
     }
     Some(balance)
+}
+
+/// Same currency is identity. A missing rate is skipped, never treated as 1:1.
+fn amount_for_account(tx: &Transaction, account: &Account, book: &crate::finance_fx::FxBook, now_ms: i64) -> Option<i64> {
+    if account.currency.is_empty() || tx.currency.is_empty() || tx.currency.eq_ignore_ascii_case(&account.currency) {
+        return Some(tx.amount_minor);
+    }
+    crate::finance_fx::convert(tx.amount_minor, &tx.currency, &account.currency, book, now_ms).map(|row| row.amount_minor)
 }
 
 fn step_balance(balance: i64, kind: &str, role: Role, direction: &str, amount: i64) -> i64 {
@@ -2249,7 +2581,7 @@ fn step_balance(balance: i64, kind: &str, role: Role, direction: &str, amount: i
         Role::Source => -amount,
         Role::Primary => match (kind, direction) {
             ("credit_card" | "loan" | "other_debt", "expense") => amount,
-            ("credit_card" | "loan" | "other_debt", "payment") => -amount,
+            ("credit_card" | "loan" | "other_debt", "payment" | "income") => -amount,
             ("credit_card" | "loan" | "other_debt", _) => 0,
             ("investment", _) => 0,
             (_, "income") => amount,
@@ -2265,7 +2597,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
     let mut accounts: Vec<AccountView> = store
         .accounts
         .iter()
-        .map(|account| AccountView { shown_balance_minor: shown_balance(account, &store.transactions), account: account.clone() })
+        .map(|account| AccountView { shown_balance_minor: shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()), account: account.clone() })
         .collect();
     accounts.sort_by(|a, b| a.account.kind.cmp(&b.account.kind).then(a.account.name.to_ascii_lowercase().cmp(&b.account.name.to_ascii_lowercase())));
     let mut transactions = store.transactions.clone();
@@ -2348,6 +2680,81 @@ fn upcoming_items(store: &Store, today: NaiveDate) -> Vec<Upcoming> {
     rows
 }
 
+#[derive(Debug)]
+struct ComingItem {
+    name: String,
+    date: String,
+    direction: String,
+}
+
+fn coming_lines(store: &Store, today: NaiveDate, side: &str) -> Vec<ComingItem> {
+    let end = today + Duration::days(30);
+    let mut rows = Vec::new();
+    for rule in &store.rules {
+        if !shows_on_calendar(&rule.status) {
+            continue;
+        }
+        let outgoing = rule.direction == "expense" || rule.direction == "payment";
+        if side == "out" {
+            if !outgoing {
+                continue;
+            }
+        } else if outgoing {
+            continue;
+        }
+        if side == "out" && rule.direction != "payment" {
+            if store.accounts.iter().any(|account| account.id == rule.account_id && account.kind == "credit_card") {
+                continue;
+            }
+        }
+        let spec = rule_spec(rule);
+        let settled = settled_dates(store, &rule.id);
+        for date in crate::finance_schedule::occurrence_dates(&spec, today) {
+            if date < today || date > end || settled.contains(&date) || spec.skipped.contains(&date) {
+                continue;
+            }
+            let name = if rule.direction == "payment" { card_payment_title(store, rule) } else { rule.name.clone() };
+            rows.push(ComingItem { name, date: iso(date), direction: rule.direction.clone() });
+        }
+    }
+    if side == "out" {
+        for account in store.accounts.iter().filter(|account| account.kind == "credit_card") {
+            if rows.iter().any(|row| row.direction == "payment" && row.name == payment_title(&account.name)) {
+                continue;
+            }
+            let Some(date) = card_due_on(account, today) else { continue };
+            if date < today || date > end {
+                continue;
+            }
+            let amount = account.payment_minor.filter(|value| *value > 0).or_else(|| shown_with_fx(account, &store.transactions, &store.fx, 0).filter(|value| *value > 0));
+            if amount.is_none() {
+                continue;
+            }
+            rows.push(ComingItem { name: payment_title(&account.name), date: iso(date), direction: "payment".into() });
+        }
+    }
+    rows.sort_by(|a, b| a.date.cmp(&b.date).then(a.name.cmp(&b.name)));
+    rows
+}
+
+fn speak_coming(store: &Store, today: NaiveDate) -> String {
+    let out = coming_lines(store, today, "out");
+    let inn = coming_lines(store, today, "in");
+    if out.is_empty() && inn.is_empty() {
+        return spoken("Nothing is due in the next 30 days.", &[]);
+    }
+    let mut parts = Vec::new();
+    if !out.is_empty() {
+        let body = out.iter().take(6).map(|row| format!("{} {}", row.name, row.date)).collect::<Vec<_>>().join("; ");
+        parts.push(spoken("Coming expenses, next 30 days: {body}.", &[("body", &body)]));
+    }
+    if !inn.is_empty() {
+        let body = inn.iter().take(6).map(|row| format!("{} {}", row.name, row.date)).collect::<Vec<_>>().join("; ");
+        parts.push(spoken("Coming income, next 30 days: {body}.", &[("body", &body)]));
+    }
+    parts.join(" ")
+}
+
 fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
     let month = if ask.month.len() == 7 { ask.month.clone() } else { format!("{:04}-{:02}", today.year(), today.month()) };
     let kind = if !ask.kind.is_empty() {
@@ -2374,8 +2781,22 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
     } else {
         "summary".into()
     };
+    if view == "coming" {
+        return speak_coming(store, today);
+    }
     if view == "upcoming" {
-        return speak_upcoming(&upcoming_items(store, today));
+        let rows = upcoming_items(store, today)
+            .into_iter()
+            .filter(|row| (0..=30).contains(&row.days_until))
+            .filter(|row| {
+                if row.direction != "expense" {
+                    return true;
+                }
+                let Some(rule) = store.rules.iter().find(|rule| rule.id == row.id) else { return true };
+                !store.accounts.iter().any(|account| account.id == rule.account_id && account.kind == "credit_card")
+            })
+            .collect::<Vec<_>>();
+        return speak_upcoming(&rows);
     }
     if view == "accounts" || view == "investments" {
         let kind = if view == "investments" && kind.is_empty() { "investment".into() } else { kind };
@@ -2394,6 +2815,10 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
     if !account_id.is_empty() || !kind.is_empty() {
         detail.push(' ');
         detail.push_str(&speak_accounts(store, &kind, &ask.account));
+    }
+    if !detail.contains("needs a rate") {
+        detail.push(' ');
+        detail.push_str(&speak_coming(store, today));
     }
     detail
 }
@@ -2478,11 +2903,27 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
                 None => spoken("{name} has no balance saved.", &[("name", &account.name)]),
                 Some(minor) => {
                     let amount = format_minor(minor, &account.currency);
-                    match account.kind.as_str() {
+                    let mut line = match account.kind.as_str() {
                         "credit_card" | "loan" | "other_debt" => spoken("{name} owes {amount}.", &[("name", &account.name), ("amount", &amount)]),
                         "investment" => spoken("{name} is worth {amount}.", &[("name", &account.name), ("amount", &amount)]),
                         _ => spoken("{name} is {amount}.", &[("name", &account.name), ("amount", &amount)]),
+                    };
+                    if account.kind == "credit_card" {
+                        if let Some(limit) = account.credit_limit_minor.filter(|value| *value > 0) {
+                            let percent = minor.max(0).saturating_mul(100) / limit;
+                            let percent = percent.to_string();
+                            line.push(' ');
+                            line.push_str(&spoken("{name} is {percent} of its limit.", &[("name", &account.name), ("percent", &percent)]));
+                        }
+                        if let Some(date) = card_due_on(account, Local::now().date_naive()) {
+                            let due_amount = account.payment_minor.filter(|value| *value > 0).unwrap_or(minor.max(0));
+                            let due = format_minor(due_amount, &account.currency);
+                            let dated = iso(date);
+                            line.push(' ');
+                            line.push_str(&spoken("Next payment {amount} on {date}.", &[("amount", &due), ("date", &dated)]));
+                        }
                     }
+                    line
                 }
             }
         })
@@ -2659,7 +3100,7 @@ fn link_calendar(app: &AppHandle, store: &mut Store, now: chrono::DateTime<Local
             continue;
         }
         let (date, cadence, amount, title) = if account.kind == "investment" {
-            (account.contribution_date.clone(), account.contribution_cadence.clone(), account.contribution_minor, format!("Invest in {}", account.name))
+            (account.contribution_date.clone(), account.contribution_cadence.clone(), account.contribution_minor, invest_title(&account.name))
         } else {
             (account.due_date.clone(), account.cadence.clone(), account.payment_minor, account.name.clone())
         };
@@ -2700,16 +3141,38 @@ fn calendar_money_events(store: &Store, start_ms: i64, end_ms: i64, today: Naive
         }
         let spec = rule_spec(rule);
         let settled = settled_dates(store, &rule.id);
-        push_due_events(&mut out, &format!("fin-due-{}", rule.id), &rule.name, rule.amount_minor, &rule.currency, &spec, &settled, today, start_ms, end_ms);
+        let mut amount = rule.amount_minor;
+        if amount.is_none() && rule.direction == "payment" {
+            if let Some(card) = store.accounts.iter().find(|account| account.id == rule.account_id && account.kind == "credit_card") {
+                amount = shown_with_fx(card, &store.transactions, &store.fx, 0).filter(|value| *value > 0);
+            }
+        }
+        let title = card_payment_title(store, rule);
+        push_due_events(&mut out, &format!("fin-due-{}", rule.id), &title, amount, &rule.currency, &spec, &settled, today, start_ms, end_ms);
     }
     for account in &store.accounts {
+        if account.kind == "credit_card" && !card_payment_covered(store, &account.id) {
+            if let Some(date) = card_due_on(account, today) {
+                let cadence = if !account.cadence.is_empty() {
+                    account.cadence.as_str()
+                } else if account.due_day.is_some() {
+                    "monthly"
+                } else {
+                    ""
+                };
+                let spec = account_spec(date, cadence);
+                let amount = account.payment_minor.filter(|value| *value > 0).or_else(|| shown_with_fx(account, &store.transactions, &store.fx, 0).filter(|value| *value > 0));
+                let title = payment_title(account.name.trim());
+                push_due_events(&mut out, &format!("fin-card-{}", account.id), &title, amount, &account.currency, &spec, &[], today, start_ms, end_ms);
+            }
+        }
         if account_has_rule(store, &account.id) {
             continue;
         }
         if account.kind == "investment" {
             if let Some(start) = parse_iso_date(&account.contribution_date) {
                 let spec = account_spec(start, &account.contribution_cadence);
-                let title = format!("Invest in {}", account.name);
+                let title = invest_title(&account.name);
                 push_due_events(&mut out, &format!("fin-acct-{}", account.id), &title, account.contribution_minor, &account.currency, &spec, &[], today, start_ms, end_ms);
             }
         } else if let Some(start) = parse_iso_date(&account.due_date) {
@@ -2719,6 +3182,47 @@ fn calendar_money_events(store: &Store, start_ms: i64, end_ms: i64, today: Naive
     }
     out.sort_by(|a, b| a.start_ms.cmp(&b.start_ms).then_with(|| a.title.cmp(&b.title)));
     out
+}
+
+fn invest_title(name: &str) -> String {
+    spoken("Invest in {name}", &[("name", name.trim())])
+}
+
+fn payment_title(name: &str) -> String {
+    let name = name.trim();
+    let folded = fold(name);
+    if folded.ends_with("payment") || folded.starts_with("pay ") {
+        return name.to_string();
+    }
+    spoken("{name} payment", &[("name", name)])
+}
+
+fn card_payment_title(store: &Store, rule: &Rule) -> String {
+    if rule.direction == "payment" {
+        if let Some(account) = store.accounts.iter().find(|account| account.id == rule.account_id && account.kind == "credit_card") {
+            let name = account.name.trim();
+            if name.to_ascii_lowercase().ends_with("payment") {
+                return name.to_string();
+            }
+            return payment_title(name);
+        }
+    }
+    rule.name.clone()
+}
+
+fn card_payment_covered(store: &Store, account_id: &str) -> bool {
+    store.rules.iter().any(|rule| {
+        rule.account_id == account_id && rule.direction == "payment" && shows_on_calendar(&rule.status) && (!rule.next_date.is_empty() || !rule.start_date.is_empty())
+    })
+}
+
+fn card_due_on(account: &Account, today: NaiveDate) -> Option<NaiveDate> {
+    if let Some(date) = parse_iso_date(&account.due_date) {
+        if date >= today {
+            return Some(date);
+        }
+    }
+    account.due_day.map(|day| next_month_day(day, today))
 }
 
 fn shows_on_calendar(status: &str) -> bool {
@@ -3504,7 +4008,7 @@ fn mark_paid(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, S
         account_id: rule.account_id.clone(),
         from_account_id: String::new(),
         date: posted,
-        notes: if rule.amount_mode == "quote" && !rule.payout_currency.is_empty() { format!("Settled in {}.", rule.payout_currency) } else { String::new() },
+        notes: if rule.amount_mode == "quote" && !rule.payout_currency.is_empty() { spoken("Settled in {code}.", &[("code", &rule.payout_currency)]) } else { String::new() },
         recurrence: "once".into(),
         rule_id: rule.id.clone(),
         created_ms: clock.ms,
@@ -3535,11 +4039,11 @@ fn relative_days(days: i64) -> String {
 fn pay_title(rule: &Rule) -> String {
     let name = rule.name.trim();
     if rule.direction == "income" {
-        if fold(name).starts_with("payday") { name.to_string() } else { format!("Payday {name}") }
+        if fold(name).starts_with("payday") { name.to_string() } else { spoken("Payday {name}", &[("name", name)]) }
     } else if fold(name).starts_with("pay ") {
         name.to_string()
     } else {
-        format!("Pay {name}")
+        spoken("Pay {name}", &[("name", name)])
     }
 }
 
@@ -4857,5 +5361,118 @@ mod tests {
         assert!(spoken.contains("15.50 EUR"), "{spoken}");
         assert!(spoken.contains("together in EUR"), "{spoken}");
         assert!(!spoken.contains("21.00"), "{spoken}");
+    }
+
+    #[test]
+    fn voice_edits_amount_without_rewriting_paid_history() {
+        let mut store = Store::default();
+        let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 12).unwrap());
+        rule_from_tool(&mut store, &json!({"name": "Renew travel card", "amount": "40", "currency": "EUR", "direction": "expense", "cadence": "yearly", "date": "2026-11-01"}), &clock, false).unwrap();
+        let rule_id = store.rules[0].id.clone();
+        store.transactions.push(Transaction {
+            id: "paid".into(),
+            amount_minor: 4_000,
+            currency: "EUR".into(),
+            direction: "expense".into(),
+            category: "Renew travel card".into(),
+            account_id: String::new(),
+            from_account_id: String::new(),
+            date: "2025-11-01".into(),
+            notes: String::new(),
+            recurrence: "once".into(),
+            rule_id: rule_id.clone(),
+            created_ms: 1,
+            updated_ms: 1,
+            occurrence_date: "2025-11-01".into(),
+        });
+        let detail = rule_from_tool(&mut store, &json!({"name": "Renew travel card", "amount": "55", "currency": "EUR"}), &clock, false).unwrap();
+        assert!(detail.contains("55.00 EUR"), "{detail}");
+        assert!(detail.contains("Future unpaid"), "{detail}");
+        assert_eq!(store.rules[0].amount_minor, Some(5_500));
+        assert_eq!(store.transactions[0].amount_minor, 4_000);
+        let edited = edit_logged(&mut store, "paid", &json!({"amount": "42", "currency": "EUR"}), &clock).unwrap();
+        assert!(edited.contains("42.00 EUR"), "{edited}");
+        assert_eq!(store.transactions[0].amount_minor, 4_200);
+        assert_eq!(store.rules[0].amount_minor, Some(5_500));
+    }
+
+    #[test]
+    fn voice_card_charge_payment_and_coming_window() {
+        let mut store = Store::default();
+        let mut clock = clock(NaiveDate::from_ymd_opt(2026, 11, 12).unwrap());
+        account_from_tool(&mut store, &json!({"name": "Checking", "kind": "bank", "balance": "500", "currency": "EUR"}), &clock).unwrap();
+        account_from_tool(
+            &mut store,
+            &json!({"name": "Visa", "kind": "credit_card", "balance": "20", "currency": "EUR", "creditLimit": "1000", "dueDay": 20, "lastFour": "4242"}),
+            &clock,
+        )
+        .unwrap();
+        let card = store.accounts.iter().find(|account| account.name == "Visa").unwrap();
+        assert_eq!(card.kind, "credit_card");
+        assert_eq!(card.last_four, "4242");
+        assert_eq!(card.credit_limit_minor, Some(100_000));
+        assert!(card.due_day == Some(20));
+        clock.ms = 8_000;
+        let charged = log_from_tool(&mut store, &json!({"direction": "expense", "amount": "30", "currency": "EUR", "account": "Visa", "category": "Groceries"}), &clock).unwrap();
+        assert!(charged.contains("Charged"), "{charged}");
+        let bank = shown_balance(store.accounts.iter().find(|account| account.name == "Checking").unwrap(), &store.transactions);
+        let owed = shown_balance(store.accounts.iter().find(|account| account.name == "Visa").unwrap(), &store.transactions);
+        assert_eq!(bank, Some(50_000));
+        assert_eq!(owed, Some(5_000));
+        let over = log_from_tool(&mut store, &json!({"direction": "payment", "amount": "80", "currency": "EUR", "account": "Visa", "fromAccount": "Checking"}), &clock);
+        assert!(over.is_err(), "{over:?}");
+        clock.ms = 9_000;
+        let paid = log_from_tool(&mut store, &json!({"direction": "payment", "payInFull": true, "account": "Visa", "fromAccount": "Checking"}), &clock).unwrap();
+        assert!(paid.contains("Paid"), "{paid}");
+        assert!(store.transactions.iter().filter(|tx| tx.direction == "payment").count() == 1);
+        assert!(store.transactions.iter().all(|tx| tx.direction != "payment" || tx.category.is_empty() || tx.direction == "payment"));
+        let bank = shown_balance(store.accounts.iter().find(|account| account.name == "Checking").unwrap(), &store.transactions);
+        let owed = shown_balance(store.accounts.iter().find(|account| account.name == "Visa").unwrap(), &store.transactions);
+        assert_eq!(owed, Some(0));
+        assert_eq!(bank, Some(45_000));
+        let expenses = period_totals(&store.transactions, "2026-11", "", "", "");
+        assert_eq!(expenses.iter().map(|row| row.expense_minor).sum::<i64>(), 3_000);
+        assert_eq!(expenses.iter().map(|row| row.payment_minor).sum::<i64>(), 5_000);
+        rule_from_tool(&mut store, &json!({"name": "Rent", "amount": "10", "currency": "EUR", "direction": "expense", "date": "2026-11-18", "account": "Checking"}), &clock, false).unwrap();
+        rule_from_tool(&mut store, &json!({"name": "Groceries plan", "amount": "8", "currency": "EUR", "direction": "expense", "date": "2026-11-16", "account": "Visa", "accountKind": "credit_card"}), &clock, false).unwrap();
+        rule_from_tool(&mut store, &json!({"name": "Renew travel card", "amount": "40", "currency": "EUR", "direction": "expense", "cadence": "yearly", "date": "2027-10-12", "account": "Checking"}), &clock, false).unwrap();
+        let coming = coming_lines(&store, clock.today, "out");
+        assert!(coming.iter().any(|row| row.name == "Rent"), "{coming:?}");
+        assert!(coming.iter().all(|row| row.name != "Groceries plan"), "{coming:?}");
+        assert!(coming.iter().all(|row| row.name != "Renew travel card"), "{coming:?}");
+        let ask = Ask { view: "coming".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new() };
+        let spoken = speak(&store, &ask, clock.today);
+        assert!(spoken.contains("Rent"), "{spoken}");
+        assert!(!spoken.contains("Groceries plan"), "{spoken}");
+        assert!(!spoken.contains("Renew travel card"), "{spoken}");
+        let mut twin = empty_account("fa-visa-2".into());
+        twin.name = "Visa".into();
+        twin.kind = "credit_card".into();
+        twin.currency = "EUR".into();
+        twin.balance_minor = Some(100);
+        store.accounts.push(twin);
+        let ambiguous = log_from_tool(&mut store, &json!({"direction": "expense", "amount": "1", "currency": "EUR", "account": "Visa"}), &clock);
+        assert!(ambiguous.is_err(), "{ambiguous:?}");
+        let invested = account_from_tool(
+            &mut store,
+            &json!({"name": "Nitroeggs", "kind": "investment", "units": "2", "unitPrice": "50", "currency": "EUR", "investmentType": "custom"}),
+            &clock,
+        )
+        .unwrap();
+        assert!(invested.contains("Nitroeggs"), "{invested}");
+        let holding = store.accounts.iter().find(|account| account.name == "Nitroeggs").unwrap();
+        assert_eq!(holding.kind, "investment");
+        assert_eq!(shown_balance(holding, &store.transactions), Some(10_000));
+        let payout = rule_from_tool(
+            &mut store,
+            &json!({"name": "Nitroeggs payout", "amount": "14", "currency": "USD", "direction": "income", "purpose": "investment_payout", "cadence": "every_n_days", "intervalDays": 10, "date": "2026-11-20", "payoutCurrency": "XMR", "amountMode": "quote", "account": "Nitroeggs"}),
+            &clock,
+            true,
+        )
+        .unwrap();
+        assert!(payout.contains("Nitroeggs"), "{payout}");
+        let rule = store.rules.iter().find(|rule| rule.name == "Nitroeggs payout").unwrap();
+        assert_eq!(rule.interval_days, 10);
+        assert_eq!(rule.payout_currency, "XMR");
     }
 }

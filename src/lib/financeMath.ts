@@ -12,7 +12,7 @@ export interface FlowRow {
   left: number;
 }
 
-/** Incoming, outgoing, and leftover for one period. Currencies are never combined. */
+/** Income minus expenses for one period. A debt payment is not an expense. Currencies stay apart. */
 export function cashFlow(rows: FlowInput[], start: string, end: string): FlowRow[] {
   const by = new Map<string, FlowRow>();
   for (const tx of rows) {
@@ -21,7 +21,7 @@ export function cashFlow(rows: FlowInput[], start: string, end: string): FlowRow
     if (end && tx.date > end) continue;
     const row = by.get(tx.currency) ?? { currency: tx.currency, incoming: 0, outgoing: 0, left: 0 };
     if (tx.direction === "income") row.incoming += tx.amountMinor;
-    else if (tx.direction === "expense" || tx.direction === "payment") row.outgoing += tx.amountMinor;
+    else if (tx.direction === "expense") row.outgoing += tx.amountMinor;
     row.left = row.incoming - row.outgoing;
     by.set(tx.currency, row);
   }
@@ -483,6 +483,133 @@ export function plannedHits(schedules: ScheduleShape[], txs: LinkedTx[], today: 
   return hits.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
 
+/** Coming lists run from today through this many days, inclusive. */
+export const COMING_DAYS = 30;
+
+export function comingEnd(today: string): string {
+  return addDays(today, COMING_DAYS);
+}
+
+export interface CardAccount {
+  id: string;
+  name: string;
+  kind: string;
+  currency: string;
+  shownBalanceMinor: number | null;
+  paymentMinor: number | null;
+  dueDate: string;
+  dueDay?: number | null;
+}
+
+export function nextMonthDay(day: number, today: string): string {
+  if (day < 1 || day > 31) return "";
+  const part = parts(today);
+  if (!part) return "";
+  const here = clampDom(part.y, part.m, day);
+  if (here >= today) return here;
+  const index = part.y * 12 + part.m;
+  const year = Math.floor(index / 12);
+  const month = index % 12;
+  return clampDom(year, month + 1, day);
+}
+
+function clampDom(year: number, month: number, day: number): string {
+  const dim = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return isoFrom(new Date(Date.UTC(year, month - 1, Math.min(day, dim))));
+}
+
+/** Next statement payment date. A past due date without a day-of-month stays in the past. */
+export function cardDueDate(card: CardAccount, today: string): string {
+  if (card.dueDate && card.dueDate >= today) return card.dueDate;
+  if (card.dueDay) return nextMonthDay(card.dueDay, today);
+  return card.dueDate || "";
+}
+
+/** Overpay is rejected. An unknown balance is not treated as zero owed. */
+export function paymentFits(owed: number | null, pay: number): "ok" | "over" | "unknown" {
+  if (owed == null) return "unknown";
+  if (pay > Math.max(0, owed)) return "over";
+  return "ok";
+}
+
+export function utilization(owed: number | null, limit: number | null): number | null {
+  if (owed == null || limit == null || limit <= 0) return null;
+  return Math.max(0, owed) / limit;
+}
+
+export function cardPaymentName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "Card payment";
+  if (/payment$/i.test(trimmed)) return trimmed;
+  return `${trimmed} payment`;
+}
+
+/**
+ * Cash picture for the next 30 days.
+ * Charges on a card are omitted. The card's upcoming payment is included once.
+ */
+export function comingCashRows(schedules: ScheduleShape[], txs: LinkedTx[], accounts: CardAccount[], today: string, side: "in" | "out"): ComingRow[] {
+  const end = comingEnd(today);
+  const rows = comingRows(schedules, txs, today, side)
+    .filter((row) => {
+      if (side !== "out") return true;
+      const account = accounts.find((item) => item.id === row.accountId);
+      return !(account?.kind === "credit_card" && row.direction !== "payment");
+    })
+    .map((row) => labelCardPayment(row, accounts));
+  if (side !== "out") return rows;
+  for (const card of accounts) {
+    if (card.kind !== "credit_card") continue;
+    if (rows.some((row) => row.accountId === card.id && row.direction === "payment")) continue;
+    const due = cardDueDate(card, today);
+    if (!due || due < today || due > end) continue;
+    const stated = card.paymentMinor != null && card.paymentMinor > 0 ? card.paymentMinor : card.shownBalanceMinor;
+    if (stated == null || stated <= 0) continue;
+    const weekEnd = addDays(today, 6);
+    const monthEnd = monthBounds(today).end;
+    const bucket = due <= weekEnd ? "week" : due <= monthEnd ? "month" : "later";
+    rows.push({
+      id: `card-due-${card.id}`,
+      name: cardPaymentName(card.name),
+      date: due,
+      amountMinor: stated,
+      currency: card.currency,
+      direction: "payment",
+      purpose: "recurring",
+      payoutCurrency: "",
+      amountMode: "fixed",
+      bucket,
+      progress: {
+        mode: "once",
+        paidCount: 0,
+        totalCount: 1,
+        remainingCount: 1,
+        remainingMinor: stated,
+        perPeriodMinor: stated,
+        currency: card.currency,
+        nearTermMinor: null,
+        nearTermCount: 0,
+      },
+      track: null,
+      category: "credit_card",
+      accountId: card.id,
+    });
+  }
+  return rows.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+}
+
+function labelCardPayment(row: ComingRow, accounts: CardAccount[]): ComingRow {
+  const account = accounts.find((item) => item.id === row.accountId);
+  if (!account || account.kind !== "credit_card" || row.direction !== "payment") return row;
+  const amount = row.amountMinor != null && row.amountMinor > 0 ? row.amountMinor : account.shownBalanceMinor;
+  return {
+    ...row,
+    name: cardPaymentName(account.name),
+    amountMinor: amount != null && amount > 0 ? amount : row.amountMinor,
+    currency: row.currency || account.currency,
+  };
+}
+
 export interface ComingRow {
   id: string;
   name: string;
@@ -512,9 +639,9 @@ export function comingRows(schedules: ScheduleShape[], txs: LinkedTx[], today: s
     const progress = scheduleProgress(schedule, txs, today);
     const track = spec.purpose === "investment_payout" ? payoutTrack(schedule, txs, today) : null;
     const hits = plannedHits([schedule], txs, today);
-    const overdue = hits.filter((hit) => hit.date < today).slice(-6);
-    const future = hits.filter((hit) => hit.date >= today).slice(0, spec.endKind === "after_count" ? 24 : 6);
-    for (const hit of [...overdue, ...future]) {
+    const horizon = addDays(today, COMING_DAYS);
+    const future = hits.filter((hit) => hit.date >= today && hit.date <= horizon);
+    for (const hit of future) {
       const bucket = hit.date < today ? "overdue" : hit.date <= weekEnd ? "week" : hit.date <= monthEnd ? "month" : "later";
       rows.push({
         id: spec.id,
@@ -639,6 +766,7 @@ export function netWorthChange(moves: WorthMove[], start: string, end: string): 
     if (primary === "cash" && move.direction === "income") delta += move.amountMinor;
     if (primary === "cash" && (move.direction === "expense" || move.direction === "payment")) delta -= move.amountMinor;
     if (primary === "debt" && move.direction === "expense") delta -= move.amountMinor;
+    if (primary === "debt" && move.direction === "income") delta += move.amountMinor;
     if (primary === "debt" && move.direction === "payment") delta += move.amountMinor;
     if (move.direction === "payment" && move.fromKind) {
       const source = worthBucket(move.fromKind);
