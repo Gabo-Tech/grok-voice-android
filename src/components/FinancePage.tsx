@@ -9,10 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
-import { formatMoney, kindLabel, majorString, minorExponent, typeLabel } from "@/lib/money";
+import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
 import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
-import { cardDueDate, debtPayoff, nextDue, paymentFits, plannedHits, utilization } from "@/lib/financeMath";
+import { cardDisplayMinor, cardDueDate, cardPosture, debtPayoff, nextDue, plannedHits, utilization } from "@/lib/financeMath";
 import { FinanceDashboard, plannedYearBars, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
 import { FINANCE_TABS, readFinanceTab, type FinanceTab } from "@/lib/financeTabs";
 import { ProgramSheet } from "@/components/ProgramSheet";
@@ -830,13 +830,16 @@ function AccountRows({
   return (
     <div className="space-y-3">
       {rows.map((account, index) => {
-        const money = account.shownBalanceMinor == null ? t("Not set") : formatMoney(account.shownBalanceMinor, account.currency);
+        const posture = cardPosture(account.kind === "credit_card" ? account.shownBalanceMinor : null);
+        const displayMinor = account.kind === "credit_card" ? cardDisplayMinor(account.shownBalanceMinor) : account.shownBalanceMinor;
+        const money = displayMinor == null ? t("Not set") : formatMoney(displayMinor, account.currency);
         const owed = isDebt(account.kind);
         const card = account.kind === "credit_card";
         const payoff = debtPayoff(account, transactions);
         const due = nextDue(account, rules);
         const used = card ? utilization(account.shownBalanceMinor, account.creditLimitMinor) : null;
         const charges = card ? transactions.filter((tx) => tx.accountId === account.id && tx.direction === "expense").slice(0, 3) : [];
+        const billDue = owed && due && !(card && (posture === "credit" || posture === "paid"));
         return (
           <div key={account.id} className="border border-border px-3 py-3">
             <RowButton onClick={() => onOpen(account)} className="px-0 py-0">
@@ -845,12 +848,14 @@ function AccountRows({
                 <p className="truncate text-base">{account.name}</p>
                 <p className="text-sm text-muted-foreground">
                   {t(kindLabel(account.kind))}
-                  {owed && account.shownBalanceMinor != null ? ` · ${t("Remaining")}` : ""}
+                  {posture === "credit" ? ` · ${t("Credit")}` : ""}
+                  {owed && posture !== "credit" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 ? ` · ${t("Remaining")}` : ""}
+                  {account.kind === "investment" && account.investmentType ? ` · ${t(typeLabel(account.investmentType))}` : ""}
                   {account.kind === "investment" && account.shownBalanceMinor != null ? ` · ${t("Worth")}` : ""}
                   {account.calendarEventId ? ` · ${t("On Calendar")}` : ""}
                 </p>
               </div>
-              <p className={cn("shrink-0 text-right text-xl leading-6 font-medium tabular-nums", account.shownBalanceMinor == null && "text-base font-normal text-muted-foreground")}>{money}</p>
+              <p className={cn("shrink-0 text-right text-xl leading-6 font-medium tabular-nums", displayMinor == null && "text-base font-normal text-muted-foreground")}>{money}</p>
             </RowButton>
             {owed && payoff && payoff.paid > 0 ? (
               <div className="mt-2">
@@ -866,7 +871,7 @@ function AccountRows({
                   <span style={{ width: `${Math.min(100, Math.round(used * 100))}%` }} />
                 </span>
                 <p className="fin-muted mt-1 text-sm">
-                  {t("Utilization")} · {Math.round(used * 100)}% · {formatMoney(account.creditLimitMinor, account.currency)}
+                  {t("Utilization")} · {posture === "credit" ? t("In credit") : `${Math.round(used * 100)}%`} · {formatMoney(account.creditLimitMinor, account.currency)}
                 </p>
               </div>
             ) : null}
@@ -883,7 +888,7 @@ function AccountRows({
             {card && onPay ? (
               <button type="button" className="fin-chip mt-3 min-h-12 w-full" onClick={() => onPay(account)}>{t("Pay card")}</button>
             ) : null}
-            {owed && due ? (
+            {billDue && due ? (
               <div className="mt-2 flex items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">
                   {t("Next payment")}
@@ -961,7 +966,6 @@ function TransactionSheet({
   const [recurrence, setRecurrence] = useState("once");
   const [cadence, setCadence] = useState("");
   const [notes, setNotes] = useState("");
-  const [formError, setFormError] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = editing?.id || `new:${presetDirection}`;
@@ -978,7 +982,6 @@ function TransactionSheet({
     setRecurrence(editing?.recurrence || "once");
     setCadence("");
     setNotes(editing?.notes || "");
-    setFormError("");
     setConfirming(false);
   }
   const picked = (id: string) => {
@@ -990,15 +993,6 @@ function TransactionSheet({
     if (!amount.trim()) return;
     const target = picked(accountId);
     const source = picked(fromId);
-    if (direction === "payment" && target.kind === "credit_card") {
-      const card = finance.snapshot.accounts.find((row) => row.id === target.id);
-      const minor = Number(amount.replace(",", "."));
-      const pay = card && Number.isFinite(minor) ? Math.round(minor * 10 ** minorExponent(card.currency)) : 0;
-      if (card && card.currency === (currency || card.currency).toUpperCase() && paymentFits(card.shownBalanceMinor, pay) === "over") {
-        setFormError(t("That is more than this card owes."));
-        return;
-      }
-    }
     finance.saveTransaction({
       id: editing?.id,
       amount,
@@ -1054,8 +1048,8 @@ function TransactionSheet({
         <Field label={t("Amount")}>
           <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-16 text-3xl tabular-nums" autoFocus />
         </Field>
-        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
-          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={8} autoCapitalize="characters" />
+        <Field label={t("Currency")} hint={t("EUR, USD, BTC, or another code.")}>
+          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={12} autoCapitalize="characters" />
         </Field>
         <Field label={t("Direction")}>
           <div className="chip-scroller">
@@ -1064,7 +1058,6 @@ function TransactionSheet({
             <Chip on={direction === "payment"} onClick={() => setDirection("payment")}>{t("Payment")}</Chip>
           </div>
         </Field>
-        {formError ? <p className="text-sm leading-5">{formError}</p> : null}
         {direction === "payment" ? (
           <div className="space-y-3">
             <p className="text-sm leading-5 text-muted-foreground">{t("Cards")}</p>
@@ -1149,8 +1142,10 @@ function AccountSheet({
   if (open && seen !== key) {
     setSeen(key);
     setName(editing?.name || "");
-    setKind(editing?.kind || (investment ? "investment" : presetKind || "cash"));
-    setBalance(majorString(editing?.balanceMinor, editing?.currency || finance.snapshot.defaultCurrency));
+    const openingKind = editing?.kind || (investment ? "investment" : presetKind || "cash");
+    setKind(openingKind);
+    const openingBalance = openingKind === "credit_card" ? (editing?.shownBalanceMinor ?? editing?.balanceMinor) : editing?.balanceMinor;
+    setBalance(majorString(openingBalance, editing?.currency || finance.snapshot.defaultCurrency));
     setCurrency(editing?.currency || finance.snapshot.defaultCurrency);
     setInstitution(editing?.institution || "");
     setDueDate(editing?.dueDate || "");
@@ -1252,11 +1247,36 @@ function AccountSheet({
             </div>
           </Field>
         )}
-        <Field label={investment ? t("Worth") : kind === "credit_card" ? t("Balance owed") : t("Balance")} hint={t("Leave blank until you have checked it.")}>
+        <Field
+          label={investment ? t("Worth") : kind === "credit_card" ? t("Balance owed") : t("Balance")}
+          hint={
+            kind === "credit_card"
+              ? editing
+                ? t("Update the amount owed anytime. A negative amount is a credit.")
+                : t("Leave blank until you have checked it. A negative amount is a credit.")
+              : t("Leave blank until you have checked it.")
+          }
+        >
           <Input inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="h-16 text-3xl tabular-nums" />
         </Field>
-        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
-          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} autoCapitalize="characters" />
+        {kind === "credit_card" ? (
+          <div className="chip-scroller">
+            <Chip on={!balance.trim().startsWith("-")} onClick={() => setBalance((value) => value.replace(/^-/, ""))}>{t("Balance owed")}</Chip>
+            <Chip
+              on={balance.trim().startsWith("-")}
+              onClick={() =>
+                setBalance((value) => {
+                  const trimmed = value.trim().replace(/^-/, "");
+                  return trimmed ? `-${trimmed}` : "-";
+                })
+              }
+            >
+              {t("Credit")}
+            </Chip>
+          </div>
+        ) : null}
+        <Field label={t("Currency")} hint={t("EUR, USD, BTC, or another code.")}>
+          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={12} autoCapitalize="characters" />
         </Field>
         <Field label={t("Institution")} hint={t("A bank name or label. Not an account number.")}>
           <Input value={institution} onChange={(e) => setInstitution(e.target.value)} />
@@ -1306,7 +1326,7 @@ function AccountSheet({
           <>
             <Field label={t("Type")}>
               <div className="chip-scroller">
-                {["stock", "fund", "crypto", "custom"].map((id) => (
+                {["stock", "fund", "crypto", "property", "collectible", "stake", "custom"].map((id) => (
                   <Chip key={id} on={investmentType === id} onClick={() => setInvestmentType(id)}>{t(typeLabel(id))}</Chip>
                 ))}
               </div>
@@ -1548,20 +1568,15 @@ function PayCardSheet({
   if (!open && seen !== null) setSeen(null);
   if (open && card && seen !== key) {
     setSeen(key);
-    setAmount(majorString(card.shownBalanceMinor, card.currency));
+    setAmount(card.shownBalanceMinor != null && card.shownBalanceMinor > 0 ? majorString(card.shownBalanceMinor, card.currency) : "");
     setFromId("");
     setDate(todayIso());
     setError("");
   }
   const save = () => {
-    if (!card || !amount.trim()) return;
+    if (!card || !amount.trim() || amount.trim() === "-") return;
     if (!fromId) {
       setError(t("Which account pays this card?"));
-      return;
-    }
-    const pay = Math.round(Number(amount.replace(",", ".")) * 10 ** minorExponent(card.currency));
-    if (Number.isFinite(pay) && paymentFits(card.shownBalanceMinor, pay) === "over") {
-      setError(t("That is more than this card owes."));
       return;
     }
     const source = fromId === CASH_WALLET
@@ -1584,7 +1599,9 @@ function PayCardSheet({
     });
     onClose();
   };
-  const owed = card?.shownBalanceMinor != null && card ? formatMoney(card.shownBalanceMinor, card.currency) : t("Not set");
+  const posture = cardPosture(card?.shownBalanceMinor ?? null);
+  const display = card ? cardDisplayMinor(card.shownBalanceMinor) : null;
+  const owed = display != null && card ? formatMoney(display, card.currency) : t("Not set");
   return (
     <Sheet
       open={open && Boolean(card)}
@@ -1600,13 +1617,23 @@ function PayCardSheet({
       }
     >
       <div className="space-y-4">
-        <p className="text-sm leading-5 text-muted-foreground">{t("A card payment is not a new expense. Cash and the balance owed both fall. Net worth stays the same.")}</p>
-        <p className="fin-num text-3xl">{owed}</p>
-        {card && cardDueDate(card, todayIso()) ? (
+        <p className="text-sm leading-5 text-muted-foreground">{t("A card payment is not a new expense. Cash and the balance owed both fall. Paying more than you owe leaves a credit. Net worth stays the same.")}</p>
+        {posture === "credit" ? <p className="text-sm leading-5">{t("This card is already in credit. Enter an amount only if you still want to pay more.")}</p> : null}
+        {posture === "paid" ? <p className="text-sm leading-5">{t("This card is already paid. Enter an amount only if you want to pay more.")}</p> : null}
+        <p className="fin-num text-3xl">{posture === "credit" ? `${owed} ${t("Credit")}` : owed}</p>
+        {card && posture === "owed" && cardDueDate(card, todayIso()) ? (
           <p className="fin-muted text-sm">{t("Next payment")} · {cardDueDate(card, todayIso())}</p>
         ) : null}
         <div className="chip-scroller">
-          <Chip on={false} onClick={() => card && setAmount(majorString(card.shownBalanceMinor, card.currency))}>{t("Pay in full")}</Chip>
+          <Chip
+            on={false}
+            onClick={() => {
+              if (!card || card.shownBalanceMinor == null || card.shownBalanceMinor <= 0) return;
+              setAmount(majorString(card.shownBalanceMinor, card.currency));
+            }}
+          >
+            {t("Pay in full")}
+          </Chip>
           <Chip on={false} onClick={() => setAmount("")}>{t("Custom amount")}</Chip>
         </div>
         <Field label={t("Amount")}>

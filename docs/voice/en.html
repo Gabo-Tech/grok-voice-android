@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Grok Voice commands — English</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+  <main>
+    <p><a href="../index.html">Grok Voice</a> · Voice commands</p>
+    <h1>What you can say</h1>
+    <p>Talk calls the tools on this phone, then tells you what happened. These are the commands the app actually supports. Say them in your own words. If two names match, Grok asks which one. It does not invent a balance or an exchange rate.</p>
+    <p>
+      <a href="es.html">Español</a> ·
+      <a href="de.html">Deutsch</a> ·
+      <a href="pt.html">Português</a> ·
+      <a href="ca.html">Valencià</a>
+    </p>
+
+    <h2>Talk</h2>
+    <ul>
+      <li>“Hey Grok” starts listening when Listen is on.</li>
+      <li>“Turn Listen off” asks you to confirm. On does not.</li>
+      <li>“What’s my battery?” and “When is the next alarm?” read the phone.</li>
+      <li>“Go home” leaves the app.</li>
+      <li>“Search the web for the weather in Valencia” uses live search. It does not guess.</li>
+    </ul>
+
+    <h2>Notes</h2>
+    <ul>
+      <li>“Make a note: buy milk.”</li>
+      <li>“What notes do I have about milk?”</li>
+      <li>“Change that note” after you have listed it.</li>
+      <li>“Delete the milk note.”</li>
+    </ul>
+
+    <h2>Calendar and Time</h2>
+    <ul>
+      <li>“What’s on my calendar today?” reads the phone calendar. Android asks the first time.</li>
+      <li>“Add lunch with Ana tomorrow at 1.” Saved on this app’s Calendar. If you omit the end, it lasts one hour.</li>
+      <li>“Move lunch to 2.” “Delete the lunch event.”</li>
+      <li>“Remind me in 5 minutes to check the oven.” An in-app reminder, not the phone Clock.</li>
+      <li>“Set an alarm for 7:30.” Saved on Time. You can name a sound already picked, or a YouTube link. The app does not download the video.</li>
+      <li>“Set a timer for 10 minutes.”</li>
+      <li>“Snooze that 10 minutes.” If it is not clear which reminder, Grok asks.</li>
+      <li>“Remind me every weekday at 9 to take meds.”</li>
+    </ul>
+
+    <h2>People</h2>
+    <ul>
+      <li>“What’s Ana’s preferred channel?” Answers in the conversation. It does not open another app.</li>
+      <li>“When’s Sam’s birthday?”</li>
+      <li>“Call Mom.” Grok says the number and waits for a clear yes. You tap Call.</li>
+      <li>“Text Sam that I’m late.” The draft opens. You tap Send.</li>
+      <li>WhatsApp, Signal, and email work the same way: speak it, confirm, then you send it.</li>
+      <li>“Add a person named Ana, birthday June 15.”</li>
+    </ul>
+
+    <h2>Finance — money</h2>
+    <ul>
+      <li>“I spent 12 euros on coffee.” An expense. It hits this month’s result.</li>
+      <li>“I got paid 2000 euros.” Income.</li>
+      <li>“Change that coffee to 14 euros.” Edits that one transaction. It does not rewrite other ones.</li>
+      <li>“What’s my net worth?” “What did I spend this month?” “What’s coming in the next 30 days?”</li>
+      <li>Coming is today through the next 30 days: bills from cash or a bank, and a card payment when you still owe. Card charges themselves are not listed one by one.</li>
+    </ul>
+
+    <h2>Finance — accounts, cards, and credit</h2>
+    <ul>
+      <li>“Add a bank called Checking with 500 euros.”</li>
+      <li>“Add a card called Abanca, limit 15000 euros, due on the 1st.”</li>
+      <li>“Charge 30 euros on Abanca for groceries.” The card debt goes up. The bank does not move. It is an expense.</li>
+      <li>“Pay Abanca 80 euros from Checking.” The bank goes down and the debt goes down by the same amount, at a real rate if the currencies differ. It is not a new expense.</li>
+      <li>“Pay 80 on Abanca” when it only owes 50. That is allowed. Abanca is then 30 in credit. Grok says the new credit. It does not block the payment.</li>
+      <li>“Set Abanca owed to 1393.65 credit.” “Update the Abanca balance owed to -1393.65.” “Abanca is 200 in credit.” This sets the statement balance. It is not income, not an expense, and no other account moves.</li>
+      <li>“What’s the Abanca balance?” “How much credit is on Abanca?” A negative balance is spoken as a credit, not as leftover limit.</li>
+      <li>“Pay Abanca in full” when it is already paid or in credit. Grok says there is nothing to pay. It does not book a failed payment. You can still name an amount and pay more.</li>
+      <li>A missing exchange rate is refused. Grok never treats it as one-for-one.</li>
+      <li>Two cards named Visa: Grok asks which one.</li>
+    </ul>
+
+    <h2>Finance — crypto, as a currency</h2>
+    <p>Bitcoin, ether, monero, solana, and other tickers are currencies, like euros. A wallet, a bank-like account, income, an expense, a card, or an investment can be denominated in one. Native amounts stay on each item. Combined totals use a real rate.</p>
+    <ul>
+      <li>“Add a wallet called Wallet with 0.5 BTC.”</li>
+      <li>“Add 0.5 bitcoin to my wallet.”</li>
+      <li>“I earned 0.05 BTC salary in Wallet.” Income. The balance goes up.</li>
+      <li>“Pay the rent with bitcoin” or “Spend 0.1 BTC from Wallet on lunch.” The balance goes down. It is an expense. If you name euros and the wallet is in bitcoin, Grok converts with a real rate or refuses.</li>
+      <li>“Spend 1 BTC from Wallet” when it holds less. Grok refuses and says what the wallet holds.</li>
+      <li>“What is 1 bitcoin in euros?” Speaks a fetched, cached, or manual rate. It does not invent one. If none is saved: “No rate is saved… Refresh rates, or set a manual rate in Settings.”</li>
+      <li>“Refresh finance rates.” Asks the phone to fetch today’s book. A failed fetch keeps the last book.</li>
+    </ul>
+    <p>There is no separate “move coins from wallet A to wallet B” command. Booking that as an expense and an income would count it twice in the month. Move it by editing the two balances, which does not touch profit and loss.</p>
+
+    <h2>Finance — investments and custom assets</h2>
+    <ul>
+      <li>“Add an investment called Quanloop worth 3280 euros.” Stays an investment. It is not turned into a card or a coin.</li>
+      <li>“I have 2 units of VT at 50 euros.”</li>
+      <li>“Add a custom asset called Watch worth 4000 euros.”</li>
+      <li>“Add a property called Cottage worth 200000 euros.” Also collectible, or a private stake.</li>
+      <li>“Update the Watch to 4500 euros.”</li>
+      <li>“Delete the Watch.” Grok asks you to confirm first.</li>
+      <li>A stated worth is your figure. It is not an invented exchange rate. If the asset’s currency differs from the display currency, the combined net worth still needs a real rate.</li>
+      <li>“Nitroeggs pays 14 dollars every 10 days in monero.” A scheduled payout. It stays planned until you mark it.</li>
+    </ul>
+
+    <h2>Rates</h2>
+    <p>Fiat tries Frankfurter, then open.er-api.com, the ECB, and currency-api. Crypto tries CoinGecko, then Coinbase, Kraken, and currency-api, and later books only fill tickers the earlier book missed. One fetch per local day. Settings → Refresh forces a fetch. A manual rate in Settings is last, unless you mark it to override today’s rate. Same currency is one-to-one. Anything else missing is “needs a rate”, amount 0 in the combined total. Native amounts stay.</p>
+
+    <h2>Settings, music, and the phone</h2>
+    <ul>
+      <li>“Switch the language to Spanish.” Also German, Portuguese, Valencian, or follow the phone.</li>
+      <li>“Play some music.” Uses the default player. “On YouTube” still waits for a yes and does not download.</li>
+      <li>“Pause.” “Next.” “Volume up.”</li>
+      <li>“Open the browser to the weather” waits for a yes.</li>
+      <li>“Turn on Do Not Disturb.” If notification access is off, Grok says so.</li>
+      <li>“Export this month’s finance PDF.” Grok asks, then opens the share sheet. Nothing is uploaded.</li>
+    </ul>
+
+    <h2>What it will not do</h2>
+    <ul>
+      <li>Invent a balance, a price, or an exchange rate.</li>
+      <li>Store a full card number, account number, or PIN. Last four only.</li>
+      <li>Place a call or send a message by itself.</li>
+      <li>Treat a missing rate as one-for-one, or quietly assume dollars.</li>
+    </ul>
+  </main>
+</body>
+</html>

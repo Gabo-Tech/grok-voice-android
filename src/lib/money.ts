@@ -43,11 +43,22 @@ export function defaultCurrency(locale: string): string {
   return "USD";
 }
 
+const FIAT = new Set(["AED", "AUD", "BGN", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN", "RON", "SAR", "SEK", "SGD", "THB", "TRY", "USD", "ZAR", "VND", "CLP", "BHD", "KWD", "OMR"]);
+const CRYPTO = new Set(["BTC", "ETH", "XMR", "SOL", "LTC", "BCH", "XRP", "XLM", "DOGE", "ADA", "DOT", "AVAX", "ATOM", "LINK", "UNI", "AAVE", "MATIC", "POL", "NEAR", "APT", "SUI", "TON", "TRX", "ETC", "FIL", "ICP", "HBAR", "ALGO", "EOS", "XTZ", "DASH", "ZEC", "NEO", "USDT", "USDC", "DAI", "SHIB", "PEPE", "ARB", "OP", "INJ", "TIA", "SEI", "RENDER", "FET", "WLD", "BONK", "FLOKI"]);
+
+/** Crypto is a currency. Longer tickers count too. Ordinary words are not coins. */
+export function isCrypto(currency: string): boolean {
+  const code = currency.trim().toUpperCase();
+  if (!code || FIAT.has(code)) return false;
+  if (CRYPTO.has(code)) return true;
+  return code.length >= 4 && code.length <= 12 && /^[A-Z]+$/.test(code) && !["CREDIT", "BALANCE", "WORTH", "CUSTOM", "PROPERTY", "WALLET", "BITCOIN", "ETHEREUM"].includes(code);
+}
+
 export function minorExponent(currency: string): number {
   const code = currency.toUpperCase();
   if (["JPY", "KRW", "VND", "CLP"].includes(code)) return 0;
   if (["BHD", "KWD", "OMR"].includes(code)) return 3;
-  if (["BTC", "ETH", "XMR", "SOL", "LTC"].includes(code)) return 8;
+  if (isCrypto(code)) return 8;
   return 2;
 }
 
@@ -90,7 +101,7 @@ export function emptyFinance(locale = ""): FinanceSnapshot {
 
 export function shownBalance(account: FinanceAccount, transactions: FinanceTransaction[]): number | null {
   if (account.balanceMinor == null) return null;
-  if (account.kind === "investment") {
+  if (account.kind === "investment" && !isCrypto(account.currency)) {
     const priced = unitsWorth(account);
     return priced ?? account.balanceMinor;
   }
@@ -104,7 +115,7 @@ export function shownBalance(account: FinanceAccount, transactions: FinanceTrans
     if (account.balanceUpdatedMs > 0 && tx.createdMs <= account.balanceUpdatedMs) continue;
     if (account.balanceAsOf && tx.date < account.balanceAsOf) continue;
     const source = tx.accountId !== account.id;
-    balance += source ? -tx.amountMinor : delta(account.kind, tx.direction, tx.amountMinor);
+    balance += source ? -tx.amountMinor : delta(account.kind, account.currency, tx.direction, tx.amountMinor);
   }
   return balance;
 }
@@ -115,13 +126,13 @@ function unitsWorth(account: FinanceAccount): number | null {
   return Math.round(units * account.priceMinor);
 }
 
-function delta(kind: string, direction: string, amount: number): number {
+function delta(kind: string, currency: string, direction: string, amount: number): number {
   if (kind === "credit_card" || kind === "loan" || kind === "other_debt") {
     if (direction === "expense") return amount;
-    if (direction === "payment") return -amount;
+    if (direction === "payment" || direction === "income") return -amount;
     return 0;
   }
-  if (kind === "investment") return 0;
+  if (kind === "investment" && !isCrypto(currency)) return 0;
   if (direction === "income") return amount;
   if (direction === "expense" || direction === "payment") return -amount;
   return 0;
@@ -189,6 +200,9 @@ export function typeLabel(kind: string): string {
   if (kind === "stock") return "Stock";
   if (kind === "fund") return "Fund";
   if (kind === "crypto") return "Crypto";
+  if (kind === "property") return "Property";
+  if (kind === "collectible") return "Collectible";
+  if (kind === "stake") return "Private stake";
   if (kind === "custom") return "Custom";
   return kind;
 }

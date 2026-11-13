@@ -38,7 +38,7 @@ Use headphones the first few times. On a loudspeaker the microphone hears the re
 
 ## What you can ask
 
-During a session the assistant can act on the phone. It calls the tool, then tells you what happened.
+During a session the assistant can act on the phone. It calls the tool, then tells you what happened. The full voice-command guide, in the five languages the app speaks, is on the site: [English](docs/voice/en.html), [Spanish](docs/voice/es.html), [German](docs/voice/de.html), [Portuguese](docs/voice/pt.html), and [Valencian](docs/voice/ca.html).
 
 | Ask | What happens |
 | --- | --- |

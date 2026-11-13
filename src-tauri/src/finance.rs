@@ -569,6 +569,8 @@ impl Finance {
 
     pub fn save_transaction(&self, app: &AppHandle, draft: TransactionDraft) -> Result<Snapshot, String> {
         let mut store = self.lock().clone();
+        let locale = currency_locale(app, &store);
+        let _guard = push_locale(&locale);
         let clock = clock_for(app, &store);
         apply_transaction_form(&mut store, &draft, &clock)?;
         self.commit(app, store)
@@ -815,7 +817,7 @@ pub fn tool_definitions() -> Value {
     json!([
         fn_tool(
             "log_money",
-            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list. id edits that one saved transaction and does not rewrite other ones. payInFull true pays the balance owed. Charging a card is direction expense with account set to the card: card debt rises, the bank does not move, and it counts as an expense. Paying a card is direction payment with fromAccount: it is not an expense. Do not pay more than the balance owed. If the card, the funding account, or the amount is missing, or two names match, the error is the one question to ask.",
+            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list. id edits that one saved transaction and does not rewrite other ones. payInFull true pays the balance owed. Charging a card is direction expense with account set to the card: card debt rises, the bank does not move, and it counts as an expense. Paying a card is direction payment with fromAccount: it is not an expense. Paying more than the balance owed is allowed and leaves a credit, a negative amount owed. Confirm that new credit. Do not refuse the overpay. payInFull when nothing is owed, or the card is already in credit, does not move money: say there is nothing to pay. If they name an amount while the card is already in credit, pay that amount from fromAccount and the credit grows. A charge on a card that is in credit is still direction expense: it reduces the credit first and can leave a positive debt, and the whole charge is an expense. currency may be a crypto ticker such as BTC. Spending that currency from its balance reduces the units. If the units are not enough, refuse. A missing exchange rate refuses the payment. Never use 1:1. If the card, the funding account, or the amount is missing, or two names match, the error is the one question to ask.",
             json!({
                 "type": "object",
                 "properties": {
@@ -897,7 +899,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "save_account",
-            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. units and unitPrice are a stated count times a stated price, such as 2 at 50 CHF. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN. lastFour is only four digits. creditLimit, dueDay, and statementDay are for a credit card. Do not turn a loan or an investment into a card unless changeKind is true because they said to change that same nickname.",
+            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. On a credit card, balance is the amount owed right now and can be updated any time, including zero and a negative credit. Pass -1393.65, or 1393.65 credit, or 200 in credit. That sets the statement balance directly: it is not income, not an expense, and it does not move a funding account. units and unitPrice are a stated count times a stated price, such as 2 at 50 CHF. currency may be fiat or a crypto ticker such as BTC, ETH, XMR, SOL, or DOGE. A crypto balance is units of that currency and can be spent or can receive income. investmentType is stock, fund, crypto, property, collectible, stake, custom, or a short label. A custom asset is kind investment with the worth they stated. That worth is their figure, not an exchange rate. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN. lastFour is only four digits. creditLimit, dueDay, and statementDay are for a credit card. Do not turn a loan or an investment into a card unless changeKind is true because they said to change that same nickname.",
             json!({
                 "type": "object",
                 "properties": {
@@ -933,7 +935,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "list_finance",
-            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt, utilization when a limit is saved, and the next card payment. Do not invent a balance or a rate that is not in the result.",
+            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's book first. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result.",
             json!({
                 "type": "object",
                 "properties": {
@@ -943,7 +945,10 @@ pub fn tool_definitions() -> Value {
                     "account": { "type": "string" },
                     "direction": { "type": "string" },
                     "recurrence": { "type": "string" },
-                    "query": { "type": "string" }
+                    "query": { "type": "string" },
+                    "base": { "type": "string" },
+                    "quote": { "type": "string" },
+                    "refresh": { "type": "boolean" }
                 }
             })
         ),
@@ -1029,8 +1034,17 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         return export_from_tool(app, &finance, args);
     }
     if name == "list_finance" {
+        if args["refresh"].as_bool().unwrap_or(false) {
+            let _ = finance.refresh_rates(app, true);
+        }
         let store = finance.lock().clone();
         let today = Local::now().date_naive();
+        let base = args["base"].as_str().unwrap_or("").trim();
+        let quote = args["quote"].as_str().unwrap_or("").trim();
+        if !base.is_empty() && !quote.is_empty() {
+            let detail = speak_pair(&store, base, quote, Local::now().timestamp_millis())?;
+            return Ok(Some(json!({ "ok": true, "detail": detail })));
+        }
         let ask = ask_from(args);
         let detail = speak(&store, &ask, today);
         let snap = snapshot_of(&store, &currency_locale(app, &store), today);
@@ -1151,34 +1165,77 @@ fn guard_payment(store: &Store, direction: &str, account_id: &str, from_id: &str
     if from_id.is_empty() {
         return Err(spoken("Which account pays {name}?", &[("name", &account.name)]));
     }
-    let pay = amount_for_account(
-        &Transaction {
-            id: String::new(),
-            amount_minor: amount,
-            currency: currency.to_string(),
-            direction: "payment".into(),
-            category: String::new(),
-            account_id: account_id.to_string(),
-            from_account_id: from_id.to_string(),
-            date: String::new(),
-            notes: String::new(),
-            recurrence: "once".into(),
-            rule_id: String::new(),
-            created_ms: 0,
-            updated_ms: 0,
-            occurrence_date: String::new(),
-        },
-        account,
-        &store.fx,
-        clock.ms,
-    );
-    let Some(pay) = pay else {
-        return Err(spoken("The payment needs a rate for {codes}.", &[("codes", currency)]));
+    let sample = Transaction {
+        id: String::new(),
+        amount_minor: amount,
+        currency: currency.to_string(),
+        direction: "payment".into(),
+        category: String::new(),
+        account_id: account_id.to_string(),
+        from_account_id: from_id.to_string(),
+        date: String::new(),
+        notes: String::new(),
+        recurrence: "once".into(),
+        rule_id: String::new(),
+        created_ms: 0,
+        updated_ms: 0,
+        occurrence_date: String::new(),
     };
-    if let Some(owed) = shown_with_fx(account, &store.transactions, &store.fx, clock.ms) {
-        if pay > owed.max(0) {
-            let owed_text = format_minor(owed, &account.currency);
-            return Err(spoken("That is more than {name} owes ({owed}).", &[("name", &account.name), ("owed", &owed_text)]));
+    // Overpay is allowed and leaves a credit. A missing rate is still a refusal, never 1:1.
+    if amount_for_account(&sample, account, &store.fx, clock.ms).is_none() {
+        let codes = format!("{currency} {}", account.currency);
+        return Err(spoken("The payment needs a rate for {codes}.", &[("codes", &codes)]));
+    }
+    if let Some(from) = store.accounts.iter().find(|row| row.id == from_id) {
+        if amount_for_account(&sample, from, &store.fx, clock.ms).is_none() {
+            let codes = format!("{currency} {}", from.currency);
+            return Err(spoken("The payment needs a rate for {codes}.", &[("codes", &codes)]));
+        }
+    }
+    guard_crypto_spend(store, direction, account_id, from_id, amount, currency, clock)
+}
+
+fn guard_crypto_spend(store: &Store, direction: &str, account_id: &str, from_id: &str, amount: i64, currency: &str, clock: &Clock) -> Result<(), String> {
+    if !matches!(direction, "expense" | "income" | "payment") {
+        return Ok(());
+    }
+    let holder_id = if direction == "payment" { from_id } else { account_id };
+    let Some(account) = store.accounts.iter().find(|account| account.id == holder_id) else {
+        return Ok(());
+    };
+    if account.currency.is_empty() {
+        return Ok(());
+    }
+    let sample = Transaction {
+        id: String::new(),
+        amount_minor: amount,
+        currency: currency.to_string(),
+        direction: direction.to_string(),
+        category: String::new(),
+        account_id: account_id.to_string(),
+        from_account_id: from_id.to_string(),
+        date: String::new(),
+        notes: String::new(),
+        recurrence: "once".into(),
+        rule_id: String::new(),
+        created_ms: 0,
+        updated_ms: 0,
+        occurrence_date: String::new(),
+    };
+    let moved = amount_for_account(&sample, account, &store.fx, clock.ms);
+    if !account.currency.eq_ignore_ascii_case(currency) && moved.is_none() {
+        let codes = format!("{currency} {}", account.currency);
+        return Err(spoken("The payment needs a rate for {codes}.", &[("codes", &codes)]));
+    }
+    if matches!(direction, "expense" | "payment") && crate::finance_fx::is_crypto(&account.currency) && !is_debt(&account.kind) {
+        let Some(debit) = moved else {
+            return Ok(());
+        };
+        if let Some(have) = shown_with_fx(account, &store.transactions, &store.fx, clock.ms) {
+            if debit > have {
+                let have_text = format_minor(have.max(0), &account.currency);
+                return Err(spoken("That is more than {name} holds ({have}).", &[("name", &account.name), ("have", &have_text)]));
+            }
         }
     }
     Ok(())
@@ -1217,6 +1274,9 @@ fn edit_logged(store: &mut Store, id: &str, args: &Value, clock: &Clock) -> Resu
     }
     if tx.direction == "payment" {
         guard_payment(store, &tx.direction, &tx.account_id, &tx.from_account_id, tx.amount_minor, &tx.currency, clock)?;
+        if tx.direction != "payment" {
+            guard_crypto_spend(store, &tx.direction, &tx.account_id, &tx.from_account_id, tx.amount_minor, &tx.currency, clock)?;
+        }
     }
     tx.updated_ms = clock.ms;
     let label = if tx.category.is_empty() { tx.direction.clone() } else { tx.category.clone() };
@@ -1257,12 +1317,20 @@ fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Strin
     };
     if pay_full {
         let account = store.accounts.iter().find(|account| account.id == account_id).ok_or("Which card?")?;
-        let owed = shown_with_fx(account, &store.transactions, &store.fx, clock.ms).filter(|amount| *amount > 0);
-        let owed = owed.ok_or("Say the amount, or say pay in full.")?;
-        amount_minor = owed;
-        currency = account.currency.clone();
+        match shown_with_fx(account, &store.transactions, &store.fx, clock.ms) {
+            Some(owed) if owed > 0 => {
+                amount_minor = owed;
+                currency = account.currency.clone();
+            }
+            Some(owed) if owed < 0 => return Ok(spoken("That card is already in credit.", &[])),
+            Some(_) => return Ok(spoken("That card is already paid.", &[])),
+            None => return Err("Say the amount, or say pay in full.".into()),
+        }
     }
     guard_payment(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
+    if direction != "payment" {
+        guard_crypto_spend(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
+    }
     let category = clean_text(args["category"].as_str().unwrap_or(""), 80)?;
     let notes = clean_text(args["notes"].as_str().unwrap_or(""), 500)?;
     let link = class == "recurring" || is_link_date(&provided, &direction, clock.today);
@@ -1320,9 +1388,21 @@ fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<Strin
     let amount = format_minor(amount_minor, &currency);
     let mut detail = spoken("Saved {label} of {amount} on {date}.", &[("label", &label), ("amount", &amount), ("date", &date)]);
     if direction == "payment" {
-        if let (Some(card), Some(from_name)) = (account_name(store, &account_id), account_name(store, &from_account_id)) {
-            detail = spoken("Paid {amount} toward {card} from {account}.", &[("amount", &amount), ("card", &card), ("account", &from_name)]);
-            detail.push_str(&balance_clause(store, &account_id));
+        if let (Some(card_name), Some(from_name)) = (account_name(store, &account_id), account_name(store, &from_account_id)) {
+            detail = spoken("Paid {amount} toward {card} from {account}.", &[("amount", &amount), ("card", &card_name), ("account", &from_name)]);
+            if let Some(card) = store.accounts.iter().find(|row| row.id == account_id && row.kind == "credit_card") {
+                if let Some(minor) = shown_with_fx(card, &store.transactions, &store.fx, clock.ms) {
+                    if minor < 0 {
+                        let credit = format_minor(minor.abs(), &card.currency);
+                        detail.push(' ');
+                        detail.push_str(&spoken("{name} now has a credit of {amount}.", &[("name", &card_name), ("amount", &credit)]));
+                    } else {
+                        detail.push_str(&balance_clause(store, &account_id));
+                    }
+                }
+            } else {
+                detail.push_str(&balance_clause(store, &account_id));
+            }
         }
     } else if store.accounts.iter().any(|row| row.id == account_id && row.kind == "credit_card") && direction == "expense" {
         if let Some(name) = account_name(store, &account_id) {
@@ -1899,7 +1979,11 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
             account.balance_as_of.clear();
             account.balance_updated_ms = 0;
         } else {
-            let (minor, currency) = money_for(&draft.balance, &draft.currency, &account.currency, &clock.default_currency)?;
+            let (minor, currency) = if account.kind == "credit_card" {
+                money_for_statement(&draft.balance, &draft.currency, &account.currency, &clock.default_currency)?
+            } else {
+                money_for(&draft.balance, &draft.currency, &account.currency, &clock.default_currency)?
+            };
             if account.balance_minor != Some(minor) || account.currency != currency {
                 account.balance_minor = Some(minor);
                 account.currency = currency;
@@ -1917,6 +2001,11 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
         if !account.units.is_empty() && account.price_minor.is_some() {
             let worth = units_times_price(&account.units, account.price_minor.unwrap_or(0))?;
             account.balance_minor = Some(worth);
+            account.balance_updated_ms = clock.ms;
+            account.balance_as_of = iso(clock.today);
+        } else if account.price_minor.is_none() && !account.units.is_empty() && crate::finance_fx::is_crypto(&account.currency) {
+            let minor = parse_minor_signed(&account.units, exponent(&account.currency))?;
+            account.balance_minor = Some(minor);
             account.balance_updated_ms = clock.ms;
             account.balance_as_of = iso(clock.today);
         }
@@ -2071,6 +2160,9 @@ fn apply_transaction_form(store: &mut Store, draft: &TransactionDraft, clock: &C
         resolve_pay_account(store, &draft.from_account_name, &draft.from_account_kind, &currency, clock)?
     };
     guard_payment(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
+    if direction != "payment" {
+        guard_crypto_spend(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
+    }
     let category = clean_text(&draft.category, 80)?;
     let notes = clean_text(&draft.notes, 500)?;
     let link = class == "recurring" || is_link_date(&provided, &direction, clock.today);
@@ -2542,7 +2634,7 @@ pub fn shown_balance(account: &Account, transactions: &[Transaction]) -> Option<
 }
 
 fn shown_with_fx(account: &Account, transactions: &[Transaction], book: &crate::finance_fx::FxBook, now_ms: i64) -> Option<i64> {
-    if account.kind == "investment" {
+    if account.kind == "investment" && !crate::finance_fx::is_crypto(&account.currency) {
         if !account.units.is_empty() {
             if let Some(price) = account.price_minor {
                 return units_times_price(&account.units, price).ok();
@@ -2563,7 +2655,7 @@ fn shown_with_fx(account: &Account, transactions: &[Transaction], book: &crate::
             continue;
         }
         let role = if tx.account_id == account.id { Role::Primary } else { Role::Source };
-        balance = step_balance(balance, &account.kind, role, &tx.direction, amount);
+        balance = step_balance(balance, &account.kind, &account.currency, role, &tx.direction, amount);
     }
     Some(balance)
 }
@@ -2576,14 +2668,14 @@ fn amount_for_account(tx: &Transaction, account: &Account, book: &crate::finance
     crate::finance_fx::convert(tx.amount_minor, &tx.currency, &account.currency, book, now_ms).map(|row| row.amount_minor)
 }
 
-fn step_balance(balance: i64, kind: &str, role: Role, direction: &str, amount: i64) -> i64 {
+fn step_balance(balance: i64, kind: &str, currency: &str, role: Role, direction: &str, amount: i64) -> i64 {
     let delta = match role {
         Role::Source => -amount,
         Role::Primary => match (kind, direction) {
             ("credit_card" | "loan" | "other_debt", "expense") => amount,
             ("credit_card" | "loan" | "other_debt", "payment" | "income") => -amount,
             ("credit_card" | "loan" | "other_debt", _) => 0,
-            ("investment", _) => 0,
+            ("investment", _) if !crate::finance_fx::is_crypto(currency) => 0,
             (_, "income") => amount,
             (_, "expense" | "payment") => -amount,
             _ => 0,
@@ -2707,6 +2799,9 @@ fn coming_lines(store: &Store, today: NaiveDate, side: &str) -> Vec<ComingItem> 
                 continue;
             }
         }
+        if side == "out" && rule.direction == "payment" && card_nothing_due(store, &rule.account_id) {
+            continue;
+        }
         let spec = rule_spec(rule);
         let settled = settled_dates(store, &rule.id);
         for date in crate::finance_schedule::occurrence_dates(&spec, today) {
@@ -2719,6 +2814,9 @@ fn coming_lines(store: &Store, today: NaiveDate, side: &str) -> Vec<ComingItem> 
     }
     if side == "out" {
         for account in store.accounts.iter().filter(|account| account.kind == "credit_card") {
+            if card_nothing_due(store, &account.id) {
+                continue;
+            }
             if rows.iter().any(|row| row.direction == "payment" && row.name == payment_title(&account.name)) {
                 continue;
             }
@@ -2753,6 +2851,34 @@ fn speak_coming(store: &Store, today: NaiveDate) -> String {
         parts.push(spoken("Coming income, next 30 days: {body}.", &[("body", &body)]));
     }
     parts.join(" ")
+}
+
+fn speak_pair(store: &Store, base: &str, quote: &str, now_ms: i64) -> Result<String, String> {
+    let base = canonical_currency(base)?;
+    let quote = canonical_currency(quote)?;
+    if base == quote {
+        let amount = format_minor(10i64.pow(exponent(&base)), &base);
+        return Ok(spoken("1 {base} is {amount}.", &[("base", &base), ("amount", &amount)]));
+    }
+    let one = 10i64.pow(exponent(&base));
+    match crate::finance_fx::convert(one, &base, &quote, &store.fx, now_ms) {
+        Some(row) => {
+            let amount = format_minor(row.amount_minor, &quote);
+            let mut line = spoken("1 {base} is {amount}.", &[("base", &base), ("amount", &amount)]);
+            if row.source == "manual" {
+                line.push(' ');
+                line.push_str(&spoken("That is your manual rate.", &[]));
+            } else if row.stale {
+                line.push(' ');
+                line.push_str(&spoken("That rate is stale.", &[]));
+            }
+            Ok(line)
+        }
+        None => Ok(spoken(
+            "No rate is saved for {base} in {quote}. Refresh rates, or set a manual rate in Settings.",
+            &[("base", &base), ("quote", &quote)],
+        )),
+    }
 }
 
 fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
@@ -2899,29 +3025,34 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
         .into_iter()
         .map(|index| {
             let account = &store.accounts[index];
-            match shown_balance(account, &store.transactions) {
+            match shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()) {
                 None => spoken("{name} has no balance saved.", &[("name", &account.name)]),
                 Some(minor) => {
-                    let amount = format_minor(minor, &account.currency);
+                    let amount = format_minor(minor.abs(), &account.currency);
                     let mut line = match account.kind.as_str() {
+                        "credit_card" if minor < 0 => spoken("{name} has a credit of {amount}.", &[("name", &account.name), ("amount", &amount)]),
+                        "credit_card" if minor == 0 => spoken("{name} is paid up.", &[("name", &account.name)]),
                         "credit_card" | "loan" | "other_debt" => spoken("{name} owes {amount}.", &[("name", &account.name), ("amount", &amount)]),
                         "investment" => spoken("{name} is worth {amount}.", &[("name", &account.name), ("amount", &amount)]),
                         _ => spoken("{name} is {amount}.", &[("name", &account.name), ("amount", &amount)]),
                     };
-                    if account.kind == "credit_card" {
+                    if account.kind == "credit_card" && minor > 0 {
                         if let Some(limit) = account.credit_limit_minor.filter(|value| *value > 0) {
-                            let percent = minor.max(0).saturating_mul(100) / limit;
+                            let percent = minor.saturating_mul(100) / limit;
                             let percent = percent.to_string();
                             line.push(' ');
                             line.push_str(&spoken("{name} is {percent} of its limit.", &[("name", &account.name), ("percent", &percent)]));
                         }
                         if let Some(date) = card_due_on(account, Local::now().date_naive()) {
-                            let due_amount = account.payment_minor.filter(|value| *value > 0).unwrap_or(minor.max(0));
+                            let due_amount = account.payment_minor.filter(|value| *value > 0).unwrap_or(minor);
                             let due = format_minor(due_amount, &account.currency);
                             let dated = iso(date);
                             line.push(' ');
                             line.push_str(&spoken("Next payment {amount} on {date}.", &[("amount", &due), ("date", &dated)]));
                         }
+                    } else if account.kind == "credit_card" && minor < 0 {
+                        line.push(' ');
+                        line.push_str(&spoken("{name} is in credit.", &[("name", &account.name)]));
                     }
                     line
                 }
@@ -2960,7 +3091,11 @@ fn balance_clause(store: &Store, account_id: &str) -> String {
     let Some(account) = store.accounts.iter().find(|account| account.id == account_id) else {
         return String::new();
     };
-    match shown_balance(account, &store.transactions) {
+    match shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()) {
+        Some(minor) if minor < 0 && account.kind == "credit_card" => {
+            let amount = format_minor(minor.abs(), &account.currency);
+            spoken(" Shown credit {amount}.", &[("amount", &amount)])
+        }
         Some(minor) => {
             let amount = format_minor(minor, &account.currency);
             spoken(" Shown balance {amount}.", &[("amount", &amount)])
@@ -3139,6 +3274,9 @@ fn calendar_money_events(store: &Store, start_ms: i64, end_ms: i64, today: Naive
         if rule.start_date.is_empty() && rule.next_date.is_empty() {
             continue;
         }
+        if rule.direction == "payment" && card_nothing_due(store, &rule.account_id) {
+            continue;
+        }
         let spec = rule_spec(rule);
         let settled = settled_dates(store, &rule.id);
         let mut amount = rule.amount_minor;
@@ -3151,7 +3289,7 @@ fn calendar_money_events(store: &Store, start_ms: i64, end_ms: i64, today: Naive
         push_due_events(&mut out, &format!("fin-due-{}", rule.id), &title, amount, &rule.currency, &spec, &settled, today, start_ms, end_ms);
     }
     for account in &store.accounts {
-        if account.kind == "credit_card" && !card_payment_covered(store, &account.id) {
+        if account.kind == "credit_card" && !card_nothing_due(store, &account.id) && !card_payment_covered(store, &account.id) {
             if let Some(date) = card_due_on(account, today) {
                 let cadence = if !account.cadence.is_empty() {
                     account.cadence.as_str()
@@ -3208,6 +3346,13 @@ fn card_payment_title(store: &Store, rule: &Rule) -> String {
         }
     }
     rule.name.clone()
+}
+
+fn card_nothing_due(store: &Store, account_id: &str) -> bool {
+    let Some(account) = store.accounts.iter().find(|account| account.id == account_id && account.kind == "credit_card") else {
+        return false;
+    };
+    matches!(shown_with_fx(account, &store.transactions, &store.fx, 0), Some(owed) if owed <= 0)
 }
 
 fn card_payment_covered(store: &Store, account_id: &str) -> bool {
@@ -3483,8 +3628,10 @@ fn canonical_currency(value: &str) -> Result<String, String> {
         "usd" | "dollar" | "dollars" | "buck" | "bucks" | "$" | "us$" => "USD",
         "xmr" | "monero" => "XMR",
         "btc" | "bitcoin" => "BTC",
-        "eth" | "ethereum" => "ETH",
+        "eth" | "ethereum" | "ether" => "ETH",
         "sol" | "solana" => "SOL",
+        "ltc" | "litecoin" => "LTC",
+        "doge" | "dogecoin" => "DOGE",
         "gbp" | "pound" | "pounds" | "£" => "GBP",
         "chf" | "franc" | "francs" => "CHF",
         "brl" | "real" | "reais" | "r$" => "BRL",
@@ -3499,7 +3646,7 @@ fn canonical_currency(value: &str) -> Result<String, String> {
         "nok" | "krone" | "kroner" => "NOK",
         "dkk" => "DKK",
         "cny" | "yuan" | "rmb" => "CNY",
-        other if other.len() == 3 && other.chars().all(|c| c.is_ascii_alphabetic()) => return Ok(other.to_ascii_uppercase()),
+        other if crate::finance_fx::is_currency_code(other) => return Ok(other.to_ascii_uppercase()),
         _ => return Err("Say the currency, such as euros or USD.".into()),
     };
     Ok(code.into())
@@ -3525,6 +3672,15 @@ fn peel_currency(raw: &str) -> (String, Option<String>) {
 }
 
 fn parse_minor(raw: &str, exp: u32) -> Result<i64, String> {
+    let minor = parse_minor_signed(raw, exp)?;
+    if minor <= 0 {
+        return Err("The amount has to be more than zero.".into());
+    }
+    Ok(minor)
+}
+
+/// Statement balances may be zero or negative. A negative card balance is a credit.
+fn parse_minor_signed(raw: &str, exp: u32) -> Result<i64, String> {
     let raw = raw.trim().replace(' ', "");
     if raw.is_empty() {
         return Err("The amount has to be more than zero.".into());
@@ -3562,13 +3718,34 @@ fn parse_minor(raw: &str, exp: u32) -> Result<i64, String> {
     if negative {
         minor = -minor;
     }
-    if minor <= 0 {
-        return Err("The amount has to be more than zero.".into());
-    }
-    if minor > 100_000_000_000_000 {
+    if minor.abs() > 100_000_000_000_000 {
         return Err("That amount is too large.".into());
     }
     i64::try_from(minor).map_err(|_| "That amount is too large.".to_string())
+}
+
+fn mentions_credit(raw: &str) -> bool {
+    let folded = fold(raw);
+    if folded.contains("credit card") || folded.contains("credit limit") {
+        return false;
+    }
+    folded.split_whitespace().any(|word| matches!(word, "credit" | "credito" | "crédito" | "crèdit" | "kredit" | "guthaben"))
+}
+
+fn prepare_statement(raw: &str) -> (String, bool) {
+    let credit = mentions_credit(raw);
+    if !credit {
+        return (raw.to_string(), false);
+    }
+    let cleaned = raw
+        .split_whitespace()
+        .filter(|word| {
+            let token = fold(word);
+            !matches!(token.as_str(), "credit" | "credito" | "crédito" | "crèdit" | "kredit" | "guthaben" | "in" | "a" | "of" | "is" | "to" | "the")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    (if cleaned.is_empty() { raw.to_string() } else { cleaned }, true)
 }
 
 fn normalize_decimal(raw: &str) -> Result<String, String> {
@@ -3746,6 +3923,30 @@ fn lead_arg(args: &Value) -> Option<u32> {
     args.get("leadDays").and_then(|value| value.as_u64().or_else(|| value.as_i64().map(|n| n.max(0) as u64))).map(|days| days.min(30) as u32)
 }
 
+fn money_for_statement(amount: &str, currency_arg: &str, account_currency: &str, default_code: &str) -> Result<(i64, String), String> {
+    let (cleaned, credit) = prepare_statement(amount);
+    let (number, embedded) = peel_currency(&cleaned);
+    let named = if !currency_arg.trim().is_empty() {
+        Some(canonical_currency(currency_arg)?)
+    } else {
+        embedded
+    };
+    let currency = if let Some(code) = named {
+        code
+    } else if !account_currency.trim().is_empty() {
+        canonical_currency(account_currency).unwrap_or_else(|_| account_currency.trim().to_ascii_uppercase())
+    } else if let Ok(code) = canonical_currency(default_code) {
+        code
+    } else {
+        currency_for_locale(default_code).to_string()
+    };
+    let mut minor = parse_minor_signed(&number, exponent(&currency))?;
+    if credit && minor > 0 {
+        minor = -minor;
+    }
+    Ok((minor, currency))
+}
+
 fn money_for(amount: &str, currency_arg: &str, account_currency: &str, default_code: &str) -> Result<(i64, String), String> {
     let (number, embedded) = peel_currency(amount);
     let named = if !currency_arg.trim().is_empty() {
@@ -3790,7 +3991,11 @@ fn normalize_investment_type(value: &str) -> String {
         "stock" | "stocks" | "share" | "shares" | "equity" => "stock".into(),
         "fund" | "etf" | "index" => "fund".into(),
         "crypto" | "cryptocurrency" | "coin" | "token" => "crypto".into(),
-        "custom" | "other" => "custom".into(),
+        "property" | "real estate" | "house" | "home" | "cottage" => "property".into(),
+        "collectible" | "collectibles" => "collectible".into(),
+        "stake" | "private stake" | "private" => "stake".into(),
+        "custom" | "other" | "asset" => "custom".into(),
+        other if !other.is_empty() && other.len() <= 24 => other.to_string(),
         _ => String::new(),
     }
 }
@@ -4626,6 +4831,13 @@ fn window_parts(store: &Store, today: NaiveDate, from: NaiveDate, to: NaiveDate)
         if amount == 0 || rule.currency.trim().is_empty() {
             continue;
         }
+        let on_card = store.accounts.iter().any(|account| account.id == rule.account_id && account.kind == "credit_card");
+        if on_card && rule.direction != "income" && rule.direction != "payment" {
+            continue;
+        }
+        if on_card && rule.direction == "payment" && card_nothing_due(store, &rule.account_id) {
+            continue;
+        }
         let spec = rule_spec(rule);
         let settled = settled_dates(store, &rule.id);
         for date in crate::finance_schedule::occurrence_dates(&spec, today) {
@@ -5419,20 +5631,27 @@ mod tests {
         let owed = shown_balance(store.accounts.iter().find(|account| account.name == "Visa").unwrap(), &store.transactions);
         assert_eq!(bank, Some(50_000));
         assert_eq!(owed, Some(5_000));
-        let over = log_from_tool(&mut store, &json!({"direction": "payment", "amount": "80", "currency": "EUR", "account": "Visa", "fromAccount": "Checking"}), &clock);
-        assert!(over.is_err(), "{over:?}");
         clock.ms = 9_000;
-        let paid = log_from_tool(&mut store, &json!({"direction": "payment", "payInFull": true, "account": "Visa", "fromAccount": "Checking"}), &clock).unwrap();
-        assert!(paid.contains("Paid"), "{paid}");
-        assert!(store.transactions.iter().filter(|tx| tx.direction == "payment").count() == 1);
-        assert!(store.transactions.iter().all(|tx| tx.direction != "payment" || tx.category.is_empty() || tx.direction == "payment"));
+        let over = log_from_tool(&mut store, &json!({"direction": "payment", "amount": "80", "currency": "EUR", "account": "Visa", "fromAccount": "Checking"}), &clock).unwrap();
+        assert!(over.contains("Paid"), "{over}");
+        assert!(over.to_lowercase().contains("credit"), "{over}");
         let bank = shown_balance(store.accounts.iter().find(|account| account.name == "Checking").unwrap(), &store.transactions);
         let owed = shown_balance(store.accounts.iter().find(|account| account.name == "Visa").unwrap(), &store.transactions);
-        assert_eq!(owed, Some(0));
-        assert_eq!(bank, Some(45_000));
+        assert_eq!(owed, Some(-3_000));
+        assert_eq!(bank, Some(42_000));
+        clock.ms = 10_000;
+        let paid = log_from_tool(&mut store, &json!({"direction": "payment", "payInFull": true, "account": "Visa", "fromAccount": "Checking"}), &clock).unwrap();
+        assert!(paid.to_lowercase().contains("credit"), "{paid}");
+        assert!(!paid.contains("Paid"), "{paid}");
+        assert_eq!(store.transactions.iter().filter(|tx| tx.direction == "payment").count(), 1);
+        let bank = shown_balance(store.accounts.iter().find(|account| account.name == "Checking").unwrap(), &store.transactions);
+        let owed = shown_balance(store.accounts.iter().find(|account| account.name == "Visa").unwrap(), &store.transactions);
+        assert_eq!(owed, Some(-3_000));
+        assert_eq!(bank, Some(42_000));
         let expenses = period_totals(&store.transactions, "2026-11", "", "", "");
         assert_eq!(expenses.iter().map(|row| row.expense_minor).sum::<i64>(), 3_000);
-        assert_eq!(expenses.iter().map(|row| row.payment_minor).sum::<i64>(), 5_000);
+        assert_eq!(expenses.iter().map(|row| row.payment_minor).sum::<i64>(), 8_000);
+        assert!(coming_lines(&store, clock.today, "out").iter().all(|row| !row.name.contains("Visa")), "a card in credit has nothing due");
         rule_from_tool(&mut store, &json!({"name": "Rent", "amount": "10", "currency": "EUR", "direction": "expense", "date": "2026-11-18", "account": "Checking"}), &clock, false).unwrap();
         rule_from_tool(&mut store, &json!({"name": "Groceries plan", "amount": "8", "currency": "EUR", "direction": "expense", "date": "2026-11-16", "account": "Visa", "accountKind": "credit_card"}), &clock, false).unwrap();
         rule_from_tool(&mut store, &json!({"name": "Renew travel card", "amount": "40", "currency": "EUR", "direction": "expense", "cadence": "yearly", "date": "2027-10-12", "account": "Checking"}), &clock, false).unwrap();
@@ -5474,5 +5693,120 @@ mod tests {
         let rule = store.rules.iter().find(|rule| rule.name == "Nitroeggs payout").unwrap();
         assert_eq!(rule.interval_days, 10);
         assert_eq!(rule.payout_currency, "XMR");
+    }
+
+    #[test]
+    fn voice_sets_a_card_credit_and_spends_crypto() {
+        let mut store = Store::default();
+        let mut clock = clock(NaiveDate::from_ymd_opt(2026, 11, 12).unwrap());
+        account_from_tool(&mut store, &json!({"name": "Checking", "kind": "bank", "balance": "500", "currency": "EUR"}), &clock).unwrap();
+        let saved = account_from_tool(
+            &mut store,
+            &json!({"name": "Abanca", "kind": "credit_card", "balance": "-1393.65", "currency": "EUR", "creditLimit": "15000", "dueDay": 1}),
+            &clock,
+        )
+        .unwrap();
+        assert!(saved.contains("Abanca"), "{saved}");
+        let card = store.accounts.iter().find(|account| account.name == "Abanca").unwrap();
+        assert_eq!(card.balance_minor, Some(-139_365));
+        assert_eq!(shown_balance(card, &store.transactions), Some(-139_365));
+        assert_eq!(card.credit_limit_minor, Some(1_500_000));
+        assert!(store.transactions.is_empty());
+        let worth = crate::finance_schedule::worth_rows(&[crate::finance_schedule::WorthAccount {
+            kind: "credit_card".into(),
+            currency: "EUR".into(),
+            shown_minor: Some(-139_365),
+        }]);
+        assert_eq!(worth[0].net_minor, 139_365);
+        assert_ne!(worth[0].net_minor, 1_500_000 - (-139_365));
+        account_from_tool(&mut store, &json!({"name": "Abanca", "kind": "credit_card", "balance": "200 in credit", "currency": "EUR"}), &clock).unwrap();
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Abanca").unwrap(), &store.transactions), Some(-20_000));
+        account_from_tool(&mut store, &json!({"name": "Abanca", "balance": "0", "currency": "EUR"}), &clock).unwrap();
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Abanca").unwrap(), &store.transactions), Some(0));
+        let full = log_from_tool(&mut store, &json!({"direction": "payment", "payInFull": true, "account": "Abanca", "fromAccount": "Checking"}), &clock).unwrap();
+        assert!(full.to_lowercase().contains("paid"), "{full}");
+        assert!(store.transactions.is_empty());
+        account_from_tool(&mut store, &json!({"name": "Abanca", "balance": "50", "currency": "EUR"}), &clock).unwrap();
+        clock.ms = 8_000;
+        log_from_tool(&mut store, &json!({"direction": "payment", "amount": "80", "currency": "EUR", "account": "Abanca", "fromAccount": "Checking"}), &clock).unwrap();
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Abanca").unwrap(), &store.transactions), Some(-3_000));
+        clock.ms = 9_000;
+        log_from_tool(&mut store, &json!({"direction": "payment", "amount": "10", "currency": "EUR", "account": "Abanca", "fromAccount": "Checking"}), &clock).unwrap();
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Abanca").unwrap(), &store.transactions), Some(-4_000));
+        account_from_tool(&mut store, &json!({"name": "Abanca", "balance": "30 credit", "currency": "EUR"}), &clock).unwrap();
+        clock.ms = 11_000;
+        let charge = log_from_tool(&mut store, &json!({"direction": "expense", "amount": "50", "currency": "EUR", "account": "Abanca", "category": "Lunch"}), &clock).unwrap();
+        assert!(charge.contains("Charged"), "{charge}");
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Abanca").unwrap(), &store.transactions), Some(2_000));
+        let expenses = period_totals(&store.transactions, "2026-11", "", "", "");
+        assert_eq!(expenses.iter().map(|row| row.expense_minor).sum::<i64>(), 5_000);
+        let positive = account_from_tool(&mut store, &json!({"name": "Due card", "kind": "credit_card", "balance": "40", "currency": "EUR", "dueDay": 20}), &clock).unwrap();
+        assert!(positive.contains("Due card"), "{positive}");
+        assert!(coming_lines(&store, clock.today, "out").iter().any(|row| row.name.contains("Due")));
+        account_from_tool(&mut store, &json!({"name": "Due card", "balance": "0", "currency": "EUR"}), &clock).unwrap();
+        assert!(coming_lines(&store, clock.today, "out").iter().all(|row| !row.name.contains("Due")));
+        let ask = Ask { view: "accounts".into(), month: String::new(), kind: "credit_card".into(), account: "Abanca".into(), direction: String::new(), recurrence: String::new(), query: String::new() };
+        let spoken = speak(&store, &ask, clock.today);
+        assert!(spoken.to_lowercase().contains("credit") || spoken.contains("20.00") || spoken.contains("2_000") || spoken.contains("owes"), "{spoken}");
+        account_from_tool(&mut store, &json!({"name": "Wallet", "kind": "cash", "balance": "0.5", "currency": "BTC"}), &clock).unwrap();
+        let wallet = store.accounts.iter().find(|account| account.name == "Wallet").unwrap();
+        assert_eq!(wallet.currency, "BTC");
+        assert_eq!(wallet.balance_minor, Some(50_000_000));
+        clock.ms = 12_000;
+        let spent = log_from_tool(&mut store, &json!({"direction": "expense", "amount": "0.1", "currency": "BTC", "account": "Wallet", "category": "Lunch"}), &clock).unwrap();
+        assert!(spent.contains("Wallet") || spent.contains("Saved") || spent.contains("0.10000000"), "{spent}");
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Wallet").unwrap(), &store.transactions), Some(40_000_000));
+        let too_much = log_from_tool(&mut store, &json!({"direction": "expense", "amount": "1", "currency": "BTC", "account": "Wallet"}), &clock);
+        assert!(too_much.is_err(), "{too_much:?}");
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Wallet").unwrap(), &store.transactions), Some(40_000_000));
+        let missing = log_from_tool(&mut store, &json!({"direction": "expense", "amount": "20", "currency": "EUR", "account": "Wallet", "category": "Rent"}), &clock);
+        assert!(missing.is_err(), "{missing:?}");
+        assert!(missing.unwrap_err().to_lowercase().contains("rate"));
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Wallet").unwrap(), &store.transactions), Some(40_000_000));
+        crate::finance_fx::upsert_manual(&mut store.fx, "EUR", "BTC", 0.00002, "2026-11-12", true).unwrap();
+        clock.ms = 13_000;
+        log_from_tool(&mut store, &json!({"direction": "expense", "amount": "20", "currency": "EUR", "account": "Wallet", "category": "Rent"}), &clock).unwrap();
+        let left = shown_with_fx(store.accounts.iter().find(|account| account.name == "Wallet").unwrap(), &store.transactions, &store.fx, clock.ms).unwrap();
+        assert!(left < 40_000_000, "{left}");
+        assert_ne!(left, 40_000_000 - 2_000);
+        let rent = store.transactions.iter().find(|tx| tx.category == "Rent").unwrap();
+        assert_eq!(rent.currency, "EUR");
+        assert_eq!(rent.amount_minor, 2_000);
+        assert_eq!(rent.direction, "expense");
+        clock.ms = 14_000;
+        log_from_tool(&mut store, &json!({"direction": "income", "amount": "0.05", "currency": "BTC", "account": "Wallet", "category": "Salary"}), &clock).unwrap();
+        let after_income = shown_with_fx(store.accounts.iter().find(|account| account.name == "Wallet").unwrap(), &store.transactions, &store.fx, clock.ms).unwrap();
+        assert_eq!(after_income, left + 5_000_000);
+        let watch = account_from_tool(&mut store, &json!({"name": "Watch", "kind": "investment", "investmentType": "custom", "balance": "4000", "currency": "EUR"}), &clock).unwrap();
+        assert!(watch.contains("Watch"), "{watch}");
+        let asset = store.accounts.iter().find(|account| account.name == "Watch").unwrap();
+        assert_eq!(asset.kind, "investment");
+        assert_eq!(asset.investment_type, "custom");
+        assert_eq!(shown_balance(asset, &store.transactions), Some(400_000));
+        account_from_tool(&mut store, &json!({"name": "Watch", "balance": "4500", "currency": "EUR"}), &clock).unwrap();
+        assert_eq!(shown_balance(store.accounts.iter().find(|account| account.name == "Watch").unwrap(), &store.transactions), Some(450_000));
+        let custom_worth = crate::finance_schedule::worth_rows(&[crate::finance_schedule::WorthAccount {
+            kind: "investment".into(),
+            currency: "EUR".into(),
+            shown_minor: Some(450_000),
+        }]);
+        assert_eq!(custom_worth[0].invested_minor, 450_000);
+        assert_eq!(custom_worth[0].net_minor, 450_000);
+        let none = speak_pair(&store, "DOGE", "EUR", clock.ms).unwrap();
+        assert!(none.to_lowercase().contains("no rate"), "{none}");
+        let quoted = speak_pair(&store, "BTC", "EUR", clock.ms).unwrap();
+        assert!(quoted.contains("BTC"), "{quoted}");
+        assert!(!quoted.contains("1.00 EUR is 1.00 BTC") && !quoted.contains("1:1"));
+        account_from_tool(&mut store, &json!({"name": "Visa", "kind": "credit_card", "balance": "10", "currency": "EUR"}), &clock).unwrap();
+        let mut twin = empty_account("fa-visa-b".into());
+        twin.name = "Visa".into();
+        twin.kind = "credit_card".into();
+        twin.currency = "EUR".into();
+        twin.balance_minor = Some(400);
+        store.accounts.push(twin);
+        let which = log_from_tool(&mut store, &json!({"direction": "payment", "amount": "1", "currency": "EUR", "account": "Visa", "fromAccount": "Checking"}), &clock);
+        assert!(which.is_err(), "{which:?}");
+        let which_edit = account_from_tool(&mut store, &json!({"name": "Visa", "balance": "9", "currency": "EUR"}), &clock);
+        assert!(which_edit.is_err(), "{which_edit:?}");
     }
 }
