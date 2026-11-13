@@ -55,6 +55,15 @@
       <li>„Wie hoch ist mein Vermögen?“ „Was habe ich diesen Monat ausgegeben?“ „Was kommt in den nächsten 30 Tagen?“</li>
       <li>Die nächsten 30 Tage: Rechnungen von Bargeld oder Bank, und eine Kartenzahlung, wenn noch etwas offen ist. Einzelne Kartenumsätze stehen dort nicht.</li>
     </ul>
+    <h2>Finanzen — mehrere Ausgaben, Änderungen, Verschieben</h2>
+    <ul>
+      <li>„Ich habe 179 Franken für einen Staubsauger mit der Swiss card ausgegeben, dann 6,95 für einen Mopp, dann 63,96 für einen Luftreiniger.“ Ein Satz speichert jede Ausgabe. Grok nennt nur die gespeicherten, mit ihrer Id.</li>
+      <li>„79,95, nein warte, 63,96 für einen Luftreiniger.“ Nur 63,96 wird gespeichert.</li>
+      <li>„Swiss card“ benutzt die Karte, die schon Swisscard heißt. Leerzeichen, Bindestriche und kleine Verschreiber treffen, wenn eine Karte klar am nächsten ist. Grok legt beim Buchen keine Karte an. Wenn zwei Namen nah sind oder keiner passt, fragt es und nennt die nächsten. Eine neue Karte gibt es nur, wenn du darum bittest.</li>
+      <li>„Der Mopp war 6,95, nicht 695.“ Das ändert den gespeicherten Mopp. Es fügt keine zweite Ausgabe hinzu.</li>
+      <li>„Verschiebe diese Ausgaben von Swiss card auf Bargeld.“ Salden und Kartenschuld werden neu gerechnet. Dieselbe Ausgabe zählt nicht doppelt.</li>
+      <li>„Lösche Swiss card.“ Wenn Buchungen daran hängen, sagt Grok wie viele und fragt, wohin sie sollen. Es sagt nicht, es gebe keine, solange die Liste nicht leer ist.</li>
+    </ul>
     <h2>Finanzen — Konten, Karten und Guthaben</h2>
     <ul>
       <li>„Füg eine Bank namens Konto mit 500 Euro hinzu.“</li>

@@ -817,7 +817,7 @@ pub fn tool_definitions() -> Value {
     json!([
         fn_tool(
             "log_money",
-            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list. id edits that one saved transaction and does not rewrite other ones. payInFull true pays the balance owed. Charging a card is direction expense with account set to the card: card debt rises, the bank does not move, and it counts as an expense. Paying a card is direction payment with fromAccount: it is not an expense. Paying more than the balance owed is allowed and leaves a credit, a negative amount owed. Confirm that new credit. Do not refuse the overpay. payInFull when nothing is owed, or the card is already in credit, does not move money: say there is nothing to pay. If they name an amount while the card is already in credit, pay that amount from fromAccount and the credit grows. A charge on a card that is in credit is still direction expense: it reduces the credit first and can leave a positive debt, and the whole charge is an expense. currency may be a crypto ticker such as BTC. Spending that currency from its balance reduces the units. If the units are not enough, refuse. A missing exchange rate refuses the payment. Never use 1:1. If the card, the funding account, or the amount is missing, or two names match, the error is the one question to ask.",
+            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list. id edits that one saved transaction and does not rewrite other ones. payInFull true pays the balance owed. Charging a card is direction expense with account set to the card: card debt rises, the bank does not move, and it counts as an expense. Paying a card is direction payment with fromAccount: it is not an expense. Paying more than the balance owed is allowed and leaves a credit, a negative amount owed. Confirm that new credit. Do not refuse the overpay. payInFull when nothing is owed, or the card is already in credit, does not move money: say there is nothing to pay. If they name an amount while the card is already in credit, pay that amount from fromAccount and the credit grows. A charge on a card that is in credit is still direction expense: it reduces the credit first and can leave a positive debt, and the whole charge is an expense. currency may be a crypto ticker such as BTC. Spending that currency from its balance reduces the units. If the units are not enough, refuse. A missing exchange rate refuses the payment. Never use 1:1. If the card, the funding account, or the amount is missing, or two names match, the error is the one question to ask. Pass items to log several expenses in one call. Each saved row includes id. Speak only rows in saved. If failed is not empty, say those errors and do not say they were logged. A phrase may correct itself, such as 79.95, no wait, 63.96, which saves 63.96 only. Account names match ignoring case, spaces, hyphens, punctuation, and diacritics, and a single close prefix or typo matches too: Swiss card is Swisscard when that card exists. Logging never creates an account or card. If none match, or several do, ask and list the closest names. Create one only with save_account after they explicitly ask to add it. To change an existing expense, pass its id, or matchAmount, matchCategory, matchAccount, and matchDate, plus the new amount. That edits the same id. Do not add a second expense.",
             json!({
                 "type": "object",
                 "properties": {
@@ -835,9 +835,16 @@ pub fn tool_definitions() -> Value {
                     "notes": { "type": "string" },
                     "id": { "type": "string" },
                     "payInFull": { "type": "boolean" },
-                    "fromAccountKind": { "type": "string" }
+                    "fromAccountKind": { "type": "string" },
+                    "phrase": { "type": "string" },
+                    "items": { "type": "array", "items": { "type": "object" } },
+                    "matchAmount": { "type": "string" },
+                    "matchCategory": { "type": "string" },
+                    "matchQuery": { "type": "string" },
+                    "matchDate": { "type": "string" },
+                    "matchAccount": { "type": "string" }
                 },
-                "required": ["direction", "amount"]
+                "required": ["direction"]
             })
         ),
         fn_tool(
@@ -899,7 +906,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "save_account",
-            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. On a credit card, balance is the amount owed right now and can be updated any time, including zero and a negative credit. Pass -1393.65, or 1393.65 credit, or 200 in credit. That sets the statement balance directly: it is not income, not an expense, and it does not move a funding account. units and unitPrice are a stated count times a stated price, such as 2 at 50 CHF. currency may be fiat or a crypto ticker such as BTC, ETH, XMR, SOL, or DOGE. A crypto balance is units of that currency and can be spent or can receive income. investmentType is stock, fund, crypto, property, collectible, stake, custom, or a short label. A custom asset is kind investment with the worth they stated. That worth is their figure, not an exchange rate. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN. lastFour is only four digits. creditLimit, dueDay, and statementDay are for a credit card. Do not turn a loan or an investment into a card unless changeKind is true because they said to change that same nickname.",
+            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. On a credit card, balance is the amount owed right now and can be updated any time, including zero and a negative credit. Pass -1393.65, or 1393.65 credit, or 200 in credit. That sets the statement balance directly: it is not income, not an expense, and it does not move a funding account. units and unitPrice are a stated count times a stated price, such as 2 at 50 CHF. currency may be fiat or a crypto ticker such as BTC, ETH, XMR, SOL, or DOGE. A crypto balance is units of that currency and can be spent or can receive income. investmentType is stock, fund, crypto, property, collectible, stake, custom, or a short label. A custom asset is kind investment with the worth they stated. That worth is their figure, not an exchange rate. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN. lastFour is only four digits. creditLimit, dueDay, and statementDay are for a credit card. Do not turn a loan or an investment into a card unless changeKind is true because they said to change that same nickname. Spacing, hyphens, and a small typo still select that same nickname, so Swiss card updates Swisscard instead of creating another card. A new account is created only when no saved name matches.",
             json!({
                 "type": "object",
                 "properties": {
@@ -935,7 +942,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "list_finance",
-            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's book first. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result.",
+            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's book first. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result. view activity, transactions, or search returns each transaction id, date, amount, currency, category, and account. amount, date, query, and account filter that list. transactionCount on an account is how many transactions are attached. Do not say there are none unless that count is zero or transactions is empty.",
             json!({
                 "type": "object",
                 "properties": {
@@ -948,22 +955,44 @@ pub fn tool_definitions() -> Value {
                     "query": { "type": "string" },
                     "base": { "type": "string" },
                     "quote": { "type": "string" },
-                    "refresh": { "type": "boolean" }
+                    "refresh": { "type": "boolean" },
+                    "amount": { "type": "string" },
+                    "date": { "type": "string" }
                 }
             })
         ),
         fn_tool(
             "delete_finance",
-            "Delete one finance account, transaction, or recurring rule after a clear yes. Call first with confirmed false, say what will be removed, then call with confirmed true. kind is account, transaction, or rule. id comes from list_finance.",
+            "Delete one finance account, transaction, or recurring rule after a clear yes. Call first with confirmed false, say what will be removed, then call with confirmed true. kind is account, transaction, or rule. id comes from list_finance. Deleting an account says how many transactions it has. If that count is not zero, offer to move them. Pass moveTo with the destination name to move them before the account is removed. Do not say there are none unless the count is zero.",
             json!({
                 "type": "object",
                 "properties": {
                     "kind": { "type": "string" },
                     "id": { "type": "string" },
                     "name": { "type": "string" },
-                    "confirmed": { "type": "boolean" }
+                    "confirmed": { "type": "boolean" },
+                    "moveTo": { "type": "string" }
                 },
                 "required": ["kind", "confirmed"]
+            })
+        ),
+        fn_tool(
+            "move_transactions",
+            "Move one or many saved transactions onto another bank, cash wallet, or card. ids come from list_finance. Or pass fromAccount plus query, amount, category, or date. toAccount is the destination nickname and must already exist. This edits account on those rows. It does not copy them and does not log a new expense. Balances and card debt are recalculated from the same rows. If none match, say so. Do not create an account.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "ids": { "type": "array", "items": { "type": "string" } },
+                    "fromAccount": { "type": "string" },
+                    "toAccount": { "type": "string" },
+                    "toAccountKind": { "type": "string" },
+                    "query": { "type": "string" },
+                    "amount": { "type": "string" },
+                    "category": { "type": "string" },
+                    "date": { "type": "string" },
+                    "direction": { "type": "string" }
+                },
+                "required": ["toAccount"]
             })
         ),
         fn_tool(
@@ -1006,10 +1035,14 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
     json!({ "type": "function", "name": name, "description": description, "parameters": parameters })
 }
 
+pub fn voice_money_hint() -> &'static str {
+    " When logging money, call log_money and then confirm only the rows in saved, each with its id. If failed is not empty or the tool returns an error, say what failed and do not say those items were logged. items logs several expenses in one call. A correction in the same sentence, such as 79.95 no wait 63.96, saves only 63.96. To change 695 to 6.95, edit the existing id from list_finance view activity. Do not add a second expense. Activity returns id, date, amount, currency, category, and account. Swiss card matches an existing Swisscard. Logging never creates an account or card. If none match, or several do, ask and list the closest names. Create a card only with save_account after they explicitly ask to add one. move_transactions moves saved rows and recalculates balances and card debt without copying them. delete_finance on an account says how many transactions it has. Do not say there are none unless that count is zero."
+}
+
 pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     if !matches!(
         name,
-        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "mark_paid" | "export_finance_pdf"
+        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf"
     ) {
         return Ok(None);
     }
@@ -1025,7 +1058,7 @@ pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Valu
 fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     if !matches!(
         name,
-        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "mark_paid" | "export_finance_pdf"
+        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf"
     ) {
         return Ok(None);
     }
@@ -1062,9 +1095,11 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
                 "currency": row.account.currency,
                 "shownBalanceMinor": row.shown_balance_minor,
                 "balanceSaved": row.account.balance_minor.is_some(),
+                "transactionCount": transactions_on(&store, &row.account.id),
                 "dueDate": row.account.due_date,
                 "calendarEventId": row.account.calendar_event_id,
-            })).collect::<Vec<_>>()
+            })).collect::<Vec<_>>(),
+            "transactions": transaction_views(&store, &ask),
         })));
     }
     if name == "delete_finance" {
@@ -1080,14 +1115,21 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
     }
     let mut store = finance.lock().clone();
     let clock = clock_for(app, &store);
-    let detail = match name {
-        "log_money" => {
-            if let Some(phrase) = args["phrase"].as_str().map(str::trim).filter(|value| !value.is_empty()) {
-                apply_phrase(&mut store, phrase, &clock)?
-            } else {
-                log_from_tool(&mut store, args, &clock)?
-            }
+    if name == "log_money" {
+        let entries = log_entries(&mut store, args, &clock)?;
+        let value = entries_json(&entries);
+        if !entries.saved.is_empty() || entries.failed.is_empty() {
+            finance.commit(app, store)?;
         }
+        return Ok(Some(value));
+    }
+    if name == "move_transactions" {
+        let value = move_transactions(&mut store, args, &clock)?;
+        finance.commit(app, store)?;
+        return Ok(Some(value));
+    }
+    let detail = match name {
+        "log_money" => return Ok(None),
         "save_recurring" | "save_schedule" => {
             if let Some(phrase) = args["phrase"].as_str().map(str::trim).filter(|value| !value.is_empty()) {
                 apply_phrase(&mut store, phrase, &clock)?
@@ -1114,6 +1156,8 @@ fn ask_from(args: &Value) -> Ask {
         direction: args["direction"].as_str().unwrap_or("").trim().to_string(),
         recurrence: normalize_class(args["recurrence"].as_str().unwrap_or("")),
         query: args["query"].as_str().unwrap_or("").trim().to_string(),
+        amount: amount_text(args.get("amount")),
+        date: args["date"].as_str().unwrap_or("").trim().to_string(),
     }
 }
 
@@ -1125,31 +1169,58 @@ struct Ask {
     direction: String,
     recurrence: String,
     query: String,
+    amount: String,
+    date: String,
 }
 
-fn ensure_cash(store: &mut Store, currency: &str, clock: &Clock) -> Result<String, String> {
-    if let Some(account) = store.accounts.iter().find(|account| account.kind == "cash") {
-        return Ok(account.id.clone());
-    }
-    resolve_account(store, "", "Cash", "cash", currency, clock, true)
-}
-
-fn resolve_pay_account(store: &mut Store, name: &str, kind: &str, currency: &str, clock: &Clock) -> Result<String, String> {
+fn resolve_pay_account(store: &mut Store, name: &str, kind: &str, _currency: &str, _clock: &Clock) -> Result<String, String> {
     let kind_norm = normalize_kind(kind);
     let folded = fold(name);
-    let want_cash = kind_norm == "cash" || folded == "cash";
-    if want_cash {
-        if !name.trim().is_empty() && folded != "cash" {
-            if let Some(found) = locate_account(store, "", name, "cash")? {
-                return Ok(store.accounts[found.index].id.clone());
-            }
+    if !name.trim().is_empty() {
+        match locate_account(store, "", name, if kind_norm.is_empty() { "" } else { &kind_norm }) {
+            Ok(Some(found)) => return Ok(store.accounts[found.index].id.clone()),
+            Ok(None) => {}
+            Err(err) => return Err(err),
         }
-        return ensure_cash(store, currency, clock);
     }
-    if name.trim().is_empty() && kind_norm.is_empty() {
+    let generic_cash = kind_norm == "cash" && (name.trim().is_empty() || folded == "cash");
+    let said_cash = folded == "cash";
+    if generic_cash || (said_cash && kind_norm.is_empty()) {
+        let cash: Vec<usize> = store.accounts.iter().enumerate().filter(|(_, account)| account.kind == "cash").map(|(index, _)| index).collect();
+        return match cash.len() {
+            1 => Ok(store.accounts[cash[0]].id.clone()),
+            0 => Err(spoken("No cash account is saved. I did not create one.", &[])),
+            _ => Err(which_account(store, &cash)),
+        };
+    }
+    if name.trim().is_empty() {
         return Ok(String::new());
     }
-    resolve_account(store, "", name, kind, currency, clock, true)
+    Err(unresolved_account(store, name))
+}
+
+fn unresolved_account(store: &Store, name: &str) -> String {
+    let names = closest_account_names(store, name, 4);
+    if names.is_empty() {
+        return spoken("No account matches {name}. I did not create one.", &[("name", name)]);
+    }
+    let found = and_list(names.iter().map(String::as_str));
+    spoken("No account matches {name}. I did not create one. Closest: {names}.", &[("name", name), ("names", &found)])
+}
+
+fn closest_account_names(store: &Store, name: &str, limit: usize) -> Vec<String> {
+    let query = compact_name(name);
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let mut scored: Vec<(usize, String)> = store
+        .accounts
+        .iter()
+        .map(|account| (edit_distance(&query, &compact_name(&account.name)), account.name.clone()))
+        .collect();
+    scored.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    scored.truncate(limit);
+    scored.into_iter().map(|(_, name)| name).collect()
 }
 
 fn guard_payment(store: &Store, direction: &str, account_id: &str, from_id: &str, amount: i64, currency: &str, clock: &Clock) -> Result<(), String> {
@@ -1274,9 +1345,8 @@ fn edit_logged(store: &mut Store, id: &str, args: &Value, clock: &Clock) -> Resu
     }
     if tx.direction == "payment" {
         guard_payment(store, &tx.direction, &tx.account_id, &tx.from_account_id, tx.amount_minor, &tx.currency, clock)?;
-        if tx.direction != "payment" {
-            guard_crypto_spend(store, &tx.direction, &tx.account_id, &tx.from_account_id, tx.amount_minor, &tx.currency, clock)?;
-        }
+    } else {
+        guard_crypto_spend(store, &tx.direction, &tx.account_id, &tx.from_account_id, tx.amount_minor, &tx.currency, clock)?;
     }
     tx.updated_ms = clock.ms;
     let label = if tx.category.is_empty() { tx.direction.clone() } else { tx.category.clone() };
@@ -1285,7 +1355,606 @@ fn edit_logged(store: &mut Store, id: &str, args: &Value, clock: &Clock) -> Resu
     Ok(spoken("Updated {name} to {amount}.", &[("name", &label), ("amount", &amount)]))
 }
 
+#[derive(Debug)]
+struct LogEntries {
+    detail: String,
+    saved: Vec<Value>,
+    failed: Vec<Value>,
+}
+
 fn log_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, String> {
+    let entries = log_entries(store, args, clock)?;
+    if entries.saved.is_empty() && !entries.failed.is_empty() {
+        return Err(entries.detail);
+    }
+    Ok(entries.detail)
+}
+
+fn log_entries(store: &mut Store, args: &Value, clock: &Clock) -> Result<LogEntries, String> {
+    if let Some(phrase) = args["phrase"].as_str().map(str::trim).filter(|value| !value.is_empty()) {
+        if args.get("items").is_none() {
+            if let Some(items) = spoken_expense_batch(phrase) {
+                return log_many(store, &items, clock);
+            }
+            let before = store.transactions.len();
+            let detail = apply_phrase(store, phrase, clock)?;
+            return Ok(saved_from_new(store, before, detail));
+        }
+    }
+    if let Some(items) = args.get("items").and_then(Value::as_array) {
+        let collapsed = collapse_corrections(items);
+        let values: Vec<Value> = collapsed.iter().map(|item| merge_item(args, item)).collect();
+        return log_many(store, &values, clock);
+    }
+    if explicit_id(args).is_none() && has_match_keys(args) {
+        let indexes = find_transactions(store, args)?;
+        if indexes.is_empty() {
+            return Err("No transactions matched.".into());
+        }
+        if indexes.len() > 1 {
+            return Err(which_transaction(store, &indexes));
+        }
+        let id = store.transactions[indexes[0]].id.clone();
+        let mut edit = args.clone();
+        edit["id"] = json!(id);
+        let detail = log_single(store, &edit, clock)?;
+        return Ok(entry_from_id(store, &id, detail));
+    }
+    if let Some(id) = explicit_id(args) {
+        let detail = log_single(store, args, clock)?;
+        return Ok(entry_from_id(store, &id, detail));
+    }
+    let before = store.transactions.len();
+    let detail = log_single(store, args, clock)?;
+    Ok(saved_from_new(store, before, detail))
+}
+
+fn explicit_id(args: &Value) -> Option<String> {
+    args.get("id").and_then(Value::as_str).map(str::trim).filter(|id| !id.is_empty()).map(str::to_string)
+}
+
+fn has_match_keys(args: &Value) -> bool {
+    ["matchAmount", "matchCategory", "matchQuery", "matchDate", "matchAccount"].iter().any(|key| match args.get(*key) {
+        None | Some(Value::Null) => false,
+        Some(Value::String(text)) => !text.trim().is_empty(),
+        Some(_) => true,
+    })
+}
+
+fn saved_from_new(store: &Store, before: usize, detail: String) -> LogEntries {
+    if store.transactions.len() > before {
+        let tx = store.transactions.last().expect("transaction was pushed");
+        return entry_from_id(store, &tx.id, detail);
+    }
+    LogEntries { detail, saved: Vec::new(), failed: Vec::new() }
+}
+
+fn entry_from_id(store: &Store, id: &str, mut detail: String) -> LogEntries {
+    let Some(tx) = store.transactions.iter().find(|tx| tx.id == id) else {
+        return LogEntries { detail, saved: Vec::new(), failed: Vec::new() };
+    };
+    if !detail.contains(&format!("Id {id}")) {
+        detail.push_str(&spoken(" Id {id}.", &[("id", id)]));
+    }
+    let account = account_name(store, &tx.account_id).unwrap_or_default();
+    LogEntries { detail, saved: vec![tx_saved_json(tx, &account)], failed: Vec::new() }
+}
+
+fn log_many(store: &mut Store, items: &[Value], clock: &Clock) -> Result<LogEntries, String> {
+    if items.is_empty() {
+        return Err("Say the amount, or say pay in full.".into());
+    }
+    let mut saved = Vec::new();
+    let mut failed = Vec::new();
+    for item in items {
+        let before = store.transactions.len();
+        match log_single(store, item, clock) {
+            Ok(_) => {
+                if store.transactions.len() > before {
+                    let tx = store.transactions.last().expect("transaction was pushed");
+                    let account = account_name(store, &tx.account_id).unwrap_or_default();
+                    saved.push(tx_saved_json(tx, &account));
+                }
+            }
+            Err(err) => failed.push(json!({
+                "ok": false,
+                "error": err,
+                "amount": item.get("amount").cloned().unwrap_or(Value::Null),
+                "category": item.get("category").cloned().unwrap_or(Value::Null),
+                "account": item.get("account").cloned().unwrap_or(Value::Null),
+            })),
+        }
+    }
+    let detail = batch_detail(&saved, &failed);
+    Ok(LogEntries { detail, saved, failed })
+}
+
+fn batch_detail(saved: &[Value], failed: &[Value]) -> String {
+    let count = saved.len().to_string();
+    let total = (saved.len() + failed.len()).to_string();
+    let mut detail = spoken("Saved {count} of {total}.", &[("count", &count), ("total", &total)]);
+    if !saved.is_empty() {
+        let body = saved
+            .iter()
+            .map(|row| {
+                spoken(
+                    "{label} {amount} on {account} {date}, id {id}.",
+                    &[
+                        ("label", row["label"].as_str().unwrap_or("")),
+                        ("amount", row["amount"].as_str().unwrap_or("")),
+                        ("account", row["account"].as_str().unwrap_or("")),
+                        ("date", row["date"].as_str().unwrap_or("")),
+                        ("id", row["id"].as_str().unwrap_or("")),
+                    ],
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        detail.push(' ');
+        detail.push_str(&body);
+    }
+    if !failed.is_empty() {
+        let body = failed.iter().filter_map(|row| row["error"].as_str()).collect::<Vec<_>>().join(" ");
+        if !body.is_empty() {
+            detail.push(' ');
+            detail.push_str(&body);
+        }
+    }
+    detail
+}
+
+fn tx_saved_json(tx: &Transaction, account: &str) -> Value {
+    let label = if tx.category.trim().is_empty() { spoken("unknown", &[]) } else { tx.category.clone() };
+    json!({
+        "ok": true,
+        "id": tx.id,
+        "date": tx.date,
+        "amountMinor": tx.amount_minor,
+        "amount": format_minor(tx.amount_minor, &tx.currency),
+        "currency": tx.currency,
+        "category": tx.category,
+        "description": if tx.category.trim().is_empty() { tx.notes.clone() } else { tx.category.clone() },
+        "label": label,
+        "account": account,
+        "accountId": tx.account_id,
+        "direction": tx.direction,
+        "paymentMethod": account,
+    })
+}
+
+fn entries_json(entries: &LogEntries) -> Value {
+    json!({
+        "ok": entries.failed.is_empty(),
+        "savedCount": entries.saved.len(),
+        "failedCount": entries.failed.len(),
+        "saved": entries.saved,
+        "failed": entries.failed,
+        "detail": entries.detail,
+    })
+}
+
+fn merge_item(parent: &Value, item: &Value) -> Value {
+    let mut out = json!({});
+    if let Some(obj) = parent.as_object() {
+        for (key, value) in obj {
+            if matches!(key.as_str(), "items" | "phrase" | "matchAmount" | "matchCategory" | "matchQuery" | "matchDate" | "matchAccount") {
+                continue;
+            }
+            out[key] = value.clone();
+        }
+    }
+    if let Some(obj) = item.as_object() {
+        for (key, value) in obj {
+            if matches!(key.as_str(), "correctsPrevious" | "replacesPrevious") {
+                continue;
+            }
+            let empty = value.as_str().is_some_and(|text| text.trim().is_empty());
+            if !value.is_null() && !empty {
+                out[key] = value.clone();
+            }
+        }
+    }
+    out
+}
+
+fn collapse_corrections(items: &[Value]) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    for item in items {
+        let mut item = item.clone();
+        if let Some(raw) = item.get("amount").map(|value| amount_text(Some(value))) {
+            let fixed = correct_amount_text(&raw);
+            if !fixed.is_empty() {
+                item["amount"] = json!(fixed);
+            }
+        }
+        let corrects = item["correctsPrevious"].as_bool().unwrap_or(false) || item["replacesPrevious"].as_bool().unwrap_or(false);
+        if corrects {
+            let previous = out.pop();
+            if text_field(&item, "category").is_empty() {
+                if let Some(prev) = previous.as_ref() {
+                    item["category"] = json!(text_field(prev, "category"));
+                }
+            }
+            if text_field(&item, "account").is_empty() {
+                if let Some(prev) = previous.as_ref() {
+                    item["account"] = json!(text_field(prev, "account"));
+                }
+            }
+        }
+        out.push(item);
+    }
+    out
+}
+
+fn text_field(value: &Value, key: &str) -> String {
+    value.get(key).and_then(Value::as_str).unwrap_or("").trim().to_string()
+}
+
+fn correct_amount_text(raw: &str) -> String {
+    if !has_correction(raw) {
+        return raw.trim().to_string();
+    }
+    let tail = tail_after_correction(raw);
+    scan_amounts(&tail).into_iter().next().map(|(amount, _)| amount).unwrap_or_else(|| raw.trim().to_string())
+}
+
+fn has_correction(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    ["no wait", "wait no", "no, wait", "i mean", "i meant", "actually", "correction"].iter().any(|marker| lower.contains(marker))
+}
+
+fn tail_after_correction(clause: &str) -> String {
+    let lower = clause.to_lowercase();
+    let markers = ["no wait", "wait no", "no, wait", "i mean", "i meant", "actually", "correction"];
+    let mut best = 0usize;
+    for marker in markers {
+        if let Some(pos) = lower.rfind(marker) {
+            let end = pos + marker.len();
+            if end > best && clause.is_char_boundary(end) {
+                best = end;
+            }
+        }
+    }
+    clause[best..].trim().trim_start_matches([',', ' ']).to_string()
+}
+
+fn spoken_expense_batch(phrase: &str) -> Option<Vec<Value>> {
+    if looks_like_schedule(phrase) {
+        return None;
+    }
+    let items = parse_spoken_expenses(phrase);
+    if items.len() >= 2 || (items.len() == 1 && has_correction(phrase)) {
+        Some(items)
+    } else {
+        None
+    }
+}
+
+fn looks_like_schedule(phrase: &str) -> bool {
+    let folded = fold(phrase);
+    if folded.contains("every")
+        || folded.contains("subscription")
+        || folded.contains("as long")
+        || folded.contains("will get")
+        || folded.contains("will receive")
+        || folded.contains("got paid")
+        || folded.contains("was paid")
+        || folded.contains("pays")
+    {
+        return true;
+    }
+    let words: Vec<&str> = folded.split_whitespace().collect();
+    words.windows(3).any(|window| {
+        window[0] == "for" && window[1].chars().all(|ch| ch.is_ascii_digit()) && (window[2].starts_with("month") || window[2].starts_with("week") || window[2].starts_with("day"))
+    })
+}
+
+fn parse_spoken_expenses(phrase: &str) -> Vec<Value> {
+    let mut carry_currency = String::new();
+    let mut carry_account = String::new();
+    let mut items = Vec::new();
+    for clause in split_expense_clauses(phrase) {
+        let tail = tail_after_correction(&clause);
+        let Some((amount, mut currency)) = scan_amounts(&tail).into_iter().next() else {
+            continue;
+        };
+        if currency.is_empty() {
+            currency = carry_currency.clone();
+        } else {
+            carry_currency = currency.clone();
+        }
+        let mut account = account_of(&clause);
+        if account.is_empty() {
+            account = carry_account.clone();
+        } else {
+            carry_account = account.clone();
+        }
+        let category = if forgotten(&clause) && !clause.to_lowercase().contains(" on ") {
+            String::new()
+        } else {
+            category_of(&clause)
+        };
+        items.push(json!({
+            "direction": "expense",
+            "amount": amount,
+            "currency": currency,
+            "category": category,
+            "account": account,
+        }));
+    }
+    items
+}
+
+fn split_expense_clauses(phrase: &str) -> Vec<String> {
+    let chars: Vec<char> = phrase.chars().collect();
+    let mut normalized = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '.' && index + 1 < chars.len() && chars[index + 1].is_whitespace() {
+            normalized.push('\n');
+            index += 1;
+            continue;
+        }
+        normalized.push(chars[index]);
+        index += 1;
+    }
+    let mut clauses = Vec::new();
+    for line in normalized.split('\n') {
+        let mut buf = String::new();
+        for word in line.split_whitespace() {
+            if fold(word) == "then" {
+                if !buf.trim().is_empty() {
+                    clauses.push(buf.trim().to_string());
+                }
+                buf.clear();
+                continue;
+            }
+            if !buf.is_empty() {
+                buf.push(' ');
+            }
+            buf.push_str(word);
+        }
+        if !buf.trim().is_empty() {
+            clauses.push(buf.trim().to_string());
+        }
+    }
+    clauses.into_iter().map(|clause| clause.trim_matches(|ch: char| ch == '.' || ch == ';').trim().to_string()).filter(|clause| !clause.is_empty()).collect()
+}
+
+fn scan_amounts(text: &str) -> Vec<(String, String)> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut index = 0;
+    let mut hits = Vec::new();
+    while index < chars.len() {
+        if chars[index].is_ascii_digit() {
+            let start = index;
+            index += 1;
+            let mut saw_sep = false;
+            while index < chars.len() {
+                if chars[index].is_ascii_digit() {
+                    index += 1;
+                } else if !saw_sep && (chars[index] == '.' || chars[index] == ',') && index + 1 < chars.len() && chars[index + 1].is_ascii_digit() {
+                    saw_sep = true;
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            let amount: String = chars[start..index].iter().collect();
+            let after: String = chars[index..].iter().collect();
+            let next = after.trim_start().split_whitespace().next().unwrap_or("");
+            let next_fold = fold(next);
+            if next_fold.starts_with("month") || next_fold.starts_with("day") || next_fold.starts_with("week") || next_fold.starts_with("year") {
+                continue;
+            }
+            let currency = canonical_currency(next.trim_matches(|ch: char| !ch.is_alphanumeric())).unwrap_or_default();
+            hits.push((amount, currency));
+        } else {
+            index += 1;
+        }
+    }
+    hits
+}
+
+fn category_of(clause: &str) -> String {
+    let lower = clause.to_lowercase();
+    let Some(on) = lower.rfind(" on ") else {
+        return String::new();
+    };
+    if !clause.is_char_boundary(on + 4) {
+        return String::new();
+    }
+    let rest = &clause[on + 4..];
+    let rest_lower = rest.to_lowercase();
+    let mut end = rest.len();
+    for marker in [" paid with", " with the", " with my", ","] {
+        if let Some(pos) = rest_lower.find(marker) {
+            if rest.is_char_boundary(pos) {
+                end = end.min(pos);
+            }
+        }
+    }
+    title_phrase(&strip_article(rest[..end].trim()))
+}
+
+fn account_of(clause: &str) -> String {
+    let lower = clause.to_lowercase();
+    for marker in ["paid with the ", "paid with ", "with the ", "with my "] {
+        if let Some(pos) = lower.rfind(marker) {
+            let end = pos + marker.len();
+            if clause.is_char_boundary(end) {
+                let name = clause[end..].trim().trim_end_matches('.').trim();
+                let name = name.split(',').next().unwrap_or(name).trim();
+                if !name.is_empty() && !name.chars().any(|ch| ch.is_ascii_digit()) {
+                    return clean_account_name(name);
+                }
+            }
+        }
+    }
+    if let Some(pos) = clause.rfind(',') {
+        let tail = clause[pos + 1..].trim().trim_end_matches('.').trim();
+        let words = tail.split_whitespace().count();
+        let lower_tail = tail.to_lowercase();
+        if (1..=4).contains(&words) && !tail.chars().any(|ch| ch.is_ascii_digit()) && !lower_tail.contains("remember") && !lower_tail.contains("wait") {
+            return clean_account_name(tail);
+        }
+    }
+    String::new()
+}
+
+fn clean_account_name(value: &str) -> String {
+    strip_article(value.trim().trim_end_matches('.').trim())
+}
+
+fn strip_article(value: &str) -> String {
+    let mut words: Vec<&str> = value.split_whitespace().collect();
+    while words.first().map(|word| fold(word)).is_some_and(|word| matches!(word.as_str(), "a" | "an" | "the" | "my")) {
+        words.remove(0);
+    }
+    words.join(" ")
+}
+
+fn title_phrase(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn forgotten(text: &str) -> bool {
+    let folded = fold(text);
+    folded.contains("remember") || folded.contains("not sure") || folded.contains("dont know") || folded.contains("unknown")
+}
+
+fn find_transactions(store: &Store, args: &Value) -> Result<Vec<usize>, String> {
+    let account = args["matchAccount"].as_str().unwrap_or("").trim().to_string();
+    let query = {
+        let query = args["matchQuery"].as_str().unwrap_or("").trim();
+        let category = args["matchCategory"].as_str().unwrap_or("").trim();
+        if !query.is_empty() { query.to_string() } else { category.to_string() }
+    };
+    let ask = Ask {
+        view: "search".into(),
+        month: String::new(),
+        kind: String::new(),
+        account,
+        direction: args["direction"].as_str().unwrap_or("").trim().to_string(),
+        recurrence: String::new(),
+        query,
+        amount: amount_text(args.get("matchAmount")),
+        date: args["matchDate"].as_str().unwrap_or("").trim().to_string(),
+    };
+    if ask.account.is_empty() && ask.query.is_empty() && ask.amount.is_empty() && ask.date.is_empty() {
+        return Err("Which transaction?".into());
+    }
+    if !ask.account.is_empty() {
+        match locate_account(store, "", &ask.account, "")? {
+            Some(_) => {}
+            None => return Err(unresolved_account(store, &ask.account)),
+        }
+    }
+    let rows = filtered_transactions(store, &ask)?;
+    let ids: Vec<String> = rows.iter().map(|tx| tx.id.clone()).collect();
+    Ok(store.transactions.iter().enumerate().filter(|(_, tx)| ids.iter().any(|id| id == &tx.id)).map(|(index, _)| index).collect())
+}
+
+fn which_transaction(store: &Store, indexes: &[usize]) -> String {
+    let lines: Vec<String> = indexes
+        .iter()
+        .map(|index| {
+            let tx = &store.transactions[*index];
+            let account = account_name(store, &tx.account_id).unwrap_or_default();
+            let label = if tx.category.is_empty() { spoken("unknown", &[]) } else { tx.category.clone() };
+            format!("{} {} {} {}", tx.id, format_minor(tx.amount_minor, &tx.currency), label, account)
+        })
+        .collect();
+    let found = and_list(lines.iter().map(String::as_str));
+    spoken("Which transaction? I found {names}.", &[("names", &found)])
+}
+
+fn move_transactions(store: &mut Store, args: &Value, clock: &Clock) -> Result<Value, String> {
+    let to_name = args["toAccount"].as_str().or_else(|| args["account"].as_str()).unwrap_or("").trim();
+    let to_given = args["toAccountId"].as_str().unwrap_or("").trim();
+    if to_name.is_empty() && to_given.is_empty() {
+        return Err("Which account?".into());
+    }
+    let to_id = if to_given.is_empty() {
+        resolve_pay_account(store, to_name, args["toAccountKind"].as_str().unwrap_or(""), "", clock)?
+    } else {
+        resolve_account(store, to_given, "", "", "", clock, false)?
+    };
+    if to_id.is_empty() {
+        return Err(unresolved_account(store, to_name));
+    }
+    let ids: Vec<String> = args
+        .get("ids")
+        .and_then(Value::as_array)
+        .map(|rows| rows.iter().filter_map(|value| value.as_str().map(str::trim).filter(|id| !id.is_empty()).map(str::to_string)).collect())
+        .unwrap_or_default();
+    let mut indexes = Vec::new();
+    if !ids.is_empty() {
+        for id in &ids {
+            let index = store.transactions.iter().position(|tx| &tx.id == id).ok_or("No transaction with that id.")?;
+            indexes.push(index);
+        }
+    } else {
+        let from = args["fromAccount"].as_str().unwrap_or("").trim();
+        let query = args["query"].as_str().unwrap_or(args["category"].as_str().unwrap_or("")).trim();
+        let amount = amount_text(args.get("amount"));
+        if from.is_empty() && query.is_empty() && amount.trim().is_empty() && args["date"].as_str().unwrap_or("").trim().is_empty() {
+            return Err("Which transaction?".into());
+        }
+        let finder = json!({
+            "matchAccount": from,
+            "matchQuery": query,
+            "matchAmount": amount,
+            "matchDate": args["date"].as_str().unwrap_or(""),
+            "direction": args["direction"].as_str().unwrap_or(""),
+        });
+        indexes = find_transactions(store, &finder)?;
+        if indexes.is_empty() {
+            return Err("No transactions matched.".into());
+        }
+    }
+    let to_saved = account_name(store, &to_id).unwrap_or_default();
+    let floor = store.accounts.iter().find(|account| account.id == to_id).map(|account| account.balance_updated_ms).unwrap_or(0);
+    let mut moved = Vec::new();
+    for index in indexes {
+        if store.transactions[index].account_id == to_id {
+            continue;
+        }
+        store.transactions[index].account_id = to_id.clone();
+        if store.transactions[index].created_ms <= floor {
+            store.transactions[index].created_ms = floor.saturating_add(1);
+        }
+        store.transactions[index].updated_ms = clock.ms.max(store.transactions[index].created_ms);
+        moved.push(store.transactions[index].id.clone());
+    }
+    if moved.is_empty() {
+        return Err("No transactions matched.".into());
+    }
+    let count = moved.len().to_string();
+    let detail = spoken("Moved {count} transactions to {name}.", &[("count", &count), ("name", &to_saved)]);
+    let owed = store.accounts.iter().find(|account| account.id == to_id).and_then(|account| shown_with_fx(account, &store.transactions, &store.fx, clock.ms));
+    Ok(json!({
+        "ok": true,
+        "movedCount": moved.len(),
+        "ids": moved,
+        "account": to_saved,
+        "accountId": to_id,
+        "shownBalanceMinor": owed,
+        "detail": detail,
+    }))
+}
+
+fn log_single(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, String> {
     if let Some(id) = args.get("id").and_then(|value| value.as_str()).map(str::trim).filter(|id| !id.is_empty()) {
         return edit_logged(store, id, args, clock);
     }
@@ -1571,7 +2240,7 @@ fn paint_schedule_args(rule: &mut Rule, args: &Value) {
 fn apply_phrase(store: &mut Store, phrase: &str, clock: &Clock) -> Result<String, String> {
     let parsed = crate::finance_schedule::parse_phrase(phrase, clock.today, &clock.default_currency)?;
     match parsed.kind.as_str() {
-        "transaction" => log_from_tool(
+        "transaction" => log_single(
             store,
             &json!({
                 "direction": parsed.direction,
@@ -1711,7 +2380,11 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
         }
         None => (String::new(), true, String::new()),
     };
-    let mut display = name.clone();
+    let mut display = if id.is_empty() {
+        name.clone()
+    } else {
+        store.accounts.iter().find(|account| account.id == id).map(|account| account.name.clone()).unwrap_or_else(|| name.clone())
+    };
     if let Some(renamed) = args.get("newName").and_then(|value| value.as_str()) {
         let renamed = clean_text(renamed, 80)?;
         if !renamed.is_empty() {
@@ -2457,8 +3130,24 @@ fn apply_delete(store: &mut Store, args: &Value) -> Result<String, String> {
             let index = find_account(store, &id, &name)?.ok_or("Which account?")?;
             let label = store.accounts[index].name.clone();
             let id = store.accounts[index].id.clone();
+            let count = transactions_on(store, &id);
+            let count_text = count.to_string();
+            let moved_to = args["moveTo"].as_str().unwrap_or("").trim().to_string();
+            if !moved_to.is_empty() && count > 0 {
+                let clock = Clock { ms: store.accounts.iter().map(|account| account.updated_ms).max().unwrap_or(0).max(1), today: Local::now().date_naive(), currency: String::new(), default_currency: effective_default(store, &current_locale()) };
+                move_transactions(store, &json!({ "fromAccount": label, "toAccount": moved_to }), &clock)?;
+            }
+            let remaining = transactions_on(store, &id);
             remove_account(store, &id)?;
-            Ok(spoken("Deleted the account {label}. Transactions stay in Activity.", &[("label", &label)]))
+            if count == 0 {
+                Ok(spoken("Deleted the account {label}.", &[("label", &label)]))
+            } else if !moved_to.is_empty() && remaining == 0 {
+                let moved = spoken("Moved {count} transactions to {name}.", &[("count", &count_text), ("name", &moved_to)]);
+                let deleted = spoken("Deleted the account {label}.", &[("label", &label)]);
+                Ok(format!("{moved} {deleted}"))
+            } else {
+                Ok(spoken("Deleted the account {label}. {count} transactions are still in Activity.", &[("label", &label), ("count", &count_text)]))
+            }
         }
         "transaction" | "entry" => {
             let before = store.transactions.len();
@@ -2490,7 +3179,20 @@ fn describe_delete(store: &Store, args: &Value) -> Result<String, String> {
     let id = args["id"].as_str().unwrap_or("").trim();
     let name = args["name"].as_str().unwrap_or("").trim();
     let label = match kind.as_str() {
-        "account" => find_account(store, id, name)?.map(|index| store.accounts[index].name.clone()).ok_or("Which account?")?,
+        "account" => {
+            let index = find_account(store, id, name)?.ok_or("Which account?")?;
+            let label = store.accounts[index].name.clone();
+            let count = transactions_on(store, &store.accounts[index].id);
+            let count_text = count.to_string();
+            return if count == 0 {
+                Ok(spoken("Delete {label}? It has no transactions. Say yes and I will remove it.", &[("label", &label)]))
+            } else {
+                Ok(spoken(
+                    "Delete {label}? It has {count} transactions. Tell me where to move them, or say yes to delete the account and leave them in Activity.",
+                    &[("label", &label), ("count", &count_text)],
+                ))
+            };
+        }
         "transaction" | "entry" => store.transactions.iter().find(|tx| tx.id == id).map(|tx| format!("{} {}", tx.direction, format_minor(tx.amount_minor, &tx.currency))).ok_or("Which transaction?")?,
         "rule" | "recurring" => {
             if !id.is_empty() {
@@ -2514,18 +3216,30 @@ fn find_account(store: &Store, id: &str, name: &str) -> Result<Option<usize>, St
     Ok(locate_account(store, id, name, "")?.map(|found| found.index))
 }
 
-/// Exact folded names win. A substring match is kept only when it is unique and
-/// the kinds are the same, or the incoming kind was not specified.
+/// Exact names win, including names that differ only by case, spaces, hyphens,
+/// punctuation, or diacritics. A unique close name (prefix or a small typo)
+/// matches too. Different kinds that only share a fragment, such as ZKB and
+/// ZKB credit card, stay apart unless the folded name is exact.
 fn locate_account(store: &Store, id: &str, name: &str, kind: &str) -> Result<Option<Found>, String> {
     if !id.trim().is_empty() {
         let index = store.accounts.iter().position(|account| account.id == id.trim()).ok_or("No account with that id.")?;
         return Ok(Some(Found { index, exact: true }));
     }
     let query = fold(name);
-    if query.is_empty() {
+    let query_compact = compact_name(name);
+    if query_compact.is_empty() {
         return Ok(None);
     }
-    let exact: Vec<usize> = store.accounts.iter().enumerate().filter(|(_, account)| fold(&account.name) == query).map(|(index, _)| index).collect();
+    let exact: Vec<usize> = store
+        .accounts
+        .iter()
+        .enumerate()
+        .filter(|(_, account)| {
+            let folded = fold(&account.name);
+            folded == query || compact_name(&account.name) == query_compact
+        })
+        .map(|(index, _)| index)
+        .collect();
     if exact.len() == 1 {
         return Ok(Some(Found { index: exact[0], exact: true }));
     }
@@ -2533,25 +3247,46 @@ fn locate_account(store: &Store, id: &str, name: &str, kind: &str) -> Result<Opt
         return Err(which_account(store, &exact));
     }
     let incoming = normalize_kind(kind);
-    let hits: Vec<usize> = store
-        .accounts
-        .iter()
-        .enumerate()
-        .filter(|(_, account)| {
-            let folded = fold(&account.name);
-            if folded.is_empty() || folded == query {
-                return false;
+    let mut scored: Vec<(usize, i32)> = Vec::new();
+    for (index, account) in store.accounts.iter().enumerate() {
+        if !incoming.is_empty() && incoming != account.kind {
+            continue;
+        }
+        let folded = fold(&account.name);
+        let compact = compact_name(&account.name);
+        if compact.is_empty() {
+            continue;
+        }
+        let mut score = 0;
+        if folded.contains(&query) || query.contains(&folded) {
+            score = score.max(300 + query.len() as i32);
+        }
+        if query_compact.len() >= 4 && (compact.starts_with(&query_compact) || query_compact.starts_with(&compact)) {
+            let shorter = query_compact.len().min(compact.len());
+            let longer = query_compact.len().max(compact.len());
+            if shorter * 2 >= longer {
+                score = score.max(800 - (longer - shorter) as i32);
             }
-            let overlaps = folded.contains(&query) || query.contains(&folded);
-            overlaps && (incoming.is_empty() || incoming == account.kind)
-        })
-        .map(|(index, _)| index)
-        .collect();
-    match hits.len() {
-        0 => Ok(None),
-        1 => Ok(Some(Found { index: hits[0], exact: false })),
-        _ => Err(which_account(store, &hits)),
+        }
+        let distance = edit_distance(&query_compact, &compact);
+        let len_diff = (query_compact.len() as i32 - compact.len() as i32).abs();
+        if distance == 1 && query_compact.len() >= 5 && len_diff <= 1 {
+            score = score.max(700);
+        }
+        if score > 0 {
+            scored.push((index, score));
+        }
     }
+    if scored.is_empty() {
+        return Ok(None);
+    }
+    scored.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let best = scored[0].1;
+    let close: Vec<usize> = scored.iter().filter(|row| best - row.1 < 80).map(|row| row.0).collect();
+    if close.len() == 1 {
+        return Ok(Some(Found { index: close[0], exact: false }));
+    }
+    Err(which_account(store, &close))
 }
 
 fn which_account(store: &Store, indexes: &[usize]) -> String {
@@ -2928,6 +3663,12 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
         let kind = if view == "investments" && kind.is_empty() { "investment".into() } else { kind };
         return speak_accounts(store, &kind, &ask.account);
     }
+    if matches!(view.as_str(), "activity" | "transactions" | "search") {
+        return match filtered_transactions(store, ask) {
+            Ok(rows) => speak_activity(store, &rows),
+            Err(message) => message,
+        };
+    }
     let account_id = match locate_account(store, "", &ask.account, &kind) {
         Ok(Some(found)) => store.accounts[found.index].id.clone(),
         Ok(None) => String::new(),
@@ -3007,7 +3748,7 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
         .iter()
         .enumerate()
         .filter(|(_, row)| kind.is_empty() || row.kind == kind)
-        .filter(|(_, row)| account.trim().is_empty() || fold(&row.name).contains(&fold(account)) || fold(account).contains(&fold(&row.name)))
+        .filter(|(_, row)| account.trim().is_empty() || compact_name(&row.name).contains(&compact_name(account)) || compact_name(account).contains(&compact_name(&row.name)))
         .map(|(index, _)| index)
         .collect();
     if indexes.is_empty() {
@@ -3026,7 +3767,15 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
         .map(|index| {
             let account = &store.accounts[index];
             match shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()) {
-                None => spoken("{name} has no balance saved.", &[("name", &account.name)]),
+                None => {
+                    let count = transactions_on(store, &account.id);
+                    if count == 0 {
+                        spoken("{name} has no balance saved.", &[("name", &account.name)])
+                    } else {
+                        let count = count.to_string();
+                        spoken("{name} has no balance saved, and {count} transactions.", &[("name", &account.name), ("count", &count)])
+                    }
+                }
                 Some(minor) => {
                     let amount = format_minor(minor.abs(), &account.currency);
                     let mut line = match account.kind.as_str() {
@@ -3123,6 +3872,112 @@ fn calendar_clause(cadence: &str, date: &str) -> String {
 
 fn account_name(store: &Store, id: &str) -> Option<String> {
     store.accounts.iter().find(|account| account.id == id).map(|account| account.name.clone())
+}
+
+fn transactions_on(store: &Store, id: &str) -> usize {
+    if id.is_empty() {
+        return 0;
+    }
+    store.transactions.iter().filter(|tx| tx.account_id == id || tx.from_account_id == id).count()
+}
+
+fn filtered_transactions<'a>(store: &'a Store, ask: &Ask) -> Result<Vec<&'a Transaction>, String> {
+    let account_id = if ask.account.trim().is_empty() {
+        String::new()
+    } else {
+        match locate_account(store, "", &ask.account, &ask.kind)? {
+            Some(found) => store.accounts[found.index].id.clone(),
+            None => return Ok(Vec::new()),
+        }
+    };
+    let mut rows: Vec<&Transaction> = store.transactions.iter().filter(|tx| tx_visible(store, tx, ask, &account_id)).collect();
+    rows.sort_by(|a, b| b.date.cmp(&a.date).then(b.created_ms.cmp(&a.created_ms)));
+    rows.truncate(40);
+    Ok(rows)
+}
+
+fn tx_visible(store: &Store, tx: &Transaction, ask: &Ask, account_id: &str) -> bool {
+    if !account_id.is_empty() && tx.account_id != account_id && tx.from_account_id != account_id {
+        return false;
+    }
+    if !ask.month.is_empty() && !tx.date.starts_with(ask.month.trim()) {
+        return false;
+    }
+    if !ask.date.is_empty() && !tx.date.starts_with(ask.date.trim()) {
+        return false;
+    }
+    if !ask.direction.is_empty() {
+        let direction = normalize_direction(&ask.direction).unwrap_or_default();
+        if !direction.is_empty() && tx.direction != direction {
+            return false;
+        }
+    }
+    if !ask.amount.is_empty() && !amount_matches(tx, &ask.amount) {
+        return false;
+    }
+    if !ask.query.is_empty() {
+        let account = account_name(store, &tx.account_id).unwrap_or_default();
+        if !text_matches(&tx.category, &ask.query) && !text_matches(&tx.notes, &ask.query) && !text_matches(&account, &ask.query) {
+            return false;
+        }
+    }
+    true
+}
+
+fn amount_matches(tx: &Transaction, raw: &str) -> bool {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return true;
+    }
+    money_for(raw, "", &tx.currency, &tx.currency).is_ok_and(|(minor, _)| minor == tx.amount_minor)
+}
+
+fn text_matches(hay: &str, needle: &str) -> bool {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return false;
+    }
+    let hay = compact_name(hay);
+    let needle = compact_name(needle);
+    if hay.is_empty() || needle.is_empty() {
+        return false;
+    }
+    if hay.contains(&needle) || needle.contains(&hay) {
+        return true;
+    }
+    needle.len() >= 4 && edit_distance(&hay, &needle) <= 1
+}
+
+fn speak_activity(store: &Store, rows: &[&Transaction]) -> String {
+    if rows.is_empty() {
+        return spoken("No transactions matched.", &[]);
+    }
+    let body = rows
+        .iter()
+        .take(12)
+        .map(|tx| {
+            let account = account_name(store, &tx.account_id).unwrap_or_default();
+            let label = if tx.category.trim().is_empty() { spoken("unknown", &[]) } else { tx.category.clone() };
+            let amount = format_minor(tx.amount_minor, &tx.currency);
+            spoken(
+                "{label} {amount} on {account} {date}, id {id}.",
+                &[("label", &label), ("amount", &amount), ("account", &account), ("date", &tx.date), ("id", &tx.id)],
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    spoken("Activity: {body}.", &[("body", &body)])
+}
+
+fn transaction_views(store: &Store, ask: &Ask) -> Vec<Value> {
+    filtered_transactions(store, ask)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|tx| {
+            let account = account_name(store, &tx.account_id).unwrap_or_default();
+            tx_saved_json(tx, &account)
+        })
+        .collect()
 }
 
 struct Plan {
@@ -3908,15 +4763,55 @@ fn sensitive(value: &str) -> bool {
 }
 
 fn fold(value: &str) -> String {
-    value
-        .trim()
-        .chars()
-        .flat_map(|ch| ch.to_lowercase())
-        .filter(|ch| ch.is_alphanumeric() || ch.is_whitespace())
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut raw = String::new();
+    for ch in value.trim().chars() {
+        raw.push_str(&fold_char(ch));
+    }
+    raw.chars().filter(|ch| ch.is_alphanumeric() || ch.is_whitespace()).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn compact_name(value: &str) -> String {
+    fold(value).chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
+fn fold_char(ch: char) -> String {
+    let base = match ch {
+        'à' | 'á' | 'â' | 'ä' | 'ã' | 'å' | 'ā' | 'ă' | 'ą' | 'À' | 'Á' | 'Â' | 'Ä' | 'Ã' | 'Å' | 'Ā' | 'Ă' | 'Ą' => 'a',
+        'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' | 'È' | 'É' | 'Ê' | 'Ë' | 'Ē' | 'Ĕ' | 'Ė' | 'Ę' | 'Ě' => 'e',
+        'ì' | 'í' | 'î' | 'ï' | 'ī' | 'ĭ' | 'į' | 'Ì' | 'Í' | 'Î' | 'Ï' | 'Ī' | 'Ĭ' | 'Į' => 'i',
+        'ò' | 'ó' | 'ô' | 'ö' | 'õ' | 'ō' | 'ő' | 'ø' | 'Ò' | 'Ó' | 'Ô' | 'Ö' | 'Õ' | 'Ō' | 'Ő' | 'Ø' => 'o',
+        'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ů' | 'ű' | 'ų' | 'Ù' | 'Ú' | 'Û' | 'Ü' | 'Ū' | 'Ů' | 'Ű' | 'Ų' => 'u',
+        'ý' | 'ÿ' | 'Ý' => 'y',
+        'ñ' | 'ń' | 'Ñ' | 'Ń' => 'n',
+        'ç' | 'ć' | 'č' | 'Ç' | 'Ć' | 'Č' => 'c',
+        'ß' => return "ss".into(),
+        'æ' | 'Æ' => return "ae".into(),
+        'œ' | 'Œ' => return "oe".into(),
+        other => other,
+    };
+    base.to_lowercase().collect()
+}
+
+fn edit_distance(left: &str, right: &str) -> usize {
+    let left: Vec<char> = left.chars().collect();
+    let right: Vec<char> = right.chars().collect();
+    if left.is_empty() {
+        return right.len();
+    }
+    if right.is_empty() {
+        return left.len();
+    }
+    let mut prev: Vec<usize> = (0..=right.len()).collect();
+    let mut next = vec![0; right.len() + 1];
+    for (i, ca) in left.iter().enumerate() {
+        next[0] = i + 1;
+        for (j, cb) in right.iter().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            next[j + 1] = (prev[j + 1] + 1).min(next[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut next);
+    }
+    prev[right.len()]
 }
 
 fn lead_arg(args: &Value) -> Option<u32> {
@@ -5238,6 +6133,15 @@ mod tests {
     fn logging_and_questions_do_not_invent_figures() {
         let mut store = Store::default();
         let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 10).unwrap());
+        let refused = log_from_tool(
+            &mut store,
+            &json!({"direction": "expense", "amount": "12 euros", "category": "lunch", "account": "cash", "accountKind": "cash"}),
+            &clock,
+        );
+        assert!(refused.is_err(), "{refused:?}");
+        assert!(store.accounts.is_empty(), "logging must not create a cash account");
+        assert!(store.transactions.is_empty());
+        account_from_tool(&mut store, &json!({"name": "Cash", "kind": "cash", "currency": "EUR"}), &clock).unwrap();
         let detail = log_from_tool(
             &mut store,
             &json!({"direction": "expense", "amount": "12 euros", "category": "lunch", "account": "cash", "accountKind": "cash"}),
@@ -5249,17 +6153,17 @@ mod tests {
         assert!(store.accounts[0].balance_minor.is_none());
         assert_eq!(store.transactions[0].recurrence, "once");
         store.default_currency = "EUR".into();
-        let spoken = speak(&store, &Ask { view: "summary".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new() }, clock.today);
+        let spoken = speak(&store, &Ask { view: "summary".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new(), amount: String::new(), date: String::new() }, clock.today);
         assert!(spoken.contains("Spent 12.00 EUR"));
         assert!(spoken.contains("received nothing"));
         assert!(spoken.contains("together in EUR"));
-        let cash = speak(&store, &Ask { view: String::new(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: "cash".into() }, clock.today);
+        let cash = speak(&store, &Ask { view: String::new(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: "cash".into(), amount: String::new(), date: String::new() }, clock.today);
         assert!(cash.contains("no balance saved"));
         rule_from_tool(&mut store, &json!({"name": "Rent", "date": "1", "cadence": "monthly"}), &clock, false).unwrap();
         let rent = store.rules.iter().find(|rule| rule.name == "Rent").unwrap();
         assert!(rent.amount_minor.is_none());
         assert_eq!(rent.next_date, "2026-12-01");
-        let upcoming = speak(&store, &Ask { view: "upcoming".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new() }, clock.today);
+        let upcoming = speak(&store, &Ask { view: "upcoming".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new(), amount: String::new(), date: String::new() }, clock.today);
         assert!(upcoming.contains("Rent on 2026-12-01"));
         assert!(!upcoming.contains("0.00"));
     }
@@ -5563,7 +6467,7 @@ mod tests {
         log_from_tool(&mut store, &json!({"direction": "expense", "amount": "10 euros", "category": "lunch"}), &clock).unwrap();
         log_from_tool(&mut store, &json!({"direction": "expense", "amount": "11 dollars", "category": "lunch"}), &clock).unwrap();
         store.fx.manual.clear();
-        let ask = Ask { view: "summary".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new() };
+        let ask = Ask { view: "summary".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new(), amount: String::new(), date: String::new() };
         let missing = speak(&store, &ask, clock.today);
         assert!(missing.contains("needs a rate for USD"), "{missing}");
         assert!(!missing.contains("Spent"), "{missing}");
@@ -5659,7 +6563,7 @@ mod tests {
         assert!(coming.iter().any(|row| row.name == "Rent"), "{coming:?}");
         assert!(coming.iter().all(|row| row.name != "Groceries plan"), "{coming:?}");
         assert!(coming.iter().all(|row| row.name != "Renew travel card"), "{coming:?}");
-        let ask = Ask { view: "coming".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new() };
+        let ask = Ask { view: "coming".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new(), amount: String::new(), date: String::new() };
         let spoken = speak(&store, &ask, clock.today);
         assert!(spoken.contains("Rent"), "{spoken}");
         assert!(!spoken.contains("Groceries plan"), "{spoken}");
@@ -5745,7 +6649,7 @@ mod tests {
         assert!(coming_lines(&store, clock.today, "out").iter().any(|row| row.name.contains("Due")));
         account_from_tool(&mut store, &json!({"name": "Due card", "balance": "0", "currency": "EUR"}), &clock).unwrap();
         assert!(coming_lines(&store, clock.today, "out").iter().all(|row| !row.name.contains("Due")));
-        let ask = Ask { view: "accounts".into(), month: String::new(), kind: "credit_card".into(), account: "Abanca".into(), direction: String::new(), recurrence: String::new(), query: String::new() };
+        let ask = Ask { view: "accounts".into(), month: String::new(), kind: "credit_card".into(), account: "Abanca".into(), direction: String::new(), recurrence: String::new(), query: String::new(), amount: String::new(), date: String::new() };
         let spoken = speak(&store, &ask, clock.today);
         assert!(spoken.to_lowercase().contains("credit") || spoken.contains("20.00") || spoken.contains("2_000") || spoken.contains("owes"), "{spoken}");
         account_from_tool(&mut store, &json!({"name": "Wallet", "kind": "cash", "balance": "0.5", "currency": "BTC"}), &clock).unwrap();
@@ -5808,5 +6712,127 @@ mod tests {
         assert!(which.is_err(), "{which:?}");
         let which_edit = account_from_tool(&mut store, &json!({"name": "Visa", "balance": "9", "currency": "EUR"}), &clock);
         assert!(which_edit.is_err(), "{which_edit:?}");
+    }
+
+    #[test]
+    fn swiss_card_batch_edits_in_place_and_moves_without_creating_a_card() {
+        let mut store = Store::default();
+        let mut clock = clock(NaiveDate::from_ymd_opt(2026, 11, 13).unwrap());
+        account_from_tool(&mut store, &json!({"name": "Swisscard", "kind": "credit_card", "balance": "100", "currency": "CHF"}), &clock).unwrap();
+        let swiss_id = store.accounts.iter().find(|account| account.name == "Swisscard").unwrap().id.clone();
+        assert_eq!(locate_account(&store, "", "Swiss card", "credit_card").unwrap().unwrap().index, 0);
+        assert_eq!(locate_account(&store, "", "swiss-card", "").unwrap().unwrap().index, 0);
+        assert_eq!(locate_account(&store, "", "Swiscard", "").unwrap().unwrap().index, 0);
+        account_from_tool(&mut store, &json!({"name": "Crédit Suisse", "kind": "bank", "balance": "10", "currency": "CHF"}), &clock).unwrap();
+        let credit = locate_account(&store, "", "Credit Suisse", "bank").unwrap().unwrap().index;
+        assert_eq!(store.accounts[credit].name, "Crédit Suisse");
+        let before = store.accounts.len();
+        let missing = log_from_tool(&mut store, &json!({"direction": "expense", "amount": "10", "currency": "CHF", "account": "Amex", "category": "Lunch"}), &clock);
+        let missing = missing.expect_err("logging must not create Amex");
+        assert!(missing.contains("did not create"), "{missing}");
+        assert_eq!(store.accounts.len(), before);
+        assert!(store.transactions.is_empty());
+        clock.ms = 8_000;
+        let corrected = log_entries(
+            &mut store,
+            &json!({
+                "direction": "expense",
+                "account": "Swiss card",
+                "currency": "CHF",
+                "items": [
+                    {"amount": "79.95", "category": "cable"},
+                    {"amount": "1.50", "category": "cable", "correctsPrevious": true}
+                ]
+            }),
+            &clock,
+        )
+        .unwrap();
+        assert_eq!(corrected.saved.len(), 1, "{corrected:?}");
+        assert!(corrected.failed.is_empty(), "{corrected:?}");
+        assert_eq!(store.transactions.len(), 1);
+        assert_eq!(store.transactions[0].amount_minor, 150);
+        assert_eq!(store.transactions[0].account_id, swiss_id);
+        store.transactions.clear();
+        let phrase = "I spent 179 francs on a vacuum cleaner, paid with the Swiss card. Then 695 on a mop, Swiss card. Then 79.95, no wait, 63.96 on an air purifier, Swiss card. Then 2 francs on a takeaway bag, then 9.95 I don't remember what.";
+        let logged = log_entries(&mut store, &json!({"direction": "expense", "phrase": phrase}), &clock).unwrap();
+        assert!(logged.failed.is_empty(), "{:?}", logged.failed);
+        assert_eq!(logged.saved.len(), 5, "{}", logged.detail);
+        assert!(logged.detail.contains("Saved 5 of 5"), "{}", logged.detail);
+        assert_eq!(store.accounts.iter().filter(|account| compact_name(&account.name) == "swisscard").count(), 1);
+        assert!(store.accounts.iter().all(|account| account.name != "Swiss card"));
+        let txs: Vec<&Transaction> = store.transactions.iter().filter(|tx| tx.account_id == swiss_id).collect();
+        assert_eq!(txs.len(), 5);
+        let amounts: Vec<i64> = txs.iter().map(|tx| tx.amount_minor).collect();
+        assert_eq!(amounts, vec![17_900, 69_500, 6_396, 200, 995]);
+        assert!(txs.iter().all(|tx| tx.currency == "CHF"));
+        assert_eq!(txs[0].category, "Vacuum Cleaner");
+        assert_eq!(txs[1].category, "Mop");
+        assert_eq!(txs[2].category, "Air Purifier");
+        assert_eq!(txs[3].category, "Takeaway Bag");
+        assert!(txs[4].category.is_empty());
+        assert!(txs.iter().all(|tx| !tx.id.is_empty()));
+        assert_eq!(txs.iter().map(|tx| tx.id.as_str()).collect::<std::collections::HashSet<_>>().len(), 5);
+        assert!(logged.saved.iter().all(|row| row["ok"] == true && !row["id"].as_str().unwrap_or("").is_empty()));
+        let owed = shown_with_fx(store.accounts.iter().find(|account| account.id == swiss_id).unwrap(), &store.transactions, &store.fx, clock.ms).unwrap();
+        assert_eq!(owed, 10_000 + 17_900 + 69_500 + 6_396 + 200 + 995);
+        let mop_id = txs[1].id.clone();
+        let edited = log_entries(
+            &mut store,
+            &json!({"direction": "expense", "matchAmount": "695", "matchCategory": "mop", "matchAccount": "Swiss card", "amount": "6.95", "currency": "CHF"}),
+            &clock,
+        )
+        .unwrap();
+        assert_eq!(edited.saved.len(), 1);
+        assert_eq!(edited.saved[0]["id"], mop_id);
+        assert_eq!(store.transactions.len(), 5);
+        assert_eq!(store.transactions.iter().find(|tx| tx.id == mop_id).unwrap().amount_minor, 695);
+        assert!(store.transactions.iter().all(|tx| tx.amount_minor != 69_500));
+        let ask = Ask {
+            view: "activity".into(),
+            month: String::new(),
+            kind: String::new(),
+            account: "swiss-card".into(),
+            direction: "expense".into(),
+            recurrence: String::new(),
+            query: "mop".into(),
+            amount: String::new(),
+            date: String::new(),
+        };
+        let activity = speak(&store, &ask, clock.today);
+        assert!(activity.contains(&mop_id), "{activity}");
+        assert!(activity.contains("6.95"), "{activity}");
+        let rows = transaction_views(&store, &ask);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], mop_id);
+        assert_eq!(rows[0]["paymentMethod"], "Swisscard");
+        clock.ms = 9_000;
+        account_from_tool(&mut store, &json!({"name": "Other card", "kind": "credit_card", "balance": "0", "currency": "CHF"}), &clock).unwrap();
+        let other_id = store.accounts.iter().find(|account| account.name == "Other card").unwrap().id.clone();
+        let preview = describe_delete(&store, &json!({"kind": "account", "name": "Swiss card"})).unwrap();
+        assert!(preview.contains('5'), "{preview}");
+        assert!(!preview.contains("no transactions"), "{preview}");
+        let moved = move_transactions(&mut store, &json!({"fromAccount": "Swiss card", "toAccount": "Other card"}), &clock).unwrap();
+        assert_eq!(moved["movedCount"], 5);
+        assert!(store.transactions.iter().all(|tx| tx.account_id == other_id));
+        assert_eq!(store.transactions.len(), 5);
+        let swiss_after = shown_with_fx(store.accounts.iter().find(|account| account.id == swiss_id).unwrap(), &store.transactions, &store.fx, clock.ms).unwrap();
+        let other_after = shown_with_fx(store.accounts.iter().find(|account| account.id == other_id).unwrap(), &store.transactions, &store.fx, clock.ms).unwrap();
+        assert_eq!(swiss_after, 10_000);
+        assert_eq!(other_after, 17_900 + 695 + 6_396 + 200 + 995);
+        let back = move_transactions(&mut store, &json!({"fromAccount": "Other card", "toAccount": "swiss-card"}), &clock).unwrap();
+        assert_eq!(back["movedCount"], 5);
+        assert!(store.transactions.iter().all(|tx| tx.account_id == swiss_id));
+        let swiss_back = shown_with_fx(store.accounts.iter().find(|account| account.id == swiss_id).unwrap(), &store.transactions, &store.fx, clock.ms).unwrap();
+        let other_back = shown_with_fx(store.accounts.iter().find(|account| account.id == other_id).unwrap(), &store.transactions, &store.fx, clock.ms).unwrap();
+        assert_eq!(swiss_back, 10_000 + 17_900 + 695 + 6_396 + 200 + 995);
+        assert_eq!(other_back, 0);
+        assert_eq!(store.transactions.iter().find(|tx| tx.id == mop_id).unwrap().amount_minor, 695);
+        let empty = describe_delete(&store, &json!({"kind": "account", "name": "Other card"})).unwrap();
+        assert!(empty.contains("no transactions"), "{empty}");
+        account_from_tool(&mut store, &json!({"name": "Swisscash", "kind": "credit_card", "balance": "1", "currency": "CHF"}), &clock).unwrap();
+        let ambiguous = locate_account(&store, "", "Swiss", "").unwrap_err();
+        assert!(ambiguous.starts_with("Which account? I found"), "{ambiguous}");
+        let names: Vec<_> = tool_definitions().as_array().unwrap().iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect();
+        assert!(names.contains(&"move_transactions".into()));
     }
 }

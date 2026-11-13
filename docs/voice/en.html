@@ -66,6 +66,16 @@
       <li>Coming is today through the next 30 days: bills from cash or a bank, and a card payment when you still owe. Card charges themselves are not listed one by one.</li>
     </ul>
 
+    <h2>Finance — several expenses, edits, and moving</h2>
+    <ul>
+      <li>“I spent 179 francs on a vacuum cleaner with the Swiss card, then 6.95 on a mop, then 63.96 on an air purifier.” One request saves each expense. Grok names only the ones that were saved, with their ids.</li>
+      <li>“79.95, no wait, 63.96 on an air purifier.” Only 63.96 is saved.</li>
+      <li>“Swiss card” uses the card already named Swisscard. Spaces, hyphens, and small slips still match when one card is clearly closest. Grok does not create a card while logging an expense. If two names are close, or none match, it asks and lists the closest names. A new card is added only when you ask to add one.</li>
+      <li>“The mop was 6.95, not 695.” That edits the saved mop. It does not add another expense.</li>
+      <li>“Move those expenses from Swiss card to Cash.” Balances and what a card owes are recalculated. The same expense is not counted twice.</li>
+      <li>“Delete Swiss card.” If it has expenses, Grok says how many and asks where to move them. It does not say there are none unless the list is empty.</li>
+    </ul>
+
     <h2>Finance — accounts, cards, and credit</h2>
     <ul>
       <li>“Add a bank called Checking with 500 euros.”</li>

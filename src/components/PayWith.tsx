@@ -35,14 +35,13 @@ export function PayWith({
           ))}
         </ChipGroup>
       ) : null}
-      <ChipGroup title={t("Cash")}>
-        {cash.map((account) => (
-          <Chip key={account.id} on={value === account.id} onClick={() => onChange(account.id)}>{account.name}</Chip>
-        ))}
-        {cash.length === 0 ? (
-          <Chip on={value === CASH_WALLET} onClick={() => onChange(CASH_WALLET)}>{t("Cash")}</Chip>
-        ) : null}
-      </ChipGroup>
+      {cash.length > 0 ? (
+        <ChipGroup title={t("Cash")}>
+          {cash.map((account) => (
+            <Chip key={account.id} on={value === account.id} onClick={() => onChange(account.id)}>{account.name}</Chip>
+          ))}
+        </ChipGroup>
+      ) : null}
       <ChipGroup title={t("Accounts")}>
         {banks.length === 0 ? <p className="fin-muted text-sm">{t("No accounts yet")}</p> : null}
         {banks.map((account) => (

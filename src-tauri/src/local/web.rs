@@ -258,6 +258,7 @@ mod tests {
             "save_account",
             "list_finance",
             "delete_finance",
+            "move_transactions",
             "mark_paid",
             "export_finance_pdf",
         ] {
