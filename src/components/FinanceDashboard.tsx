@@ -7,7 +7,7 @@ import {
   addMonths,
   bookFromStatus,
   cashFlow,
-  comingRows,
+  comingCashRows,
   headlineOf,
   monthBounds,
   netWorth,
@@ -62,8 +62,9 @@ export function missingRateKey(snapshot: FinanceState["snapshot"], nowMs: number
   const worth = netWorth(accounts.map((account) => ({ kind: account.kind, currency: account.currency, shownBalanceMinor: account.shownBalanceMinor })));
   const bounds = monthBounds(today);
   const flow = cashFlow(snapshot.transactions, bounds.start, bounds.end);
-  const expenses = comingRows(snapshot.rules, snapshot.transactions, today, "out");
-  const income = comingRows(snapshot.rules, snapshot.transactions, today, "in");
+  const cards = snapshot.accounts.map(cardShape);
+  const expenses = comingCashRows(snapshot.rules, snapshot.transactions, cards, today, "out");
+  const income = comingCashRows(snapshot.rules, snapshot.transactions, cards, today, "in");
   const planned = plannedHits(snapshot.rules, snapshot.transactions, today);
   const monthPlan = projectWindow(flow, planned, today, bounds.end, today, true);
   const horizon = addDays(today, 30);
@@ -152,8 +153,9 @@ export function FinanceDashboard({
   );
   const rules = finance.snapshot.rules;
   const txs = finance.snapshot.transactions;
-  const comingOut = useMemo(() => comingRows(rules, txs, today, "out"), [rules, txs, today]);
-  const comingIn = useMemo(() => comingRows(rules, txs, today, "in"), [rules, txs, today]);
+  const cardAccounts = useMemo(() => accounts.map(cardShape), [accounts]);
+  const comingOut = useMemo(() => comingCashRows(rules, txs, cardAccounts, today, "out"), [rules, txs, cardAccounts, today]);
+  const comingIn = useMemo(() => comingCashRows(rules, txs, cardAccounts, today, "in"), [rules, txs, cardAccounts, today]);
   const payoutRows = useMemo(() => comingIn.filter((row) => row.purpose === "investment_payout"), [comingIn]);
   const incomeRows = useMemo(() => comingIn.filter((row) => row.purpose !== "investment_payout"), [comingIn]);
   const planned = useMemo(() => plannedHits(rules, txs, today), [rules, txs, today]);
@@ -264,7 +266,7 @@ export function FinanceDashboard({
       {panels.includes("coming-expenses") ? (
         <Coming
           title={t("Coming expenses")}
-          body={t("Bills, rent, subscriptions, and fixed runs.")}
+          body={t("The next 30 days. Bills paid from cash or a bank, and credit-card payments that are due.")}
           rows={comingOut}
           parts={comingOutParts}
           emptyTitle={t("Program a bill")}
@@ -297,7 +299,7 @@ export function FinanceDashboard({
       {panels.includes("coming-income") ? (
         <Coming
           title={t("Coming income")}
-          body={t("Paydays, planned income, and payouts.")}
+          body={t("The next 30 days.")}
           rows={incomeRows}
           parts={incomeParts}
           emptyTitle={t("Program income")}
@@ -335,7 +337,7 @@ export function FinanceDashboard({
       {panels.includes("result") ? (
         <section className="fin-panel" data-finance-panel="result">
           <h2 className="fin-kicker">{t("This month's result")}</h2>
-          <p className="fin-muted mt-2 text-sm leading-5">{t("Income received minus expenses paid.")}</p>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("Income minus expenses, including charges on a card. A card payment is not included.")}</p>
           {flow.length === 0 ? (
             <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
           ) : (
@@ -379,49 +381,37 @@ export function FinanceDashboard({
               <StaticHeadline head={heads.plan} size="text-3xl" />
             </div>
           ) : null}
-          <NextThirty nextIn={heads.nextIn} nextOut={heads.nextOut} net={heads.next} overdueIn={heads.overdueIn} overdueOut={heads.overdueOut} />
+          <OverdueLine overdueIn={heads.overdueIn} overdueOut={heads.overdueOut} />
         </section>
       ) : null}
     </div>
   );
 }
 
-function NextThirty({
-  nextIn,
-  nextOut,
-  net,
-  overdueIn,
-  overdueOut,
-}: {
-  nextIn: Headline;
-  nextOut: Headline;
-  net: Headline;
-  overdueIn: Headline;
-  overdueOut: Headline;
-}) {
+function OverdueLine({ overdueIn, overdueOut }: { overdueIn: Headline; overdueOut: Headline }) {
   const t = useT();
-  const quiet = [net, nextIn, nextOut, overdueIn, overdueOut].every((head) => head.state === "empty");
-  if (quiet) return null;
+  const open = (overdueIn.state === "ready" && overdueIn.amountMinor !== 0) || (overdueOut.state === "ready" && overdueOut.amountMinor !== 0);
+  if (!open) return null;
   return (
-    <section className="fin-window mt-4">
-      <h2 className="fin-kicker">{t("Next 30 days")}</h2>
-      <p className="fin-muted mt-2 text-sm leading-5">{t("Planned in and out for the next 30 days, plus anything overdue. Not this month's leftover.")}</p>
-      <StaticHeadline head={net} size="text-4xl" />
-      {nextIn.state === "ready" || nextOut.state === "ready" ? (
-        <div className="mt-3 grid w-full min-w-0 grid-cols-2 gap-2">
-          {nextIn.state === "ready" ? <Mini label={t("Incoming")} value={formatMoney(nextIn.amountMinor, nextIn.currency)} tone="in" /> : null}
-          {nextOut.state === "ready" ? <Mini label={t("Outgoing")} value={formatMoney(nextOut.amountMinor, nextOut.currency)} tone="out" /> : null}
-        </div>
-      ) : null}
-      {overdueIn.state === "ready" || overdueOut.state === "ready" ? (
-        <p className="fin-muted mt-2 text-sm leading-5 break-words">
-          {t("Overdue still open")}
-          {overdueIn.state === "ready" && overdueIn.amountMinor ? ` · ${t("Incoming")} ${formatMoney(overdueIn.amountMinor, overdueIn.currency)}` : ""}
-          {overdueOut.state === "ready" && overdueOut.amountMinor ? ` · ${t("Outgoing")} ${formatMoney(overdueOut.amountMinor, overdueOut.currency)}` : ""}
-        </p>
-      ) : null}
-    </section>
+    <p className="fin-muted mt-3 text-sm leading-5 break-words">
+      {t("Overdue still open")}
+      {overdueIn.state === "ready" && overdueIn.amountMinor ? ` · ${t("Incoming")} ${formatMoney(overdueIn.amountMinor, overdueIn.currency)}` : ""}
+      {overdueOut.state === "ready" && overdueOut.amountMinor ? ` · ${t("Outgoing")} ${formatMoney(overdueOut.amountMinor, overdueOut.currency)}` : ""}
+    </p>
   );
+}
+
+function cardShape(account: FinanceAccount) {
+  return {
+    id: account.id,
+    name: account.name,
+    kind: account.kind,
+    currency: account.currency,
+    shownBalanceMinor: account.shownBalanceMinor,
+    paymentMinor: account.paymentMinor,
+    dueDate: account.dueDate,
+    dueDay: account.dueDay,
+  };
 }
 
 function Coming({
@@ -579,15 +569,6 @@ function FocusChip({ label, onClick }: { label: string; onClick: () => void }) {
     <button type="button" className="fin-chip w-full" onClick={onClick}>
       {label}
     </button>
-  );
-}
-
-function Mini({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-xs leading-4 tracking-wide break-words text-muted-foreground uppercase">{label}</p>
-      <p className={cn("fin-num mt-1 text-base font-medium break-words", tone === "in" && "fin-in", tone === "out" && "fin-out")}>{value}</p>
-    </div>
   );
 }
 

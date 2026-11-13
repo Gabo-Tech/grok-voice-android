@@ -9,18 +9,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
-import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
+import { formatMoney, kindLabel, majorString, minorExponent, typeLabel } from "@/lib/money";
 import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
-import { debtPayoff, nextDue, plannedHits } from "@/lib/financeMath";
+import { cardDueDate, debtPayoff, nextDue, paymentFits, plannedHits, utilization } from "@/lib/financeMath";
 import { FinanceDashboard, plannedYearBars, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
 import { FINANCE_TABS, readFinanceTab, type FinanceTab } from "@/lib/financeTabs";
 import { ProgramSheet } from "@/components/ProgramSheet";
+import { CASH_WALLET, PayWith } from "@/components/PayWith";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import "@/finance.css";
 
-type SheetKind = "transaction" | "account" | "investment" | "rule";
+type SheetKind = "transaction" | "account" | "investment" | "rule" | "pay";
 
 const FINANCE_TAB_KEY = "grok-finance-tab";
 
@@ -62,6 +63,7 @@ export function FinancePage({
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
+  const [paying, setPaying] = useState<FinanceAccount | null>(null);
   const [classFilter, setClassFilter] = useState("all");
   const [directionFilter, setDirectionFilter] = useState(() => {
     const saved = readFinanceTab(readStoredTab());
@@ -356,6 +358,10 @@ export function FinancePage({
               rules={finance.snapshot.rules}
               onPaid={finance.markPaid}
               onOpen={openAccount}
+              onPay={(account) => {
+                setPaying(account);
+                setSheet("pay");
+              }}
               onAddAccount={() => {
                 setEditingAccount(null);
                 setAccountPreset("bank");
@@ -369,6 +375,11 @@ export function FinancePage({
               onAddDebt={() => {
                 setEditingAccount(null);
                 setAccountPreset("credit_card");
+                setSheet("account");
+              }}
+              onAddLoan={() => {
+                setEditingAccount(null);
+                setAccountPreset("loan");
                 setSheet("account");
               }}
               onAddInvestment={openInvestment}
@@ -470,6 +481,7 @@ export function FinancePage({
         onClose={() => setSheet(null)}
       />
       <ProgramSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} />
+      <PayCardSheet open={sheet === "pay"} finance={finance} card={paying} onClose={() => setSheet(null)} />
       <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} />
     </div>
   );
@@ -782,6 +794,7 @@ function AccountList({
   action,
   onAdd,
   onOpen,
+  onPay,
 }: {
   rows: FinanceAccount[];
   transactions: FinanceTransaction[];
@@ -792,9 +805,10 @@ function AccountList({
   action: string;
   onAdd: () => void;
   onOpen: (account: FinanceAccount) => void;
+  onPay?: (account: FinanceAccount) => void;
 }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} />;
+  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} />;
 }
 
 function AccountRows({
@@ -803,12 +817,14 @@ function AccountRows({
   transactions,
   rules,
   onPaid,
+  onPay,
 }: {
   rows: FinanceAccount[];
   onOpen: (account: FinanceAccount) => void;
   transactions: FinanceTransaction[];
   rules: FinanceState["snapshot"]["rules"];
   onPaid: (id: string) => void;
+  onPay?: (account: FinanceAccount) => void;
 }) {
   const t = useT();
   return (
@@ -816,8 +832,11 @@ function AccountRows({
       {rows.map((account, index) => {
         const money = account.shownBalanceMinor == null ? t("Not set") : formatMoney(account.shownBalanceMinor, account.currency);
         const owed = isDebt(account.kind);
+        const card = account.kind === "credit_card";
         const payoff = debtPayoff(account, transactions);
         const due = nextDue(account, rules);
+        const used = card ? utilization(account.shownBalanceMinor, account.creditLimitMinor) : null;
+        const charges = card ? transactions.filter((tx) => tx.accountId === account.id && tx.direction === "expense").slice(0, 3) : [];
         return (
           <div key={account.id} className="border border-border px-3 py-3">
             <RowButton onClick={() => onOpen(account)} className="px-0 py-0">
@@ -840,6 +859,29 @@ function AccountRows({
                 </span>
                 <p className="fin-muted mt-1 text-sm">{fill("{paid} paid down", { paid: formatMoney(payoff.paid, account.currency) })}</p>
               </div>
+            ) : null}
+            {card && account.creditLimitMinor != null && used != null ? (
+              <div className="mt-2">
+                <span className="fin-track">
+                  <span style={{ width: `${Math.min(100, Math.round(used * 100))}%` }} />
+                </span>
+                <p className="fin-muted mt-1 text-sm">
+                  {t("Utilization")} · {Math.round(used * 100)}% · {formatMoney(account.creditLimitMinor, account.currency)}
+                </p>
+              </div>
+            ) : null}
+            {card && charges.length > 0 ? (
+              <div className="mt-2 space-y-1">
+                <p className="stamp">{t("Recent charges")}</p>
+                {charges.map((tx) => (
+                  <p key={tx.id} className="text-sm text-muted-foreground">
+                    {tx.date} · {tx.category || t("Expense")} · {formatMoney(tx.amountMinor, tx.currency)}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            {card && onPay ? (
+              <button type="button" className="fin-chip mt-3 min-h-12 w-full" onClick={() => onPay(account)}>{t("Pay card")}</button>
             ) : null}
             {owed && due ? (
               <div className="mt-2 flex items-center justify-between gap-3">
@@ -913,11 +955,13 @@ function TransactionSheet({
   const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency);
   const [direction, setDirection] = useState(presetDirection || "expense");
   const [category, setCategory] = useState("");
-  const [accountName, setAccountName] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [fromId, setFromId] = useState("");
   const [date, setDate] = useState("");
   const [recurrence, setRecurrence] = useState("once");
   const [cadence, setCadence] = useState("");
   const [notes, setNotes] = useState("");
+  const [formError, setFormError] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = editing?.id || `new:${presetDirection}`;
@@ -928,22 +972,45 @@ function TransactionSheet({
     setCurrency(editing?.currency || finance.snapshot.defaultCurrency);
     setDirection(editing?.direction || presetDirection || "expense");
     setCategory(editing?.category || "");
-    setAccountName(finance.snapshot.accounts.find((account) => account.id === editing?.accountId)?.name || "");
+    setAccountId(editing?.accountId || "");
+    setFromId(editing?.fromAccountId || "");
     setDate(editing?.date || "");
     setRecurrence(editing?.recurrence || "once");
     setCadence("");
     setNotes(editing?.notes || "");
+    setFormError("");
     setConfirming(false);
   }
+  const picked = (id: string) => {
+    if (id === CASH_WALLET) return { id: "", name: "Cash", kind: "cash" };
+    const account = finance.snapshot.accounts.find((row) => row.id === id);
+    return { id: account?.id || "", name: account?.name || "", kind: account?.kind || "" };
+  };
   const save = () => {
     if (!amount.trim()) return;
+    const target = picked(accountId);
+    const source = picked(fromId);
+    if (direction === "payment" && target.kind === "credit_card") {
+      const card = finance.snapshot.accounts.find((row) => row.id === target.id);
+      const minor = Number(amount.replace(",", "."));
+      const pay = card && Number.isFinite(minor) ? Math.round(minor * 10 ** minorExponent(card.currency)) : 0;
+      if (card && card.currency === (currency || card.currency).toUpperCase() && paymentFits(card.shownBalanceMinor, pay) === "over") {
+        setFormError(t("That is more than this card owes."));
+        return;
+      }
+    }
     finance.saveTransaction({
       id: editing?.id,
       amount,
       currency,
       direction,
       category,
-      accountName,
+      accountId: target.id,
+      accountName: target.name,
+      accountKind: target.kind,
+      fromAccountId: direction === "payment" ? source.id : "",
+      fromAccountName: direction === "payment" ? source.name : "",
+      fromAccountKind: direction === "payment" ? source.kind : "",
       date,
       notes,
       recurrence,
@@ -981,8 +1048,14 @@ function TransactionSheet({
       }
     >
       <div className="space-y-4">
+        <Field label={t("Category or payee")}>
+          <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t("Lunch, rent, salary")} />
+        </Field>
         <Field label={t("Amount")}>
           <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-16 text-3xl tabular-nums" autoFocus />
+        </Field>
+        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
+          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={8} autoCapitalize="characters" />
         </Field>
         <Field label={t("Direction")}>
           <div className="chip-scroller">
@@ -991,20 +1064,20 @@ function TransactionSheet({
             <Chip on={direction === "payment"} onClick={() => setDirection("payment")}>{t("Payment")}</Chip>
           </div>
         </Field>
-        <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
-          <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} autoCapitalize="characters" />
-        </Field>
-        <Field label={t("Category or payee")}>
-          <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t("Lunch, rent, salary")} />
-        </Field>
-        <Field label={t("Account")} hint={t("Nickname")}>
-          <Input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder={t("Cash, Visa travel, car loan")} list="finance-accounts" />
-          <datalist id="finance-accounts">
-            {finance.snapshot.accounts.map((account) => (
-              <option key={account.id} value={account.name} />
-            ))}
-          </datalist>
-        </Field>
+        {formError ? <p className="text-sm leading-5">{formError}</p> : null}
+        {direction === "payment" ? (
+          <div className="space-y-3">
+            <p className="text-sm leading-5 text-muted-foreground">{t("Cards")}</p>
+            <div className="chip-scroller">
+              {finance.snapshot.accounts.filter((account) => account.kind === "credit_card" || account.kind === "loan" || account.kind === "other_debt").map((account) => (
+                <Chip key={account.id} on={accountId === account.id} onClick={() => setAccountId(account.id)}>{account.name}</Chip>
+              ))}
+            </div>
+            <PayWith accounts={finance.snapshot.accounts} value={fromId} onChange={setFromId} mode="fund" />
+          </div>
+        ) : (
+          <PayWith accounts={finance.snapshot.accounts} value={accountId} onChange={setAccountId} mode={direction === "income" ? "deposit" : "pay"} />
+        )}
         <Field label={t("Date")}>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
@@ -1065,6 +1138,10 @@ function AccountSheet({
   const [units, setUnits] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [leadDays, setLeadDays] = useState(2);
+  const [creditLimit, setCreditLimit] = useState("");
+  const [dueDay, setDueDay] = useState("");
+  const [statementDay, setStatementDay] = useState("");
+  const [lastFour, setLastFour] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = `${investment ? "i" : "a"}:${editing?.id || presetKind || "new"}`;
@@ -1090,6 +1167,10 @@ function AccountSheet({
     setUnits(editing?.units || "");
     setUnitPrice(majorString(editing?.priceMinor, editing?.currency || finance.snapshot.defaultCurrency || ""));
     setLeadDays(editing?.leadDays ?? 2);
+    setCreditLimit(majorString(editing?.creditLimitMinor, editing?.currency || finance.snapshot.defaultCurrency));
+    setDueDay(editing?.dueDay ? String(editing.dueDay) : "");
+    setStatementDay(editing?.statementDay ? String(editing.statementDay) : "");
+    setLastFour(editing?.lastFour || "");
     setConfirming(false);
   }
   const save = () => {
@@ -1116,6 +1197,14 @@ function AccountSheet({
       valueMode,
       leadDays,
       changeKind: true,
+      creditLimit: kind === "credit_card" ? creditLimit : "",
+      dueDay: kind === "credit_card" && dueDay.trim() ? Number(dueDay) : null,
+      statementDay: kind === "credit_card" && statementDay.trim() ? Number(statementDay) : null,
+      lastFour: kind === "credit_card" ? lastFour : "",
+      editLimit: kind === "credit_card",
+      editDueDay: kind === "credit_card",
+      editStatementDay: kind === "credit_card",
+      editLastFour: kind === "credit_card",
     });
     onClose();
   };
@@ -1123,7 +1212,7 @@ function AccountSheet({
   return (
     <Sheet
       open={open}
-      title={investment ? (editing ? t("Edit investment") : t("New investment")) : editing ? t("Edit account") : t("New account")}
+      title={investment ? (editing ? t("Edit investment") : t("New investment")) : kind === "credit_card" ? (editing ? t("Edit card") : t("New card")) : editing ? t("Edit account") : t("New account")}
       onClose={onClose}
       className="finance"
       footer={
@@ -1163,7 +1252,7 @@ function AccountSheet({
             </div>
           </Field>
         )}
-        <Field label={investment ? t("Worth") : t("Balance")} hint={t("Leave blank until you have checked it.")}>
+        <Field label={investment ? t("Worth") : kind === "credit_card" ? t("Balance owed") : t("Balance")} hint={t("Leave blank until you have checked it.")}>
           <Input inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="h-16 text-3xl tabular-nums" />
         </Field>
         <Field label={t("Currency")} hint={t("Three letters, such as EUR or USD.")}>
@@ -1183,6 +1272,22 @@ function AccountSheet({
             <CadenceChips value={contributionCadence} onChange={setContributionCadence} />
             <Field label={t("Next contribution")}>
               <Input type="date" value={contributionDate} onChange={(e) => setContributionDate(e.target.value)} />
+            </Field>
+          </>
+        )}
+        {kind === "credit_card" && (
+          <>
+            <Field label={t("Credit limit")} hint={t("Optional.")}>
+              <Input inputMode="decimal" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
+            </Field>
+            <Field label={t("Due day")} hint={t("Day of the month, 1 to 31.")}>
+              <Input inputMode="numeric" value={dueDay} onChange={(e) => setDueDay(e.target.value)} />
+            </Field>
+            <Field label={t("Statement day")} hint={t("Day of the month, 1 to 31.")}>
+              <Input inputMode="numeric" value={statementDay} onChange={(e) => setStatementDay(e.target.value)} />
+            </Field>
+            <Field label={t("Last four")} hint={t("Optional. Four digits only.")}>
+              <Input inputMode="numeric" maxLength={4} value={lastFour} onChange={(e) => setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))} />
             </Field>
           </>
         )}
@@ -1332,7 +1437,9 @@ function AccountsBoard({
   onAddAccount,
   onAddCash,
   onAddDebt,
+  onAddLoan,
   onAddInvestment,
+  onPay,
 }: {
   accounts: FinanceAccount[];
   focus: WorthFocus | "all";
@@ -1343,13 +1450,16 @@ function AccountsBoard({
   onAddAccount: () => void;
   onAddCash: () => void;
   onAddDebt: () => void;
+  onAddLoan: () => void;
   onAddInvestment: () => void;
+  onPay: (account: FinanceAccount) => void;
 }) {
   const t = useT();
   const bank = accounts.filter((account) => account.kind === "bank" || account.kind === "other");
   const cash = accounts.filter((account) => account.kind === "cash");
   const invested = accounts.filter((account) => account.kind === "investment");
-  const debt = accounts.filter((account) => isDebt(account.kind));
+  const cards = accounts.filter((account) => account.kind === "credit_card");
+  const loans = accounts.filter((account) => account.kind === "loan" || account.kind === "other_debt");
   const show = (section: "accounts" | "cash" | "invested" | "debt") => {
     if (focus === "all") return true;
     if (focus === "owned") return section !== "debt";
@@ -1357,10 +1467,10 @@ function AccountsBoard({
     if (focus === "invested") return section === "invested";
     return section === "debt";
   };
-  const block = (title: string, rows: FinanceAccount[], emptyTitle: string, emptyBody: string, action: string, onAdd: () => void) => (
+  const block = (title: string, rows: FinanceAccount[], emptyTitle: string, emptyBody: string, action: string, onAdd: () => void, pay = false) => (
     <section key={title}>
       <h2 className="fin-kicker mb-2">{title}</h2>
-      <AccountList rows={rows} transactions={transactions} rules={rules} onPaid={onPaid} emptyTitle={emptyTitle} emptyBody={emptyBody} action={action} onAdd={onAdd} onOpen={onOpen} />
+      <AccountList rows={rows} transactions={transactions} rules={rules} onPaid={onPaid} emptyTitle={emptyTitle} emptyBody={emptyBody} action={action} onAdd={onAdd} onOpen={onOpen} onPay={pay ? onPay : undefined} />
     </section>
   );
   return (
@@ -1375,7 +1485,10 @@ function AccountsBoard({
         ? block(t("Investments"), invested, t("No investments yet"), t("Say “I invest 200 euros into VT every month”, or tap +."), t("Add investment"), onAddInvestment)
         : null}
       {show("debt")
-        ? block(t("You owe"), debt, t("No debts saved"), t("A card or loan. Payments reduce what you owe."), t("Add account"), onAddDebt)
+        ? block(t("Credit cards"), cards, t("No credit card is saved."), t("A card you pay with. Charges increase what you owe."), t("Add a card"), onAddDebt, true)
+        : null}
+      {show("debt")
+        ? block(t("Loans and other debts"), loans, t("No debts saved"), t("A loan. Payments reduce what you owe."), t("Add account"), onAddLoan)
         : null}
     </div>
   );
@@ -1412,6 +1525,105 @@ function CategorySheet({ open, finance, onClose }: { open: boolean; finance: Fin
       </div>
     </Sheet>
   );
+}
+
+function PayCardSheet({
+  open,
+  finance,
+  card,
+  onClose,
+}: {
+  open: boolean;
+  finance: FinanceState;
+  card: FinanceAccount | null;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const [amount, setAmount] = useState("");
+  const [fromId, setFromId] = useState("");
+  const [date, setDate] = useState("");
+  const [error, setError] = useState("");
+  const [seen, setSeen] = useState<string | null>(null);
+  const key = card?.id || "none";
+  if (!open && seen !== null) setSeen(null);
+  if (open && card && seen !== key) {
+    setSeen(key);
+    setAmount(majorString(card.shownBalanceMinor, card.currency));
+    setFromId("");
+    setDate(todayIso());
+    setError("");
+  }
+  const save = () => {
+    if (!card || !amount.trim()) return;
+    if (!fromId) {
+      setError(t("Which account pays this card?"));
+      return;
+    }
+    const pay = Math.round(Number(amount.replace(",", ".")) * 10 ** minorExponent(card.currency));
+    if (Number.isFinite(pay) && paymentFits(card.shownBalanceMinor, pay) === "over") {
+      setError(t("That is more than this card owes."));
+      return;
+    }
+    const source = fromId === CASH_WALLET
+      ? { id: "", name: "Cash", kind: "cash" }
+      : finance.snapshot.accounts.find((row) => row.id === fromId);
+    finance.saveTransaction({
+      amount,
+      currency: card.currency,
+      direction: "payment",
+      category: cardPaymentLabel(card.name),
+      accountId: card.id,
+      accountName: card.name,
+      accountKind: "credit_card",
+      fromAccountId: source?.id || "",
+      fromAccountName: source?.name || "",
+      fromAccountKind: source?.kind || "cash",
+      date: date || todayIso(),
+      notes: "",
+      recurrence: "once",
+    });
+    onClose();
+  };
+  const owed = card?.shownBalanceMinor != null && card ? formatMoney(card.shownBalanceMinor, card.currency) : t("Not set");
+  return (
+    <Sheet
+      open={open && Boolean(card)}
+      title={card ? card.name : t("Pay card")}
+      onClose={onClose}
+      className="finance"
+      footer={
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" className="min-h-12" onClick={onClose}>{t("Back")}</Button>
+          <div className="flex-1" />
+          <Button className="min-h-12" disabled={finance.busy || !amount.trim() || !fromId} onClick={save}>{t("Pay card")}</Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm leading-5 text-muted-foreground">{t("A card payment is not a new expense. Cash and the balance owed both fall. Net worth stays the same.")}</p>
+        <p className="fin-num text-3xl">{owed}</p>
+        {card && cardDueDate(card, todayIso()) ? (
+          <p className="fin-muted text-sm">{t("Next payment")} · {cardDueDate(card, todayIso())}</p>
+        ) : null}
+        <div className="chip-scroller">
+          <Chip on={false} onClick={() => card && setAmount(majorString(card.shownBalanceMinor, card.currency))}>{t("Pay in full")}</Chip>
+          <Chip on={false} onClick={() => setAmount("")}>{t("Custom amount")}</Chip>
+        </div>
+        <Field label={t("Amount")}>
+          <Input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-16 text-3xl tabular-nums" />
+        </Field>
+        {card ? <PayWith accounts={finance.snapshot.accounts.filter((row) => row.id !== card.id)} value={fromId} onChange={setFromId} mode="fund" /> : null}
+        <Field label={t("Date")}>
+          <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        </Field>
+        {error ? <p className="text-sm leading-5">{error}</p> : null}
+      </div>
+    </Sheet>
+  );
+}
+
+function cardPaymentLabel(name: string): string {
+  return /payment$/i.test(name.trim()) ? name.trim() : `${name.trim()} payment`;
 }
 
 function downloadBase64(name: string, data: string) {

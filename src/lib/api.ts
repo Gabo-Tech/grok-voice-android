@@ -280,6 +280,10 @@ export interface FinanceAccount {
   priceMinor: number | null;
   leadDays: number | null;
   shownBalanceMinor: number | null;
+  creditLimitMinor: number | null;
+  dueDay: number | null;
+  statementDay: number | null;
+  lastFour: string;
 }
 
 export interface FinanceTransaction {
@@ -408,6 +412,14 @@ export interface FinanceAccountDraft {
   valueMode?: string;
   leadDays?: number | null;
   changeKind?: boolean;
+  creditLimit?: string;
+  dueDay?: number | null;
+  statementDay?: number | null;
+  lastFour?: string;
+  editLimit?: boolean;
+  editDueDay?: boolean;
+  editStatementDay?: boolean;
+  editLastFour?: boolean;
 }
 
 export interface FinanceTransactionDraft {
@@ -418,8 +430,10 @@ export interface FinanceTransactionDraft {
   category?: string;
   accountId?: string;
   accountName?: string;
+  accountKind?: string;
   fromAccountId?: string;
   fromAccountName?: string;
+  fromAccountKind?: string;
   date?: string;
   notes?: string;
   recurrence?: string;

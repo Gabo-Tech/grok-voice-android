@@ -313,6 +313,10 @@ function previewAccount(current: FinanceSnapshot, draft: FinanceAccountDraft): F
     priceMinor: draft.valueMode === "stated" ? null : minorOf(draft.unitPrice || "", currency),
     leadDays: draft.leadDays ?? existing?.leadDays ?? 2,
     shownBalanceMinor: null,
+    creditLimitMinor: minorOf(draft.creditLimit || "", currency),
+    dueDay: draft.dueDay ?? existing?.dueDay ?? null,
+    statementDay: draft.statementDay ?? existing?.statementDay ?? null,
+    lastFour: draft.lastFour || existing?.lastFour || "",
   };
   const accounts = existing ? current.accounts.map((row) => (row.id === account.id ? account : row)) : [...current.accounts, account];
   const dated = account.kind === "investment" ? account.contributionDate : account.dueDate;
@@ -375,6 +379,10 @@ function previewTransaction(current: FinanceSnapshot, draft: FinanceTransactionD
       priceMinor: null,
       leadDays: 2,
       shownBalanceMinor: null,
+      creditLimitMinor: null,
+      dueDay: null,
+      statementDay: null,
+      lastFour: "",
     };
     accounts = [...accounts, named];
   }
