@@ -256,6 +256,31 @@ export interface Settings {
   appearance?: string;
   /** Seven hex colors: canvas, panel, border, text, accent, income, expense. */
   customTheme?: string;
+  /** `language`, `packs`, `packs-run`, `preview`, `cloud`, `done`, or `skipped`. */
+  setupStep?: string;
+}
+
+export interface PlanPiece {
+  id: string;
+  kind: string;
+  bytes: number;
+  label: string;
+}
+
+export interface OfflinePlan {
+  lang: string;
+  uiLocale: string;
+  hearing: string;
+  brain: string;
+  voice: string;
+  engine: string;
+  phononModel: string;
+  offerHf: boolean;
+  hfModel: string;
+  pieces: PlanPiece[];
+  bytes: number;
+  note: string;
+  optional?: PlanPiece | null;
 }
 
 export interface MusicPlayerChoice {
@@ -660,6 +685,9 @@ export const api = {
   requestBatteryExemption: () => invoke<ListenHealth>("request_battery_exemption"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
+  offlinePlan: (lang: string) => invoke<OfflinePlan>("offline_plan", { lang }),
+  saveSetup: (lang: string | null, step: string, phonon = false) =>
+    invoke<Settings>("save_setup", { lang, step, phonon }),
   musicPlayers: () => invoke<{ ok?: boolean; players?: MusicPlayerChoice[] }>("music_players"),
   debugSnapshot: () => invoke<DebugInfo>("debug_snapshot"),
   debugLogs: () => invoke<LogLine[]>("debug_logs"),

@@ -6,7 +6,7 @@
     <title>Grok Voice: Free Open-Source "Hey Grok" Voice Assistant for Android</title>
     <meta
       name="description"
-      content="Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI."
+      content="Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone."
     />
     <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/" />
     <meta name="author" content="Gabriel Clemente" />
@@ -21,7 +21,7 @@
     />
     <meta
       property="og:description"
-      content="Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI."
+      content="Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone."
     />
     <meta property="og:url" content="https://gabo-tech.github.io/grok-voice-android/" />
     <meta property="og:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
@@ -40,7 +40,7 @@
     />
     <meta
       name="twitter:description"
-      content="Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI."
+      content="Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone."
     />
     <meta name="twitter:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
     <meta
@@ -52,7 +52,7 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Grok Voice",
-        "description": "Free, open-source “Hey Grok” voice assistant for Android. The wake word stays on the phone. Speech and search are sent to xAI.",
+        "description": "Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone.",
         "url": "https://gabo-tech.github.io/grok-voice-android/",
         "image": "https://gabo-tech.github.io/grok-voice-android/og.png",
         "operatingSystem": "Android",
@@ -83,7 +83,7 @@
             "name": "What is Grok Voice?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. The wake word stays on the device. Speech, transcripts, and search are sent to xAI under your key. The app is free and open source under the MIT license."
+              "text": "A voice assistant for Android. A new install talks on the phone with on-device speech recognition, SmolLM2, and Phonon when that language has a free model. Otherwise the voice is Piper, then the Android voice. An xAI or OpenAI key is optional. The wake word stays on the device. The app is free and open source under the MIT license."
             }
           },
           {
@@ -99,7 +99,7 @@
             "name": "Where does my API key go?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "You paste an xAI API key during setup. It is stored encrypted on the phone, and sent to api.x.ai to mint a short-lived voice token. Speech, the transcript, and live search then go to xAI under that key."
+              "text": "A cloud key is optional. If you add an xAI or OpenAI key in Voice and AI, it is stored encrypted on the phone. An xAI key is sent to api.x.ai only to mint a short-lived voice token, and only while that provider is in use. The default voice does not need a key. A Hugging Face token, if you add one, is used only to download a gated Phonon model."
             }
           },
           {
@@ -149,11 +149,11 @@
             height="1024"
             alt="Grok Voice app icon, a white square frame on black"
           />
-          <p class="eyebrow">Android · bring your own key</p>
+          <p class="eyebrow">Android · on the phone by default</p>
           <h1>A voice assistant on your phone.</h1>
           <p class="lead">
-            Say “Hey Grok” with the screen off. Type when you can’t talk. Notes, calendar, reminders, and money
-            stay on the phone. A conversation is sent to xAI.
+            Say “Hey Grok” with the screen off. A new install answers on the phone, with no cloud key.
+            Notes, calendar, reminders, and money stay on the phone. xAI and OpenAI are optional.
           </p>
           <div class="actions">
             <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.47/GrokVoice-0.1.47.apk">
@@ -204,11 +204,24 @@
 
       <section id="on-device" class="band">
         <div class="wrap narrow reveal">
-          <h2>On-device voice</h2>
+          <h2>Voice and AI</h2>
           <p>
-            Settings walks through the voice on this phone: language, engine, voice, download, then a test.
-            The engine is Piper or Phonon, or Auto. Auto uses Phonon when that language already has a model,
-            otherwise Piper, then the Android voice. If Phonon fails, Piper speaks, and the Android voice is next.
+            Settings has one Voice and AI screen. From there you pick who hears you, which model thinks,
+            which voice speaks, and the order Talk tries if the first one fails. On this phone can sit next to
+            xAI and OpenAI. A key is typed on the provider it belongs to. Downloaded, key set, and offline-ready
+            show at the top.
+          </p>
+          <p>
+            The first launch downloads the offline pack for the language you pick. It shows the size and the
+            progress, and it asks for Wi-Fi. English uses Moonshine, SmolLM2, and Phonon, with no account.
+            Spanish and German use Piper unless you add a Hugging Face token for Phonon. Portuguese and
+            Valencian speak with the Android voice. The tour can be paused and finished later from Voice and AI.
+            An install that already finished setup is not sent through it again.
+          </p>
+          <p>
+            The on-device engine is Phonon, Piper, or the Android voice, or Auto. Auto uses Phonon when that
+            language already has a model, otherwise Piper, then the Android voice. If Phonon fails, Piper speaks,
+            and the Android voice is next.
           </p>
           <p>
             <a href="https://gradium.ai/phonon">Phonon</a> is Gradium’s on-device speech engine. It builds on Pocket TTS
@@ -216,7 +229,7 @@
             <a href="https://github.com/gradium-ai/xn-ptts">xn-ptts</a>, MIT or Apache 2.0, and it runs on the phone
             with no PyTorch. English Phonon 31m is Apache 2.0 and needs no account. The 40m models are CC BY-NC 4.0
             and gated on Hugging Face. This app is non-commercial, so those terms allow them. Accept the license on
-            the model page, then save a Hugging Face token in Settings. The token stays in the on-device vault and
+            the model page, then save a Hugging Face token in Voice and AI. The token stays in the on-device vault and
             is sent only for that gated download. English 31m works with no token. Valencian has no Phonon model,
             so it keeps Piper when a voice is installed and otherwise the Android voice. Portuguese has no Piper
             voice; Phonon speaks it after the model is downloaded.
@@ -236,9 +249,10 @@
             Wake-word audio is checked on the device and is not uploaded. Notes, reminders, and in-app events stay in a local file.
           </p>
           <p>
-            A conversation is not private from xAI. The key is sent to api.x.ai to mint a short-lived voice token.
-            After “Hey Grok,” or when you tap the microphone, your speech and the transcript go to xAI. A typed question
-            and a live search do too. xAI sees that content under your key.
+            The default conversation stays on the phone. If you add a cloud provider, that part of the talk is not
+            private from them. An xAI key is sent to api.x.ai to mint a short-lived voice token, and speech goes to
+            xAI only while xAI is the provider in use. OpenAI works the same way with its own key. A typed question
+            that uses a cloud model is sent there too.
           </p>
         </div>
       </section>
@@ -264,7 +278,7 @@
           <dl class="faq">
             <div>
               <dt>What is Grok Voice?</dt>
-              <dd>A bring-your-own-key voice assistant for Android. The phone talks to the xAI Realtime API directly. The wake word stays on the device. Speech, transcripts, and search are sent to xAI under your key. The app is free and open source under the MIT license.</dd>
+              <dd>A voice assistant for Android. A new install talks on the phone with on-device speech recognition, SmolLM2, and Phonon when that language has a free model. Otherwise the voice is Piper, then the Android voice. An xAI or OpenAI key is optional. The wake word stays on the device. The app is free and open source under the MIT license.</dd>
             </div>
             <div>
               <dt>How do I install it?</dt>
@@ -272,11 +286,11 @@
             </div>
             <div>
               <dt>Where does my API key go?</dt>
-              <dd>You paste an xAI API key during setup. It is stored encrypted on the phone, and sent to api.x.ai to mint a short-lived voice token. Speech, the transcript, and live search then go to xAI under that key.</dd>
+              <dd>A cloud key is optional. If you add an xAI or OpenAI key in Voice and AI, it is stored encrypted on the phone. An xAI key is sent to api.x.ai only to mint a short-lived voice token, and only while that provider is in use. The default voice does not need a key. A Hugging Face token, if you add one, is used only to download a gated Phonon model.</dd>
             </div>
             <div>
               <dt>Can the phone speak without a cloud key?</dt>
-              <dd>Yes. Settings, On-device voice, walks through language, Piper or Phonon, a voice, the download, and a test. Phonon is Gradium’s on-device engine, built on Kyutai’s Pocket TTS and Mimi codec. English Phonon 31m is Apache 2.0 and needs no token. The 40m models are CC BY-NC 4.0 and need a Hugging Face token after you accept the license. The token is stored on the phone. Valencian falls back to Piper, then the Android voice. Once a model is downloaded, that voice works offline.</dd>
+              <dd>Yes. That is the default. Voice and AI is one screen for hearing, the model, the voice, and the fallback order. The first launch downloads the offline pack and can be finished later from Settings. English uses Phonon with no token. Spanish and German use Piper unless you add a Hugging Face token for Phonon. Portuguese and Valencian use the Android voice. Phonon is Gradium’s on-device engine, built on Kyutai’s Pocket TTS and Mimi codec. Once a model is downloaded, that voice works offline.</dd>
             </div>
             <div>
               <dt>Are wake-word recordings uploaded?</dt>

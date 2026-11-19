@@ -26,7 +26,16 @@ const FAMILIES = [
   ["llama3", "Llama 3"],
 ] as const;
 
-export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: boolean; onChanged?: () => void }) {
+export function LocalPacks({
+  showHeading = true,
+  onChanged,
+  part = "all",
+}: {
+  showHeading?: boolean;
+  onChanged?: () => void;
+  /** `stt` is hearing. `models` is the brain. `all` is both. */
+  part?: "all" | "stt" | "models";
+}) {
   const t = useT();
   const [packs, setPacks] = useState<LocalPack[]>([]);
   const [progress, setProgress] = useState<PackProgress | null>(null);
@@ -130,9 +139,16 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
     }
   };
 
-  const speech = packs.filter((pack) => pack.kind !== "llm" && pack.kind !== "custom" && pack.kind !== "phonon");
+  const speech = packs.filter((pack) => {
+    if (pack.kind === "llm" || pack.kind === "custom" || pack.kind === "phonon") return false;
+    if (part === "stt") return pack.id.startsWith("stt");
+    return true;
+  });
   const models = packs.filter((pack) => pack.kind === "llm" || pack.kind === "custom");
-  const bulk = packs.filter((pack) => pack.kind === "speech" || pack.id === "llm" || (pack.kind === undefined && pack.id !== "llm-custom"));
+  const bulk = packs.filter((pack) => {
+    if (part === "stt") return pack.id.startsWith("stt");
+    return pack.kind === "speech" || pack.id === "llm" || (pack.kind === undefined && pack.id !== "llm-custom");
+  });
   const needed = [...speech, ...models.filter((pack) => pack.selected)];
   const readyCount = needed.filter((pack) => pack.ready).length;
   const ready = needed.length > 0 && needed.every((pack) => pack.ready);
@@ -163,8 +179,13 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
     }
   };
 
+  const showSpeech = part !== "models";
+  const showModels = part !== "stt";
+
   return (
     <div className="space-y-3">
+      {showSpeech ? (
+        <>
       <div>
         {showHeading ? <p className="text-base text-foreground">{t("On-device packs")}</p> : null}
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{summary}</p>
@@ -190,7 +211,11 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
           {t("Delete all")}
         </Button>
       </div>
+        </>
+      ) : null}
 
+      {showModels ? (
+        <>
       <div className="pt-2">
         <p className="text-base text-foreground">{t("Language models")}</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -268,6 +293,8 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
           {busy === "link" ? t("Downloading") : t("Add from a link")}
         </Button>
       </div>
+        </>
+      ) : null}
 
       {error && (
         <p role="alert" className="text-sm leading-6 text-foreground">

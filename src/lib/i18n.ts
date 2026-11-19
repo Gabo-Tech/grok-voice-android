@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import phononStrings from "./phonon-i18n.json";
+import setupStrings from "./setup-i18n.json";
 
 export type LocaleId = "en" | "es" | "de" | "pt" | "ca-ES-valencia";
 
@@ -4660,6 +4661,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
 
 for (const locale of Object.keys(phononStrings) as Array<keyof typeof phononStrings>) {
   Object.assign(catalogs[locale], phononStrings[locale]);
+}
+for (const locale of Object.keys(setupStrings) as Array<keyof typeof setupStrings>) {
+  Object.assign(catalogs[locale], setupStrings[locale]);
 }
 
 export function resolveLocale(tag: string): LocaleId {

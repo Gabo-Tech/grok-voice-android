@@ -17,7 +17,7 @@ const LANGS = [
   { id: "ca", label: "Valencian" },
 ] as const;
 
-const ENGINES = ["auto", "piper", "phonon"] as const;
+const ENGINES = ["auto", "phonon", "piper", "android"] as const;
 
 function formatBytes(bytes: number) {
   const mb = bytes / (1024 * 1024);
@@ -63,9 +63,12 @@ function playWav(wavBase64: string) {
 export function OnDeviceVoice({
   settings,
   onSettings,
+  embedded = false,
 }: {
   settings: Settings;
   onSettings: (next: Settings) => void;
+  /** Inside Voice and AI. Hearing and the language model live on that page. */
+  embedded?: boolean;
 }) {
   const t = useT();
   const [status, setStatus] = useState<VoiceSetupStatus | null>(null);
@@ -109,7 +112,7 @@ export function OnDeviceVoice({
   const voiceChoice = pairValue(settings.phononVoices, lang, "");
   const models = (status?.models ?? []).filter((model) => model.langs.includes(lang));
   const chosenModel = models.find((model) => model.id === (modelChoice || current?.modelId)) ?? models[0];
-  const phonon = engineChoice !== "piper" && lang !== "ca";
+  const phonon = (engineChoice === "phonon" || engineChoice === "auto") && lang !== "ca";
   const catalog = voices.filter((voice) => voice.lang === lang || (lang === "en" && voice.locale === "characters"));
   const ratio =
     progress && chosenModel && progress.id === chosenModel.id && progress.total > 0
@@ -221,7 +224,7 @@ export function OnDeviceVoice({
     setError(null);
     try {
       const audio = await api.previewOnDeviceVoice(lang);
-      await playWav(audio.wavBase64);
+      if (audio.wavBase64) await playWav(audio.wavBase64);
     } catch (err) {
       setError(t(errorText(err)));
     } finally {
@@ -231,12 +234,14 @@ export function OnDeviceVoice({
 
   return (
     <div className="space-y-6 pb-8">
+      {embedded ? null : (
       <div>
         <h2 className="px-1 text-2xl font-medium tracking-tight">{t("On-device voice")}</h2>
         <p className="mt-1 px-1 text-sm leading-6 text-muted-foreground">
           {t("Pick a language, then an engine, a voice, and a download. Nothing is fetched until you tap Download.")}
         </p>
       </div>
+      )}
 
       <section className="border border-border px-3 py-3">
         <p className="text-sm text-muted-foreground">{t("At a glance")}</p>
@@ -275,16 +280,16 @@ export function OnDeviceVoice({
 
       <section>
         <p className="mb-2 px-1 text-sm text-muted-foreground">{t("2. Engine")}</p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {ENGINES.map((choice) => (
             <button
               key={choice}
               type="button"
-              disabled={choice === "phonon" && lang === "ca"}
+              disabled={(choice === "phonon" && lang === "ca") || (choice === "piper" && (lang === "pt" || lang === "ca"))}
               onClick={() => chooseEngine(choice)}
               className={`min-h-12 border px-2 py-2 text-sm disabled:opacity-40 ${engineChoice === choice ? "border-foreground text-foreground" : "border-border text-muted-foreground"}`}
             >
-              {t(choice === "auto" ? "Auto" : choice === "piper" ? "Piper" : "Phonon")}
+              {t(choice === "auto" ? "Auto" : choice === "piper" ? "Piper" : choice === "android" ? "Android voice" : "Phonon")}
             </button>
           ))}
         </div>
@@ -366,7 +371,12 @@ export function OnDeviceVoice({
               </div>
             ))
           : null}
-        {lang === "en" || lang === "es" || lang === "de" ? (
+        {engineChoice === "android" && (lang === "en" || lang === "es" || lang === "de") ? (
+          <p className="px-1 text-sm leading-6 text-muted-foreground">
+            {t("The Android voice speaks alerts. Talk on this phone needs Phonon or Piper to answer.")}
+          </p>
+        ) : null}
+        {(lang === "en" || lang === "es" || lang === "de") && engineChoice !== "android" ? (
           <Button type="button" variant="outline" className="w-full" disabled={busy !== null || current?.piperReady} onClick={() => void downloadPiper()}>
             {current?.piperReady ? t("On this phone") : t("Download Piper")}
           </Button>
@@ -414,12 +424,14 @@ export function OnDeviceVoice({
         )}
       </p>
 
+      {embedded ? null : (
       <div className="space-y-3 border-t border-border pt-4">
         <p className="px-1 text-sm leading-6 text-muted-foreground">
           {t("Speech to text and the language model are below. Moonshine, SmolLM2, and the Piper packs still download the same way.")}
         </p>
         <LocalPacks showHeading />
       </div>
+      )}
     </div>
   );
 }

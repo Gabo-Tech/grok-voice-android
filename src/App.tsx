@@ -32,7 +32,7 @@ function previewRoute(inApp: boolean): { app: boolean; tab: AppTab; section: Sec
   const tabs: AppTab[] = ["talk", "notes", "calendar", "reminders", "finance", "more"];
   const asked = params.get("tab");
   const tab = tabs.includes(asked as AppTab) ? (asked as AppTab) : "talk";
-  const sections: Section[] = ["menu", "model", "wake", "people", "spend", "language", "keys", "music", "updates", "finance"];
+  const sections: Section[] = ["menu", "voice", "model", "wake", "people", "spend", "language", "keys", "packs", "music", "updates", "finance"];
   const sectionAsked = params.get("section");
   const section = sections.includes(sectionAsked as Section) ? (sectionAsked as Section) : "menu";
   return { app: true, tab, section };
@@ -56,6 +56,8 @@ export default function App() {
   const previewApp = preview.app;
   const [auth, setAuth] = useState<AuthStatus | null>(inApp ? null : previewApp ? PREVIEW_APP_AUTH : PREVIEW_AUTH);
   const [onboarded, setOnboarded] = useState<boolean | null>(inApp ? null : previewApp);
+  const [setupStep, setSetupStep] = useState<string | null>(inApp ? null : previewApp ? "done" : "language");
+  const [bootLocale, setBootLocale] = useState("");
   const [bootError, setBootError] = useState<string | null>(null);
   const [wake, setWake] = useState<WakewordStatus>(EMPTY_WAKE);
   const [tab, setTab] = useState<AppTab>(preview.tab);
@@ -121,6 +123,8 @@ export default function App() {
       .getSettings()
       .then((s) => {
         setAppLocale(s.locale || "");
+        setBootLocale(s.locale || "");
+        setSetupStep(s.setupStep || (s.onboarded ? "done" : "language"));
         setOnboarded(s.onboarded);
         if (s.customTheme) rememberCustomTheme(s.customTheme);
         const choice = choiceFromSettings(s.appearance);
@@ -130,7 +134,10 @@ export default function App() {
           applyAppearance(choice, prefersLight());
         }
       })
-      .catch(() => setOnboarded(false));
+      .catch(() => {
+        setSetupStep("language");
+        setOnboarded(false);
+      });
     let unlisten: (() => void) | undefined;
     void listen<Settings>("voice://settings", (event) => {
       setAppLocale(event.payload.locale || "");
@@ -161,7 +168,7 @@ export default function App() {
     );
   }
 
-  if (!auth || onboarded === null) {
+  if (!auth || onboarded === null || setupStep === null) {
     return (
       <main className="grid h-full place-items-center">
         <Loader2 className="size-6 animate-spin text-primary" />
@@ -169,7 +176,7 @@ export default function App() {
     );
   }
 
-  if (!onboarded || !auth.hasKey) {
+  if (!onboarded) {
     return (
       <main className="safe-area flex h-full flex-col">
         <UpdateBanner />
@@ -177,10 +184,14 @@ export default function App() {
           <Onboarding
             preview={!inApp}
             auth={auth}
-            wake={wake}
+            initialStep={setupStep}
+            autoResume={setupStep === "packs-run"}
+            locale={bootLocale}
             onAuth={setAuth}
-            onWake={setWake}
-            onFinished={() => setOnboarded(true)}
+            onFinished={(step) => {
+              setSetupStep(step);
+              setOnboarded(true);
+            }}
           />
         </div>
       </main>
@@ -277,10 +288,14 @@ export default function App() {
             onAuth={setAuth}
             onWake={setWake}
             onSignedOut={() => {
+              setSetupStep("language");
               setOnboarded(false);
               void api.authStatus().then(setAuth);
             }}
-            onReplayTour={() => setOnboarded(false)}
+            onReplayTour={() => {
+              setSetupStep("language");
+              setOnboarded(false);
+            }}
             finance={finance}
             onAppearance={setAppearance}
           />

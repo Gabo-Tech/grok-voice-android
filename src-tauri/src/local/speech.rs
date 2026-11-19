@@ -15,6 +15,8 @@ pub enum EngineChoice {
     Auto,
     Piper,
     Phonon,
+    /// Alerts use the Android voice. Talk on this phone still needs Phonon or Piper.
+    Android,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +79,7 @@ pub fn parse_choice(raw: &str) -> EngineChoice {
     match raw.trim().to_ascii_lowercase().as_str() {
         "piper" => EngineChoice::Piper,
         "phonon" => EngineChoice::Phonon,
+        "android" | "system" => EngineChoice::Android,
         _ => EngineChoice::Auto,
     }
 }
@@ -86,6 +89,7 @@ pub fn choice_label(choice: EngineChoice) -> &'static str {
         EngineChoice::Auto => "auto",
         EngineChoice::Piper => "piper",
         EngineChoice::Phonon => "phonon",
+        EngineChoice::Android => "android",
     }
 }
 
@@ -289,6 +293,14 @@ pub fn plan(
     installed: &[&str],
 ) -> VoicePlan {
     let lang = speech_lang(lang);
+    if choice == EngineChoice::Android {
+        return VoicePlan {
+            lang,
+            choice,
+            steps: vec![SpokenEngine::System],
+            model_id: None,
+        };
+    }
     let model = pick_model(lang, preferred, installed);
     let mut steps = Vec::new();
     let want_phonon = matches!(choice, EngineChoice::Auto | EngineChoice::Phonon);
@@ -296,6 +308,7 @@ pub fn plan(
         EngineChoice::Piper => true,
         EngineChoice::Auto => true,
         EngineChoice::Phonon => model.is_none() || true,
+        EngineChoice::Android => false,
     };
     if want_phonon {
         if model.is_some() {
@@ -306,6 +319,7 @@ pub fn plan(
         EngineChoice::Piper => true,
         EngineChoice::Auto => true,
         EngineChoice::Phonon => true,
+        EngineChoice::Android => false,
     };
     if allow_piper && want_piper && piper {
         steps.push(SpokenEngine::Piper);
@@ -481,16 +495,15 @@ pub fn talk_ready(root: &Path, speech: &str, engines: &str, models: &str) -> boo
     if !matches!(lang, "en" | "es" | "de") {
         return false;
     }
-    if !super::packs::pack_ready_public(root, "stt") {
-        return false;
-    }
     if !super::packs::llm_ready(root) {
         return false;
     }
-    if lang == "de" && !super::packs::pack_ready_public(root, "stt-de") {
-        return false;
-    }
-    if lang == "es" && !super::packs::pack_ready_public(root, "stt-es") {
+    let heard = match lang {
+        "de" => super::packs::pack_ready_public(root, "stt-de"),
+        "es" => super::packs::pack_ready_public(root, "stt-es"),
+        _ => super::packs::pack_ready_public(root, "stt"),
+    };
+    if !heard {
         return false;
     }
     let planned = plan_in(root, lang, engines, models);
@@ -563,6 +576,24 @@ mod tests {
         );
         assert_eq!(piper.steps, vec![SpokenEngine::Piper, SpokenEngine::System]);
         assert!(piper.model_id.is_none());
+    }
+
+    #[test]
+    fn explicit_android_does_not_speak_phonon_or_piper() {
+        let forced = plan(
+            "en",
+            EngineChoice::Android,
+            Some("phonon-31m-en"),
+            true,
+            &["phonon-31m-en"],
+        );
+        assert_eq!(forced.steps, vec![SpokenEngine::System]);
+        assert!(forced.model_id.is_none());
+        assert_eq!(choice_label(parse_choice("android")), "android");
+        assert_eq!(parse_choice("system"), EngineChoice::Android);
+        let stored = stored_engines("en=android,es=piper");
+        assert_eq!(choice_for(&stored, "en"), EngineChoice::Android);
+        assert_eq!(choice_for(&stored, "es"), EngineChoice::Piper);
     }
 
     #[test]
@@ -763,6 +794,29 @@ mod tests {
         assert!(talk_ready(&root, "en", "en=phonon", ""));
         assert!(!talk_ready(&root, "pt", "", ""));
         assert!(!talk_ready(&root, "ca", "", ""));
+        let spanish = std::env::temp_dir().join(format!("gv-spanish-ready-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&spanish);
+        fn touch(path: &std::path::Path) {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(path, b"x").unwrap();
+        }
+        let paths = super::super::packs::model_paths_for(&spanish, "es");
+        touch(&paths.encoder);
+        touch(&paths.uncached);
+        touch(&paths.joiner);
+        touch(&paths.stt_tokens);
+        touch(&paths.tts_model);
+        touch(&paths.tts_tokens);
+        std::fs::create_dir_all(&paths.tts_data).unwrap();
+        touch(&spanish.join("llm").join(super::super::packs::LLM_FILE));
+        assert!(
+            talk_ready(&spanish, "es", "es=piper", ""),
+            "Spanish Talk uses its own speech pack, not English Moonshine"
+        );
+        assert!(!super::super::packs::pack_ready_public(&spanish, "stt"));
+        let _ = std::fs::remove_dir_all(&spanish);
         let piper = plan_in(&root, "en", "en=piper", "");
         assert_eq!(piper.primary(), SpokenEngine::System);
         let _ = std::fs::remove_dir_all(&root);
