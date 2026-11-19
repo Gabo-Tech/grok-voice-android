@@ -9,7 +9,7 @@ Signed release APKs are built in GitHub Actions, so a release does not depend on
 3. Tag that commit `vX.Y.Z` and push the tag.
 4. The Release APK workflow builds the arm64 release with `pnpm tauri android build --target aarch64 --apk`. That build runs `build.rs`, which produces `libptts_ffi`. The workflow signs the APK with `apksigner` (v2) and checks the certificate, version, minSdk 26, the arm64-v8a ABI, and `libptts_ffi.so`. It uploads `GrokVoice-X.Y.Z.apk` to the GitHub release for that tag, and creates the release when it is missing.
 
-A tag push does not replace an asset already on the release. Run the workflow manually with the same tag to replace `GrokVoice-X.Y.Z.apk`. Manual dry run builds, signs, and verifies, and skips the upload.
+A tag push does not replace an asset already on the release. Run the workflow manually with the same tag to replace `GrokVoice-X.Y.Z.apk`. Manual dry run builds, signs, and verifies, and skips the upload. A pull request runs that same dry run and does not upload. Manual dispatch is available once this workflow file is on `main`.
 
 The release certificate SHA-256 is `fd400ffe61c9b18654bc40f567275e5a6e13bab8d311355f389f6e46458aafe9`. The workflow rejects an APK signed by any other certificate.
 

@@ -6,6 +6,12 @@ on:
   push:
     tags:
       - "v*"
+  # workflow_dispatch is available once this file is on the default branch.
+  # Until then, a pull request runs the same build, sign, and verify steps
+  # and never uploads a release.
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       tag:
@@ -20,6 +26,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   release-apk:
@@ -40,6 +50,9 @@ jobs:
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             tag="$INPUT_TAG"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -n 1)"
+            tag="v${version}"
           else
             tag="$REF_NAME"
           fi
@@ -231,7 +244,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish GitHub release
-        if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         env:
           TAG: ${{ steps.rel.outputs.tag }}
           VERSION: ${{ steps.rel.outputs.version }}
@@ -239,6 +252,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" != "push" ] && [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "not uploading a release for ${EVENT_NAME}"
+            exit 0
+          fi
           asset="GrokVoice-${VERSION}.apk"
           apk="${RUNNER_TEMP}/${asset}"
           test -f "$apk"
