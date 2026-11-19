@@ -26,9 +26,10 @@ use crate::{
 
 use super::{
     engine::Engines,
-    memory_enough_for, required_free_mb,
+    memory_enough_for,
     mode::set_public_search,
-    packs::{model_dir, model_paths_for, packs_ready_for},
+    packs::{model_dir, model_paths_for},
+    required_free_mb,
     turn::{self, ChatTurn},
     vad::Vad,
 };
@@ -37,8 +38,12 @@ use super::{
 /// caller's message, which is different for a typed turn and a live session.
 fn optional_speech_missing(speech: &str) -> Option<&'static str> {
     match speech {
-        "de" => Some("German on-device speech is not downloaded. English Moonshine Base does not understand German. Download the German packs in Settings."),
-        "es" => Some("Spanish on-device speech is not downloaded. English Moonshine Base does not understand Spanish. Download the Spanish packs in Settings."),
+        "de" => Some(
+            "German on-device speech is not downloaded. English Moonshine Base does not understand German. Download the German packs in Settings.",
+        ),
+        "es" => Some(
+            "Spanish on-device speech is not downloaded. English Moonshine Base does not understand Spanish. Download the Spanish packs in Settings.",
+        ),
         _ => None,
     }
 }
@@ -66,22 +71,36 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
     let dir = model_dir(app)?;
     let settings = app.state::<crate::settings::SettingsStore>().get();
     let speech = settings.local_speech.clone();
-    if !packs_ready_for(&dir, &speech) {
+    if !super::speech::talk_ready(
+        &dir,
+        &speech,
+        &settings.speech_engines,
+        &settings.phonon_models,
+    ) {
         return Err(optional_speech_missing(&speech)
             .unwrap_or(super::web::OFFLINE_VOICE)
             .into());
     }
-    let facts = app.state::<NativeBridge>().device_facts().unwrap_or(crate::native::DeviceFacts {
-        avail_mb: 0,
-        low_memory: false,
-        online: false,
-    });
+    let facts = app
+        .state::<NativeBridge>()
+        .device_facts()
+        .unwrap_or(crate::native::DeviceFacts {
+            avail_mb: 0,
+            low_memory: false,
+            online: false,
+        });
     let paths = model_paths_for(&dir, &speech);
     let family = super::packs::active_model(&dir).family;
-    if let Err(why) = memory_gate(facts.avail_mb, facts.low_memory, model_file_bytes(&paths.llm)) {
+    if let Err(why) = memory_gate(
+        facts.avail_mb,
+        facts.low_memory,
+        model_file_bytes(&paths.llm),
+    ) {
         return Err(why);
     }
-    let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get().clamp(2, 4) as i32)
+        .unwrap_or(2);
     let mut engines = Engines::load(&paths, threads)?;
     let system = local_system(app);
     let mut history = Vec::new();
@@ -121,18 +140,32 @@ pub async fn run_session(
     }
     let facts = device_facts(app).await;
     let speech = settings.local_speech.as_str();
-    if !packs_ready_for(&dir, speech) {
+    if !super::speech::talk_ready(
+        &dir,
+        speech,
+        &settings.speech_engines,
+        &settings.phonon_models,
+    ) {
         return Err(optional_speech_missing(speech).unwrap_or(
             "On-device voice packs are not downloaded yet. Download them in Settings, under Voice keys.",
         ).into());
     }
     let paths = model_paths_for(&dir, speech);
     let family = chosen.family;
-    if let Err(why) = memory_gate(facts.avail_mb, facts.low_memory, model_file_bytes(&paths.llm)) {
+    if let Err(why) = memory_gate(
+        facts.avail_mb,
+        facts.low_memory,
+        model_file_bytes(&paths.llm),
+    ) {
         return Err(why);
     }
-    let threads = std::thread::available_parallelism().map(|n| n.get().clamp(2, 4) as i32).unwrap_or(2);
-    hub.info(format!("loading on-device speech, {}, and voice", chosen.name));
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get().clamp(2, 4) as i32)
+        .unwrap_or(2);
+    hub.info(format!(
+        "loading on-device speech, {}, and voice",
+        chosen.name
+    ));
     let engines = tokio::task::spawn_blocking(move || Engines::load(&paths, threads))
         .await
         .map_err(|err| err.to_string())??;
@@ -216,7 +249,11 @@ fn typed_user_note(note: &str) -> Option<String> {
         .strip_prefix("pending:")
         .or_else(|| note.strip_prefix("user:"))?
         .trim();
-    if text.is_empty() { None } else { Some(text.to_string()) }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
 }
 
 fn local_system(app: &AppHandle) -> String {
@@ -232,7 +269,10 @@ fn local_system(app: &AppHandle) -> String {
 fn record_exchange(app: &AppHandle, history: &[ChatTurn]) {
     let turns = history
         .iter()
-        .map(|turn| crate::local_memory::ExchangeTurn { role: turn.role.to_string(), text: turn.text.clone() })
+        .map(|turn| crate::local_memory::ExchangeTurn {
+            role: turn.role.to_string(),
+            text: turn.text.clone(),
+        })
         .collect::<Vec<_>>();
     crate::local_memory::record_exchange(app, &turns);
 }
@@ -241,7 +281,11 @@ async fn device_facts(app: &AppHandle) -> crate::native::DeviceFacts {
     let app = app.clone();
     match tokio::task::spawn_blocking(move || app.state::<NativeBridge>().device_facts()).await {
         Ok(Ok(facts)) => facts,
-        _ => crate::native::DeviceFacts { avail_mb: 0, low_memory: false, online: true },
+        _ => crate::native::DeviceFacts {
+            avail_mb: 0,
+            low_memory: false,
+            online: true,
+        },
     }
 }
 
@@ -262,7 +306,10 @@ async fn handle_audio(
     let samples = resample_16k(utterance);
     let engines_bg = engines.clone();
     let text = tokio::task::spawn_blocking(move || {
-        engines_bg.lock().unwrap_or_else(|err| err.into_inner()).transcribe(&samples)
+        engines_bg
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .transcribe(&samples)
     })
     .await
     .map_err(|err| err.to_string())??;
@@ -272,7 +319,10 @@ async fn handle_audio(
     }
     hub.info(format!("heard: {text}"));
     remember(app, hub, "user", &text);
-    handle_text(app, hub, player, active, engines, system, family, history, &text, true).await
+    handle_text(
+        app, hub, player, active, engines, system, family, history, &text, true,
+    )
+    .await
 }
 
 async fn handle_text(
@@ -347,7 +397,13 @@ fn remember(app: &AppHandle, hub: &Hub, role: &'static str, text: &str) {
     app.state::<crate::memory::Memory>().remember(role, text);
     hub.emit(
         "voice://transcript",
-        Transcript { id: format!("local-{role}-{}", now_ms()), role, text, delta: None, is_final: true },
+        Transcript {
+            id: format!("local-{role}-{}", now_ms()),
+            role,
+            text,
+            delta: None,
+            is_final: true,
+        },
     );
 }
 
@@ -366,20 +422,72 @@ async fn speak_line(
     if active.load(Ordering::Acquire) {
         hub.set_phase(Phase::Speaking);
     }
-    let engines_bg = engines.clone();
-    let owned = text.to_string();
-    let synth = tokio::task::spawn_blocking(move || {
-        engines_bg.lock().unwrap_or_else(|err| err.into_inner()).synthesize(&owned)
-    })
-    .await;
-    match synth {
-        Ok(Ok((pcm, rate))) => play(player, &pcm, rate).await,
-        _ => {
-            let app = app.clone();
-            let line = text.to_string();
-            let _ = tokio::task::spawn_blocking(move || app.state::<NativeBridge>().speak_fallback(&line)).await;
+    let settings = app.state::<crate::settings::SettingsStore>().get();
+    let speech = settings.local_speech.clone();
+    let engines_map = settings.speech_engines.clone();
+    let models_map = settings.phonon_models.clone();
+    let voices_map = settings.phonon_voices.clone();
+    let dir = super::model_dir(app).ok();
+    let planned = dir
+        .as_ref()
+        .map(|dir| super::speech::plan_in(dir, &speech, &engines_map, &models_map))
+        .unwrap_or_else(|| {
+            super::speech::plan(&speech, super::speech::EngineChoice::Auto, None, false, &[])
+        });
+    let voice_id = super::speech::voice_pref(&voices_map, &speech);
+    for step in planned.steps {
+        match step {
+            super::speech::SpokenEngine::Phonon => {
+                let (Some(dir), Some(model)) = (dir.clone(), planned.model_id) else {
+                    continue;
+                };
+                let owned = text.to_string();
+                let voice_id = voice_id.clone();
+                let speech = speech.clone();
+                let model = model.to_string();
+                let synth = tokio::task::spawn_blocking(move || {
+                    super::phonon::synthesize(&dir, &model, &speech, &voice_id, &owned)
+                })
+                .await;
+                match synth {
+                    Ok(Ok((pcm, rate))) => {
+                        play(player, &pcm, rate).await;
+                        return;
+                    }
+                    Ok(Err(err)) => {
+                        hub.warn(format!("Phonon failed, trying the next voice: {err}"))
+                    }
+                    Err(err) => hub.warn(format!("Phonon failed, trying the next voice: {err}")),
+                }
+            }
+            super::speech::SpokenEngine::Piper => {
+                let engines_bg = engines.clone();
+                let owned = text.to_string();
+                let synth = tokio::task::spawn_blocking(move || {
+                    engines_bg
+                        .lock()
+                        .unwrap_or_else(|err| err.into_inner())
+                        .synthesize(&owned)
+                })
+                .await;
+                match synth {
+                    Ok(Ok((pcm, rate))) => {
+                        play(player, &pcm, rate).await;
+                        return;
+                    }
+                    Ok(Err(err)) => {
+                        hub.warn(format!("Piper failed, trying the Android voice: {err}"))
+                    }
+                    Err(err) => hub.warn(format!("Piper failed, trying the Android voice: {err}")),
+                }
+            }
+            super::speech::SpokenEngine::System => break,
         }
     }
+    let app = app.clone();
+    let line = text.to_string();
+    let _ = tokio::task::spawn_blocking(move || app.state::<NativeBridge>().speak_fallback(&line))
+        .await;
 }
 
 async fn play(player: &Player, samples: &[f32], rate: u32) {

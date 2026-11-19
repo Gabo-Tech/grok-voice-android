@@ -236,7 +236,16 @@ impl Session<'_> {
             return Err(msg("No voice key saved. Add one in setup."));
         }
 
-        let ready = crate::local::model_dir(self.app).map(|dir| crate::local::packs_ready(&dir)).unwrap_or(false);
+        let ready = crate::local::model_dir(self.app)
+            .map(|dir| {
+                crate::local::talk_ready(
+                    &dir,
+                    &self.settings.local_speech,
+                    &self.settings.speech_engines,
+                    &self.settings.phonon_models,
+                )
+            })
+            .unwrap_or(false);
         let providers: Vec<&str> = accounts.iter().map(|account| account.provider.as_str()).collect();
         let order = crate::local::attempt_order(&providers, self.settings.prefer_local_on_wake, ready);
         let http = http_client();

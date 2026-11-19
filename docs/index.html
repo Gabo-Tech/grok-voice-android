@@ -202,6 +202,32 @@
         </div>
       </section>
 
+      <section id="on-device" class="band">
+        <div class="wrap narrow reveal">
+          <h2>On-device voice</h2>
+          <p>
+            Settings walks through the voice on this phone: language, engine, voice, download, then a test.
+            The engine is Piper or Phonon, or Auto. Auto uses Phonon when that language already has a model,
+            otherwise Piper, then the Android voice. If Phonon fails, Piper speaks, and the Android voice is next.
+          </p>
+          <p>
+            <a href="https://gradium.ai/phonon">Phonon</a> is Gradium’s on-device speech engine. It builds on Pocket TTS
+            and the Mimi codec from Kyutai. The runtime is
+            <a href="https://github.com/gradium-ai/xn-ptts">xn-ptts</a>, MIT or Apache 2.0, and it runs on the phone
+            with no PyTorch. English Phonon 31m is Apache 2.0 and needs no account. The 40m models are CC BY-NC 4.0
+            and gated on Hugging Face. This app is non-commercial, so those terms allow them. Accept the license on
+            the model page, then save a Hugging Face token in Settings. The token stays in the on-device vault and
+            is sent only for that gated download. English 31m works with no token. Valencian has no Phonon model,
+            so it keeps Piper when a voice is installed and otherwise the Android voice. Portuguese has no Piper
+            voice; Phonon speaks it after the model is downloaded.
+          </p>
+          <p>
+            Moonshine speech-to-text, SmolLM2, and the Piper packs are still there, under the same screen.
+            Nothing new downloads until you tap Download. After that, the voice is offline.
+          </p>
+        </div>
+      </section>
+
       <section id="private" class="band">
         <div class="wrap narrow reveal">
           <h2>Privacy</h2>
@@ -247,6 +273,10 @@
             <div>
               <dt>Where does my API key go?</dt>
               <dd>You paste an xAI API key during setup. It is stored encrypted on the phone, and sent to api.x.ai to mint a short-lived voice token. Speech, the transcript, and live search then go to xAI under that key.</dd>
+            </div>
+            <div>
+              <dt>Can the phone speak without a cloud key?</dt>
+              <dd>Yes. Settings, On-device voice, walks through language, Piper or Phonon, a voice, the download, and a test. Phonon is Gradium’s on-device engine, built on Kyutai’s Pocket TTS and Mimi codec. English Phonon 31m is Apache 2.0 and needs no token. The 40m models are CC BY-NC 4.0 and need a Hugging Face token after you accept the license. The token is stored on the phone. Valencian falls back to Piper, then the Android voice. Once a model is downloaded, that voice works offline.</dd>
             </div>
             <div>
               <dt>Are wake-word recordings uploaded?</dt>

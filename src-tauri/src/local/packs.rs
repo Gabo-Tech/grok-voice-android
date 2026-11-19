@@ -372,6 +372,26 @@ pub fn pack_status(root: &Path) -> Vec<PackInfo> {
             selected: spec.kind == "llm" && spec.id == selected,
         })
         .collect();
+    for model in super::phonon::MODELS {
+        if !model
+            .langs
+            .iter()
+            .any(|lang| matches!(*lang, "en" | "es" | "de" | "pt"))
+        {
+            continue;
+        }
+        packs.push(PackInfo {
+            id: model.id.into(),
+            label: model.label.into(),
+            detail: model.detail.into(),
+            download_bytes: model.download_bytes(),
+            installed_bytes: super::phonon::installed_bytes(root, model.id),
+            ready: super::phonon::model_ready(root, model),
+            note: String::new(),
+            kind: "phonon".into(),
+            selected: false,
+        });
+    }
     packs.push(custom_info(root, &selected));
     packs
 }
@@ -540,6 +560,52 @@ fn dir_bytes(path: &Path) -> u64 {
 }
 
 static BUSY: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn begin_download() -> Result<(), String> {
+    if BUSY.swap(true, Ordering::AcqRel) {
+        Err("A pack download is already running.".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn end_download() {
+    BUSY.store(false, Ordering::Release);
+}
+
+pub fn piper_ready(root: &Path, lang: &str) -> bool {
+    match lang {
+        "de" => pack_ready(root, "tts-de"),
+        "es" => pack_ready(root, "tts-es"),
+        "en" => pack_ready(root, "tts"),
+        _ => false,
+    }
+}
+
+pub(crate) fn pack_ready_public(root: &Path, id: &str) -> bool {
+    pack_ready(root, id)
+}
+
+pub(crate) fn llm_ready(root: &Path) -> bool {
+    pack_ready(root, &selected_id(root))
+}
+
+#[cfg(test)]
+pub fn write_min_talk(root: &Path, _lang: &str) {
+    fn touch(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, b"x").unwrap();
+    }
+    let english = speech_paths(root, "en");
+    touch(&english.preprocess);
+    touch(&english.encoder);
+    touch(&english.uncached);
+    touch(&english.cached);
+    touch(&english.stt_tokens);
+    touch(&root.join(DEFAULT_LLM).join(LLM_FILE));
+}
 
 pub fn download_pack(
     root: &Path,
@@ -1160,9 +1226,11 @@ mod tests {
         ));
         assert!(spanish.uncached.ends_with("decoder.int8.onnx"));
         assert!(spanish.joiner.ends_with("joiner.int8.onnx"));
-        assert!(spanish
-            .tts_model
-            .ends_with("tts-es/vits-piper-es_ES-davefx-medium/es_ES-davefx-medium.onnx"));
+        assert!(
+            spanish
+                .tts_model
+                .ends_with("tts-es/vits-piper-es_ES-davefx-medium/es_ES-davefx-medium.onnx")
+        );
         assert_eq!(model_paths(&root).asr, "moonshine");
         for path in [
             &spanish.encoder,
@@ -1350,13 +1418,20 @@ mod tests {
             tts_es.sha256,
             "a3f6beb54a9cb893279f72978a22f807a4d9fc9c7848157b524d5cc7b7f58b22"
         );
-        assert!(stt_es.url.contains("sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8"));
+        assert!(
+            stt_es
+                .url
+                .contains("sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8")
+        );
         assert!(tts_es.url.contains("vits-piper-es_ES-davefx-medium"));
         assert_eq!(
             model_paths_for(Path::new("/models"), "es").asr,
             "transducer"
         );
-        assert_eq!(model_paths_for(Path::new("/models"), "de").asr, "transducer");
+        assert_eq!(
+            model_paths_for(Path::new("/models"), "de").asr,
+            "transducer"
+        );
         assert_eq!(model_paths_for(Path::new("/models"), "en").asr, "moonshine");
         assert_eq!(
             llm.sha256,

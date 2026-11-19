@@ -33,7 +33,8 @@ export function readyProvider(
 export function packsReadyForTalk(packs: { id: string; ready: boolean; selected?: boolean; kind?: string }[]): boolean {
   const ready = (id: string) => packs.some((pack) => pack.id === id && pack.ready);
   const selected = packs.find((pack) => pack.selected && (pack.kind === "llm" || pack.kind === "custom"));
-  return ready("stt") && ready("tts") && Boolean(selected?.ready);
+  const voice = ready("tts") || packs.some((pack) => pack.kind === "phonon" && pack.ready);
+  return ready("stt") && voice && Boolean(selected?.ready);
 }
 
 export function recoveryFor(message: string): { hint: string; go?: SettingsDestination } | null {

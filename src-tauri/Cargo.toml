@@ -26,7 +26,8 @@ futures-util = { version = "0.3", default-features = false, features = ["sink", 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 cpal = "0.16"
 rustpotter = "3"
-# candle-core 0.2 (via rustpotter) needs half's rand 0.8 integration
+# candle-core 0.2 (via rustpotter) needs half's rand 0.8 integration.
+# Phonon is linked as its own library on Android so it can keep a newer half.
 half = "~2.4"
 hound = "3.5"
 base64 = "0.22"

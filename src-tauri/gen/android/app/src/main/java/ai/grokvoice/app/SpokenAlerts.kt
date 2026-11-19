@@ -166,7 +166,7 @@ object SpokenAlerts {
     // clear, then let that sound continue. The sentence itself is unchanged.
     AlarmSounds.yieldForSpeech()
     try {
-      if (!playPiper(context, line) && !playAndroid(context, line)) {
+      if (!playOnDevice(context, line) && !playAndroid(context, line)) {
         Log.w(TAG, "could not speak the notice")
       } else {
         Log.i(TAG, "spoken notice finished")
@@ -377,6 +377,30 @@ object SpokenAlerts {
       am.abandonAudioFocusRequest(request)
     } catch (_: Exception) {
     }
+  }
+
+  private fun playOnDevice(context: Context, line: String): Boolean {
+    val settings = readSettings(context)
+    val root = File(appRoot(context), "local-models").absolutePath
+    val plan = RustBridge.planOnDeviceVoice(
+      root,
+      settings.optString("locale", ""),
+      Locale.getDefault().language ?: "",
+      settings.optString("speechEngines", ""),
+      settings.optString("phononModels", ""),
+      settings.optString("phononVoices", ""),
+    ).orEmpty()
+    val parts = plan.split('\t')
+    if (parts.firstOrNull() == "phonon" && parts.size >= 4) {
+      val pcm = RustBridge.synthesizePhonon(root, parts[1], parts[2], parts[3], line)
+      if (pcm != null && pcm.isNotEmpty()) {
+        val rate = RustBridge.noticeSampleRate().takeIf { it > 0 } ?: 24000
+        if (playPcm(pcm, rate)) return true
+      }
+      Log.w(TAG, "spoken notice Phonon failed; trying Piper")
+    }
+    if (parts.firstOrNull() == "system") return false
+    return playPiper(context, line)
   }
 
   private fun playPiper(context: Context, line: String): Boolean {

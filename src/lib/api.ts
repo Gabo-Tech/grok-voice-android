@@ -162,6 +162,44 @@ export interface LocalPack {
   selected?: boolean;
 }
 
+export interface VoiceLangStatus {
+  id: string;
+  choice: string;
+  resolved: string;
+  modelId: string;
+  voiceId: string;
+  piperReady: boolean;
+  phononReady: boolean;
+  note: string;
+  piperName: string;
+}
+
+export interface PhononModelStatus {
+  id: string;
+  label: string;
+  detail: string;
+  license: string;
+  gated: boolean;
+  langs: string[];
+  downloadBytes: number;
+  installedBytes: number;
+  ready: boolean;
+}
+
+export interface VoiceSetupStatus {
+  langs: VoiceLangStatus[];
+  models: PhononModelStatus[];
+  voicesReady: string[];
+  hfHasToken: boolean;
+  hfHint: string;
+}
+
+export interface VoicePreviewAudio {
+  engine: string;
+  sampleRate: number;
+  wavBase64: string;
+}
+
 export interface PackProgress {
   id: string;
   received: number;
@@ -196,8 +234,14 @@ export interface Settings {
   /** Soft monthly voice budget in minutes. 0 is off. */
   monthlyBudgetMinutes: number;
   monthlyBudgetHardStop: boolean;
-  /** `en` or `de` for on-device speech. */
+  /** `en`, `es`, or `de` for on-device listening. */
   localSpeech: string;
+  /** Per-language engine: `en=auto,es=phonon`. */
+  speechEngines?: string;
+  /** Per-language Phonon model id. */
+  phononModels?: string;
+  /** Per-language Phonon voice id. Empty uses the model default. */
+  phononVoices?: string;
   /** Empty follows the phone. */
   locale: string;
   /** Hands-free Listen. Saved on the phone and restored after the app is cleared. */
@@ -721,6 +765,14 @@ export const api = {
   importLocalModel: (name: string, family: string) => invoke<LocalPack[]>("import_local_model", { name, family }),
   downloadCustomModel: (url: string, sha256: string, name: string, family: string) =>
     invoke<LocalPack[]>("download_custom_local_model", { url, sha256, name, family }),
+  onDeviceVoice: () => invoke<VoiceSetupStatus>("on_device_voice_status"),
+  downloadPhononModel: (id: string) => invoke<VoiceSetupStatus>("download_phonon_model", { id }),
+  deletePhononModel: (id: string) => invoke<VoiceSetupStatus>("delete_phonon_model", { id }),
+  downloadPhononVoice: (id: string) => invoke<VoiceSetupStatus>("download_phonon_voice", { id }),
+  deletePhononVoice: (id: string) => invoke<VoiceSetupStatus>("delete_phonon_voice", { id }),
+  previewOnDeviceVoice: (lang: string) => invoke<VoicePreviewAudio>("preview_on_device_voice", { lang }),
+  saveHfToken: (token: string) => invoke<VoiceSetupStatus>("save_hf_token", { token }),
+  clearHfToken: () => invoke<VoiceSetupStatus>("clear_hf_token"),
   updateStatus: () => invoke<UpdateStatus>("update_status"),
   dismissUpdate: () => invoke<UpdateStatus>("dismiss_update"),
   financeSnapshot: (locale?: string) => invoke<FinanceSnapshot>("finance_snapshot", { locale: locale ?? null }),
