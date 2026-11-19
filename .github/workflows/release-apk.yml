@@ -1,0 +1,277 @@
+name: Release APK
+
+# Action SHAs are pinned. Versions are noted beside each use.
+
+on:
+  push:
+    tags:
+      - "v*"
+  # workflow_dispatch is available once this file is on the default branch.
+  # Until then, a pull request runs the same build, sign, and verify steps
+  # and never uploads a release.
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, such as v0.1.47
+        required: true
+        type: string
+      dry_run:
+        description: Build, sign, and verify without uploading a release
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-apk:
+    name: Build and sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve release tag
+        id: rel
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -n 1)"
+            tag="v${version}"
+          else
+            tag="$REF_NAME"
+          fi
+          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "tag must look like v1.2.3"
+            exit 1
+          fi
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          version="${tag#v}"
+          # 10# keeps values such as 08 out of octal arithmetic.
+          version_code=$((10#$major * 1000000 + 10#$minor * 1000 + 10#$patch))
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "Resolved $tag versionName=$version versionCode=$version_code"
+
+      - name: Install host build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config curl unzip bzip2
+
+      - name: Set up Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0 ndk;27.1.12297006
+
+      - name: Select NDK 27.1
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/27.1.12297006"
+          test -d "$ndk"
+          test -x "$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          test -x "$ANDROID_HOME/build-tools/37.0.0/aapt"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15
+        with:
+          toolchain: 1.94.1
+          targets: aarch64-linux-android
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          prefix-key: v1-aarch64-linux-android
+          cache-on-failure: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 10.33.0
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.0.0"
+          cache: pnpm
+
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Show toolchain
+        run: |
+          set -euo pipefail
+          java -version
+          rustc --version
+          rustup target list --installed
+          node --version
+          pnpm --version
+          cmake --version | head -n 1
+          ninja --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "NDK_HOME=$NDK_HOME"
+          sed -n '1,4p' "$NDK_HOME/source.properties"
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build arm64 release APK
+        run: pnpm tauri android build --target aarch64 --apk
+
+      - name: Sign and verify
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ steps.rel.outputs.version }}
+          VERSION_CODE: ${{ steps.rel.outputs.version_code }}
+          EXPECTED_CERT: fd400ffe61c9b18654bc40f567275e5a6e13bab8d311355f389f6e46458aafe9
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ] || [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ]; then
+            echo "signing secrets are not available to this job"
+            exit 1
+          fi
+
+          src="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
+          if [ ! -f "$src" ]; then
+            echo "release APK was not produced at $src"
+            find src-tauri/gen/android/app/build/outputs -type f -name '*.apk' -print || true
+            exit 1
+          fi
+
+          out="${RUNNER_TEMP}/GrokVoice-${VERSION}.apk"
+          bt="$ANDROID_HOME/build-tools/37.0.0"
+          ks="$(mktemp -p "$RUNNER_TEMP" ks.XXXXXX)"
+          cleanup() { rm -f "$ks"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ks"
+
+          "$bt/apksigner" sign \
+            --ks "$ks" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled false \
+            --v4-signing-enabled false \
+            --out "$out" \
+            "$src"
+          cleanup
+          trap - EXIT
+
+          verify="$("$bt/apksigner" verify --print-certs --verbose "$out")"
+          printf '%s\n' "$verify"
+          mapfile -t fps < <(printf '%s\n' "$verify" | sed -n 's/.*certificate SHA-256 digest: //p' | tr -d ':\r' | tr '[:upper:]' '[:lower:]')
+          v2="$(printf '%s\n' "$verify" | sed -n 's/.*Verified using v2 scheme.*: //p' | head -n 1)"
+          if [ "${#fps[@]}" -ne 1 ] || [ "${fps[0]}" != "$EXPECTED_CERT" ] || [ "$v2" != "true" ]; then
+            echo "certificate check failed"
+            exit 1
+          fi
+
+          badging="$("$bt/aapt" dump badging "$out")"
+          version_name="$(printf '%s\n' "$badging" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -n 1)"
+          version_code="$(printf '%s\n' "$badging" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -n 1)"
+          min_sdk="$(printf '%s\n' "$badging" | sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" | head -n 1)"
+          abi="$(printf '%s\n' "$badging" | sed -n 's/^native-code: //p' | tr -d "'" | head -n 1 | xargs)"
+          lib_abis="$(unzip -Z1 "$out" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+          if [ "$version_name" != "$VERSION" ]; then
+            echo "versionName is $version_name, expected $VERSION"
+            exit 1
+          fi
+          if [ "$version_code" != "$VERSION_CODE" ]; then
+            echo "versionCode is $version_code, expected $VERSION_CODE"
+            exit 1
+          fi
+          if [ "$min_sdk" != "26" ]; then
+            echo "minSdk is $min_sdk, expected 26"
+            exit 1
+          fi
+          if [ "$abi" != "arm64-v8a" ] || [ "$lib_abis" != "arm64-v8a" ]; then
+            echo "ABI check failed: badging='$abi' libs='$lib_abis'"
+            exit 1
+          fi
+          if ! unzip -Z1 "$out" | grep -qx 'lib/arm64-v8a/libptts_ffi.so'; then
+            echo "libptts_ffi.so is missing"
+            exit 1
+          fi
+
+          size="$(stat -c%s "$out")"
+          hash="$(sha256sum "$out" | awk '{print $1}')"
+          echo "RESULT file=GrokVoice-${VERSION}.apk cert_sha256=${fps[0]} version_name=${version_name} version_code=${version_code} min_sdk=${min_sdk} abi=${abi} size_bytes=${size} sha256=${hash}"
+          {
+            echo "## GrokVoice-${VERSION}.apk"
+            echo "- cert_sha256: \`${fps[0]}\`"
+            echo "- version_name: \`${version_name}\`"
+            echo "- version_code: \`${version_code}\`"
+            echo "- min_sdk: \`${min_sdk}\`"
+            echo "- abi: \`${abi}\`"
+            echo "- size_bytes: \`${size}\`"
+            echo "- sha256: \`${hash}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish GitHub release
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+          VERSION: ${{ steps.rel.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "push" ] && [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "not uploading a release for ${EVENT_NAME}"
+            exit 0
+          fi
+          asset="GrokVoice-${VERSION}.apk"
+          apk="${RUNNER_TEMP}/${asset}"
+          test -f "$apk"
+          notes="Signed arm64 sideload APK for ${VERSION}."
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" "$apk" --title "Grok Voice ${VERSION}" --notes "$notes"
+            exit 0
+          fi
+          names="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          if printf '%s\n' "$names" | grep -Fxq "$asset"; then
+            if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+              echo "Release asset ${asset} already exists. A tag push does not replace it."
+              exit 1
+            fi
+            gh release upload "$TAG" "$apk" --clobber
+          else
+            gh release upload "$TAG" "$apk"
+          fi
+          echo "Uploaded ${asset} ($(stat -c%s "$apk") bytes, sha256 $(sha256sum "$apk" | awk '{print $1}'))"

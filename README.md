@@ -153,6 +153,8 @@ src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-rele
 
 Minimum SDK is 26. The release native library is arm64.
 
+A pushed `v*` tag builds and signs that APK in GitHub Actions. The signing key lives in repository secrets. See [Releasing](RELEASING.md).
+
 ## License
 
 [MIT](LICENSE).
