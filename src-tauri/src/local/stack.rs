@@ -1,9 +1,9 @@
 //! Offline-first defaults and the setup tour.
 //!
-//! A new install hears with on-device speech, thinks with SmolLM2, and speaks
-//! with Phonon when that language has a token-free model. Otherwise it speaks
-//! with Piper, then the Android voice. An existing settings file keeps its
-//! voice, model, engine, and provider preference.
+//! A new install hears English with Moonshine, thinks with SmolLM2, and speaks
+//! with Phonon 31m. The setup tour downloads that pack only. Other languages,
+//! Piper, and gated Phonon models stay optional in Settings. An existing file
+//! keeps its voice, model, engine, and provider preference.
 
 use serde::Serialize;
 
@@ -57,7 +57,7 @@ pub fn normalize_step(raw: &str) -> String {
     }
 }
 
-/// Brand-new settings. English Phonon is the stand-in until the tour picks a language.
+/// Brand-new settings. The offline voice is English Phonon 31m.
 pub fn offline_first() -> Settings {
     Settings {
         prefer_local_on_wake: true,
@@ -83,6 +83,16 @@ pub fn migrate_loaded(existed: bool, mut settings: Settings) -> Settings {
         settings.setup_step = normalize_step(&settings.setup_step);
     }
     settings
+}
+
+/// The pack the first-run tour downloads. Always English, with no token.
+pub fn setup_pack() -> OfflinePlan {
+    let mut plan = offline_plan("en");
+    plan.offer_hf = false;
+    plan.hf_model.clear();
+    plan.optional = None;
+    plan.note = "The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.".into();
+    plan
 }
 
 pub fn offline_plan(raw: &str) -> OfflinePlan {
@@ -210,32 +220,10 @@ fn pack_label(id: &str) -> &'static str {
     }
 }
 
-fn has_pair(map: &str, lang: &str) -> bool {
-    let lang = speech::speech_lang(lang);
-    map.split(',').any(|part| {
-        let Some((key, value)) = part.trim().split_once('=') else {
-            return false;
-        };
-        speech::speech_lang(key.trim()) == lang && !value.trim().is_empty()
-    })
-}
-
-/// Sets the screen language and fills a missing engine for that language.
-/// A saved engine, cloud voice, and provider preference stay.
+/// Sets the screen language only. The offline voice stays whatever is already saved.
 pub fn apply_setup_language(settings: &Settings, raw: &str) -> Settings {
-    let plan = offline_plan(raw);
     let mut next = settings.clone();
-    next.locale = plan.ui_locale.clone();
-    if matches!(plan.hearing.as_str(), "moonshine" | "nemo") {
-        next.local_speech = plan.lang.clone();
-    }
-    if !has_pair(&settings.speech_engines, &plan.lang) {
-        next.speech_engines = speech::set_pair(&next.speech_engines, &plan.lang, &plan.engine);
-    }
-    if !plan.phonon_model.is_empty() && !has_pair(&settings.phonon_models, &plan.lang) {
-        next.phonon_models =
-            speech::set_pair(&next.phonon_models, &plan.lang, &plan.phonon_model);
-    }
+    next.locale = offline_plan(raw).ui_locale;
     next
 }
 
@@ -260,59 +248,24 @@ mod tests {
     use crate::local::attempt_order;
 
     #[test]
-    fn default_stack_is_on_device_phonon_and_falls_back_by_language() {
-        let english = offline_plan("en-US");
+    fn setup_downloads_the_english_pack_for_every_screen_language() {
+        let english = setup_pack();
         assert_eq!(english.hearing, "moonshine");
         assert_eq!(english.brain, "smollm2");
         assert_eq!(english.voice, "phonon");
         assert_eq!(english.engine, "phonon");
+        assert_eq!(english.lang, "en");
         assert_eq!(english.phonon_model, "phonon-31m-en");
         assert!(!english.offer_hf);
-        assert!(english.pieces.iter().any(|piece| piece.id == "stt"));
-        assert!(english.pieces.iter().any(|piece| piece.id == "llm"));
-        assert!(english.pieces.iter().any(|piece| piece.id == "phonon-31m-en"));
-        assert!(!english.pieces.iter().any(|piece| piece.id == "tts"));
+        assert!(english.hf_model.is_empty());
+        assert!(english.optional.is_none());
+        let ids: Vec<&str> = english.pieces.iter().map(|piece| piece.id.as_str()).collect();
+        assert_eq!(ids, vec!["stt", "llm", "phonon-31m-en"]);
         assert!(english.bytes > 400_000_000);
         let phonon = phonon::model_by_id("phonon-31m-en").unwrap().download_bytes();
         assert_eq!(phonon, 65_051_089);
-
-        let spanish = offline_plan("es-MX");
-        assert_eq!(spanish.lang, "es");
-        assert_eq!(spanish.hearing, "nemo");
-        assert_eq!(spanish.voice, "piper");
-        assert_eq!(spanish.engine, "piper");
-        assert!(spanish.offer_hf);
-        assert_eq!(spanish.hf_model, "phonon-40m-es");
-        assert!(spanish.optional.as_ref().is_some_and(|piece| piece.id == "phonon-40m-es"));
-        let ids: Vec<&str> = spanish.pieces.iter().map(|piece| piece.id.as_str()).collect();
-        assert_eq!(ids, vec!["stt-es", "llm", "tts-es"]);
-        assert!(!ids.contains(&"stt"));
-
-        let german = offline_plan("de-DE");
-        assert_eq!(german.voice, "piper");
-        assert_eq!(german.hf_model, "phonon-40m-de");
-        assert!(german.pieces.iter().any(|piece| piece.id == "stt-de"));
-        assert!(german.pieces.iter().any(|piece| piece.id == "tts-de"));
-
-        let portuguese = offline_plan("pt-BR");
-        assert_eq!(portuguese.hearing, "none");
-        assert_eq!(portuguese.voice, "android");
-        assert_eq!(portuguese.engine, "auto");
-        assert!(portuguese.pieces.is_empty());
-        assert_eq!(portuguese.bytes, 0);
-        assert!(portuguese.offer_hf);
-        assert_eq!(portuguese.hf_model, "phonon-40m-pt");
-
-        let valencian = offline_plan("ca-ES-valencia");
-        assert_eq!(valencian.lang, "ca");
-        assert_eq!(valencian.ui_locale, "ca-ES-valencia");
-        assert_eq!(valencian.hearing, "none");
-        assert_eq!(valencian.voice, "android");
-        assert_eq!(valencian.engine, "android");
-        assert!(!valencian.offer_hf);
-        assert!(valencian.pieces.is_empty());
-        assert!(valencian.note.contains("Valencian"));
-        assert_eq!(offline_plan("ca").voice, "android");
+        assert!(english.note.contains("English"));
+        assert!(!english.note.to_lowercase().contains("token required"));
     }
 
     #[test]
@@ -374,38 +327,41 @@ mod tests {
     }
 
     #[test]
-    fn applying_a_language_fills_only_a_missing_engine() {
-        let spanish = apply_setup_language(&Settings::default(), "español");
-        assert_eq!(spanish.locale, "es");
-        assert_eq!(spanish.local_speech, "es");
-        assert_eq!(spanish.speech_engines, "es=piper");
-        assert_eq!(spanish.voice, Settings::default().voice);
-        assert!(!spanish.prefer_local_on_wake);
+    fn applying_a_language_changes_the_screen_and_keeps_the_english_voice() {
+        let fresh = apply_setup_language(&offline_first(), "español");
+        assert_eq!(fresh.locale, "es");
+        assert_eq!(fresh.local_speech, "en");
+        assert_eq!(fresh.speech_engines, "en=phonon");
+        assert_eq!(fresh.phonon_models, "en=phonon-31m-en");
+        assert!(fresh.prefer_local_on_wake);
+        assert_eq!(fresh.voice, Settings::default().voice);
 
         let custom = Settings {
             speech_engines: "es=phonon".into(),
             phonon_models: "es=phonon-40m-es".into(),
+            local_speech: "es".into(),
             voice: "rex".into(),
             prefer_local_on_wake: false,
             onboarded: true,
             ..Settings::default()
         };
-        let kept = apply_setup_language(&custom, "es");
+        let kept = apply_setup_language(&custom, "de");
+        assert_eq!(kept.locale, "de");
+        assert_eq!(kept.local_speech, "es");
         assert_eq!(kept.speech_engines, "es=phonon");
         assert_eq!(kept.phonon_models, "es=phonon-40m-es");
         assert_eq!(kept.voice, "rex");
         assert!(!kept.prefer_local_on_wake);
-        assert_eq!(kept.locale, "es");
 
-        let gated = with_gated_phonon(&spanish, "es").unwrap();
+        let gated = with_gated_phonon(&Settings::default(), "es").unwrap();
         assert_eq!(gated.speech_engines, "es=phonon");
         assert_eq!(gated.phonon_models, "es=phonon-40m-es");
         assert!(with_gated_phonon(&Settings::default(), "ca-ES-valencia").is_none());
 
-        let valencian = apply_setup_language(&Settings::default(), "ca-ES-valencia");
+        let valencian = apply_setup_language(&offline_first(), "ca-ES-valencia");
         assert_eq!(valencian.locale, "ca-ES-valencia");
         assert_eq!(valencian.local_speech, "en");
-        assert_eq!(valencian.speech_engines, "ca=android");
+        assert_eq!(valencian.speech_engines, "en=phonon");
     }
 
     #[test]
@@ -443,7 +399,8 @@ mod tests {
                 "Not offline yet",
                 "Use Wi-Fi if you can. These files stay on the phone. If the download stops, setup continues from here.",
                 "On-device voice packs are not downloaded yet. Download them in Settings, under Voice and AI.",
-                "Valencian speaks with the Android voice. There is no Phonon model and no Piper voice. Hearing you needs a cloud key.",
+                "The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.",
+                "This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.",
             ] {
                 assert!(object.contains_key(key), "{locale} missing {key}");
             }

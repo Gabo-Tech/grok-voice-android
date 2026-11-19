@@ -261,16 +261,9 @@ export function VoiceHome({
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {t("English uses Moonshine Base. Spanish and German each use a separate download. Moonshine does not understand Spanish or German.")}
             </p>
-            {settings.locale === "pt" ? (
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {t("Portuguese speaks with the Android voice until Phonon is downloaded with a Hugging Face token. Hearing you needs a cloud key.")}
-              </p>
-            ) : null}
-            {settings.locale === "ca-ES-valencia" || settings.locale === "ca" ? (
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {t("Valencian speaks with the Android voice. There is no Phonon model and no Piper voice. Hearing you needs a cloud key.")}
-              </p>
-            ) : null}
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {t("Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.")}
+            </p>
             <div className="mt-3">
               <LocalPacks showHeading={false} part="stt" onChanged={() => void api.localPacks().then(setPacks).catch(() => {})} />
             </div>

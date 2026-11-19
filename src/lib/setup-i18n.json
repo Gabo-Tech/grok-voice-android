@@ -1,6 +1,9 @@
 {
   "es": {
     "Voice and AI": "Voz e IA",
+    "This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.": "Esto elige el idioma de la pantalla. La voz sin red se queda en inglés. Otros idiomas se pueden añadir luego en Voz e IA.",
+    "The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.": "El paquete sin red es inglés: Moonshine, SmolLM2 y Phonon. Sin cuenta y sin token.",
+    "Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.": "La preparación descarga la voz en inglés. Añade español, alemán, Piper o un modelo con token más tarde en Voz e IA.",
     "Hearing, the model, the voice, and what is tried next.": "Qué te oye, el modelo, la voz y qué se prueba después.",
     "Offline-ready": "Listo sin red",
     "Not offline yet": "Aún no está listo sin red",
@@ -61,6 +64,9 @@
   },
   "de": {
     "Voice and AI": "Stimme und KI",
+    "This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.": "Das wählt die Sprache auf dem Bildschirm. Die Stimme ohne Netz bleibt Englisch. Andere Sprachen kannst du später unter Stimme und KI hinzufügen.",
+    "The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.": "Das Paket ohne Netz ist Englisch: Moonshine, SmolLM2 und Phonon. Kein Konto und kein Token.",
+    "Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.": "Die Einrichtung lädt die englische Stimme. Spanisch, Deutsch, Piper oder ein Modell mit Token kannst du später unter Stimme und KI hinzufügen.",
     "Hearing, the model, the voice, and what is tried next.": "Was dich hört, das Modell, die Stimme und was als Nächstes drankommt.",
     "Offline-ready": "Bereit ohne Netz",
     "Not offline yet": "Noch nicht bereit ohne Netz",
@@ -121,6 +127,9 @@
   },
   "pt": {
     "Voice and AI": "Voz e IA",
+    "This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.": "Isto escolhe o idioma do ecrã. A voz sem rede fica em inglês. Outros idiomas podem ser adicionados depois em Voz e IA.",
+    "The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.": "O pacote sem rede é inglês: Moonshine, SmolLM2 e Phonon. Sem conta e sem token.",
+    "Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.": "A preparação baixa a voz em inglês. Adiciona espanhol, alemão, Piper ou um modelo com token mais tarde em Voz e IA.",
     "Hearing, the model, the voice, and what is tried next.": "O que te ouve, o modelo, a voz e o que é tentado a seguir.",
     "Offline-ready": "Pronto sem rede",
     "Not offline yet": "Ainda não está pronto sem rede",
@@ -181,6 +190,9 @@
   },
   "ca-ES-valencia": {
     "Voice and AI": "Veu i IA",
+    "This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.": "Açò tria l'idioma de la pantalla. La veu sense xarxa es queda en anglés. Altres idiomes es poden afegir després a Veu i IA.",
+    "The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.": "El paquet sense xarxa és anglés: Moonshine, SmolLM2 i Phonon. Sense compte i sense token.",
+    "Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.": "La preparació baixa la veu en anglés. Afig espanyol, alemany, Piper o un model amb token més tard a Veu i IA.",
     "Hearing, the model, the voice, and what is tried next.": "Què t'escolta, el model, la veu i què es prova després.",
     "Offline-ready": "Llest sense xarxa",
     "Not offline yet": "Encara no està llest sense xarxa",

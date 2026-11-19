@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, errorText, type AuthStatus, type OfflinePlan, type PackProgress, type PermissionStatus } from "@/lib/api";
 import { fill, setAppLocale, useT } from "@/lib/i18n";
-import { formatBytes, previewPlan } from "@/lib/stack";
+import { englishSetupPlan, formatBytes } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
 const LANGS = [
@@ -77,7 +77,6 @@ export function Onboarding({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-  const [token, setToken] = useState("");
   const [cloud, setCloud] = useState<"xai" | "openai">("xai");
   const [key, setKey] = useState("");
   const [perms, setPerms] = useState<PermissionStatus | null>(null);
@@ -88,16 +87,16 @@ export function Onboarding({
 
   useEffect(() => {
     let alive = true;
-    const load = preview || !isTauri() ? Promise.resolve(previewPlan(lang)) : api.offlinePlan(lang);
+    const load = preview || !isTauri() ? Promise.resolve(englishSetupPlan()) : api.offlinePlan();
     void load.then((next) => {
       if (alive) setPlan(next);
     }).catch(() => {
-      if (alive) setPlan(previewPlan(lang));
+      if (alive) setPlan(englishSetupPlan());
     });
     return () => {
       alive = false;
     };
-  }, [lang, preview]);
+  }, [preview]);
 
   useEffect(() => {
     const connection = (navigator as Navigator & { connection?: { type?: string } }).connection;
@@ -124,8 +123,8 @@ export function Onboarding({
     void api.permissionsStatus().then(setPerms).catch(() => {});
   }, [id, preview]);
 
-  const phononOn = token.trim().length >= 8;
-  const pieces = plan ? [...plan.pieces, ...(phononOn && plan.optional ? [plan.optional] : [])] : [];
+  const screenLocale = lang === "ca" ? "ca-ES-valencia" : lang;
+  const pieces = plan?.pieces ?? [];
   const totalBytes = pieces.reduce((sum, piece) => sum + piece.bytes, 0);
   const currentBytes = progress && progress.total > 0 ? progress.received : 0;
   const ratio = totalBytes > 0 ? Math.min(100, Math.round(((doneBytes + currentBytes) / totalBytes) * 100)) : 0;
@@ -153,14 +152,10 @@ export function Onboarding({
     setProgress(null);
     try {
       if (isTauri()) {
-        const saved = await api.saveSetup(lang, "packs-run", phononOn);
-        setAppLocale(saved.locale || plan.uiLocale);
-        if (phononOn) {
-          await api.saveHfToken(token.trim());
-          setToken("");
-        }
+        const saved = await api.saveSetup(lang, "packs-run");
+        setAppLocale(saved.locale || screenLocale);
       } else {
-        setAppLocale(plan.uiLocale);
+        setAppLocale(screenLocale);
       }
       const have = await refreshReady();
       let completed = 0;
@@ -197,7 +192,7 @@ export function Onboarding({
         setProgress(null);
       }
       setReady(new Set(have));
-      if (isTauri()) await api.saveSetup(null, "preview", phononOn);
+      if (isTauri()) await api.saveSetup(null, "preview");
       setStep(2);
     } catch (err) {
       setError(errorText(err));
@@ -217,11 +212,11 @@ export function Onboarding({
 
   const remember = async (nextStep: string, withLang: boolean) => {
     if (!isTauri()) {
-      if (withLang && plan) setAppLocale(plan.uiLocale);
+      if (withLang) setAppLocale(screenLocale);
       return;
     }
-    const saved = await api.saveSetup(withLang ? lang : null, nextStep, phononOn);
-    if (withLang) setAppLocale(saved.locale || "");
+    const saved = await api.saveSetup(withLang ? lang : null, nextStep);
+    if (withLang) setAppLocale(saved.locale || screenLocale);
   };
 
   const finish = async (next: "done" | "skipped") => {
@@ -321,7 +316,7 @@ export function Onboarding({
     setError(null);
     try {
       if (!isTauri()) return;
-      const audio = await api.previewOnDeviceVoice(lang);
+      const audio = await api.previewOnDeviceVoice("en");
       if (audio.wavBase64) await playWav(audio.wavBase64);
     } catch (err) {
       setError(errorText(err));
@@ -363,7 +358,7 @@ export function Onboarding({
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
         {id === "language" && (
           <>
-            <p className="text-sm leading-6 text-muted-foreground">{t("Choose a language. The phone will download what that language can run offline.")}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.")}</p>
             <div className="grid grid-cols-2 gap-2">
               {LANGS.map((item) => (
                 <button
@@ -376,7 +371,7 @@ export function Onboarding({
                 </button>
               ))}
             </div>
-            <p className="text-sm leading-6 text-muted-foreground">{plan ? t(plan.note) : ""}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
           </>
         )}
 
@@ -386,7 +381,8 @@ export function Onboarding({
               {t("Use Wi-Fi if you can. These files stay on the phone. If the download stops, setup continues from here.")}
             </p>
             {cellular ? <p className="text-sm leading-6 text-foreground">{t("You appear to be on mobile data. Wi-Fi is a better way to download this.")}</p> : null}
-            <p className="text-base text-foreground">{pieces.length === 0 ? t("Nothing to download for this language. The Android voice speaks. Hearing you on this phone needs English, Spanish, or German.") : fill("About {size}", { size: formatBytes(totalBytes) })}</p>
+            <p className="text-base text-foreground">{fill("About {size}", { size: formatBytes(totalBytes) })}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
             <ul className="divide-y divide-border border-y border-border">
               {pieces.map((piece) => (
                 <li key={piece.id} className="flex items-center justify-between gap-3 py-3 text-sm">
@@ -400,15 +396,6 @@ export function Onboarding({
                 <div className="h-full bg-foreground" style={{ width: `${ratio}%` }} />
               </div>
             ) : null}
-            {plan.offerHf ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">{t("Optional Hugging Face token")}</p>
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {t("Save the token to also download Phonon. Piper or the Android voice still works if you skip it.")}
-                </p>
-                <Input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} />
-              </div>
-            ) : null}
             {failed ? (
               <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void download()}>
                 {t("Retry download")}
@@ -419,11 +406,11 @@ export function Onboarding({
 
         {id === "preview" && (
           <>
-            <p className="text-sm leading-6 text-muted-foreground">{plan ? t(plan.note) : ""}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
             <Button type="button" className="w-full" disabled={playing || busy} onClick={() => void play()}>
               {playing ? t("Playing") : t("Play this voice")}
             </Button>
-            <p className="text-sm leading-6 text-muted-foreground">{t("The Android voice says this on the phone.")}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.")}</p>
             <p className="text-sm leading-6 text-muted-foreground">{t("Allow the microphone before the first talk. You can also do this later.")}</p>
             <Button type="button" variant="outline" className="w-full" disabled={busy || perms?.microphone === "granted"} onClick={() => void allowMic()}>
               {perms?.microphone === "granted" ? t("Microphone allowed") : t("Allow microphone")}

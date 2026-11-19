@@ -685,9 +685,8 @@ export const api = {
   requestBatteryExemption: () => invoke<ListenHealth>("request_battery_exemption"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
-  offlinePlan: (lang: string) => invoke<OfflinePlan>("offline_plan", { lang }),
-  saveSetup: (lang: string | null, step: string, phonon = false) =>
-    invoke<Settings>("save_setup", { lang, step, phonon }),
+  offlinePlan: () => invoke<OfflinePlan>("offline_plan", { lang: "en" }),
+  saveSetup: (lang: string | null, step: string) => invoke<Settings>("save_setup", { lang, step }),
   musicPlayers: () => invoke<{ ok?: boolean; players?: MusicPlayerChoice[] }>("music_players"),
   debugSnapshot: () => invoke<DebugInfo>("debug_snapshot"),
   debugLogs: () => invoke<LogLine[]>("debug_logs"),

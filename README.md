@@ -2,7 +2,7 @@
 
 **Website:** [gabo-tech.github.io/grok-voice-android](https://gabo-tech.github.io/grok-voice-android/)
 
-A voice assistant for Android. A new install talks on the phone: speech recognition, SmolLM2, and Phonon when that language has a token-free model. Where it does not, the voice is Piper, then the Android voice. An [xAI](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) or OpenAI key is optional and is tried only if you add one. The wake word stays on the device.
+A voice assistant for Android. A new install talks on the phone in English: Moonshine, SmolLM2, and Phonon 31m, with no account and no token. The screen can use another language. Spanish, German, Piper, and gated Phonon models can be added later in Settings. An [xAI](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) or OpenAI key is optional and is tried only if you add one. The wake word stays on the device.
 
 The current sideload build is [Grok Voice 0.1.47](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
 
@@ -18,14 +18,14 @@ Allow installs from unknown sources if Android asks. This package is signed with
 
 ## First launch
 
-A new install opens a setup tour and downloads what that language can run offline. The tour remembers its step, so a closed app or a failed download can continue. **Finish later** leaves the tour and keeps what is already on the phone. **Settings → Voice and AI** opens it again. An install that already finished setup is not sent through the tour.
+A new install opens a setup tour and downloads the English offline pack: Moonshine, SmolLM2, and Phonon 31m. No Hugging Face token and no other-language pack. The tour remembers its step, so a closed app or a failed download can continue. **Finish later** leaves the tour and keeps what is already on the phone. **Settings → Voice and AI** opens it again. An install that already finished setup is not sent through the tour.
 
-1. **Language.** English, Spanish, German, Portuguese, or Valencian.
-2. **Offline pack.** The screen shows the total size and the progress. Wi-Fi is the better way to fetch it. English is Moonshine, SmolLM2, and Phonon 31m, with no account. Spanish and German add their listening pack and a Piper voice. Portuguese and Valencian have nothing to download for hearing; they speak with the Android voice until a Hugging Face token adds Phonon for Portuguese.
+1. **Language.** The screen language: English, Spanish, German, Portuguese, or Valencian. The offline voice stays English.
+2. **Offline pack.** The screen shows the total size and the progress. Wi-Fi is the better way to fetch it. The files are Moonshine, SmolLM2, and Phonon 31m.
 3. **Voice preview.** Play the voice. The microphone can be allowed here. Hey Grok can be trained later.
 4. **Cloud key.** Optional. Paste an xAI key from [console.x.ai](https://console.x.ai/team/default/api-keys) or an OpenAI key, or skip it.
 
-**Settings → Voice and AI** is the one screen for hearing, the model, the voice, and the order Talk tries. On this phone is Moonshine or the Spanish or German pack, SmolLM2 or another local model, and Phonon, Piper, or the Android voice. xAI and OpenAI sit in the same list. A key is entered on that provider, and the Hugging Face token is entered with the Phonon models. The list is the fallback order. Downloaded, key set, and offline-ready show at the top. Spend limits, the quiet gap, and Hey Grok stay on their own rows.
+**Settings → Voice and AI** is the one screen for hearing, the model, the voice, and the order Talk tries. The offline voice starts as English. Spanish, German, Piper, the Android voice, and Phonon models that need a token can be added there later. xAI and OpenAI sit in the same list. A key is entered on that provider, and the Hugging Face token is entered with the Phonon models. The list is the fallback order. Downloaded, key set, and offline-ready show at the top. Spend limits, the quiet gap, and Hey Grok stay on their own rows.
 
 You can replay the tour from **Voice and AI**, or from **Debug → Replay setup tour**.
 
@@ -109,9 +109,9 @@ Web search in this mode does not use xAI. It reads DuckDuckGo. Offline, the tool
 
 Hands-free “Hey Grok” uses a microphone foreground service and its notification. Leaving Talk, switching apps, locking the screen, or clearing the app from recents does not stop that listener and does not delete the enrollment. It stops when Listen is turned off (including Stop on the notification), when the app is force-stopped, or when Android kills the process because the phone is extremely low on memory. After a force-stop or that kind of kill, open the app and turn Listen on again.
 
-Voice and AI is the setup for that voice. Pick Phonon, Piper, Android, or Auto, then a voice, then Download, then Test. Auto uses Phonon when a model for that language is already on the phone, otherwise Piper, then the Android voice. A new install asks for Phonon in English, Piper in Spanish and German, and the Android voice in Portuguese and Valencian. If Phonon fails while speaking, the phone tries Piper and then the Android voice. Valencian has no Phonon model and no Piper voice, so it stays on the Android voice. Portuguese has no Piper voice. Phonon can speak it after the Portuguese or multilingual model is downloaded.
+Voice and AI is the setup for that voice. The first-run download is English Phonon 31m. Pick Phonon, Piper, Android, or Auto, then a voice, then Download, then Test, when you want another language. Auto uses Phonon when a model for that language is already on the phone, otherwise Piper, then the Android voice. If Phonon fails while speaking, the phone tries Piper and then the Android voice. Valencian has no Phonon model and no Piper voice, so it stays on the Android voice. Portuguese has no Piper voice. Phonon can speak it after the Portuguese or multilingual model is downloaded.
 
-English can use Phonon 31m with no account. The 40m models are CC BY-NC 4.0 and gated on Hugging Face. This app is non-commercial, so those terms allow them here. Accept the license on the model page, then save an optional Hugging Face token in Voice and AI, next to the Phonon models. The setup tour offers that token for Spanish, German, and Portuguese. The token is stored in the same on-device vault as the other keys. It is sent only to Hugging Face, and only for a gated download. A refusal stays a refusal. English 31m does not use the token.
+English can use Phonon 31m with no account. The 40m models are CC BY-NC 4.0 and gated on Hugging Face. This app is non-commercial, so those terms allow them here. Accept the license on the model page, then save an optional Hugging Face token in Voice and AI, next to the Phonon models. The setup tour does not ask for that token. The token is stored in the same on-device vault as the other keys. It is sent only to Hugging Face, and only for a gated download. A refusal stays a refusal. English 31m does not use the token.
 
 | Model | Languages | License | Download |
 | --- | --- | --- | --- |

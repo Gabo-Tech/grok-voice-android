@@ -397,7 +397,8 @@ pub fn get_settings(store: State<'_, SettingsStore>) -> Settings {
 
 #[tauri::command]
 pub fn offline_plan(lang: String) -> crate::local::stack::OfflinePlan {
-    crate::local::stack::offline_plan(&lang)
+    let _ = lang;
+    crate::local::stack::setup_pack()
 }
 
 #[tauri::command]
@@ -405,19 +406,12 @@ pub fn save_setup(
     store: State<'_, SettingsStore>,
     lang: Option<String>,
     step: String,
-    phonon: Option<bool>,
 ) -> Result<Settings> {
     let current = store.get();
     let mut next = match lang.as_deref().filter(|value| !value.trim().is_empty()) {
         Some(language) => crate::local::stack::apply_setup_language(&current, language),
         None => current,
     };
-    if phonon == Some(true) {
-        let language = lang.as_deref().unwrap_or(next.locale.as_str());
-        if let Some(gated) = crate::local::stack::with_gated_phonon(&next, language) {
-            next = gated;
-        }
-    }
     let step = crate::local::stack::normalize_step(&step);
     if !step.is_empty() {
         next.setup_step = step;
