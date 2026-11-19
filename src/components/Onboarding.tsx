@@ -1,160 +1,295 @@
-import { useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import {
-  AudioLines,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  Headphones,
-  KeyRound,
-  Loader2,
-  Mic,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
-import { LocalPacks } from "@/components/LocalPacks";
-import { WakeView } from "@/components/WakeView";
+import { useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { api, errorText, type AuthStatus, type PermissionStatus, type WakewordStatus } from "@/lib/api";
-import { VoiceOrder } from "@/components/VoiceOrder";
-import { fill, useT } from "@/lib/i18n";
+import { api, errorText, type AuthStatus, type OfflinePlan, type PackProgress, type PermissionStatus } from "@/lib/api";
+import { fill, setAppLocale, useT } from "@/lib/i18n";
+import { englishSetupPlan, formatBytes } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
-const PROVIDERS = [
-  {
-    id: "xai",
-    label: "xAI",
-    blurb: "Grok's voice. Needs a key from the xAI console.",
-    placeholder: "xai-…",
-    url: "https://console.x.ai/team/default/api-keys",
-    link: "Open xAI console",
-  },
-  {
-    id: "openai",
-    label: "OpenAI",
-    blurb: "Another cloud voice. Needs an OpenAI key.",
-    placeholder: "sk-…",
-    url: "https://platform.openai.com/api-keys",
-    link: "Open OpenAI keys",
-  },
-  {
-    id: "local",
-    label: "On device",
-    blurb: "No key. Download packs, then this phone can answer.",
-    placeholder: "",
-    url: "",
-    link: "",
-  },
+const LANGS = [
+  { id: "en", label: "English" },
+  { id: "es", label: "Spanish" },
+  { id: "de", label: "German" },
+  { id: "pt", label: "Portuguese" },
+  { id: "ca", label: "Valencian" },
 ] as const;
 
 const STEPS = [
-  { id: "hello", label: "Hello" },
-  { id: "key", label: "Key" },
-  { id: "mic", label: "Mic" },
-  { id: "wake", label: "Wake" },
-  { id: "ready", label: "Ready" },
+  { id: "language", label: "Language" },
+  { id: "packs", label: "Offline pack" },
+  { id: "preview", label: "Voice preview" },
+  { id: "cloud", label: "Cloud key" },
 ] as const;
+
+function stepIndex(raw: string | undefined): number {
+  if (raw === "preview") return 2;
+  if (raw === "cloud") return 3;
+  if (raw === "packs" || raw === "packs-run") return 1;
+  return 0;
+}
+
+function guessLang(locale: string): (typeof LANGS)[number]["id"] {
+  const tag = locale.trim().toLowerCase().replace(/_/g, "-");
+  if (tag.includes("valencia") || tag === "ca" || tag.startsWith("ca-")) return "ca";
+  if (tag.startsWith("pt")) return "pt";
+  if (tag.startsWith("de")) return "de";
+  if (tag.startsWith("es")) return "es";
+  return "en";
+}
+
+function playWav(wavBase64: string) {
+  const binary = atob(wavBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+  const audio = new Audio(url);
+  audio.onended = () => URL.revokeObjectURL(url);
+  return audio.play();
+}
 
 export function Onboarding({
   auth,
-  wake,
   preview,
+  initialStep,
+  autoResume = false,
+  locale = "",
   onAuth,
-  onWake,
   onFinished,
 }: {
   auth: AuthStatus;
-  wake: WakewordStatus;
   preview?: boolean;
-  onAuth: (s: AuthStatus) => void;
-  onWake: (s: WakewordStatus) => void;
-  onFinished: () => void;
+  initialStep?: string;
+  autoResume?: boolean;
+  locale?: string;
+  onAuth: (auth: AuthStatus) => void;
+  onFinished: (step: "done" | "skipped") => void;
 }) {
-  const [step, setStep] = useState(0);
-  const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["id"]>("xai");
-  const [key, setKey] = useState("");
+  const t = useT();
+  const [step, setStep] = useState(() => stepIndex(initialStep));
+  const [lang, setLang] = useState<(typeof LANGS)[number]["id"]>(() => guessLang(locale || (typeof navigator === "undefined" ? "" : navigator.language)));
+  const [plan, setPlan] = useState<OfflinePlan | null>(null);
+  const [ready, setReady] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState<PackProgress | null>(null);
+  const [doneBytes, setDoneBytes] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [cloud, setCloud] = useState<"xai" | "openai">("xai");
+  const [key, setKey] = useState("");
   const [perms, setPerms] = useState<PermissionStatus | null>(null);
-  const [done, setDone] = useState(false);
-  const t = useT();
-
+  const [playing, setPlaying] = useState(false);
+  const [cellular, setCellular] = useState(false);
+  const resumed = useRef(false);
   const id = STEPS[step].id;
-  const micGranted = perms?.microphone === "granted";
 
   useEffect(() => {
-    if (id !== "mic" || preview) return;
     let alive = true;
-    void api.permissionsStatus().then((p) => alive && setPerms(p)).catch((e) => alive && setError(errorText(e)));
+    const load = preview || !isTauri() ? Promise.resolve(englishSetupPlan()) : api.offlinePlan();
+    void load.then((next) => {
+      if (alive) setPlan(next);
+    }).catch(() => {
+      if (alive) setPlan(englishSetupPlan());
+    });
     return () => {
       alive = false;
     };
+  }, [preview]);
+
+  useEffect(() => {
+    const connection = (navigator as Navigator & { connection?: { type?: string } }).connection;
+    setCellular(connection?.type === "cellular");
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    if (auth.accounts.some((account) => account.provider === "local")) return;
+    void api.addVoiceAccount("local", "on-device").then(onAuth).catch(() => {});
+  }, [auth.accounts, onAuth]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen<PackProgress>("voice://pack", (event) => setProgress(event.payload)).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    if (id !== "preview" || preview || !isTauri()) return;
+    void api.permissionsStatus().then(setPerms).catch(() => {});
   }, [id, preview]);
 
-  const back = () => {
-    setError(null);
-    setStep((n) => Math.max(0, n - 1));
+  const screenLocale = lang === "ca" ? "ca-ES-valencia" : lang;
+  const pieces = plan?.pieces ?? [];
+  const totalBytes = pieces.reduce((sum, piece) => sum + piece.bytes, 0);
+  const currentBytes = progress && progress.total > 0 ? progress.received : 0;
+  const ratio = totalBytes > 0 ? Math.min(100, Math.round(((doneBytes + currentBytes) / totalBytes) * 100)) : 0;
+
+  const refreshReady = async () => {
+    if (!isTauri()) return new Set<string>();
+    const packs = await api.localPacks();
+    const voice = await api.onDeviceVoice();
+    const ids = new Set<string>();
+    for (const pack of packs) {
+      if (pack.ready) ids.add(pack.id);
+    }
+    for (const model of voice.models) {
+      if (model.ready) ids.add(model.id);
+    }
+    setReady(ids);
+    return ids;
   };
 
-  const finish = async () => {
+  const download = async () => {
+    if (!plan) return;
     setBusy(true);
     setError(null);
+    setFailed(false);
+    setProgress(null);
     try {
-      if (!preview) {
-        const settings = await api.getSettings();
-        await api.saveSettings({ ...settings, onboarded: true });
+      if (isTauri()) {
+        const saved = await api.saveSetup(lang, "packs-run");
+        setAppLocale(saved.locale || screenLocale);
+      } else {
+        setAppLocale(screenLocale);
       }
-      setDone(true);
-      onFinished();
-    } catch (e) {
-      setError(errorText(e));
+      const have = await refreshReady();
+      let completed = 0;
+      for (const piece of pieces) {
+        if (have.has(piece.id)) {
+          completed += piece.bytes;
+          setDoneBytes(completed);
+          continue;
+        }
+        let attempt = 0;
+        for (;;) {
+          try {
+            if (!isTauri()) {
+              await new Promise((resolve) => window.setTimeout(resolve, 250));
+            } else if (piece.kind === "phonon") {
+              await api.downloadPhononModel(piece.id);
+            } else {
+              await api.downloadLocalPack(piece.id);
+            }
+            break;
+          } catch (err) {
+            attempt += 1;
+            if (attempt >= 3) {
+              setError(errorText(err));
+              setFailed(true);
+              setBusy(false);
+              return;
+            }
+          }
+        }
+        have.add(piece.id);
+        completed += piece.bytes;
+        setDoneBytes(completed);
+        setProgress(null);
+      }
+      setReady(new Set(have));
+      if (isTauri()) await api.saveSetup(null, "preview");
+      setStep(2);
+    } catch (err) {
+      setError(errorText(err));
+      setFailed(true);
     } finally {
       setBusy(false);
     }
   };
 
-  const next = () => {
-    setError(null);
-    if (step === STEPS.length - 1) {
-      void finish();
+  useEffect(() => {
+    if (!autoResume || resumed.current || !plan || step !== 1) return;
+    resumed.current = true;
+    void download();
+    // Resume once, after the plan for this language is known.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoResume, plan, step]);
+
+  const remember = async (nextStep: string, withLang: boolean) => {
+    if (!isTauri()) {
+      if (withLang) setAppLocale(screenLocale);
       return;
     }
-    setStep((n) => n + 1);
+    const saved = await api.saveSetup(withLang ? lang : null, nextStep);
+    if (withLang) setAppLocale(saved.locale || screenLocale);
   };
 
-  const saveKey = async () => {
+  const finish = async (next: "done" | "skipped") => {
     setBusy(true);
     setError(null);
     try {
-      if (preview) {
-        if (provider === "local" && auth.accounts.some((account) => account.provider === "local")) {
-          setError("On device is already in the list.");
+      if (!preview) await remember(next, next === "skipped" && step === 0);
+      onFinished(next);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const next = async () => {
+    setError(null);
+    if (id === "language") {
+      setBusy(true);
+      try {
+        await remember("packs", true);
+        setStep(1);
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (id === "packs") {
+      if (failed || pieces.length === 0 || pieces.every((piece) => ready.has(piece.id))) {
+        try {
+          await remember("preview", false);
+        } catch (err) {
+          setError(errorText(err));
           return;
         }
-        onAuth({
-          hasKey: true,
-          keyHint: "xai-…demo",
-          securityLevel: "software",
-          accounts: [
-            ...auth.accounts,
-            {
-              id: `demo-${provider}-${auth.accounts.length}`,
-              provider,
-              hint: provider === "local" ? "on this phone" : "demo…key",
-            },
-          ],
-        });
+        setStep(2);
         return;
       }
-      const status = await api.addVoiceAccount(provider, provider === "local" ? "on-device" : key);
+      await download();
+      return;
+    }
+    if (id === "preview") {
+      try {
+        await remember("cloud", false);
+      } catch (err) {
+        setError(errorText(err));
+        return;
+      }
+      setStep(3);
+      return;
+    }
+    await finish("done");
+  };
+
+  const saveCloud = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (preview || !isTauri()) {
+        onAuth({
+          ...auth,
+          hasKey: true,
+          accounts: [...auth.accounts, { id: `demo-${cloud}`, provider: cloud, hint: "demo…key" }],
+        });
+        setKey("");
+        return;
+      }
+      onAuth(await api.addVoiceAccount(cloud, key.trim()));
       setKey("");
-      onAuth(status);
-    } catch (e) {
-      setError(errorText(e));
+    } catch (err) {
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -164,21 +299,33 @@ export function Onboarding({
     setBusy(true);
     setError(null);
     try {
-      if (preview) {
+      if (preview || !isTauri()) {
         setPerms({ microphone: "granted", notifications: "granted" });
         return;
       }
       setPerms(await api.requestPermissions());
-    } catch (e) {
-      setError(errorText(e));
+    } catch (err) {
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
   };
 
-  const canNext =
-    (id === "hello" || id === "wake" || id === "ready" || (id === "key" && auth.hasKey) || (id === "mic" && micGranted)) &&
-    !busy;
+  const play = async () => {
+    setPlaying(true);
+    setError(null);
+    try {
+      if (!isTauri()) return;
+      const audio = await api.previewOnDeviceVoice("en");
+      if (audio.wavBase64) await playWav(audio.wavBase64);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setPlaying(false);
+    }
+  };
+
+  const packsReady = pieces.length === 0 || pieces.every((piece) => ready.has(piece.id));
 
   return (
     <div className="flex h-full flex-col px-5 py-6">
@@ -188,10 +335,10 @@ export function Onboarding({
       </header>
 
       <ol className="mb-6 flex items-start gap-1">
-        {STEPS.map((s, i) => {
-          const state = i < step ? "done" : i === step ? "now" : "later";
+        {STEPS.map((item, index) => {
+          const state = index < step ? "done" : index === step ? "now" : "later";
           return (
-            <li key={s.id} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+            <li key={item.id} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
               <span
                 className={cn(
                   "grid size-7 place-items-center rounded-full border text-xs",
@@ -200,324 +347,122 @@ export function Onboarding({
                   state === "later" && "border-border text-muted-foreground",
                 )}
               >
-                {state === "done" ? <Check className="size-3.5" /> : i + 1}
+                {state === "done" ? <Check className="size-3.5" /> : index + 1}
               </span>
-              <span className={cn("text-xs", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(s.label)}</span>
+              <span className={cn("text-center text-xs", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item.label)}</span>
             </li>
           );
         })}
       </ol>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {id === "hello" && <HelloStep />}
-        {id === "key" && (
-          <KeyStep
-            auth={auth}
-            provider={provider}
-            value={key}
-            busy={busy}
-            onProvider={setProvider}
-            onChange={setKey}
-            onOpen={(url) => {
-              if (preview) {
-                window.open(url, "_blank", "noopener");
-                return;
-              }
-              void openUrl(url);
-            }}
-            onSave={() => void saveKey()}
-            onRemove={(id) => {
-              if (preview) {
-                const accounts = auth.accounts.filter((account) => account.id !== id);
-                onAuth({ ...auth, hasKey: accounts.length > 0, accounts });
-                return;
-              }
-              void api.removeVoiceAccount(id).then(onAuth).catch((e) => setError(errorText(e)));
-            }}
-            onReorder={async (ids) => {
-              if (preview) {
-                const byId = new Map(auth.accounts.map((account) => [account.id, account]));
-                const accounts = ids.flatMap((id) => {
-                  const account = byId.get(id);
-                  return account ? [account] : [];
-                });
-                onAuth({ ...auth, accounts });
-                return;
-              }
-              try {
-                onAuth(await api.reorderVoiceAccounts(ids));
-              } catch (err) {
-                setError(errorText(err));
-                throw err;
-              }
-            }}
-          />
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+        {id === "language" && (
+          <>
+            <p className="text-sm leading-6 text-muted-foreground">{t("This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.")}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {LANGS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setLang(item.id)}
+                  className={cn("min-h-12 border px-2 py-2 text-sm", lang === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground")}
+                >
+                  {t(item.label)}
+                </button>
+              ))}
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
+          </>
         )}
-        {id === "mic" && <MicStep perms={perms} busy={busy} onAllow={() => void allowMic()} />}
-        {id === "wake" && <WakeView status={wake} onStatus={onWake} />}
-        {id === "ready" && <ReadyStep wakeTrained={wake.trained} />}
+
+        {id === "packs" && plan && (
+          <>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {t("Use Wi-Fi if you can. These files stay on the phone. If the download stops, setup continues from here.")}
+            </p>
+            {cellular ? <p className="text-sm leading-6 text-foreground">{t("You appear to be on mobile data. Wi-Fi is a better way to download this.")}</p> : null}
+            <p className="text-base text-foreground">{fill("About {size}", { size: formatBytes(totalBytes) })}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
+            <ul className="divide-y divide-border border-y border-border">
+              {pieces.map((piece) => (
+                <li key={piece.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <span>{t(piece.label)}</span>
+                  <span className="text-muted-foreground">{ready.has(piece.id) ? t("Downloaded") : formatBytes(piece.bytes)}</span>
+                </li>
+              ))}
+            </ul>
+            {totalBytes > 0 ? (
+              <div className="h-2 bg-border" role="progressbar" aria-valuenow={ratio} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-full bg-foreground" style={{ width: `${ratio}%` }} />
+              </div>
+            ) : null}
+            {failed ? (
+              <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void download()}>
+                {t("Retry download")}
+              </Button>
+            ) : null}
+          </>
+        )}
+
+        {id === "preview" && (
+          <>
+            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
+            <Button type="button" className="w-full" disabled={playing || busy} onClick={() => void play()}>
+              {playing ? t("Playing") : t("Play this voice")}
+            </Button>
+            <p className="text-sm leading-6 text-muted-foreground">{t("Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.")}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("Allow the microphone before the first talk. You can also do this later.")}</p>
+            <Button type="button" variant="outline" className="w-full" disabled={busy || perms?.microphone === "granted"} onClick={() => void allowMic()}>
+              {perms?.microphone === "granted" ? t("Microphone allowed") : t("Allow microphone")}
+            </Button>
+            <p className="text-sm leading-6 text-muted-foreground">{t("Hey Grok can be trained later under Wake word.")}</p>
+            {packsReady ? <p className="text-sm text-foreground">{t("This phone is ready to talk with no network.")}</p> : null}
+          </>
+        )}
+
+        {id === "cloud" && (
+          <>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {t("Add a cloud key if you want one. You can skip this and add it later in Voice and AI.")}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["xai", "openai"] as const).map((item) => (
+                <button key={item} type="button" onClick={() => setCloud(item)} className={cn("min-h-12 border text-sm", cloud === item ? "border-foreground" : "border-border text-muted-foreground")}>
+                  {item === "xai" ? "xAI" : "OpenAI"}
+                </button>
+              ))}
+            </div>
+            <Input type="password" autoComplete="off" value={key} placeholder={cloud === "xai" ? "xai-…" : "sk-…"} onChange={(event) => setKey(event.target.value)} />
+            <Button type="button" variant="outline" className="w-full" disabled={busy || key.trim().length < 12} onClick={() => void saveCloud()}>
+              {t("Save this key")}
+            </Button>
+            <p className="text-sm leading-6 text-muted-foreground">{t("A cloud key is optional. The phone can answer without one after the offline pack is downloaded.")}</p>
+          </>
+        )}
       </div>
 
-      {error && (
+      {error ? (
         <p role="alert" className="mt-3 text-sm leading-6 text-foreground">
           {t(error)}
         </p>
-      )}
-      {!canNext && id === "key" && (
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("Save a voice to continue. On device counts after you tap Use on device.")}</p>
-      )}
-      {!canNext && id === "mic" && <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("Allow the microphone to continue.")}</p>}
-      {done && preview && (
-        <p className="mt-3 text-center text-sm text-primary">{t("Preview finished. In the app this opens the assistant.")}</p>
-      )}
+      ) : null}
+      {failed && id === "packs" ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Download stopped. What is already on the phone stays. Try again.")}</p> : null}
 
-      <footer className="mt-4 flex gap-2 pt-2">
-        <Button variant="outline" disabled={step === 0 || busy} onClick={back}>
-          <ChevronLeft /> {t("Back")}
-        </Button>
-        <Button className="flex-1" disabled={!canNext} onClick={next}>
-          {busy && id === "ready" ? <Loader2 className="animate-spin" /> : <ChevronRight />}
-          {id === "wake" && !wake.trained ? t("Skip for now") : id === "ready" ? t("Start talking") : t("Next")}
-        </Button>
-      </footer>
-    </div>
-  );
-}
-
-function HelloStep() {
-  const t = useT();
-  return (
-    <div className="space-y-5">
-      <div
-        className="mark pointer-events-none mx-auto"
-        style={{ width: "7rem", height: "7rem" }}
-        aria-hidden
-      >
-        <Sparkles className="size-8 text-primary" />
-      </div>
-      <div className="text-center">
-        <h2 className="text-xl font-medium">{t("A voice assistant that stays on your phone")}</h2>
-        <p className="mt-2 text-sm text-muted-foreground">{t("Five short steps. About two minutes.")}</p>
-      </div>
-      <ul className="space-y-3">
-        <Point n="1" title={t("Choose xAI, OpenAI, or On device")}>
-          {t("xAI and OpenAI need a key. On device needs a download. The first one in the list is tried first.")}
-        </Point>
-        <Point n="2" title={t("Allow the microphone")}>
-          {t("Needed to hear you, including when the screen is off.")}
-        </Point>
-        <Point n="3" title={t("Teach “Hey Grok”")}>
-          {t("Three short recordings. They never leave the phone. You can skip and tap instead.")}
-        </Point>
-      </ul>
-    </div>
-  );
-}
-
-function Point({ n, title, children }: { n: string; title: string; children: string }) {
-  return (
-    <li className="flex gap-3 border border-border bg-card px-3 py-3">
-      <span className="stamp size-8 shrink-0 px-0">{n}</span>
-      <span>
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="block text-xs leading-relaxed text-muted-foreground">{children}</span>
-      </span>
-    </li>
-  );
-}
-
-function KeyStep({
-  auth,
-  provider,
-  value,
-  busy,
-  onProvider,
-  onChange,
-  onOpen,
-  onSave,
-  onRemove,
-  onReorder,
-}: {
-  auth: AuthStatus;
-  provider: (typeof PROVIDERS)[number]["id"];
-  value: string;
-  busy: boolean;
-  onProvider: (id: (typeof PROVIDERS)[number]["id"]) => void;
-  onChange: (v: string) => void;
-  onOpen: (url: string) => void;
-  onSave: () => void;
-  onRemove: (id: string) => void;
-  onReorder: (ids: string[]) => Promise<void>;
-}) {
-  const t = useT();
-  const chosen = PROVIDERS.find((p) => p.id === provider) ?? PROVIDERS[0];
-  const accounts = auth.accounts ?? [];
-  return (
-    <Card className="border-primary/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="size-4 text-primary" /> {t("Add a voice key")}
-        </CardTitle>
-        <CardDescription>{t("Add xAI, OpenAI, or On device.")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-2">
-          {PROVIDERS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onProvider(item.id)}
-              className={cn(
-                "flex min-h-12 w-full flex-col items-start justify-center border px-3 py-2 text-left",
-                item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-              )}
-            >
-              <span className="text-base text-foreground">{t(item.label)}</span>
-              <span className="text-sm leading-5">{t(item.blurb)}</span>
-            </button>
-          ))}
+      <footer className="mt-4 flex flex-col gap-2 pt-2">
+        <div className="flex gap-2">
+          <Button variant="outline" disabled={step === 0 || busy} onClick={() => setStep((value) => Math.max(0, value - 1))}>
+            <ChevronLeft /> {t("Back")}
+          </Button>
+          <Button className="flex-1" disabled={busy || (id === "packs" && !plan)} onClick={() => void next()}>
+            {busy ? <Loader2 className="animate-spin" /> : <ChevronRight />}
+            {id === "cloud" ? t("Start talking") : id === "packs" && failed ? t("Continue anyway") : id === "packs" && !packsReady ? t("Download the offline pack") : t("Next")}
+          </Button>
         </div>
-        {chosen.id === "local" ? (
-          <div className="space-y-3">
-            <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-muted-foreground">
-              <li>{t("Tap Use on device. That adds it to the list. No key.")}</li>
-              <li>{t("Leave it first if the phone should answer before a cloud key.")}</li>
-              <li>{t("Download the packs below. Until they finish, Talk uses the next key.")}</li>
-            </ol>
-          </div>
-        ) : (
-          <>
-            <Button variant="outline" className="w-full" onClick={() => onOpen(chosen.url)}>
-              <ExternalLink /> {t(chosen.link)}
-            </Button>
-            <div className="space-y-2">
-              <Label htmlFor="voice-key">{fill("Paste the {name} key", { name: chosen.label })}</Label>
-              <Input
-                id="voice-key"
-                type="password"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                placeholder={chosen.placeholder}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && value && !busy && onSave()}
-              />
-            </div>
-          </>
-        )}
-        <Button className="w-full" disabled={busy || (chosen.id !== "local" && value.trim().length < 12)} onClick={onSave}>
-          {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} {chosen.id === "local" ? t("Use on device") : t("Save this key")}
+        <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void finish("skipped")}>
+          {t("Finish later")}
         </Button>
-        {accounts.length > 0 && <VoiceOrder accounts={accounts} onReorder={onReorder} onRemove={onRemove} />}
-        {accounts.length > 0 && (
-          <p className="text-sm leading-6 text-muted-foreground">{t("Add another voice if you want a fallback, then tap Next.")}</p>
-        )}
-        <p className="text-sm leading-6 text-muted-foreground">
-          {t("Each key stays on this phone. xAI is checked before it is stored. If the first voice fails, the next one is tried.")}
-        </p>
-        {chosen.id === "local" && <LocalPacks />}
-      </CardContent>
-    </Card>
-  );
-}
-
-function MicStep({
-  perms,
-  busy,
-  onAllow,
-}: {
-  perms: PermissionStatus | null;
-  busy: boolean;
-  onAllow: () => void;
-}) {
-  const mic = perms?.microphone;
-  const notes = perms?.notifications;
-  const t = useT();
-  return (
-    <Card className="border-primary/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Mic className="size-4 text-primary" /> {t("Allow the microphone")}
-        </CardTitle>
-        <CardDescription>{t("Android will show a system prompt. Choose Allow.")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          {t("The microphone hears “Hey Grok” and your question. A quiet notification stays up so Android does not switch the microphone off when the screen locks.")}
-        </p>
-        <Button className="w-full" disabled={busy || mic === "granted"} onClick={onAllow}>
-          {busy ? <Loader2 className="animate-spin" /> : <Mic />}
-          {mic === "granted" ? t("Microphone allowed") : t("Allow microphone")}
-        </Button>
-        <StatusLine label={t("Microphone")} value={mic} />
-        <StatusLine label={t("Notification")} value={notes} />
-        {mic === "denied" && (
-          <p className="text-sm text-destructive">
-            {t("Microphone is blocked. Open Android Settings → Apps → Grok Voice → Permissions, allow Microphone, then come back and tap the button again.")}
-          </p>
-        )}
-        {mic === "granted" && notes !== "granted" && (
-          <p className="text-xs text-muted-foreground">
-            {t("Notifications are off. Listening still works while the app is open. Allow notifications later if you want “Hey Grok” with the screen locked.")}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatusLine({ label, value }: { label: string; value?: string }) {
-  const t = useT();
-  return (
-    <div className="flex items-center justify-between text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-foreground">{value === "granted" ? t("Allowed") : value === "denied" ? t("Blocked") : t("Not asked yet")}</span>
-    </div>
-  );
-}
-
-function ReadyStep({ wakeTrained }: { wakeTrained: boolean }) {
-  const t = useT();
-  return (
-    <div className="space-y-3">
-      <Card className="border-primary/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AudioLines className="size-4 text-primary" /> {t("How to talk")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="space-y-3 text-sm">
-            <li>
-              <span className="font-medium">{t("Tap the ring")}</span>
-              <span className="block text-muted-foreground">{t("Speak after it says Listening. Tap again to hang up.")}</span>
-            </li>
-            <li>
-              <span className="font-medium">{t("Ask it to do things")}</span>
-              <span className="block text-muted-foreground">
-                {t("Notes, alarms, timers, reminders, and calendar. Each has its own tab after setup.")}
-              </span>
-            </li>
-            <li>
-              <span className="font-medium">{wakeTrained ? t("Or say “Hey Grok”") : t("Wake word is optional")}</span>
-              <span className="block text-muted-foreground">
-                {wakeTrained
-                  ? t("Turn on Listen on the Talk tab. A notification means it is listening.")
-                  : t("You skipped enrollment. Train it anytime under Settings, then Wake word, and turn Listen on.")}
-              </span>
-            </li>
-          </ol>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="flex gap-3 pt-4">
-          <Headphones className="mt-0.5 size-4 shrink-0 text-primary" />
-          <p className="text-sm text-muted-foreground">
-            {t("Use headphones the first time. On a loudspeaker the microphone hears the reply and Grok answers itself. Echo guard is on so the mic mutes while Grok is talking. Turn it off in Settings, then Debug, if you want to interrupt.")}
-          </p>
-        </CardContent>
-      </Card>
+        <p className="text-center text-xs leading-5 text-muted-foreground">{t("Setup can wait. Voice and AI in Settings finishes the download.")}</p>
+      </footer>
     </div>
   );
 }

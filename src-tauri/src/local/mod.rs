@@ -12,6 +12,7 @@ mod packs;
 pub mod phonon;
 mod session;
 pub mod speech;
+pub mod stack;
 mod turn;
 mod vad;
 mod web;
@@ -40,7 +41,7 @@ pub fn route(provider: &str, packs_ready: bool) -> Route {
     match provider {
         "local" if packs_ready => Route::Local,
         "local" => Route::Skip(
-            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice keys.".into(),
+            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice and AI.".into(),
         ),
         "xai" => Route::Xai,
         "openai" => Route::OpenAi,

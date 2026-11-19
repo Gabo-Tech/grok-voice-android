@@ -769,6 +769,10 @@ fn spec_by_id(id: &str) -> Option<&'static Spec> {
     PACKS.iter().find(|spec| spec.id == id)
 }
 
+pub fn download_size(id: &str) -> Option<u64> {
+    spec_by_id(id).map(|spec| spec.download_bytes)
+}
+
 fn known_llm(id: &str) -> bool {
     id == CUSTOM_LLM || spec_by_id(id).is_some_and(|spec| spec.kind == "llm")
 }

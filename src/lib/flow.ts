@@ -1,12 +1,23 @@
 import type { VoiceAccount } from "@/lib/api";
 
-export type SettingsDestination = "menu" | "keys" | "packs" | "wake" | "quiet" | "spend" | "model" | "debug";
+export type SettingsDestination = "menu" | "keys" | "packs" | "wake" | "quiet" | "spend" | "model" | "voice" | "debug";
 
 export function providerLabel(id: string): string {
   if (id === "local" || id === "Local") return "On device";
   if (id === "xai" || id === "xAI") return "xAI";
   if (id === "openai" || id === "OpenAI") return "OpenAI";
   return id || "Voice";
+}
+
+/** Indexes Talk tries. Local moves first only when that preference is on and the packs are ready. */
+export function attemptOrder(providers: string[], preferLocal: boolean, packsReady: boolean): number[] {
+  const order = providers.map((_, index) => index);
+  if (!(preferLocal && packsReady)) return order;
+  const localAt = providers.findIndex((provider) => provider === "local");
+  if (localAt < 0) return order;
+  const next = order.filter((index) => index !== localAt);
+  next.unshift(localAt);
+  return next;
 }
 
 export function chainPlace(index: number, total: number): string {
@@ -47,19 +58,19 @@ export function recoveryFor(message: string): { hint: string; go?: SettingsDesti
   if (/pack|not downloaded|cannot load|could not load|low on memory/.test(text)) {
     return {
       hint: "Download the missing packs, or put a cloud key above On device. Talk tries the list in order.",
-      go: "packs",
+      go: "voice",
     };
   }
   if (/no voice key|add a voice key|add one in setup|voice key first/.test(text)) {
     return {
       hint: "Add xAI, OpenAI, or On device. The first one in the list is the one Talk tries.",
-      go: "keys",
+      go: "voice",
     };
   }
   if (/offline|couldn't reach|could not reach|timed out|network|connection/.test(text)) {
     return {
       hint: "Check the connection. On device still answers offline after its packs are on the phone.",
-      go: "keys",
+      go: "voice",
     };
   }
   if (/wake word/.test(text)) {
@@ -80,9 +91,10 @@ export function recoveryFor(message: string): { hint: string; go?: SettingsDesti
 export function settingsLabel(go: SettingsDestination): string {
   switch (go) {
     case "keys":
-      return "Open voice keys";
     case "packs":
-      return "Open on-device packs";
+    case "model":
+    case "voice":
+      return "Open voice and AI";
     case "wake":
       return "Set up Hey Grok";
     case "spend":

@@ -145,6 +145,8 @@ pub fn run() {
             commands::listen_health,
             commands::request_battery_exemption,
             commands::get_settings,
+            commands::offline_plan,
+            commands::save_setup,
             commands::save_settings,
             commands::music_players,
             commands::update_status,

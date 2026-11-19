@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, KeyRound, Languages, Music, Package, Users, Wallet, Wand2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, Languages, Music, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
-import { LocalPacks } from "@/components/LocalPacks";
-import { OnDeviceVoice } from "@/components/OnDeviceVoice";
+import { VoiceHome } from "@/components/VoiceHome";
 import { Field } from "@/components/Field";
 import { CurrencyEditor } from "@/components/CurrencyEditor";
 import { PageChrome, RowButton } from "@/components/PageChrome";
@@ -16,10 +15,7 @@ import { Input } from "@/components/ui/input";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
-import { VoicePicker } from "@/components/VoicePicker";
-import { OPENAI_VOICES, XAI_VOICES } from "@/lib/voices";
 import { providerLabel } from "@/lib/flow";
-import { VoiceOrder } from "@/components/VoiceOrder";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
 import { normalizeAppearance, rememberCustomTheme } from "@/lib/appearance";
 import { fill, setAppLocale, useT } from "@/lib/i18n";
@@ -30,6 +26,7 @@ export type Section =
   | "wake"
   | "debug"
   | "keys"
+  | "voice"
   | "people"
   | "backup"
   | "memory"
@@ -43,12 +40,6 @@ export type Section =
   | "music"
   | "updates"
   | "finance";
-
-const PROVIDERS = [
-  { id: "xai", label: "xAI" },
-  { id: "openai", label: "OpenAI" },
-  { id: "local", label: "On device" },
-] as const;
 
 export function MorePage({
   voice,
@@ -92,7 +83,6 @@ export function MorePage({
   };
   const [quiet, setQuiet] = useState(10);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [saved, setSaved] = useState("");
   const [usage, setUsage] = useState<UsageStatus | null>(null);
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
@@ -168,14 +158,6 @@ export function MorePage({
     });
   };
 
-  const saveModel = () => {
-    if (!settings) return;
-    void api.saveSettings(settings).then((next) => {
-      setSettings(next);
-      setSaved("Saved");
-    });
-  };
-
   if (section === "wake") {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -226,25 +208,23 @@ export function MorePage({
     );
   }
 
-  if (section === "keys") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <Back onClick={() => setSection("menu")} />
-        <KeysPage auth={auth} onAuth={onAuth} />
-      </div>
-    );
-  }
-
-  if (section === "packs") {
+  if (section === "keys" || section === "packs" || section === "model" || section === "voice") {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Back onClick={() => setSection("menu")} />
         {settings ? (
-          <OnDeviceVoice
+          <VoiceHome
             settings={settings}
+            auth={auth}
+            onAuth={onAuth}
             onSettings={(next) => {
               setSettings(next);
               void api.saveSettings(next).then(setSettings).catch(() => setSettings(next));
+            }}
+            onOpenTour={() => {
+              const next = { ...settings, onboarded: false, setupStep: "language" };
+              setSettings(next);
+              void api.saveSettings(next).finally(() => onReplayTour());
             }}
           />
         ) : (
@@ -497,71 +477,10 @@ export function MorePage({
                 ))}
               </div>
             </div>
-            <div>
-              <p className="mb-2 text-sm text-muted-foreground">{t("Local speech")}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: "en", label: t("English") },
-                  { id: "es", label: t("Spanish") },
-                  { id: "de", label: t("German") },
-                ].map((choice) => (
-                  <button
-                    key={choice.id}
-                    type="button"
-                    onClick={() => saveBudget({ ...settings, localSpeech: choice.id })}
-                    className={cn(
-                      "min-h-12 h-auto border px-2 py-2 text-center text-sm leading-4 whitespace-normal",
-                      (settings.localSpeech || "en") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                    )}
-                  >
-                    {choice.label}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {t("English uses Moonshine Base. Spanish and German each use a separate download. Moonshine does not understand Spanish or German.")}
-              </p>
-            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{t("Listening and the voice are in Voice and AI.")}</p>
           </div>
         ) : (
           <p className="mt-4 px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
-        )}
-      </div>
-    );
-  }
-
-  if (section === "model") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
-        <Back onClick={() => setSection("menu")} />
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Voice and model")}</h2>
-        <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
-          {t("Pick a Grok voice or an OpenAI voice. Each provider only receives its own list. Eve stays the default.")}
-        </p>
-        {settings ? (
-          <div className="space-y-4">
-            <VoiceChoices
-              settings={settings}
-              accounts={auth.accounts ?? []}
-              live={voice.provider}
-              onSave={(patch) => {
-                const merged = { ...settings, ...patch };
-                setSettings(merged);
-                void api.saveSettings(merged).then(setSettings).catch(() => setSettings(merged));
-              }}
-            />
-            <Field label={t("Model")}>
-              <Input value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })} />
-            </Field>
-            <div className="flex items-center gap-3">
-              <Button type="button" onClick={saveModel}>
-                {t("Save model")}
-              </Button>
-              {saved && <p className="text-sm text-muted-foreground">{t("Saved")}</p>}
-            </div>
-          </div>
-        ) : (
-          <p className="px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
         )}
       </div>
     );
@@ -627,7 +546,7 @@ export function MorePage({
       id: "voice",
       title: t("Voice"),
       rows: [
-        { section: "model", icon: <AudioLines className="size-4" />, title: t("Voice and model"), detail: t("The voice and the model sent with the xAI key.") },
+        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: t("Hearing, the model, the voice, and what is tried next.") },
         {
           section: "spend",
           icon: <Wallet className="size-4" />,
@@ -635,7 +554,6 @@ export function MorePage({
           detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("A soft cap on talk time. Off until you set minutes."),
         },
         { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: t("How long Talk waits before only Hey Grok is heard.") },
-        { section: "packs", icon: <Package className="size-4" />, title: t("On-device voice"), detail: t("Pick a language, then an engine, a voice, and a download.") },
       ],
     },
     {
@@ -698,18 +616,6 @@ export function MorePage({
       id: "people",
       title: t("People"),
       rows: [{ section: "people", icon: <Users className="size-4" />, title: t("People"), detail: t("Nicknames, birthdays, and how you reach them.") }],
-    },
-    {
-      id: "keys",
-      title: t("API keys"),
-      rows: [
-        {
-          section: "keys",
-          icon: <KeyRound className="size-4" />,
-          title: t("Voice keys"),
-          detail: t("Keys for Grok and OpenAI stay on this phone. The first one is tried first."),
-        },
-      ],
     },
     {
       id: "language",
@@ -1269,217 +1175,11 @@ function downloadBase64(name: string, data: string) {
   URL.revokeObjectURL(url);
 }
 
-function KeysPage({ auth, onAuth }: { auth: AuthStatus; onAuth: (auth: AuthStatus) => void }) {
-  const t = useT();
-  const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["id"]>("xai");
-  const [secret, setSecret] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const accounts = auth.accounts ?? [];
-
-  useEffect(() => {
-    void api.getSettings().then(setSettings).catch(() => {});
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    void listen<Settings>("voice://settings", (event) => setSettings(event.payload)).then((fn) => {
-      unlisten = fn;
-    });
-    return () => unlisten?.();
-  }, []);
-
-  const save = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const value = provider === "local" ? "on-device" : secret;
-      const status = editing
-        ? await api.updateVoiceAccount(editing, provider, value)
-        : await api.addVoiceAccount(provider, value);
-      setSecret("");
-      setEditing(null);
-      onAuth(status);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reorder = async (ids: string[]) => {
-    onAuth(await api.reorderVoiceAccounts(ids));
-  };
-
-  const remove = async (id: string) => {
-    if (editing === id) setEditing(null);
-    onAuth(await api.removeVoiceAccount(id));
-  };
-
-  const edit = (id: string, current: string) => {
-    setEditing(id);
-    setSecret("");
-    setError(null);
-    if (PROVIDERS.some((item) => item.id === current)) {
-      setProvider(current as (typeof PROVIDERS)[number]["id"]);
-    }
-  };
-
-  const togglePrefer = () => {
-    if (!settings) return;
-    const next = { ...settings, preferLocalOnWake: !settings.preferLocalOnWake };
-    setSettings(next);
-    void api.saveSettings(next).then(setSettings).catch((err) => setError(errorText(err)));
-  };
-
-  const editingAccount = accounts.find((account) => account.id === editing);
-  const secretReady =
-    provider === "local" ||
-    secret.trim().length >= 12 ||
-    (editingAccount !== undefined && editingAccount.provider === provider && secret.trim().length === 0);
-
-  return (
-    <div className="space-y-4 pb-6">
-      <h2 className="text-2xl font-medium tracking-tight">{t("Voice keys")}</h2>
-      <p className="text-sm leading-6 text-muted-foreground">
-        {t("If a voice cannot sign in, reach the network, or load on this phone, the next one is used.")}
-      </p>
-      <div className="grid grid-cols-3 gap-2">
-        {PROVIDERS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setProvider(item.id)}
-            className={cn(
-              "h-12 border px-2 text-[11px] tracking-[0.08em] uppercase",
-              item.id === provider ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-            )}
-          >
-            {t(item.label)}
-          </button>
-        ))}
-      </div>
-      {provider === "local" ? (
-        <p className="text-sm leading-6 text-muted-foreground">
-          {t("No key. Talk uses this phone when the packs below are ready. If a pack is missing or the model cannot load, the next key is used.")}
-        </p>
-      ) : (
-        <Field label={editing ? t("New key") : t("Key")}>
-          <Input
-            type="password"
-            autoComplete="off"
-            placeholder={editing ? t("Leave blank to keep the saved key") : ""}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-          />
-        </Field>
-      )}
-      <div className="flex gap-2">
-        <Button disabled={busy || !secretReady} onClick={() => void save()}>
-          {provider === "local" ? (editing ? t("Update on device") : t("Use on device")) : editing ? t("Update this key") : t("Save this key")}
-        </Button>
-        {editing && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setEditing(null);
-              setSecret("");
-            }}
-          >
-            {t("Cancel")}
-          </Button>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={togglePrefer}
-        disabled={!settings}
-        className={cn(
-          "flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
-          settings?.preferLocalOnWake ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-        )}
-      >
-        <span>{t("Prefer On device when packs are ready")}</span>
-        <span>{settings?.preferLocalOnWake ? t("On") : t("Off")}</span>
-      </button>
-      <p className="text-sm leading-6 text-muted-foreground">
-        {t("Off follows the list. On uses On device first for Talk when its packs are on this phone and On device is in this list.")}
-      </p>
-      {error && <p className="text-sm text-foreground">{t(error)}</p>}
-      <LocalPacks onChanged={() => void api.getSettings().then(setSettings).catch(() => {})} />
-      <VoiceOrder
-        accounts={accounts}
-        onReorder={async (ids) => {
-          try {
-            await reorder(ids);
-          } catch (err) {
-            setError(errorText(err));
-            throw err;
-          }
-        }}
-        onEdit={edit}
-        onRemove={(id) => void remove(id)}
-      />
-    </div>
-  );
-}
 
 function Back(_: { onClick: () => void }) {
   return null;
 }
 
-function VoiceChoices({
-  settings,
-  accounts,
-  live,
-  onSave,
-}: {
-  settings: Settings;
-  accounts: AuthStatus["accounts"];
-  live: string;
-  onSave: (patch: Partial<Settings>) => void;
-}) {
-  const t = useT();
-  const providers = new Set(accounts.map((account) => account.provider));
-  const lowered = live.toLowerCase();
-  const liveCloud = lowered.includes("openai") ? "openai" : lowered.includes("xai") || lowered.includes("grok") ? "xai" : "";
-  const firstCloud = accounts.find((account) => account.provider === "xai" || account.provider === "openai")?.provider ?? "";
-  const activeCloud = liveCloud || firstCloud;
-  const showXai = activeCloud !== "openai" || providers.has("xai");
-  const showOpenAi = activeCloud === "openai" || providers.has("openai");
-  const xaiFirst = activeCloud !== "openai";
-  const grok = (
-    <div>
-      <p className="mb-2 px-1 text-sm text-muted-foreground">{t("Grok voice")}</p>
-      <p className="mb-2 px-1 text-sm leading-6 text-muted-foreground">{t("Pick a Grok voice. Eve stays the default.")}</p>
-      <VoicePicker
-        voices={XAI_VOICES}
-        value={settings.voice || "eve"}
-        preview
-        onChange={(id) => onSave({ voice: id })}
-      />
-    </div>
-  );
-  const openai = (
-    <div>
-      <p className="mb-2 px-1 text-sm text-muted-foreground">{t("OpenAI voice")}</p>
-      <p className="mb-2 px-1 text-sm leading-6 text-muted-foreground">{t("Pick an OpenAI voice. A Grok voice is never sent there.")}</p>
-      <VoicePicker
-        voices={OPENAI_VOICES}
-        value={settings.openaiVoice || "marin"}
-        onChange={(id) => onSave({ openaiVoice: id })}
-      />
-    </div>
-  );
-  return (
-    <div className="space-y-6">
-      {xaiFirst && showXai ? grok : null}
-      {showOpenAi ? openai : null}
-      {!xaiFirst && showXai ? grok : null}
-    </div>
-  );
-}
 
 function ListenStatus() {
   const t = useT();

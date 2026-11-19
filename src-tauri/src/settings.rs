@@ -90,6 +90,10 @@ pub struct Settings {
     /// Seven `#RRGGBB` colors: canvas, panel, border, text, accent, income, expense.
     #[serde(default)]
     pub custom_theme: String,
+    /// Setup tour step. Empty on an old file until load migrates it.
+    /// `language`, `packs`, `packs-run`, `preview`, `cloud`, `done`, or `skipped`.
+    #[serde(default)]
+    pub setup_step: String,
 }
 
 impl Default for Settings {
@@ -122,6 +126,7 @@ impl Default for Settings {
             music_player: crate::music::PLAYER_LOCAL.into(),
             appearance: String::new(),
             custom_theme: String::new(),
+            setup_step: String::new(),
         }
     }
 }
@@ -147,10 +152,10 @@ pub struct SettingsStore {
 
 impl SettingsStore {
     pub fn load(path: PathBuf) -> Self {
-        let mut inner = fs::read(&path)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Settings>(&b).ok())
-            .unwrap_or_default();
+        let raw = fs::read(&path).ok();
+        let existed = raw.is_some();
+        let parsed = raw.and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok());
+        let mut inner = crate::local::stack::migrate_loaded(existed, parsed.unwrap_or_default());
         inner.notification_delivery = crate::notices::stored_delivery(&inner.notification_delivery);
         inner.music_player = crate::music::stored_player(&inner.music_player).to_string();
         inner.voice = crate::voices::xai_voice(&inner.voice);
@@ -192,6 +197,17 @@ impl SettingsStore {
         s.music_player = crate::music::stored_player(&s.music_player).to_string();
         s.appearance = stored_appearance(&s.appearance, &self.get().appearance);
         s.custom_theme = stored_custom_theme(&s.custom_theme, &self.get().custom_theme);
+        if s.setup_step.trim().is_empty() {
+            s.setup_step = self.get().setup_step.clone();
+        }
+        s.setup_step = crate::local::stack::normalize_step(&s.setup_step);
+        if s.setup_step.is_empty() {
+            s.setup_step = if s.onboarded {
+                crate::local::stack::STEP_DONE.into()
+            } else {
+                crate::local::stack::STEP_LANGUAGE.into()
+            };
+        }
         crate::files::write_private(&self.path, &serde_json::to_vec_pretty(&s)?)?;
         *self.inner.write().unwrap() = s.clone();
         Ok(s)
@@ -539,6 +555,55 @@ mod tests {
         assert!(text.contains("\"openaiVoice\":\"coral\""));
         assert!(text.contains("Grok voice is rex"));
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_missing_file_is_offline_first_and_an_old_file_keeps_its_choices() {
+        let fresh_path =
+            std::env::temp_dir().join(format!("grok-settings-fresh-{}.json", std::process::id()));
+        let _ = fs::remove_file(&fresh_path);
+        let fresh = SettingsStore::load(fresh_path.clone());
+        let created = fresh.get();
+        assert!(created.prefer_local_on_wake);
+        assert_eq!(created.setup_step, "language");
+        assert_eq!(created.speech_engines, "en=phonon");
+        assert_eq!(created.phonon_models, "en=phonon-31m-en");
+        assert!(!created.onboarded);
+        let kept_step = fresh
+            .save(Settings {
+                setup_step: String::new(),
+                daily_budget_minutes: 3,
+                ..created
+            })
+            .unwrap();
+        assert_eq!(kept_step.setup_step, "language");
+        assert_eq!(kept_step.daily_budget_minutes, 3);
+        let _ = fs::remove_file(&fresh_path);
+
+        let old_path =
+            std::env::temp_dir().join(format!("grok-settings-old-{}.json", std::process::id()));
+        let _ = fs::remove_file(&old_path);
+        let old = Settings {
+            onboarded: true,
+            prefer_local_on_wake: false,
+            voice: "sal".into(),
+            openai_voice: "sage".into(),
+            speech_engines: "de=piper".into(),
+            local_speech: "de".into(),
+            daily_budget_minutes: 12,
+            ..Settings::default()
+        };
+        fs::write(&old_path, serde_json::to_vec_pretty(&old).unwrap()).unwrap();
+        let loaded = SettingsStore::load(old_path.clone()).get();
+        assert!(loaded.onboarded);
+        assert_eq!(loaded.setup_step, "done");
+        assert!(!loaded.prefer_local_on_wake);
+        assert_eq!(loaded.voice, "sal");
+        assert_eq!(loaded.openai_voice, "sage");
+        assert_eq!(loaded.speech_engines, "de=piper");
+        assert_eq!(loaded.local_speech, "de");
+        assert_eq!(loaded.daily_budget_minutes, 12);
+        let _ = fs::remove_file(&old_path);
     }
 }
 

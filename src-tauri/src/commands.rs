@@ -396,6 +396,35 @@ pub fn get_settings(store: State<'_, SettingsStore>) -> Settings {
 }
 
 #[tauri::command]
+pub fn offline_plan(lang: String) -> crate::local::stack::OfflinePlan {
+    let _ = lang;
+    crate::local::stack::setup_pack()
+}
+
+#[tauri::command]
+pub fn save_setup(
+    store: State<'_, SettingsStore>,
+    lang: Option<String>,
+    step: String,
+) -> Result<Settings> {
+    let current = store.get();
+    let mut next = match lang.as_deref().filter(|value| !value.trim().is_empty()) {
+        Some(language) => crate::local::stack::apply_setup_language(&current, language),
+        None => current,
+    };
+    let step = crate::local::stack::normalize_step(&step);
+    if !step.is_empty() {
+        next.setup_step = step;
+    }
+    if next.setup_step == crate::local::stack::STEP_DONE
+        || next.setup_step == crate::local::stack::STEP_SKIPPED
+    {
+        next.onboarded = true;
+    }
+    store.save(next)
+}
+
+#[tauri::command]
 pub fn music_players(app: AppHandle) -> Result<serde_json::Value> {
     let raw = app.state::<NativeBridge>().music_players()?;
     serde_json::from_str(&raw).map_err(|err| msg(err.to_string()))
@@ -1401,7 +1430,19 @@ pub async fn preview_on_device_voice(app: AppHandle, lang: String) -> Result<Voi
                     }
                     return Err(msg("Voice preview runs in the Android app."));
                 }
-                crate::local::speech::SpokenEngine::System => break,
+                crate::local::speech::SpokenEngine::System => {
+                    let spoken = line.to_string();
+                    match app.state::<NativeBridge>().speak_fallback(&spoken) {
+                        Ok(()) => {
+                            return Ok(VoicePreview {
+                                engine: "android".into(),
+                                sample_rate: 0,
+                                wav_base64: String::new(),
+                            });
+                        }
+                        Err(err) => log::warn!("Android voice preview failed: {err}"),
+                    }
+                }
             }
         }
         Err(msg("Voice preview runs in the Android app."))

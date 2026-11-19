@@ -147,7 +147,7 @@ pub async fn run_session(
         &settings.phonon_models,
     ) {
         return Err(optional_speech_missing(speech).unwrap_or(
-            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice keys.",
+            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice and AI.",
         ).into());
     }
     let paths = model_paths_for(&dir, speech);

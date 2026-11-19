@@ -97,7 +97,7 @@ export function DebugPanel({
     await api.clearUserToken();
     try {
       const current = settings ?? (await api.getSettings());
-      await api.saveSettings({ ...current, onboarded: false });
+      await api.saveSettings({ ...current, onboarded: false, setupStep: "language" });
     } catch {
       // The key is already gone, so setup shows again either way.
     }
@@ -107,7 +107,7 @@ export function DebugPanel({
   const replay = async () => {
     try {
       const current = settings ?? (await api.getSettings());
-      await api.saveSettings({ ...current, onboarded: false });
+      await api.saveSettings({ ...current, onboarded: false, setupStep: "language" });
       onReplayTour();
     } catch (e) {
       setSaved(errorText(e));
