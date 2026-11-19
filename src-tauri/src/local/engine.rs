@@ -29,7 +29,9 @@ impl Engines {
     pub fn load(paths: &ModelPaths, threads: i32) -> Result<Self, String> {
         #[cfg(target_os = "android")]
         {
-            Ok(Self { inner: Native::load(paths, threads)? })
+            Ok(Self {
+                inner: Native::load(paths, threads)?,
+            })
         }
         #[cfg(not(target_os = "android"))]
         {
@@ -191,26 +193,53 @@ impl Native {
             }
         };
         if asr.is_null() {
-            return Err(read_buf(&err).unwrap_or_else(|| "could not load speech recognition".into()));
+            return Err(
+                read_buf(&err).unwrap_or_else(|| "could not load speech recognition".into())
+            );
         }
-        let model = c_path(&paths.tts_model)?;
-        let tts_tokens = c_path(&paths.tts_tokens)?;
-        let data = c_path(&paths.tts_data)?;
-        let tts = unsafe {
-            gv_tts_load(model.as_ptr(), tts_tokens.as_ptr(), data.as_ptr(), threads, err.as_mut_ptr(), err.len() as c_int)
-        };
-        if tts.is_null() {
-            unsafe { gv_asr_free(asr) };
-            return Err(read_buf(&err).unwrap_or_else(|| "could not load the voice".into()));
-        }
+        let tts =
+            if paths.tts_model.is_file() && paths.tts_tokens.is_file() && paths.tts_data.is_dir() {
+                let model = c_path(&paths.tts_model)?;
+                let tts_tokens = c_path(&paths.tts_tokens)?;
+                let data = c_path(&paths.tts_data)?;
+                let loaded = unsafe {
+                    gv_tts_load(
+                        model.as_ptr(),
+                        tts_tokens.as_ptr(),
+                        data.as_ptr(),
+                        threads,
+                        err.as_mut_ptr(),
+                        err.len() as c_int,
+                    )
+                };
+                if loaded.is_null() {
+                    log::warn!(
+                        "piper voice did not load ({})",
+                        read_buf(&err).unwrap_or_else(|| "could not load the voice".into())
+                    );
+                }
+                loaded
+            } else {
+                std::ptr::null_mut()
+            };
         let llm_path = c_path(&paths.llm)?;
-        let llm = unsafe { gv_llm_load(llm_path.as_ptr(), LLM_N_CTX, threads, err.as_mut_ptr(), err.len() as c_int) };
+        let llm = unsafe {
+            gv_llm_load(
+                llm_path.as_ptr(),
+                LLM_N_CTX,
+                threads,
+                err.as_mut_ptr(),
+                err.len() as c_int,
+            )
+        };
         if llm.is_null() {
             unsafe {
                 gv_tts_free(tts);
                 gv_asr_free(asr);
             }
-            return Err(read_buf(&err).unwrap_or_else(|| "could not load the language model".into()));
+            return Err(
+                read_buf(&err).unwrap_or_else(|| "could not load the language model".into())
+            );
         }
         Ok(Self { asr, tts, llm })
     }
@@ -268,13 +297,24 @@ impl Native {
         use ffi::*;
         use std::ffi::CString;
         use std::os::raw::c_int;
+        if self.tts.is_null() {
+            return Err("the Piper voice is not on this phone".into());
+        }
         let text = CString::new(text).map_err(|_| "text contained a null".to_string())?;
         let mut samples = std::ptr::null_mut();
         let mut n: c_int = 0;
         let mut rate: c_int = 0;
         let mut err = err_buf();
         let rc = unsafe {
-            gv_tts_synth(self.tts, text.as_ptr(), &mut samples, &mut n, &mut rate, err.as_mut_ptr(), err.len() as c_int)
+            gv_tts_synth(
+                self.tts,
+                text.as_ptr(),
+                &mut samples,
+                &mut n,
+                &mut rate,
+                err.as_mut_ptr(),
+                err.len() as c_int,
+            )
         };
         if rc != 0 || samples.is_null() || n <= 0 {
             return Err(read_buf(&err).unwrap_or_else(|| "speech synthesis failed".into()));
@@ -315,7 +355,8 @@ fn text_buf(n: usize) -> Vec<std::os::raw::c_char> {
 
 #[cfg(target_os = "android")]
 fn c_path(path: &std::path::Path) -> Result<std::ffi::CString, String> {
-    std::ffi::CString::new(path.to_string_lossy().as_bytes()).map_err(|_| "model path contained a null".into())
+    std::ffi::CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|_| "model path contained a null".into())
 }
 
 /// Piper only. This does not load the language model or start a Talk session.
@@ -340,7 +381,42 @@ pub fn notice_sample_rate() -> i32 {
 }
 
 #[cfg(target_os = "android")]
-pub fn synthesize_notice(model: &str, tokens: &str, data: &str, text: &str) -> Result<Vec<i16>, String> {
+pub fn set_notice_rate(rate: u32) {
+    if rate > 0 {
+        NOTICE_RATE.store(rate, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+pub fn preview_piper(
+    model: &str,
+    tokens: &str,
+    data: &str,
+    text: &str,
+) -> Result<(Vec<f32>, u32), String> {
+    #[cfg(target_os = "android")]
+    {
+        let pcm = synthesize_notice(model, tokens, data, text)?;
+        let rate = notice_sample_rate().max(1) as u32;
+        let floats = pcm
+            .into_iter()
+            .map(|sample| sample as f32 / 32768.0)
+            .collect();
+        return Ok((floats, rate));
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (model, tokens, data, text);
+        Err("Voice preview runs in the Android app.".into())
+    }
+}
+
+#[cfg(target_os = "android")]
+pub fn synthesize_notice(
+    model: &str,
+    tokens: &str,
+    data: &str,
+    text: &str,
+) -> Result<Vec<i16>, String> {
     use ffi::*;
     use std::os::raw::c_int;
     let text = text.trim().chars().take(240).collect::<String>();
@@ -353,9 +429,12 @@ pub fn synthesize_notice(model: &str, tokens: &str, data: &str, text: &str) -> R
         if let Some(old) = guard.take() {
             unsafe { gv_tts_free(old.tts) };
         }
-        let model_c = std::ffi::CString::new(model).map_err(|_| "model path contained a null".to_string())?;
-        let tokens_c = std::ffi::CString::new(tokens).map_err(|_| "tokens path contained a null".to_string())?;
-        let data_c = std::ffi::CString::new(data).map_err(|_| "voice data path contained a null".to_string())?;
+        let model_c =
+            std::ffi::CString::new(model).map_err(|_| "model path contained a null".to_string())?;
+        let tokens_c = std::ffi::CString::new(tokens)
+            .map_err(|_| "tokens path contained a null".to_string())?;
+        let data_c = std::ffi::CString::new(data)
+            .map_err(|_| "voice data path contained a null".to_string())?;
         let mut err = err_buf();
         let tts = unsafe {
             gv_tts_load(
@@ -372,14 +451,25 @@ pub fn synthesize_notice(model: &str, tokens: &str, data: &str, text: &str) -> R
         }
         *guard = Some(HeldVoice { key, tts });
     }
-    let tts = guard.as_ref().map(|held| held.tts).ok_or_else(|| "could not load the voice".to_string())?;
+    let tts = guard
+        .as_ref()
+        .map(|held| held.tts)
+        .ok_or_else(|| "could not load the voice".to_string())?;
     let spoken = std::ffi::CString::new(text).map_err(|_| "text contained a null".to_string())?;
     let mut samples = std::ptr::null_mut();
     let mut n: c_int = 0;
     let mut rate: c_int = 0;
     let mut err = err_buf();
     let rc = unsafe {
-        gv_tts_synth(tts, spoken.as_ptr(), &mut samples, &mut n, &mut rate, err.as_mut_ptr(), err.len() as c_int)
+        gv_tts_synth(
+            tts,
+            spoken.as_ptr(),
+            &mut samples,
+            &mut n,
+            &mut rate,
+            err.as_mut_ptr(),
+            err.len() as c_int,
+        )
     };
     if rc != 0 || samples.is_null() || n <= 0 {
         return Err(read_buf(&err).unwrap_or_else(|| "speech synthesis failed".into()));
@@ -391,7 +481,11 @@ pub fn synthesize_notice(model: &str, tokens: &str, data: &str, text: &str) -> R
     // just under clipping. The phone then plays that at the alarm volume they set.
     let mut pcm = unsafe { std::slice::from_raw_parts(samples, count) }.to_vec();
     crate::notices::amplify_notice_pcm(&mut pcm);
-    let out: Vec<i16> = pcm.iter().copied().map(crate::audio::resample::f32_to_i16).collect();
+    let out: Vec<i16> = pcm
+        .iter()
+        .copied()
+        .map(crate::audio::resample::f32_to_i16)
+        .collect();
     unsafe { gv_free(samples.cast()) };
     if rate > 0 {
         NOTICE_RATE.store(rate as u32, std::sync::atomic::Ordering::Relaxed);

@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, KeyRound, Languages, Music, Package, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { LocalPacks } from "@/components/LocalPacks";
+import { OnDeviceVoice } from "@/components/OnDeviceVoice";
 import { Field } from "@/components/Field";
 import { CurrencyEditor } from "@/components/CurrencyEditor";
 import { PageChrome, RowButton } from "@/components/PageChrome";
@@ -238,11 +239,17 @@ export function MorePage({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Back onClick={() => setSection("menu")} />
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("On-device packs")}</h2>
-        <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
-          {t("Speech, the language model you choose, and the voice. They stay on this phone.")}
-        </p>
-        <LocalPacks showHeading={false} />
+        {settings ? (
+          <OnDeviceVoice
+            settings={settings}
+            onSettings={(next) => {
+              setSettings(next);
+              void api.saveSettings(next).then(setSettings).catch(() => setSettings(next));
+            }}
+          />
+        ) : (
+          <p className="px-1 text-sm text-muted-foreground">{t("Couldn't load the budget. Go back and open Settings again.")}</p>
+        )}
       </div>
     );
   }
@@ -628,7 +635,7 @@ export function MorePage({
           detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("A soft cap on talk time. Off until you set minutes."),
         },
         { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: t("How long Talk waits before only Hey Grok is heard.") },
-        { section: "packs", icon: <Package className="size-4" />, title: t("On-device packs"), detail: t("Speech and the model downloaded to this phone.") },
+        { section: "packs", icon: <Package className="size-4" />, title: t("On-device voice"), detail: t("Pick a language, then an engine, a voice, and a download.") },
       ],
     },
     {

@@ -91,6 +91,17 @@ object RustBridge {
   @JvmStatic
   external fun noticePiperPack(locale: String, phoneLang: String): String?
 
+  external fun planOnDeviceVoice(
+    root: String,
+    locale: String,
+    phoneLang: String,
+    engines: String,
+    models: String,
+    voices: String,
+  ): String?
+
+  external fun synthesizePhonon(root: String, model: String, lang: String, voice: String, text: String): ShortArray?
+
   @JvmStatic
   external fun synthesizeNotice(model: String, tokens: String, dataDir: String, text: String): ShortArray?
 

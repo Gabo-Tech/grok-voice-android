@@ -12,7 +12,8 @@ fn build_android_local() -> Result<(), String> {
     println!("cargo:rerun-if-env-changed=ANDROID_NDK_HOME");
     println!("cargo:rerun-if-env-changed=NDK_HOME");
 
-    let manifest = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?);
+    let manifest =
+        std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?);
     let cache = cache_dir(&manifest);
     std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
 
@@ -21,8 +22,16 @@ fn build_android_local() -> Result<(), String> {
     let llama = prepare_llama(&cache, &ndk)?;
     let jni = manifest.join("gen/android/app/src/main/jniLibs/arm64-v8a");
     std::fs::create_dir_all(&jni).map_err(|e| e.to_string())?;
-    copy_file(&sherpa.join("libsherpa-onnx-c-api.so"), &jni.join("libsherpa-onnx-c-api.so"))?;
-    copy_file(&sherpa.join("libonnxruntime.so"), &jni.join("libonnxruntime.so"))?;
+    copy_file(
+        &sherpa.join("libsherpa-onnx-c-api.so"),
+        &jni.join("libsherpa-onnx-c-api.so"),
+    )?;
+    copy_file(
+        &sherpa.join("libonnxruntime.so"),
+        &jni.join("libonnxruntime.so"),
+    )?;
+    let phonon = prepare_phonon(&cache, &ndk)?;
+    copy_file(&phonon, &jni.join("libptts_ffi.so"))?;
 
     let cxx = find_cxx_shared(&ndk)?;
     copy_file(&cxx, &jni.join("libc++_shared.so"))?;
@@ -61,6 +70,7 @@ fn build_android_local() -> Result<(), String> {
     println!("cargo:rustc-link-lib=dylib=c++_shared");
     println!("cargo:rustc-link-arg=-Wl,--as-needed");
     println!("cargo:rustc-link-lib=dylib=sherpa-onnx-c-api");
+    println!("cargo:rustc-link-lib=dylib=ptts_ffi");
     println!("cargo:rustc-link-lib=dylib=onnxruntime");
     println!("cargo:rustc-link-lib=dylib=log");
     println!("cargo:rustc-link-lib=dylib=android");
@@ -99,7 +109,10 @@ fn find_ndk() -> Result<std::path::PathBuf, String> {
         }
     }
     for candidate in candidates {
-        if candidate.join("build/cmake/android.toolchain.cmake").is_file() {
+        if candidate
+            .join("build/cmake/android.toolchain.cmake")
+            .is_file()
+        {
             return Ok(candidate);
         }
     }
@@ -108,7 +121,11 @@ fn find_ndk() -> Result<std::path::PathBuf, String> {
 
 fn ndk_host() -> &'static str {
     if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") { "darwin-arm64" } else { "darwin-x86_64" }
+        if cfg!(target_arch = "aarch64") {
+            "darwin-arm64"
+        } else {
+            "darwin-x86_64"
+        }
     } else {
         "linux-x86_64"
     }
@@ -143,6 +160,68 @@ fn find_cxx_shared(ndk: &std::path::Path) -> Result<std::path::PathBuf, String> 
 const SHERPA_TAG: &str = "v1.13.8";
 const LLAMA_TAG: &str = "b12140";
 
+/// Official Phonon CPU library, built from the v0.7.1 tag in its own Cargo
+/// project. It is not a dependency of this crate: its `half` version would
+/// clash with the one candle needs.
+fn prepare_phonon(
+    cache: &std::path::Path,
+    ndk: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    let repo = cache.join("xn-ptts");
+    let marker = repo.join("target/aarch64-linux-android/release/libptts_ffi.so");
+    if !marker.is_file() {
+        if repo.join(".git").is_dir() {
+            std::fs::remove_dir_all(&repo).map_err(|err| err.to_string())?;
+        }
+        if !repo.exists() {
+            let status = std::process::Command::new("git")
+                .args([
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    "v0.7.1",
+                    "https://github.com/gradium-ai/xn-ptts.git",
+                ])
+                .arg(&repo)
+                .status()
+                .map_err(|err| format!("git clone phonon: {err}"))?;
+            if !status.success() {
+                return Err("could not clone the Phonon runtime".into());
+            }
+        }
+        let clang = ndk_tool(ndk, "aarch64-linux-android26-clang")?;
+        let ar = ndk_tool(ndk, "llvm-ar")?;
+        let status = std::process::Command::new("cargo")
+            .current_dir(&repo)
+            .env("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER", &clang)
+            .env("CC_aarch64_linux_android", &clang)
+            .env("AR_aarch64_linux_android", &ar)
+            .env(
+                "CFLAGS_aarch64_linux_android",
+                "--target=aarch64-linux-android26",
+            )
+            .args([
+                "build",
+                "-p",
+                "ptts-ffi",
+                "--release",
+                "--target",
+                "aarch64-linux-android",
+            ])
+            .status()
+            .map_err(|err| format!("cargo build phonon: {err}"))?;
+        if !status.success() {
+            return Err("could not build the Phonon runtime for Android".into());
+        }
+    }
+    if !marker.is_file() {
+        return Err("Phonon build did not produce libptts_ffi.so".into());
+    }
+    println!("cargo:rerun-if-changed={}", marker.display());
+    Ok(marker)
+}
+
 fn prepare_sherpa(cache: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let dest = cache.join(format!("sherpa-onnx-{SHERPA_TAG}"));
     let marker = dest.join("libsherpa-onnx-c-api.so");
@@ -159,7 +238,13 @@ fn prepare_sherpa(cache: &std::path::Path) -> Result<std::path::PathBuf, String>
         download(&url, &archive)?;
     }
     let status = std::process::Command::new("tar")
-        .args(["-xjf", archive.to_str().unwrap_or(""), "-C", dest.to_str().unwrap_or(""), "./jniLibs/arm64-v8a"])
+        .args([
+            "-xjf",
+            archive.to_str().unwrap_or(""),
+            "-C",
+            dest.to_str().unwrap_or(""),
+            "./jniLibs/arm64-v8a",
+        ])
         .status()
         .map_err(|e| format!("tar sherpa: {e}"))?;
     if !status.success() {
@@ -167,16 +252,24 @@ fn prepare_sherpa(cache: &std::path::Path) -> Result<std::path::PathBuf, String>
     }
     let extracted = dest.join("jniLibs/arm64-v8a");
     copy_file(&extracted.join("libsherpa-onnx-c-api.so"), &marker)?;
-    copy_file(&extracted.join("libonnxruntime.so"), &dest.join("libonnxruntime.so"))?;
+    copy_file(
+        &extracted.join("libonnxruntime.so"),
+        &dest.join("libonnxruntime.so"),
+    )?;
     if !header.is_file() {
         std::fs::create_dir_all(dest.join("include")).map_err(|e| e.to_string())?;
-        let url = format!("https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/{SHERPA_TAG}/sherpa-onnx/c-api/c-api.h");
+        let url = format!(
+            "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/{SHERPA_TAG}/sherpa-onnx/c-api/c-api.h"
+        );
         download(&url, &header)?;
     }
     Ok(dest)
 }
 
-fn prepare_llama(cache: &std::path::Path, ndk: &std::path::Path) -> Result<std::path::PathBuf, String> {
+fn prepare_llama(
+    cache: &std::path::Path,
+    ndk: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
     let dest = cache.join(format!("llama.cpp-{LLAMA_TAG}"));
     let stamp = dest.join("build/built.stamp");
     if stamp.is_file() {
@@ -185,7 +278,9 @@ fn prepare_llama(cache: &std::path::Path, ndk: &std::path::Path) -> Result<std::
     if !dest.join("CMakeLists.txt").is_file() {
         let archive = cache.join(format!("llama.cpp-{LLAMA_TAG}.tar.gz"));
         if !archive.is_file() {
-            let url = format!("https://github.com/ggml-org/llama.cpp/archive/refs/tags/{LLAMA_TAG}.tar.gz");
+            let url = format!(
+                "https://github.com/ggml-org/llama.cpp/archive/refs/tags/{LLAMA_TAG}.tar.gz"
+            );
             download(&url, &archive)?;
         }
         std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
@@ -205,7 +300,9 @@ fn prepare_llama(cache: &std::path::Path, ndk: &std::path::Path) -> Result<std::
     }
     let toolchain = ndk.join("build/cmake/android.toolchain.cmake");
     let build_dir = dest.join("build");
-    let jobs = std::thread::available_parallelism().map(|n| n.get().to_string()).unwrap_or_else(|_| "4".into());
+    let jobs = std::thread::available_parallelism()
+        .map(|n| n.get().to_string())
+        .unwrap_or_else(|_| "4".into());
     let configure = std::process::Command::new("cmake")
         .arg("-S")
         .arg(&dest)
@@ -251,7 +348,10 @@ fn prepare_llama(cache: &std::path::Path, ndk: &std::path::Path) -> Result<std::
     Ok(dest)
 }
 
-fn collect_static_libs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> Result<(), String> {
+fn collect_static_libs(
+    dir: &std::path::Path,
+    out: &mut Vec<std::path::PathBuf>,
+) -> Result<(), String> {
     if !dir.exists() {
         return Ok(());
     }
@@ -294,7 +394,9 @@ fn copy_file(from: &std::path::Path, to: &std::path::Path) -> Result<(), String>
         std::fs::remove_file(to).map_err(|e| e.to_string())?;
     }
     let bytes = std::fs::read(from).map_err(|e| format!("read {}: {e}", from.display()))?;
-    if bytes.len() < 100_000 && from.file_name().and_then(|name| name.to_str()) == Some("libc++_shared.so") {
+    if bytes.len() < 100_000
+        && from.file_name().and_then(|name| name.to_str()) == Some("libc++_shared.so")
+    {
         return Err(format!("{} is only {} bytes", from.display(), bytes.len()));
     }
     std::fs::write(to, &bytes).map_err(|e| format!("write {}: {e}", to.display()))?;

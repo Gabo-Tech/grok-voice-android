@@ -57,8 +57,18 @@ pub struct Settings {
     pub monthly_budget_minutes: u32,
     /// End the live session when the monthly budget is reached. Off unless the user opts in.
     pub monthly_budget_hard_stop: bool,
-    /// On-device speech: `en` (Moonshine + Piper English), `es` (Spanish packs), or `de` (German packs).
+    /// On-device speech recognition: `en`, `es`, or `de`.
     pub local_speech: String,
+    /// Per-language voice engine: `en=auto,es=phonon,de=piper,pt=auto,ca=auto`.
+    /// Auto uses Phonon when that language has a model, then Piper, then the Android voice.
+    #[serde(default)]
+    pub speech_engines: String,
+    /// Per-language Phonon checkpoint, for example `en=phonon-31m-en`.
+    #[serde(default)]
+    pub phonon_models: String,
+    /// Per-language Phonon catalog voice id. Empty uses the checkpoint's default voice.
+    #[serde(default)]
+    pub phonon_voices: String,
     /// UI locale. Empty follows the phone. `ca-ES-valencia` is Valencian.
     pub locale: String,
     /// `normal` posts the notification. `spoken` also reads it out loud.
@@ -103,6 +113,9 @@ impl Default for Settings {
             monthly_budget_minutes: 0,
             monthly_budget_hard_stop: false,
             local_speech: "en".into(),
+            speech_engines: String::new(),
+            phonon_models: String::new(),
+            phonon_voices: String::new(),
             locale: String::new(),
             notification_delivery: crate::notices::DELIVERY_NORMAL.into(),
             spoken_name: String::new(),
@@ -120,7 +133,11 @@ pub fn safe_model_name(model: &str) -> String {
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
         .take(64)
         .collect();
-    if cleaned.is_empty() { Settings::default().model } else { cleaned }
+    if cleaned.is_empty() {
+        Settings::default().model
+    } else {
+        cleaned
+    }
 }
 
 pub struct SettingsStore {
@@ -138,7 +155,10 @@ impl SettingsStore {
         inner.music_player = crate::music::stored_player(&inner.music_player).to_string();
         inner.voice = crate::voices::xai_voice(&inner.voice);
         inner.openai_voice = crate::voices::openai_voice(&inner.openai_voice);
-        Self { path, inner: RwLock::new(inner) }
+        Self {
+            path,
+            inner: RwLock::new(inner),
+        }
     }
 
     pub fn get(&self) -> Settings {
@@ -151,6 +171,9 @@ impl SettingsStore {
         s.daily_budget_minutes = s.daily_budget_minutes.min(24 * 60);
         s.monthly_budget_minutes = s.monthly_budget_minutes.min(31 * 24 * 60);
         s.local_speech = stored_speech(&s.local_speech);
+        s.speech_engines = crate::local::speech::stored_engines(&s.speech_engines);
+        s.phonon_models = crate::local::speech::stored_models(&s.phonon_models);
+        s.phonon_voices = crate::local::speech::stored_voices(&s.phonon_voices);
         s.locale = if s.locale.trim().is_empty() {
             String::new()
         } else {
@@ -160,7 +183,8 @@ impl SettingsStore {
         s.voice = crate::voices::xai_voice(&s.voice);
         s.openai_voice = crate::voices::openai_voice(&s.openai_voice);
         if s.notification_delivery.trim().is_empty() {
-            s.notification_delivery = crate::notices::stored_delivery(&self.get().notification_delivery);
+            s.notification_delivery =
+                crate::notices::stored_delivery(&self.get().notification_delivery);
         } else {
             s.notification_delivery = crate::notices::stored_delivery(&s.notification_delivery);
         }
@@ -193,15 +217,25 @@ mod tests {
         assert_eq!(stored_custom_theme("nope", graphite), graphite);
         assert_eq!(stored_custom_theme("", graphite), graphite);
 
-        let path = std::env::temp_dir().join(format!("grok-appearance-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("grok-appearance-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         let store = SettingsStore::load(path.clone());
         let first = store.save(Settings::default()).unwrap();
         assert_eq!(first.appearance, "graphite");
-        let stone = store.save(Settings { appearance: "Stone".into(), ..Settings::default() }).unwrap();
+        let stone = store
+            .save(Settings {
+                appearance: "Stone".into(),
+                ..Settings::default()
+            })
+            .unwrap();
         assert_eq!(stone.appearance, "stone");
         let kept = store
-            .save(Settings { appearance: String::new(), daily_budget_minutes: 4, ..store.get() })
+            .save(Settings {
+                appearance: String::new(),
+                daily_budget_minutes: 4,
+                ..store.get()
+            })
             .unwrap();
         assert_eq!(kept.appearance, "stone");
         assert_eq!(kept.daily_budget_minutes, 4);
@@ -210,18 +244,32 @@ mod tests {
 
     #[test]
     fn settings_save_cannot_clear_listen() {
-        let stored = Settings { listen_armed: true, ..Settings::default() };
-        let incoming = Settings { listen_armed: false, daily_budget_minutes: 15, ..Settings::default() };
+        let stored = Settings {
+            listen_armed: true,
+            ..Settings::default()
+        };
+        let incoming = Settings {
+            listen_armed: false,
+            daily_budget_minutes: 15,
+            ..Settings::default()
+        };
         let kept = keep_listen_preference(&stored, incoming);
         assert!(kept.listen_armed);
         assert_eq!(kept.daily_budget_minutes, 15);
-        let off = Settings { listen_armed: false, ..Settings::default() };
+        let off = Settings {
+            listen_armed: false,
+            ..Settings::default()
+        };
         assert!(!keep_listen_preference(&off, stored).listen_armed);
     }
 
     #[test]
     fn voice_settings_change_language_budget_and_keep_listen() {
-        let current = Settings { listen_armed: true, daily_budget_minutes: 0, ..Settings::default() };
+        let current = Settings {
+            listen_armed: true,
+            daily_budget_minutes: 0,
+            ..Settings::default()
+        };
         let edit = edit_settings(&current, &json!({"language": "German", "preferOnDevice": true, "dailyBudgetMinutes": 15, "dailyHardStop": true})).unwrap();
         let next = edit.settings.unwrap();
         assert!(next.listen_armed);
@@ -233,7 +281,8 @@ mod tests {
         assert!(edit.detail.contains("German"));
         assert!(edit.detail.contains("15 minutes"));
 
-        let path = std::env::temp_dir().join(format!("grok-settings-voice-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("grok-settings-voice-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         let store = SettingsStore::load(path.clone());
         store.save(current.clone()).unwrap();
@@ -258,7 +307,11 @@ mod tests {
 
     #[test]
     fn voice_settings_reject_secrets_and_key_admin() {
-        let current = Settings { listen_armed: true, locale: "es".into(), ..Settings::default() };
+        let current = Settings {
+            listen_armed: true,
+            locale: "es".into(),
+            ..Settings::default()
+        };
         for args in [
             json!({"apiKey": "sk-live-secret"}),
             json!({"password": "hunter2"}),
@@ -270,8 +323,14 @@ mod tests {
             let err = edit_settings(&current, &args).unwrap_err();
             assert_eq!(err, SECRET_REFUSAL, "{args}");
         }
-        assert_eq!(edit_settings(&current, &json!({"reorder": ["a", "b"]})).unwrap_err(), KEYS_REFUSAL);
-        assert_eq!(edit_settings(&current, &json!({"deleteKey": "a"})).unwrap_err(), KEYS_REFUSAL);
+        assert_eq!(
+            edit_settings(&current, &json!({"reorder": ["a", "b"]})).unwrap_err(),
+            KEYS_REFUSAL
+        );
+        assert_eq!(
+            edit_settings(&current, &json!({"deleteKey": "a"})).unwrap_err(),
+            KEYS_REFUSAL
+        );
         assert_eq!(current.locale, "es");
         assert!(current.listen_armed);
         let described = describe_settings(&current, &["xAI".into()]);
@@ -280,7 +339,10 @@ mod tests {
 
     #[test]
     fn voice_settings_confirm_listen_off_and_map_birthday_lead() {
-        let armed = Settings { listen_armed: true, ..Settings::default() };
+        let armed = Settings {
+            listen_armed: true,
+            ..Settings::default()
+        };
         let held = edit_settings(&armed, &json!({"listen": false})).unwrap();
         assert!(held.settings.is_none());
         assert_eq!(held.pending, Some("listen-off-ask"));
@@ -290,7 +352,10 @@ mod tests {
         assert_eq!(off.listen, Some(false));
         assert!(off.pending.is_none());
 
-        let quiet = Settings { listen_armed: false, ..Settings::default() };
+        let quiet = Settings {
+            listen_armed: false,
+            ..Settings::default()
+        };
         let on = edit_settings(&quiet, &json!({"listen": true, "quietGapSeconds": 25, "monthlyBudget": "300", "localSpeech": "German"})).unwrap();
         let next = on.settings.unwrap();
         assert!(next.listen_armed);
@@ -302,18 +367,27 @@ mod tests {
         let spanish_settings = spanish.settings.unwrap();
         assert_eq!(spanish_settings.local_speech, "es");
         assert!(spanish.detail.contains("Spanish"));
-        assert!(describe_settings(&spanish_settings, &[]).to_string().contains("\"localSpeech\":\"Spanish\""));
+        assert!(
+            describe_settings(&spanish_settings, &[])
+                .to_string()
+                .contains("\"localSpeech\":\"Spanish\"")
+        );
         assert!(
             edit_settings(&quiet, &json!({"localSpeech": "Portuguese"}))
                 .unwrap_err()
                 .contains("Spanish")
         );
-        let speech_path = std::env::temp_dir().join(format!("grok-settings-speech-{}.json", std::process::id()));
+        let speech_path =
+            std::env::temp_dir().join(format!("grok-settings-speech-{}.json", std::process::id()));
         let _ = fs::remove_file(&speech_path);
         let speech_store = SettingsStore::load(speech_path.clone());
         let saved_speech = speech_store.save(spanish_settings).unwrap();
         assert_eq!(saved_speech.local_speech, "es");
-        assert!(fs::read_to_string(&speech_path).unwrap().contains("\"localSpeech\": \"es\""));
+        assert!(
+            fs::read_to_string(&speech_path)
+                .unwrap()
+                .contains("\"localSpeech\": \"es\"")
+        );
         let mut other = saved_speech.clone();
         other.local_speech = "pt".into();
         assert_eq!(speech_store.save(other).unwrap().local_speech, "en");
@@ -342,7 +416,8 @@ mod tests {
         assert_eq!(parsed.locale, "de");
         assert_eq!(Settings::default().notification_delivery, "normal");
 
-        let path = std::env::temp_dir().join(format!("grok-settings-alerts-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("grok-settings-alerts-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         fs::write(&path, raw).unwrap();
         let store = SettingsStore::load(path.clone());
@@ -352,7 +427,8 @@ mod tests {
         assert_eq!(store.get().daily_budget_minutes, 4);
         assert_eq!(store.get().voice, Settings::default().voice);
 
-        let spoken = edit_settings(&store.get(), &json!({"notificationDelivery": "spoken"})).unwrap();
+        let spoken =
+            edit_settings(&store.get(), &json!({"notificationDelivery": "spoken"})).unwrap();
         assert!(spoken.pending.is_none());
         assert!(spoken.listen.is_none());
         let next = spoken.settings.unwrap();
@@ -360,7 +436,9 @@ mod tests {
         assert!(next.listen_armed);
         store.save(next).unwrap();
 
-        let partial: Settings = serde_json::from_str(r#"{"dailyBudgetMinutes":9,"locale":"es","listenArmed":false}"#).unwrap();
+        let partial: Settings =
+            serde_json::from_str(r#"{"dailyBudgetMinutes":9,"locale":"es","listenArmed":false}"#)
+                .unwrap();
         assert!(partial.notification_delivery.is_empty());
         let kept = keep_listen_preference(&store.get(), partial);
         let saved = store.save(kept).unwrap();
@@ -385,27 +463,52 @@ mod tests {
         let named = edit_settings(&again.get(), &json!({"spokenName": "  Gabriel  "})).unwrap();
         assert_eq!(named.settings.unwrap().spoken_name, "Gabriel");
         let kept = edit_settings(
-            &Settings { spoken_name: "Gabriel".into(), ..Settings::default() },
+            &Settings {
+                spoken_name: "Gabriel".into(),
+                ..Settings::default()
+            },
             &json!({"notificationDelivery": "spoken"}),
         )
         .unwrap();
         assert_eq!(kept.settings.unwrap().spoken_name, "Gabriel");
         let cleared = edit_settings(
-            &Settings { spoken_name: "Gabriel".into(), ..Settings::default() },
+            &Settings {
+                spoken_name: "Gabriel".into(),
+                ..Settings::default()
+            },
             &json!({"spokenName": ""}),
         )
         .unwrap();
         assert!(cleared.settings.unwrap().spoken_name.is_empty());
         assert_eq!(crate::notices::sanitize_spoken_name("Gabriel"), "Gabriel");
-        assert!(describe_settings(&Settings { spoken_name: "Gabriel".into(), ..Settings::default() }, &[]).to_string().contains("Gabriel"));
-        assert!(!describe_settings(&Settings::default(), &[]).to_string().contains("Gabriel"));
+        assert!(
+            describe_settings(
+                &Settings {
+                    spoken_name: "Gabriel".into(),
+                    ..Settings::default()
+                },
+                &[]
+            )
+            .to_string()
+            .contains("Gabriel")
+        );
+        assert!(
+            !describe_settings(&Settings::default(), &[])
+                .to_string()
+                .contains("Gabriel")
+        );
         let _ = fs::remove_file(&path);
     }
 
     #[test]
     fn voice_names_follow_the_provider_and_unknown_values_migrate() {
-        let stale = Settings { voice: "NotAVoice".into(), openai_voice: "fable".into(), ..Settings::default() };
-        let path = std::env::temp_dir().join(format!("grok-settings-voices-{}.json", std::process::id()));
+        let stale = Settings {
+            voice: "NotAVoice".into(),
+            openai_voice: "fable".into(),
+            ..Settings::default()
+        };
+        let path =
+            std::env::temp_dir().join(format!("grok-settings-voices-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         fs::write(&path, serde_json::to_vec_pretty(&stale).unwrap()).unwrap();
         let store = SettingsStore::load(path.clone());
@@ -423,7 +526,14 @@ mod tests {
         assert_eq!(explicit.settings.unwrap().openai_voice, "ash");
         assert!(edit_settings(&store.get(), &json!({"voice": "not-a-voice"})).is_err());
         assert!(edit_settings(&store.get(), &json!({"openaiVoice": "eve"})).is_err());
-        let described = describe_settings(&Settings { voice: "rex".into(), openai_voice: "coral".into(), ..Settings::default() }, &[]);
+        let described = describe_settings(
+            &Settings {
+                voice: "rex".into(),
+                openai_voice: "coral".into(),
+                ..Settings::default()
+            },
+            &[],
+        );
         let text = described.to_string();
         assert!(text.contains("\"voice\":\"rex\""));
         assert!(text.contains("\"openaiVoice\":\"coral\""));
@@ -450,7 +560,11 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
     } else {
         format!("Voice order: {}.", voice_order.join(", then "))
     };
-    let prefer = if settings.prefer_local_on_wake { "on" } else { "off" };
+    let prefer = if settings.prefer_local_on_wake {
+        "on"
+    } else {
+        "off"
+    };
     let listen = if settings.listen_armed { "on" } else { "off" };
     let alerts = if settings.notification_delivery == crate::notices::DELIVERY_SPOKEN {
         "spoken out loud"
@@ -499,7 +613,10 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
 
 /// Apply one Talk settings change. Starts from the saved settings, so a missing
 /// field cannot clear Listen. Secrets and key order are refused.
-pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<SettingsEdit, String> {
+pub fn edit_settings(
+    current: &Settings,
+    args: &Value,
+) -> std::result::Result<SettingsEdit, String> {
     let Some(object) = args.as_object() else {
         return Err("Say which setting to change.".into());
     };
@@ -512,7 +629,11 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     if object.keys().any(|key| is_key_admin(key)) {
         return Err(KEYS_REFUSAL.into());
     }
-    let unknown: Vec<&str> = object.keys().filter(|key| !known_setting(key)).map(|key| key.as_str()).collect();
+    let unknown: Vec<&str> = object
+        .keys()
+        .filter(|key| !known_setting(key))
+        .map(|key| key.as_str())
+        .collect();
     if !unknown.is_empty() {
         return Err(format!(
             "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, spoken name, the default music player, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
@@ -545,9 +666,15 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     if let Some(speech) = first_string(args, &["localSpeech", "speech"]) {
         next.local_speech = parse_speech(&speech)?;
         changed = true;
-        notes.push(format!("Local speech is {}.", speech_name(&next.local_speech)));
+        notes.push(format!(
+            "Local speech is {}.",
+            speech_name(&next.local_speech)
+        ));
     }
-    if let Some(on) = first_bool(args, &["preferOnDevice", "preferLocal", "preferLocalOnWake"]) {
+    if let Some(on) = first_bool(
+        args,
+        &["preferOnDevice", "preferLocal", "preferLocalOnWake"],
+    ) {
         next.prefer_local_on_wake = on;
         changed = true;
         notes.push(format!("Prefer on device is {}.", on_off(on)));
@@ -563,12 +690,18 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
             next.daily_budget_hard_stop = false;
         }
         changed = true;
-        notes.push(format!("Daily voice budget is {}.", minutes_phrase(minutes)));
+        notes.push(format!(
+            "Daily voice budget is {}.",
+            minutes_phrase(minutes)
+        ));
     }
     if let Some(on) = first_bool(args, &["dailyHardStop", "dailyBudgetHardStop"]) {
         next.daily_budget_hard_stop = on && next.daily_budget_minutes > 0;
         changed = true;
-        notes.push(format!("Daily hard stop is {}.", on_off(next.daily_budget_hard_stop)));
+        notes.push(format!(
+            "Daily hard stop is {}.",
+            on_off(next.daily_budget_hard_stop)
+        ));
     }
     if let Some(minutes) = first_u32(args, &["monthlyBudgetMinutes", "monthlyBudget"]) {
         next.monthly_budget_minutes = minutes;
@@ -576,12 +709,18 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
             next.monthly_budget_hard_stop = false;
         }
         changed = true;
-        notes.push(format!("Monthly voice budget is {}.", minutes_phrase(minutes)));
+        notes.push(format!(
+            "Monthly voice budget is {}.",
+            minutes_phrase(minutes)
+        ));
     }
     if let Some(on) = first_bool(args, &["monthlyHardStop", "monthlyBudgetHardStop"]) {
         next.monthly_budget_hard_stop = on && next.monthly_budget_minutes > 0;
         changed = true;
-        notes.push(format!("Monthly hard stop is {}.", on_off(next.monthly_budget_hard_stop)));
+        notes.push(format!(
+            "Monthly hard stop is {}.",
+            on_off(next.monthly_budget_hard_stop)
+        ));
     }
     if let Some(voice) = arg_string(args.get("voice")).filter(|voice| !voice.is_empty()) {
         match crate::voices::assign_voice(&voice)? {
@@ -637,7 +776,10 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
         };
         notes.push(format!("Notifications are {alerts}."));
     }
-    if args.get("spokenName").is_some() || args.get("userName").is_some() || args.get("myName").is_some() {
+    if args.get("spokenName").is_some()
+        || args.get("userName").is_some()
+        || args.get("myName").is_some()
+    {
         let raw = first_string(args, &["spokenName", "userName", "myName"]).unwrap_or_default();
         next.spoken_name = crate::notices::sanitize_spoken_name(&raw);
         changed = true;
@@ -650,7 +792,10 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     if let Some(player) = first_string(args, &["musicPlayer", "defaultMusicPlayer", "music"]) {
         next.music_player = crate::music::parse_player(&player)?.to_string();
         changed = true;
-        notes.push(format!("Default music player is {}.", crate::music::player_name(&next.music_player)));
+        notes.push(format!(
+            "Default music player is {}.",
+            crate::music::player_name(&next.music_player)
+        ));
     }
 
     let mut pending = None;
@@ -672,7 +817,11 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
     if wipe && confirmed {
         notes.push("Wiped pinned facts and recent on-device notes. Notes, People, Finance, and voice keys stay.".into());
     }
-    if pending.is_some() && notes.iter().all(|note| note.is_empty()) && !changed && person_lead.is_none() {
+    if pending.is_some()
+        && notes.iter().all(|note| note.is_empty())
+        && !changed
+        && person_lead.is_none()
+    {
         notes.clear();
     }
     if !changed && pending.is_none() && person_lead.is_none() && !wipe && notes.is_empty() {
@@ -690,17 +839,21 @@ pub fn edit_settings(current: &Settings, args: &Value) -> std::result::Result<Se
 
 fn notification_mode_from(args: &Value) -> std::result::Result<Option<String>, String> {
     let mut mode = None;
-    if let Some(text) = first_string(args, &["notificationDelivery", "notificationMode", "notifications"]) {
+    if let Some(text) = first_string(
+        args,
+        &["notificationDelivery", "notificationMode", "notifications"],
+    ) {
         mode = Some(crate::notices::parse_delivery(&text)?);
     }
-    if let Some(on) = first_bool(args, &["speakNotifications", "readAloud", "spokenNotifications"]) {
-        mode = Some(
-            if on {
-                crate::notices::DELIVERY_SPOKEN.to_string()
-            } else {
-                crate::notices::DELIVERY_NORMAL.to_string()
-            },
-        );
+    if let Some(on) = first_bool(
+        args,
+        &["speakNotifications", "readAloud", "spokenNotifications"],
+    ) {
+        mode = Some(if on {
+            crate::notices::DELIVERY_SPOKEN.to_string()
+        } else {
+            crate::notices::DELIVERY_NORMAL.to_string()
+        });
     }
     Ok(mode)
 }
@@ -712,13 +865,21 @@ fn person_lead_from(args: &Value) -> std::result::Result<Option<PersonLead>, Str
         return Err("Notify can be from the day itself up to 30 days before.".into());
     }
     let label = first_string(args, &["dateLabel", "label"]).unwrap_or_else(|| {
-        if args.get("birthdayLeadDays").is_some() || args.get("notifyDays").is_some() { "birthday".into() } else { "birthday".into() }
+        if args.get("birthdayLeadDays").is_some() || args.get("notifyDays").is_some() {
+            "birthday".into()
+        } else {
+            "birthday".into()
+        }
     });
     let label = match label.trim().to_ascii_lowercase().as_str() {
         "" | "birthday" | "birthdays" | "bday" => "birthday".into(),
         "anniversary" | "anniversaries" => "anniversary".into(),
         "custom" | "all" | "dates" => {
-            if label.eq_ignore_ascii_case("custom") { "custom".into() } else { String::new() }
+            if label.eq_ignore_ascii_case("custom") {
+                "custom".into()
+            } else {
+                String::new()
+            }
         }
         other => other.to_string(),
     };
@@ -780,7 +941,17 @@ fn is_secret_key(key: &str) -> bool {
     let key = fold_key(key);
     matches!(
         key.as_str(),
-        "key" | "apikey" | "token" | "secret" | "password" | "passphrase" | "backuppassword" | "voicekey" | "openaikey" | "xaikey" | "credentials"
+        "key"
+            | "apikey"
+            | "token"
+            | "secret"
+            | "password"
+            | "passphrase"
+            | "backuppassword"
+            | "voicekey"
+            | "openaikey"
+            | "xaikey"
+            | "credentials"
     ) || key.contains("apikey")
         || key.contains("password")
         || key.contains("passphrase")
@@ -789,11 +960,17 @@ fn is_secret_key(key: &str) -> bool {
 
 fn is_key_admin(key: &str) -> bool {
     let key = fold_key(key);
-    matches!(key.as_str(), "reorder" | "accountids" | "removekey" | "deletekey" | "voicekeys" | "clearkey" | "signout")
+    matches!(
+        key.as_str(),
+        "reorder" | "accountids" | "removekey" | "deletekey" | "voicekeys" | "clearkey" | "signout"
+    )
 }
 
 fn fold_key(key: &str) -> String {
-    key.chars().filter(|c| c.is_ascii_alphanumeric()).flat_map(|c| c.to_lowercase()).collect()
+    key.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
 }
 
 fn value_looks_secret(value: &Value) -> bool {
@@ -818,13 +995,21 @@ fn parse_locale(value: &str) -> std::result::Result<String, String> {
         "es" | "spanish" | "espanol" | "español" => "es".into(),
         "de" | "german" | "deutsch" => "de".into(),
         "pt" | "portuguese" | "portugues" | "português" => "pt".into(),
-        "valencian" | "valencia" | "ca" | "ca-es-valencia" | "ca_es_valencia" => "ca-ES-valencia".into(),
-        _ => return Err("Language can be English, Spanish, German, Portuguese, Valencian, or follow the phone.".into()),
+        "valencian" | "valencia" | "ca" | "ca-es-valencia" | "ca_es_valencia" => {
+            "ca-ES-valencia".into()
+        }
+        _ => return Err(
+            "Language can be English, Spanish, German, Portuguese, Valencian, or follow the phone."
+                .into(),
+        ),
     };
     Ok(locale)
 }
 
-const THEMES: &[&str] = &["graphite", "ink", "stone", "midnight", "carbon", "ivory", "sand", "forest", "plum", "system", "custom"];
+const THEMES: &[&str] = &[
+    "graphite", "ink", "stone", "midnight", "carbon", "ivory", "sand", "forest", "plum", "system",
+    "custom",
+];
 
 /// Empty keeps a saved choice. Unknown values, including a first launch, are Graphite.
 pub fn stored_appearance(incoming: &str, previous: &str) -> String {
@@ -848,7 +1033,11 @@ pub fn stored_custom_theme(incoming: &str, previous: &str) -> String {
 }
 
 fn normalize_custom(value: &str) -> Option<String> {
-    let parts: Vec<&str> = value.split(',').map(str::trim).filter(|part| !part.is_empty()).collect();
+    let parts: Vec<&str> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
     if parts.len() != 7 {
         return None;
     }
@@ -900,7 +1089,11 @@ fn language_name(locale: &str) -> &'static str {
 }
 
 fn minutes_phrase(minutes: u32) -> String {
-    if minutes == 0 { "off".into() } else { format!("{minutes} minutes") }
+    if minutes == 0 {
+        "off".into()
+    } else {
+        format!("{minutes} minutes")
+    }
 }
 
 fn on_off(on: bool) -> &'static str {
@@ -957,7 +1150,11 @@ fn arg_u32(value: Option<&Value>) -> Option<u32> {
             if text.trim().eq_ignore_ascii_case("off") {
                 return Some(0);
             }
-            let digits: String = text.chars().skip_while(|c| !c.is_ascii_digit()).take_while(|c| c.is_ascii_digit()).collect();
+            let digits: String = text
+                .chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             digits.parse().ok()
         }
         _ => None,

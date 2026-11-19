@@ -24,6 +24,7 @@ use crate::{
 const CLIENT: &[u8] = b"grok-voice";
 const API_KEY: &[u8] = b"xai_api_key";
 const ACCOUNTS: &[u8] = b"voice_accounts";
+const HF_TOKEN: &[u8] = b"hf_token";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +70,11 @@ fn verr(e: impl std::fmt::Display) -> Error {
 
 impl Vault {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, inner: Mutex::new(None), security_level: Mutex::new(None) }
+        Self {
+            dir,
+            inner: Mutex::new(None),
+            security_level: Mutex::new(None),
+        }
     }
 
     fn snapshot_path(&self) -> PathBuf {
@@ -193,12 +198,21 @@ impl Vault {
             }
             Ok(list
                 .into_iter()
-                .map(|a| VoiceSecret { id: a.id, provider: a.provider, secret: a.secret })
+                .map(|a| VoiceSecret {
+                    id: a.id,
+                    provider: a.provider,
+                    secret: a.secret,
+                })
                 .collect())
         })
     }
 
-    pub fn add_account(&self, bridge: &NativeBridge, provider: &str, secret: &str) -> Result<Vec<VoiceAccount>> {
+    pub fn add_account(
+        &self,
+        bridge: &NativeBridge,
+        provider: &str,
+        secret: &str,
+    ) -> Result<Vec<VoiceAccount>> {
         let provider = provider.trim().to_string();
         let secret = secret.trim().to_string();
         self.with_store(bridge, |sh, client| {
@@ -235,7 +249,11 @@ impl Vault {
                 if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
                     let legacy = String::from_utf8_lossy(&bytes).trim().to_string();
                     if !legacy.is_empty() {
-                        list.push(StoredAccount { id: "legacy-xai".into(), provider: "xai".into(), secret: legacy });
+                        list.push(StoredAccount {
+                            id: "legacy-xai".into(),
+                            provider: "xai".into(),
+                            secret: legacy,
+                        });
                     }
                 }
             }
@@ -250,7 +268,13 @@ impl Vault {
         })
     }
 
-    pub fn update_account(&self, bridge: &NativeBridge, id: &str, provider: &str, secret: &str) -> Result<Vec<VoiceAccount>> {
+    pub fn update_account(
+        &self,
+        bridge: &NativeBridge,
+        id: &str,
+        provider: &str,
+        secret: &str,
+    ) -> Result<Vec<VoiceAccount>> {
         let provider = provider.trim().to_string();
         let secret = secret.trim().to_string();
         self.with_store(bridge, |sh, client| {
@@ -259,14 +283,24 @@ impl Vault {
                 if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
                     let legacy = String::from_utf8_lossy(&bytes).trim().to_string();
                     if !legacy.is_empty() {
-                        list.push(StoredAccount { id: "legacy-xai".into(), provider: "xai".into(), secret: legacy });
+                        list.push(StoredAccount {
+                            id: "legacy-xai".into(),
+                            provider: "xai".into(),
+                            secret: legacy,
+                        });
                     }
                 }
             }
             let Some(index) = list.iter().position(|account| account.id == id) else {
-                return Err(crate::error::msg("That voice key is no longer on this phone."));
+                return Err(crate::error::msg(
+                    "That voice key is no longer on this phone.",
+                ));
             };
-            if provider == "local" && list.iter().any(|account| account.provider == "local" && account.id != id) {
+            if provider == "local"
+                && list
+                    .iter()
+                    .any(|account| account.provider == "local" && account.id != id)
+            {
                 return Err(crate::error::msg("On device is already in the list."));
             }
             if provider != "local" && secret.is_empty() && provider != list[index].provider {
@@ -286,9 +320,15 @@ impl Vault {
         })
     }
 
-    pub fn reorder_accounts(&self, bridge: &NativeBridge, ids: &[String]) -> Result<Vec<VoiceAccount>> {
+    pub fn reorder_accounts(
+        &self,
+        bridge: &NativeBridge,
+        ids: &[String],
+    ) -> Result<Vec<VoiceAccount>> {
         if ids.is_empty() {
-            return Ok(public_accounts(&self.with_store(bridge, |_sh, client| read_accounts(client))?));
+            return Ok(public_accounts(
+                &self.with_store(bridge, |_sh, client| read_accounts(client))?,
+            ));
         }
         self.with_store(bridge, |sh, client| {
             let list = read_accounts(client)?;
@@ -298,19 +338,32 @@ impl Vault {
         })
     }
 
-    pub fn move_account(&self, bridge: &NativeBridge, id: &str, up: bool) -> Result<Vec<VoiceAccount>> {
+    pub fn move_account(
+        &self,
+        bridge: &NativeBridge,
+        id: &str,
+        up: bool,
+    ) -> Result<Vec<VoiceAccount>> {
         self.with_store(bridge, |sh, client| {
             let mut list = read_accounts(client)?;
             if list.is_empty() {
                 if let Some(bytes) = client.store().get(API_KEY).map_err(verr)? {
                     let legacy = String::from_utf8_lossy(&bytes).trim().to_string();
                     if !legacy.is_empty() {
-                        list.push(StoredAccount { id: "legacy-xai".into(), provider: "xai".into(), secret: legacy });
+                        list.push(StoredAccount {
+                            id: "legacy-xai".into(),
+                            provider: "xai".into(),
+                            secret: legacy,
+                        });
                     }
                 }
             }
             if let Some(i) = list.iter().position(|a| a.id == id) {
-                let j = if up { i.saturating_sub(1) } else { (i + 1).min(list.len().saturating_sub(1)) };
+                let j = if up {
+                    i.saturating_sub(1)
+                } else {
+                    (i + 1).min(list.len().saturating_sub(1))
+                };
                 if i != j {
                     list.swap(i, j);
                 }
@@ -321,7 +374,11 @@ impl Vault {
     }
 
     /// Replaces the vault account list. Used only when a backup restore explicitly opts in.
-    pub fn replace_secrets(&self, bridge: &NativeBridge, rows: &[(String, String, String)]) -> Result<()> {
+    pub fn replace_secrets(
+        &self,
+        bridge: &NativeBridge,
+        rows: &[(String, String, String)],
+    ) -> Result<()> {
         let list: Vec<StoredAccount> = rows
             .iter()
             .filter(|(_, _, secret)| !secret.trim().is_empty())
@@ -344,7 +401,10 @@ impl Vault {
 
     pub fn status(&self, bridge: &NativeBridge) -> Result<AuthStatus> {
         let accounts = self.accounts(bridge)?;
-        let first = accounts.iter().find(|a| a.provider == "xai").or(accounts.first());
+        let first = accounts
+            .iter()
+            .find(|a| a.provider == "xai")
+            .or(accounts.first());
         Ok(AuthStatus {
             has_key: !accounts.is_empty(),
             key_hint: first.map(|a| key_hint(&a.secret)),
@@ -360,6 +420,40 @@ impl Vault {
         })
     }
 
+    pub fn set_hf_token(&self, bridge: &NativeBridge, token: &str) -> Result<()> {
+        let token = normalize_hf_token(token)?;
+        self.with_store(bridge, |sh, client| {
+            client
+                .store()
+                .insert(HF_TOKEN.to_vec(), token.as_bytes().to_vec(), None)
+                .map_err(verr)?;
+            sh.write_client(CLIENT).map_err(verr)?;
+            sh.save().map_err(verr)
+        })
+    }
+
+    pub fn hf_token(&self, bridge: &NativeBridge) -> Result<Option<Zeroizing<String>>> {
+        self.with_store(bridge, |_, client| {
+            let Some(bytes) = client.store().get(HF_TOKEN).map_err(verr)? else {
+                return Ok(None);
+            };
+            let token = String::from_utf8_lossy(&bytes).trim().to_string();
+            if token.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(Zeroizing::new(token)))
+            }
+        })
+    }
+
+    pub fn delete_hf_token(&self, bridge: &NativeBridge) -> Result<()> {
+        self.with_store(bridge, |sh, client| {
+            let _ = client.store().delete(HF_TOKEN);
+            sh.write_client(CLIENT).map_err(verr)?;
+            sh.save().map_err(verr)
+        })
+    }
+
     pub fn security_level(&self) -> Option<String> {
         self.security_level.lock().unwrap().clone()
     }
@@ -372,9 +466,16 @@ fn read_accounts(client: &iota_stronghold::Client) -> Result<Vec<StoredAccount>>
     Ok(serde_json::from_slice(&bytes).unwrap_or_default())
 }
 
-fn write_accounts(sh: &Stronghold, client: &iota_stronghold::Client, list: &[StoredAccount]) -> Result<()> {
+fn write_accounts(
+    sh: &Stronghold,
+    client: &iota_stronghold::Client,
+    list: &[StoredAccount],
+) -> Result<()> {
     let bytes = serde_json::to_vec(list).map_err(|e| verr(e.to_string()))?;
-    client.store().insert(ACCOUNTS.to_vec(), bytes, None).map_err(verr)?;
+    client
+        .store()
+        .insert(ACCOUNTS.to_vec(), bytes, None)
+        .map_err(verr)?;
     if let Some(xai) = list.iter().find(|a| a.provider == "xai") {
         client
             .store()
@@ -414,8 +515,35 @@ fn order_accounts(list: &[StoredAccount], ids: &[String]) -> Vec<StoredAccount> 
     out
 }
 
+pub fn normalize_hf_token(token: &str) -> Result<String> {
+    let token = token.trim();
+    if token.is_empty() {
+        return Err(crate::error::msg(
+            "Paste a Hugging Face token, or leave the field empty.",
+        ));
+    }
+    if token.len() < 8
+        || token.len() > 200
+        || token
+            .chars()
+            .any(|ch| ch.is_whitespace() || ch.is_control())
+    {
+        return Err(crate::error::msg(
+            "That Hugging Face token does not look usable.",
+        ));
+    }
+    Ok(token.to_string())
+}
+
 pub fn key_hint(key: &str) -> String {
-    let tail: String = key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
+    let tail: String = key
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     let head: String = key.chars().take(4).collect();
     format!("{head}…{tail}")
 }
@@ -425,18 +553,33 @@ mod tests {
     use super::*;
 
     fn row(id: &str, provider: &str) -> StoredAccount {
-        StoredAccount { id: id.into(), provider: provider.into(), secret: "secret-value".into() }
+        StoredAccount {
+            id: id.into(),
+            provider: provider.into(),
+            secret: "secret-value".into(),
+        }
     }
 
     #[test]
     fn order_accounts_follows_the_saved_ids_and_keeps_the_rest() {
         let list = vec![row("a", "xai"), row("b", "openai"), row("c", "local")];
         let ordered = order_accounts(&list, &["c".into(), "a".into()]);
-        assert_eq!(ordered.iter().map(|account| account.id.as_str()).collect::<Vec<_>>(), vec!["c", "a", "b"]);
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|account| account.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c", "a", "b"]
+        );
         let same = order_accounts(&list, &[]);
         assert_eq!(same.len(), 3);
         let unknown = order_accounts(&list, &["missing".into(), "b".into(), "b".into()]);
-        assert_eq!(unknown.iter().map(|account| account.id.as_str()).collect::<Vec<_>>(), vec!["b", "a", "c"]);
+        assert_eq!(
+            unknown
+                .iter()
+                .map(|account| account.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["b", "a", "c"]
+        );
     }
 }
-

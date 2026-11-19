@@ -157,7 +157,9 @@ fn chat_tools() -> Value {
 fn text_uses_local(app: &AppHandle) -> bool {
     let settings = app.state::<crate::settings::SettingsStore>().get();
     let ready = crate::local::model_dir(app)
-        .map(|dir| crate::local::packs_ready(&dir))
+        .map(|dir| {
+            crate::local::talk_ready(&dir, &settings.local_speech, &settings.speech_engines, &settings.phonon_models)
+        })
         .unwrap_or(false);
     let Ok(accounts) = app.state::<Vault>().accounts(&app.state::<NativeBridge>()) else {
         return false;

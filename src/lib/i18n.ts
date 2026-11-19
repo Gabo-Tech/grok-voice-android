@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import phononStrings from "./phonon-i18n.json";
 
 export type LocaleId = "en" | "es" | "de" | "pt" | "ca-ES-valencia";
 
@@ -4656,6 +4657,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "This amount applies to future unpaid occurrences. Paid ones stay as recorded.": "Este import val per a les pròximes sense pagar. Les pagades es queden com estaven.",
   },
 };
+
+for (const locale of Object.keys(phononStrings) as Array<keyof typeof phononStrings>) {
+  Object.assign(catalogs[locale], phononStrings[locale]);
+}
 
 export function resolveLocale(tag: string): LocaleId {
   const norm = tag.trim().replace(/_/g, "-").toLowerCase();

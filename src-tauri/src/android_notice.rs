@@ -61,6 +61,92 @@ pub extern "system" fn Java_ai_grokvoice_app_RustBridge_noticePiperPack<'local>(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_grokvoice_app_RustBridge_planOnDeviceVoice<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    root: JString<'local>,
+    locale: JString<'local>,
+    phone_lang: JString<'local>,
+    engines: JString<'local>,
+    models: JString<'local>,
+    voices: JString<'local>,
+) -> jstring {
+    let root = java_string(&mut env, &root);
+    let locale = java_string(&mut env, &locale);
+    let phone_lang = java_string(&mut env, &phone_lang);
+    let engines = java_string(&mut env, &engines);
+    let models = java_string(&mut env, &models);
+    let voices = java_string(&mut env, &voices);
+    let lang = crate::local::speech::notice_lang(&locale, &phone_lang);
+    let planned =
+        crate::local::speech::plan_in(std::path::Path::new(&root), lang, &engines, &models);
+    let voice = crate::local::speech::voice_pref(&voices, lang);
+    let voice = if voice.is_empty() {
+        "-".to_string()
+    } else {
+        voice
+    };
+    let line = match planned.primary() {
+        crate::local::speech::SpokenEngine::Phonon => {
+            let model = planned.model_id.unwrap_or("");
+            format!("phonon\t{model}\t{lang}\t{voice}")
+        }
+        crate::local::speech::SpokenEngine::Piper => "piper".to_string(),
+        crate::local::speech::SpokenEngine::System => "system".to_string(),
+    };
+    return_string(&mut env, &line)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_grokvoice_app_RustBridge_synthesizePhonon<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    root: JString<'local>,
+    model: JString<'local>,
+    lang: JString<'local>,
+    voice: JString<'local>,
+    text: JString<'local>,
+) -> jshortArray {
+    let root = java_string(&mut env, &root);
+    let model = java_string(&mut env, &model);
+    let lang = java_string(&mut env, &lang);
+    let voice = java_string(&mut env, &voice);
+    let text = java_string(&mut env, &text);
+    let voice = if voice == "-" { String::new() } else { voice };
+    let (mut pcm, rate) = match crate::local::phonon::synthesize(
+        std::path::Path::new(&root),
+        &model,
+        &lang,
+        &voice,
+        &text,
+    ) {
+        Ok(audio) => audio,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    notices::amplify_notice_pcm(&mut pcm);
+    crate::local::set_notice_rate(rate);
+    let out: Vec<i16> = pcm
+        .into_iter()
+        .map(crate::audio::resample::f32_to_i16)
+        .collect();
+    if out.is_empty() || out.len() > i32::MAX as usize {
+        return std::ptr::null_mut();
+    }
+    let array = match env.new_short_array(out.len() as i32) {
+        Ok(array) => array,
+        Err(_) => {
+            let _ = env.exception_clear();
+            return std::ptr::null_mut();
+        }
+    };
+    if env.set_short_array_region(&array, 0, &out).is_err() {
+        let _ = env.exception_clear();
+        return std::ptr::null_mut();
+    }
+    array.into_raw() as jshortArray
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_grokvoice_app_RustBridge_synthesizeNotice<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,

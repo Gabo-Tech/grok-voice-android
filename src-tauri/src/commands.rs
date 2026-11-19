@@ -6,12 +6,12 @@ use zeroize::Zeroizing;
 
 use crate::{
     actions::{self, Agenda, AgendaSnapshot},
-    memory::{Memory, Turn},
-    people::{self, People, Person, PhoneContact},
     audio::engine::{Ctl, Engine},
     diagnostics::{self, DebugSnapshot, Hub, LogLine, now_ms},
     error::{Result, msg},
+    memory::{Memory, Turn},
     native::{NativeBridge, PermissionStatus},
+    people::{self, People, Person, PhoneContact},
     realtime::{http_client, mint_ephemeral, mint_openai},
     settings::{Settings, SettingsStore},
     vault::{AuthStatus, Vault},
@@ -44,7 +44,9 @@ async fn ensure_mic(app: &AppHandle) -> Result<()> {
     })
     .await?;
     if status.microphone != "granted" {
-        return Err(msg("Microphone permission is required for voice. Enable it in Android Settings → Apps → Grok Voice."));
+        return Err(msg(
+            "Microphone permission is required for voice. Enable it in Android Settings → Apps → Grok Voice.",
+        ));
     }
     Ok(())
 }
@@ -66,10 +68,16 @@ async fn ensure_key(app: &AppHandle) -> Result<()> {
 /// Verifies the key against xAI (by minting a realtime client secret), then commits it to
 /// the Keystore-wrapped Stronghold vault. The raw key is dropped from memory afterwards.
 #[tauri::command]
-pub async fn save_user_token(app: AppHandle, hub: State<'_, Arc<Hub>>, token: String) -> Result<AuthStatus> {
+pub async fn save_user_token(
+    app: AppHandle,
+    hub: State<'_, Arc<Hub>>,
+    token: String,
+) -> Result<AuthStatus> {
     let token = Zeroizing::new(token.trim().to_string());
     if token.len() < 20 || token.contains(char::is_whitespace) {
-        return Err(msg("That doesn't look like an xAI API key (expected something like xai-…)."));
+        return Err(msg(
+            "That doesn't look like an xAI API key (expected something like xai-…).",
+        ));
     }
     let probe = mint_ephemeral(&http_client(), &token).await?;
     hub.update(|s| {
@@ -78,7 +86,8 @@ pub async fn save_user_token(app: AppHandle, hub: State<'_, Arc<Hub>>, token: St
     });
     hub.info("API key verified: xAI issued a realtime client secret");
     let status = blocking(app, move |app| {
-        app.state::<Vault>().add_account(&app.state::<NativeBridge>(), "xai", &token)?;
+        app.state::<Vault>()
+            .add_account(&app.state::<NativeBridge>(), "xai", &token)?;
         vault_status(&app)
     })
     .await?;
@@ -90,11 +99,19 @@ pub async fn save_user_token(app: AppHandle, hub: State<'_, Arc<Hub>>, token: St
 }
 
 #[tauri::command]
-pub async fn clear_user_token(app: AppHandle, engine: State<'_, Engine>, hub: State<'_, Arc<Hub>>) -> Result<AuthStatus> {
+pub async fn clear_user_token(
+    app: AppHandle,
+    engine: State<'_, Engine>,
+    hub: State<'_, Arc<Hub>>,
+) -> Result<AuthStatus> {
     engine.send(Ctl::EndSession);
-    engine.send(Ctl::SetWakeEnabled { enabled: false, reason: "signed out" });
+    engine.send(Ctl::SetWakeEnabled {
+        enabled: false,
+        reason: "signed out",
+    });
     let status = blocking(app, |app| {
-        app.state::<Vault>().delete_api_key(&app.state::<NativeBridge>())?;
+        app.state::<Vault>()
+            .delete_api_key(&app.state::<NativeBridge>())?;
         vault_status(&app)
     })
     .await?;
@@ -103,7 +120,11 @@ pub async fn clear_user_token(app: AppHandle, engine: State<'_, Engine>, hub: St
 }
 
 #[tauri::command]
-pub async fn add_voice_account(app: AppHandle, provider: String, secret: String) -> Result<AuthStatus> {
+pub async fn add_voice_account(
+    app: AppHandle,
+    provider: String,
+    secret: String,
+) -> Result<AuthStatus> {
     let provider = provider.trim().to_string();
     let secret = Zeroizing::new(secret.trim().to_string());
     if !matches!(provider.as_str(), "xai" | "openai" | "local") {
@@ -112,7 +133,8 @@ pub async fn add_voice_account(app: AppHandle, provider: String, secret: String)
     if provider == "local" {
         let secret = Zeroizing::new("on-device".to_string());
         return blocking(app, move |app| {
-            app.state::<Vault>().add_account(&app.state::<NativeBridge>(), "local", &secret)?;
+            app.state::<Vault>()
+                .add_account(&app.state::<NativeBridge>(), "local", &secret)?;
             vault_status(&app)
         })
         .await;
@@ -126,7 +148,8 @@ pub async fn add_voice_account(app: AppHandle, provider: String, secret: String)
         mint_openai(&http_client(), &secret).await?;
     }
     blocking(app, move |app| {
-        app.state::<Vault>().add_account(&app.state::<NativeBridge>(), &provider, &secret)?;
+        app.state::<Vault>()
+            .add_account(&app.state::<NativeBridge>(), &provider, &secret)?;
         vault_status(&app)
     })
     .await
@@ -161,7 +184,12 @@ pub async fn update_voice_account(
         replacement
     });
     blocking(app, move |app| {
-        app.state::<Vault>().update_account(&app.state::<NativeBridge>(), &id, &provider, &secret)?;
+        app.state::<Vault>().update_account(
+            &app.state::<NativeBridge>(),
+            &id,
+            &provider,
+            &secret,
+        )?;
         vault_status(&app)
     })
     .await
@@ -170,7 +198,8 @@ pub async fn update_voice_account(
 #[tauri::command]
 pub async fn remove_voice_account(app: AppHandle, id: String) -> Result<AuthStatus> {
     blocking(app, move |app| {
-        app.state::<Vault>().remove_account(&app.state::<NativeBridge>(), &id)?;
+        app.state::<Vault>()
+            .remove_account(&app.state::<NativeBridge>(), &id)?;
         vault_status(&app)
     })
     .await
@@ -180,7 +209,8 @@ pub async fn remove_voice_account(app: AppHandle, id: String) -> Result<AuthStat
 pub async fn reorder_voice_accounts(app: AppHandle, ids: Vec<String>) -> Result<AuthStatus> {
     blocking(app, move |app| {
         if !ids.is_empty() {
-            app.state::<Vault>().reorder_accounts(&app.state::<NativeBridge>(), &ids)?;
+            app.state::<Vault>()
+                .reorder_accounts(&app.state::<NativeBridge>(), &ids)?;
         }
         vault_status(&app)
     })
@@ -190,7 +220,8 @@ pub async fn reorder_voice_accounts(app: AppHandle, ids: Vec<String>) -> Result<
 #[tauri::command]
 pub async fn move_voice_account(app: AppHandle, id: String, up: bool) -> Result<AuthStatus> {
     blocking(app, move |app| {
-        app.state::<Vault>().move_account(&app.state::<NativeBridge>(), &id, up)?;
+        app.state::<Vault>()
+            .move_account(&app.state::<NativeBridge>(), &id, up)?;
         vault_status(&app)
     })
     .await
@@ -212,7 +243,11 @@ pub async fn request_permissions(app: AppHandle) -> Result<PermissionStatus> {
 }
 
 #[tauri::command]
-pub async fn set_wake_enabled(app: AppHandle, engine: State<'_, Engine>, enabled: bool) -> Result<bool> {
+pub async fn set_wake_enabled(
+    app: AppHandle,
+    engine: State<'_, Engine>,
+    enabled: bool,
+) -> Result<bool> {
     if enabled {
         ensure_key(&app).await?;
         ensure_mic(&app).await?;
@@ -222,7 +257,11 @@ pub async fn set_wake_enabled(app: AppHandle, engine: State<'_, Engine>, enabled
     let _ = app.state::<SettingsStore>().save(settings);
     engine.send(Ctl::SetWakeEnabled {
         enabled,
-        reason: if enabled { "user turned Listen on" } else { "user turned Listen off" },
+        reason: if enabled {
+            "user turned Listen on"
+        } else {
+            "user turned Listen off"
+        },
     });
     Ok(enabled)
 }
@@ -261,11 +300,18 @@ pub async fn record_wake_sample(
     .await
     .map_err(|e| msg(e.to_string()))??
     .map_err(msg)?;
-    blocking(app, move |app| app.state::<WakewordFiles>().save_sample(index, &pcm)).await
+    blocking(app, move |app| {
+        app.state::<WakewordFiles>().save_sample(index, &pcm)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn train_wakeword(app: AppHandle, engine: State<'_, Engine>, hub: State<'_, Arc<Hub>>) -> Result<WakewordStatus> {
+pub async fn train_wakeword(
+    app: AppHandle,
+    engine: State<'_, Engine>,
+    hub: State<'_, Arc<Hub>>,
+) -> Result<WakewordStatus> {
     let status = blocking(app, |app| {
         let files = app.state::<WakewordFiles>();
         files.train()?;
@@ -283,7 +329,10 @@ pub fn wakeword_status(files: State<'_, WakewordFiles>) -> WakewordStatus {
 }
 
 #[tauri::command]
-pub fn delete_wakeword(files: State<'_, WakewordFiles>, engine: State<'_, Engine>) -> Result<WakewordStatus> {
+pub fn delete_wakeword(
+    files: State<'_, WakewordFiles>,
+    engine: State<'_, Engine>,
+) -> Result<WakewordStatus> {
     files.delete()?;
     engine.send(Ctl::ReloadWakeword);
     Ok(files.status())
@@ -304,7 +353,11 @@ pub fn listen_health(app: AppHandle) -> ListenHealth {
     let bridge = app.state::<crate::native::NativeBridge>();
     match bridge.listener_status() {
         Ok(status) => ListenHealth {
-            health: if status.health.is_empty() { "off".into() } else { status.health },
+            health: if status.health.is_empty() {
+                "off".into()
+            } else {
+                status.health
+            },
             battery_unrestricted: status.battery_unrestricted,
             armed: status.armed,
             service_running: status.service_running,
@@ -325,7 +378,11 @@ pub fn request_battery_exemption(app: AppHandle) -> Result<ListenHealth> {
     let bridge = app.state::<crate::native::NativeBridge>();
     let status = bridge.request_battery_exemption()?;
     Ok(ListenHealth {
-        health: if status.health.is_empty() { "off".into() } else { status.health },
+        health: if status.health.is_empty() {
+            "off".into()
+        } else {
+            status.health
+        },
         battery_unrestricted: status.battery_unrestricted,
         armed: status.armed,
         service_running: status.service_running,
@@ -345,7 +402,12 @@ pub fn music_players(app: AppHandle) -> Result<serde_json::Value> {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, store: State<'_, SettingsStore>, engine: State<'_, Engine>, settings: Settings) -> Result<Settings> {
+pub fn save_settings(
+    app: AppHandle,
+    store: State<'_, SettingsStore>,
+    engine: State<'_, Engine>,
+    settings: Settings,
+) -> Result<Settings> {
     let settings = crate::settings::keep_listen_preference(&store.get(), settings);
     let saved = store.save(settings)?;
     engine.send(Ctl::ReloadSettings);
@@ -398,7 +460,11 @@ pub async fn debug_snapshot(app: AppHandle) -> Result<DebugInfo> {
                     snapshot.mic_rate = Some(16_000);
                 }
             } else if snapshot.mic_source.is_empty() || snapshot.mic_source == "audiorecord" {
-                snapshot.mic_source = if snapshot.mic_rate.is_some() { "cpal".into() } else { "closed".into() };
+                snapshot.mic_source = if snapshot.mic_rate.is_some() {
+                    "cpal".into()
+                } else {
+                    "closed".into()
+                };
             }
             if !status.last_stop_reason.is_empty() {
                 snapshot.last_stop_reason = Some(status.last_stop_reason);
@@ -453,7 +519,12 @@ pub fn month_events(app: AppHandle, start_ms: i64, end_ms: i64) -> MonthEvents {
 }
 
 #[tauri::command]
-pub fn save_note(app: AppHandle, text: String, id: Option<String>, title: Option<String>) -> Result<AgendaSnapshot> {
+pub fn save_note(
+    app: AppHandle,
+    text: String,
+    id: Option<String>,
+    title: Option<String>,
+) -> Result<AgendaSnapshot> {
     app.state::<Agenda>()
         .upsert_note(&app, id.as_deref(), title.as_deref().unwrap_or(""), &text)
         .map_err(msg)?;
@@ -493,21 +564,38 @@ pub fn save_scheduled(
         until_ms,
         ..actions::ScheduleMeta::default()
     };
-    let has_schedule = !schedule.recurrence.is_empty() || !schedule.weekdays.is_empty() || !schedule.time.is_empty() || !schedule.date.is_empty();
+    let has_schedule = !schedule.recurrence.is_empty()
+        || !schedule.weekdays.is_empty()
+        || !schedule.time.is_empty()
+        || !schedule.date.is_empty();
     let kind = kind.unwrap_or_else(|| "reminder".into());
     let agenda = app.state::<Agenda>();
     let sound = match sound_kind {
         None => None,
         Some(value) => Some(
-            crate::alarm_sound::from_form(&value, sound_ref.as_deref().unwrap_or(""), sound_label.as_deref().unwrap_or(""), &agenda.sounds_dir())
-                .map_err(msg)?,
+            crate::alarm_sound::from_form(
+                &value,
+                sound_ref.as_deref().unwrap_or(""),
+                sound_label.as_deref().unwrap_or(""),
+                &agenda.sounds_dir(),
+            )
+            .map_err(msg)?,
         ),
     };
     if kind != "alarm" && sound.as_ref().is_some_and(|choice| !choice.is_empty()) {
         return Err(msg(crate::alarm_sound::ERR_ALARMS_ONLY));
     }
     agenda
-        .upsert_item(&app, id, &kind, &title, note.as_deref().unwrap_or(""), at_ms, has_schedule.then_some(schedule), sound)
+        .upsert_item(
+            &app,
+            id,
+            &kind,
+            &title,
+            note.as_deref().unwrap_or(""),
+            at_ms,
+            has_schedule.then_some(schedule),
+            sound,
+        )
         .map_err(msg)?;
     Ok(agenda.snapshot(&app))
 }
@@ -529,14 +617,19 @@ pub fn pick_alarm_sound(app: AppHandle) -> Result<AlarmSoundPick> {
         .pick_alarm_sound(&dir.to_string_lossy())
         .map_err(|e| msg(e.to_string()))?;
     crate::alarm_sound::file_choice(&dir, &relative_path, &name).map_err(msg)?;
-    Ok(AlarmSoundPick { relative_path, name })
+    Ok(AlarmSoundPick {
+        relative_path,
+        name,
+    })
 }
 
 #[tauri::command]
 pub fn preview_alarm_sound(app: AppHandle, relative_path: String) -> Result<()> {
     let dir = app.state::<Agenda>().sounds_dir();
     crate::alarm_sound::file_choice(&dir, &relative_path, "").map_err(msg)?;
-    app.state::<crate::native::NativeBridge>().preview_alarm_sound(&relative_path).map_err(|e| msg(e.to_string()))
+    app.state::<crate::native::NativeBridge>()
+        .preview_alarm_sound(&relative_path)
+        .map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]
@@ -565,7 +658,11 @@ pub fn save_event(
 ) -> Result<AgendaSnapshot> {
     let location = location.unwrap_or_default();
     let recurrence = crate::recurrence::normalize_kind(recurrence.as_deref().unwrap_or(""));
-    let recurrence = if recurrence == "none" { String::new() } else { recurrence };
+    let recurrence = if recurrence == "none" {
+        String::new()
+    } else {
+        recurrence
+    };
     let weekdays = weekdays.unwrap_or_default();
     let until_ms = until_ms.unwrap_or(0).max(0);
     let rrule = crate::recurrence::to_rrule(&recurrence, &weekdays, until_ms);
@@ -602,12 +699,19 @@ pub fn save_event(
             .map_err(|e| msg(e.to_string()))?;
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
         if v["ok"] != true {
-            return Err(msg(v["error"].as_str().unwrap_or("Could not update the event.")));
+            return Err(msg(v["error"]
+                .as_str()
+                .unwrap_or("Could not update the event.")));
         }
         return Ok(agenda.snapshot(&app));
     }
 
-    if app.state::<NativeBridge>().check_permissions().ok().is_some_and(|p| p.calendar == "granted") {
+    if app
+        .state::<NativeBridge>()
+        .check_permissions()
+        .ok()
+        .is_some_and(|p| p.calendar == "granted")
+    {
         let raw = app
             .state::<NativeBridge>()
             .create_event(&title, start_ms, end_ms, &location, &rrule)
@@ -643,10 +747,15 @@ pub fn delete_event(app: AppHandle, id: String) -> Result<AgendaSnapshot> {
         agenda.delete_local_event(&app, &id).map_err(msg)?;
         return Ok(agenda.snapshot(&app));
     }
-    let raw = app.state::<NativeBridge>().delete_event(&id).map_err(|e| msg(e.to_string()))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .delete_event(&id)
+        .map_err(|e| msg(e.to_string()))?;
     let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
     if v["ok"] != true {
-        return Err(msg(v["error"].as_str().unwrap_or("Could not delete the event.")));
+        return Err(msg(v["error"]
+            .as_str()
+            .unwrap_or("Could not delete the event.")));
     }
     Ok(agenda.snapshot(&app))
 }
@@ -683,7 +792,9 @@ pub async fn request_contacts(app: AppHandle) -> Result<PermissionStatus> {
 fn phone_payload(raw: &str) -> Result<serde_json::Value> {
     let value: serde_json::Value = serde_json::from_str(raw).map_err(|e| msg(e.to_string()))?;
     if value["ok"] == false {
-        return Err(msg(value["error"].as_str().unwrap_or("Could not read phone contacts.")));
+        return Err(msg(value["error"]
+            .as_str()
+            .unwrap_or("Could not read phone contacts.")));
     }
     Ok(value)
 }
@@ -700,15 +811,24 @@ pub fn list_phone_contacts(app: AppHandle, query: Option<String>) -> Result<Vec<
 
 #[tauri::command]
 pub fn phone_contact(app: AppHandle, id: String) -> Result<PhoneContact> {
-    let raw = app.state::<NativeBridge>().contact_handles(id.trim()).map_err(|e| msg(e.to_string()))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .contact_handles(id.trim())
+        .map_err(|e| msg(e.to_string()))?;
     let value = phone_payload(&raw)?;
-    let rows: Vec<PhoneContact> = serde_json::from_value(value["matches"].clone()).unwrap_or_default();
-    rows.into_iter().next().ok_or_else(|| msg("That phone contact is not on this device."))
+    let rows: Vec<PhoneContact> =
+        serde_json::from_value(value["matches"].clone()).unwrap_or_default();
+    rows.into_iter()
+        .next()
+        .ok_or_else(|| msg("That phone contact is not on this device."))
 }
 
 #[tauri::command]
 pub fn open_phone_contact(app: AppHandle, id: String) -> Result<()> {
-    let raw = app.state::<NativeBridge>().open_phone_contact(id.trim()).map_err(|e| msg(e.to_string()))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .open_phone_contact(id.trim())
+        .map_err(|e| msg(e.to_string()))?;
     phone_payload(&raw)?;
     Ok(())
 }
@@ -722,7 +842,8 @@ pub fn usage_status(app: AppHandle) -> crate::usage::UsageStatus {
         monthly_minutes: settings.monthly_budget_minutes,
         monthly_hard_stop: settings.monthly_budget_hard_stop,
     };
-    app.state::<crate::usage::UsageStore>().status(caps, &settings.locale)
+    app.state::<crate::usage::UsageStore>()
+        .status(caps, &settings.locale)
 }
 
 #[derive(Serialize)]
@@ -734,20 +855,45 @@ pub struct ExportedBackup {
 }
 
 #[tauri::command]
-pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bool>) -> Result<ExportedBackup> {
+pub fn export_backup(
+    app: AppHandle,
+    passphrase: String,
+    include_keys: Option<bool>,
+) -> Result<ExportedBackup> {
     let include_keys = include_keys.unwrap_or(false);
-    let mut payload = crate::backup::Payload::notes_and_people(app.state::<Agenda>().notes(), app.state::<People>().list());
+    let mut payload = crate::backup::Payload::notes_and_people(
+        app.state::<Agenda>().notes(),
+        app.state::<People>().list(),
+    );
     payload.memory = Some(app.state::<crate::local_memory::LocalMemory>().snapshot());
     payload.finance = Some(app.state::<crate::finance::Finance>().bundle());
     if include_keys {
-        let secrets = app.state::<Vault>().accounts(&app.state::<NativeBridge>()).map_err(|e| msg(e.to_string()))?;
+        let secrets = app
+            .state::<Vault>()
+            .accounts(&app.state::<NativeBridge>())
+            .map_err(|e| msg(e.to_string()))?;
         payload.keys = secrets
             .into_iter()
-            .map(|account| crate::backup::BackupKey { id: account.id, provider: account.provider, secret: account.secret })
+            .map(|account| crate::backup::BackupKey {
+                id: account.id,
+                provider: account.provider,
+                secret: account.secret,
+            })
             .collect();
+        if let Ok(Some(token)) = app.state::<Vault>().hf_token(&app.state::<NativeBridge>()) {
+            payload.keys.push(crate::backup::BackupKey {
+                id: "hf-token".into(),
+                provider: "huggingface".into(),
+                secret: token.to_string(),
+            });
+        }
     }
     let bytes = crate::backup::seal(&payload, &passphrase).map_err(msg)?;
-    let dir = app.path().app_cache_dir().map_err(|e| msg(e.to_string()))?.join("backups");
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| msg(e.to_string()))?
+        .join("backups");
     std::fs::create_dir_all(&dir).map_err(|e| msg(e.to_string()))?;
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
@@ -758,11 +904,16 @@ pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bo
             }
         }
     }
-    let file_name = format!("grok-voice-backup-{}.gvb", chrono::Local::now().format("%Y-%m-%d"));
+    let file_name = format!(
+        "grok-voice-backup-{}.gvb",
+        chrono::Local::now().format("%Y-%m-%d")
+    );
     let path = dir.join(&file_name);
     crate::files::write_private(&path, &bytes).map_err(|e| msg(e.to_string()))?;
     let shared = path.to_str().is_some_and(|path| {
-        app.state::<NativeBridge>().share_file(path, "application/octet-stream", "Grok Voice backup").is_ok()
+        app.state::<NativeBridge>()
+            .share_file(path, "application/octet-stream", "Grok Voice backup")
+            .is_ok()
     });
     Ok(ExportedBackup {
         file_name,
@@ -777,7 +928,9 @@ pub fn export_backup(app: AppHandle, passphrase: String, include_keys: Option<bo
 
 #[tauri::command]
 pub fn preview_backup(data_b64: String, passphrase: String) -> Result<crate::backup::Preview> {
-    crate::backup::open_b64(&data_b64, &passphrase).map(|payload| payload.preview()).map_err(msg)
+    crate::backup::open_b64(&data_b64, &passphrase)
+        .map(|payload| payload.preview())
+        .map_err(msg)
 }
 
 #[tauri::command]
@@ -789,30 +942,54 @@ pub fn restore_backup(
     restore_keys: Option<bool>,
 ) -> Result<crate::backup::Preview> {
     if !confirm {
-        return Err(msg("Confirm before replacing notes and people on this phone."));
+        return Err(msg(
+            "Confirm before replacing notes and people on this phone.",
+        ));
     }
     let payload = crate::backup::open_b64(&data_b64, &passphrase).map_err(msg)?;
     let preview = payload.preview();
-    app.state::<People>().replace_all(payload.people).map_err(msg)?;
+    app.state::<People>()
+        .replace_all(payload.people)
+        .map_err(msg)?;
     actions::replace_notes(&app, payload.notes).map_err(msg)?;
     if let Some(memory) = payload.memory {
-        app.state::<crate::local_memory::LocalMemory>().replace(memory);
+        app.state::<crate::local_memory::LocalMemory>()
+            .replace(memory);
     }
     if let Some(finance) = payload.finance {
-        app.state::<crate::finance::Finance>().replace(&app, finance).map_err(msg)?;
+        app.state::<crate::finance::Finance>()
+            .replace(&app, finance)
+            .map_err(msg)?;
     }
     actions::sync_person_reminders(&app).map_err(msg)?;
     if restore_keys.unwrap_or(false) && !payload.keys.is_empty() {
+        let mut hf_token = None;
         let rows: Vec<(String, String, String)> = payload
             .keys
             .into_iter()
             .filter(|key| crate::backup::acceptable_key(key))
-            .map(|key| (key.id, key.provider, key.secret))
+            .filter_map(|key| {
+                if key.provider == "huggingface" {
+                    hf_token = Some(key.secret);
+                    None
+                } else {
+                    Some((key.id, key.provider, key.secret))
+                }
+            })
             .collect();
-        if rows.is_empty() {
+        if rows.is_empty() && hf_token.is_none() {
             return Err(msg("That backup's voice keys could not be restored."));
         }
-        app.state::<Vault>().replace_secrets(&app.state::<NativeBridge>(), &rows).map_err(|e| msg(e.to_string()))?;
+        if !rows.is_empty() {
+            app.state::<Vault>()
+                .replace_secrets(&app.state::<NativeBridge>(), &rows)
+                .map_err(|e| msg(e.to_string()))?;
+        }
+        if let Some(token) = hf_token {
+            app.state::<Vault>()
+                .set_hf_token(&app.state::<NativeBridge>(), &token)
+                .map_err(|e| msg(e.to_string()))?;
+        }
     }
     Ok(preview)
 }
@@ -828,12 +1005,18 @@ pub fn clear_memory(memory: State<'_, Memory>) {
 }
 
 #[tauri::command]
-pub fn local_memory(memory: State<'_, crate::local_memory::LocalMemory>) -> crate::local_memory::Bundle {
+pub fn local_memory(
+    memory: State<'_, crate::local_memory::LocalMemory>,
+) -> crate::local_memory::Bundle {
     memory.snapshot()
 }
 
 #[tauri::command]
-pub fn pin_local_fact(app: AppHandle, text: String, id: Option<String>) -> Result<crate::local_memory::Bundle> {
+pub fn pin_local_fact(
+    app: AppHandle,
+    text: String,
+    id: Option<String>,
+) -> Result<crate::local_memory::Bundle> {
     let locale = app.state::<SettingsStore>().get().locale;
     app.state::<crate::local_memory::LocalMemory>()
         .remember(id.as_deref(), &text, &locale)
@@ -842,7 +1025,11 @@ pub fn pin_local_fact(app: AppHandle, text: String, id: Option<String>) -> Resul
 }
 
 #[tauri::command]
-pub fn forget_local_fact(app: AppHandle, id: Option<String>, text: Option<String>) -> Result<crate::local_memory::Bundle> {
+pub fn forget_local_fact(
+    app: AppHandle,
+    id: Option<String>,
+    text: Option<String>,
+) -> Result<crate::local_memory::Bundle> {
     let locale = app.state::<SettingsStore>().get().locale;
     app.state::<crate::local_memory::LocalMemory>()
         .forget(id.as_deref(), text.as_deref(), &locale)
@@ -851,7 +1038,9 @@ pub fn forget_local_fact(app: AppHandle, id: Option<String>, text: Option<String
 }
 
 #[tauri::command]
-pub fn wipe_local_memory(memory: State<'_, crate::local_memory::LocalMemory>) -> crate::local_memory::Bundle {
+pub fn wipe_local_memory(
+    memory: State<'_, crate::local_memory::LocalMemory>,
+) -> crate::local_memory::Bundle {
     memory.wipe()
 }
 
@@ -865,47 +1054,69 @@ pub fn dismiss_handoff(app: AppHandle) -> Result<()> {
     if let Some(handoffs) = app.try_state::<actions::Handoffs>() {
         handoffs.clear();
     }
-    app.state::<Arc<Hub>>().emit("voice://handoff", serde_json::Value::Null);
+    app.state::<Arc<Hub>>()
+        .emit("voice://handoff", serde_json::Value::Null);
     Ok(())
 }
 
 #[tauri::command]
 pub fn access_status(app: AppHandle) -> Result<serde_json::Value> {
-    let raw = app.state::<NativeBridge>().access_status().map_err(|e| msg(e.to_string()))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .access_status()
+        .map_err(|e| msg(e.to_string()))?;
     serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]
 pub fn open_access_settings(app: AppHandle, kind: String) -> Result<serde_json::Value> {
-    let raw = app.state::<NativeBridge>().open_access_settings(&kind).map_err(|e| msg(e.to_string()))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .open_access_settings(&kind)
+        .map_err(|e| msg(e.to_string()))?;
     serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]
 pub fn request_history_access(app: AppHandle) -> Result<PermissionStatus> {
-    app.state::<NativeBridge>().request_history_access().map_err(|e| msg(e.to_string()))
+    app.state::<NativeBridge>()
+        .request_history_access()
+        .map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]
 pub fn request_audio_access(app: AppHandle) -> Result<serde_json::Value> {
-    let raw = app.state::<NativeBridge>().request_audio().map_err(|e| msg(e.to_string()))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .request_audio()
+        .map_err(|e| msg(e.to_string()))?;
     serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
 }
 
 #[tauri::command]
 pub fn refresh_last_contact(app: AppHandle, id: String) -> Result<crate::people::Person> {
     let people = app.state::<People>().list();
-    let person = people.into_iter().find(|person| person.id == id).ok_or_else(|| msg("No person with that id."))?;
+    let person = people
+        .into_iter()
+        .find(|person| person.id == id)
+        .ok_or_else(|| msg("No person with that id."))?;
     let raw = app
         .state::<NativeBridge>()
         .last_contact(&person.id, &person.handles.phone, &person.display_name)
         .map_err(|e| msg(e.to_string()))?;
     let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))?;
     if value["ok"] == false {
-        return Err(msg(value["error"].as_str().unwrap_or("Could not read call or text history.")));
+        return Err(msg(value["error"]
+            .as_str()
+            .unwrap_or("Could not read call or text history.")));
     }
-    let at_ms = value["atMs"].as_i64().ok_or_else(|| msg("No recent call or text for that person."))?;
-    let saved = app.state::<People>().set_last_contacted(&id, at_ms).map_err(msg)?;
+    let at_ms = value["atMs"]
+        .as_i64()
+        .ok_or_else(|| msg("No recent call or text for that person."))?;
+    let saved = app
+        .state::<People>()
+        .set_last_contacted(&id, at_ms)
+        .map_err(msg)?;
     actions::sync_person_reminders(&app).map_err(msg)?;
     Ok(saved)
 }
@@ -913,15 +1124,29 @@ pub fn refresh_last_contact(app: AppHandle, id: String) -> Result<crate::people:
 #[tauri::command]
 pub fn import_contact_birthday(app: AppHandle, id: String) -> Result<crate::people::Person> {
     let people = app.state::<People>().list();
-    let person = people.into_iter().find(|person| person.id == id).ok_or_else(|| msg("No person with that id."))?;
-    let contact = person.android_contact_id.clone().ok_or_else(|| msg("Link a phone contact first."))?;
-    let raw = app.state::<NativeBridge>().contact_birthday(&contact).map_err(|e| msg(e.to_string()))?;
+    let person = people
+        .into_iter()
+        .find(|person| person.id == id)
+        .ok_or_else(|| msg("No person with that id."))?;
+    let contact = person
+        .android_contact_id
+        .clone()
+        .ok_or_else(|| msg("Link a phone contact first."))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .contact_birthday(&contact)
+        .map_err(|e| msg(e.to_string()))?;
     let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))?;
     if value["ok"] == false {
-        return Err(msg(value["error"].as_str().unwrap_or("Could not read that birthday.")));
+        return Err(msg(value["error"]
+            .as_str()
+            .unwrap_or("Could not read that birthday.")));
     }
     let date = value["date"].as_str().unwrap_or("").trim();
-    let saved = app.state::<People>().add_birthday_if_missing(&id, date).map_err(msg)?;
+    let saved = app
+        .state::<People>()
+        .add_birthday_if_missing(&id, date)
+        .map_err(msg)?;
     actions::sync_person_reminders(&app).map_err(msg)?;
     Ok(saved)
 }
@@ -929,12 +1154,23 @@ pub fn import_contact_birthday(app: AppHandle, id: String) -> Result<crate::peop
 #[tauri::command]
 pub fn import_contact_dates(app: AppHandle, id: String) -> Result<crate::people::Person> {
     let people = app.state::<People>().list();
-    let person = people.into_iter().find(|person| person.id == id).ok_or_else(|| msg("No person with that id."))?;
-    let contact = person.android_contact_id.clone().ok_or_else(|| msg("Link a phone contact first."))?;
-    let raw = app.state::<NativeBridge>().contact_dates(&contact).map_err(|e| msg(e.to_string()))?;
+    let person = people
+        .into_iter()
+        .find(|person| person.id == id)
+        .ok_or_else(|| msg("No person with that id."))?;
+    let contact = person
+        .android_contact_id
+        .clone()
+        .ok_or_else(|| msg("Link a phone contact first."))?;
+    let raw = app
+        .state::<NativeBridge>()
+        .contact_dates(&contact)
+        .map_err(|e| msg(e.to_string()))?;
     let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))?;
     if value["ok"] == false {
-        return Err(msg(value["error"].as_str().unwrap_or("Could not read dates on that contact.")));
+        return Err(msg(value["error"]
+            .as_str()
+            .unwrap_or("Could not read dates on that contact.")));
     }
     let incoming = value["dates"].as_array().cloned().unwrap_or_default();
     let mut reminders = Vec::new();
@@ -950,7 +1186,10 @@ pub fn import_contact_dates(app: AppHandle, id: String) -> Result<crate::people:
             enabled: true,
         });
     }
-    let (saved, _added) = app.state::<People>().merge_imported_dates(&id, reminders).map_err(msg)?;
+    let (saved, _added) = app
+        .state::<People>()
+        .merge_imported_dates(&id, reminders)
+        .map_err(msg)?;
     actions::sync_person_reminders(&app).map_err(msg)?;
     Ok(saved)
 }
@@ -965,7 +1204,10 @@ pub async fn local_pack_status(app: AppHandle) -> Result<Vec<crate::local::PackI
 }
 
 #[tauri::command]
-pub async fn download_local_pack(app: AppHandle, id: String) -> Result<Vec<crate::local::PackInfo>> {
+pub async fn download_local_pack(
+    app: AppHandle,
+    id: String,
+) -> Result<Vec<crate::local::PackInfo>> {
     let hub = app.state::<Arc<Hub>>().inner().clone();
     let dir = crate::local::model_dir(&app).map_err(msg)?;
     tokio::task::spawn_blocking(move || {
@@ -985,6 +1227,202 @@ pub async fn delete_local_pack(app: AppHandle, id: String) -> Result<Vec<crate::
         Ok(crate::local::pack_status(&dir))
     })
     .await
+}
+
+fn voice_status(app: &AppHandle) -> Result<crate::local::speech::VoiceStatus> {
+    let dir = crate::local::model_dir(app).map_err(msg)?;
+    let settings = app.state::<SettingsStore>().get();
+    let token = app
+        .state::<Vault>()
+        .hf_token(&app.state::<NativeBridge>())
+        .map_err(|err| msg(err.to_string()))?;
+    let hint = token
+        .as_ref()
+        .map(|value| crate::vault::key_hint(value))
+        .unwrap_or_default();
+    Ok(crate::local::speech::status(
+        &dir,
+        &settings.speech_engines,
+        &settings.phonon_models,
+        &settings.phonon_voices,
+        token.is_some(),
+        &hint,
+    ))
+}
+
+#[tauri::command]
+pub async fn on_device_voice_status(app: AppHandle) -> Result<crate::local::speech::VoiceStatus> {
+    blocking(app, |app| voice_status(&app)).await
+}
+
+#[tauri::command]
+pub async fn download_phonon_model(
+    app: AppHandle,
+    id: String,
+) -> Result<crate::local::speech::VoiceStatus> {
+    let hub = app.state::<Arc<Hub>>().inner().clone();
+    let token = app
+        .state::<Vault>()
+        .hf_token(&app.state::<NativeBridge>())
+        .map_err(|err| msg(err.to_string()))?
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    blocking(app.clone(), move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        crate::local::phonon::download_model(&dir, &id, &token, |progress| {
+            hub.emit("voice://pack", progress)
+        })
+        .map_err(msg)?;
+        voice_status(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_phonon_model(
+    app: AppHandle,
+    id: String,
+) -> Result<crate::local::speech::VoiceStatus> {
+    blocking(app, move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        crate::local::phonon::delete_model(&dir, &id).map_err(msg)?;
+        voice_status(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn download_phonon_voice(
+    app: AppHandle,
+    id: String,
+) -> Result<crate::local::speech::VoiceStatus> {
+    let hub = app.state::<Arc<Hub>>().inner().clone();
+    let voice_id = id.clone();
+    blocking(app.clone(), move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        crate::local::phonon::download_voice(&dir, &voice_id, |progress| {
+            hub.emit(
+                "voice://pack",
+                crate::local::PackProgress {
+                    id: format!("voice-{voice_id}"),
+                    ..progress
+                },
+            )
+        })
+        .map_err(msg)?;
+        voice_status(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_phonon_voice(
+    app: AppHandle,
+    id: String,
+) -> Result<crate::local::speech::VoiceStatus> {
+    blocking(app, move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        crate::local::phonon::delete_voice(&dir, &id).map_err(msg)?;
+        voice_status(&app)
+    })
+    .await
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoicePreview {
+    pub engine: String,
+    pub sample_rate: u32,
+    pub wav_base64: String,
+}
+
+#[tauri::command]
+pub async fn preview_on_device_voice(app: AppHandle, lang: String) -> Result<VoicePreview> {
+    blocking(app, move |app| {
+        let dir = crate::local::model_dir(&app).map_err(msg)?;
+        let settings = app.state::<SettingsStore>().get();
+        let planned = crate::local::speech::plan_in(
+            &dir,
+            &lang,
+            &settings.speech_engines,
+            &settings.phonon_models,
+        );
+        let line = crate::local::speech::preview_line(&lang);
+        let voice = crate::local::speech::voice_pref(&settings.phonon_voices, &lang);
+        for step in &planned.steps {
+            match step {
+                crate::local::speech::SpokenEngine::Phonon => {
+                    let Some(model) = planned.model_id else {
+                        continue;
+                    };
+                    match crate::local::phonon::synthesize(&dir, model, &lang, &voice, line) {
+                        Ok((pcm, rate)) => {
+                            return Ok(VoicePreview {
+                                engine: "phonon".into(),
+                                sample_rate: rate,
+                                wav_base64: base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    crate::local::speech::wav_bytes(&pcm, rate),
+                                ),
+                            });
+                        }
+                        Err(err) => log::warn!("Phonon preview failed: {err}"),
+                    }
+                }
+                crate::local::speech::SpokenEngine::Piper => {
+                    let lang = crate::local::speech::speech_lang(&lang);
+                    let pack = match lang {
+                        "de" => "tts-de",
+                        "es" => "tts-es",
+                        "en" => "tts",
+                        _ => "",
+                    };
+                    let folder = crate::notices::piper_dir(pack).map(|rel| dir.join(rel));
+                    let model_name = crate::notices::piper_model_name(pack);
+                    if let (Some(folder), Some(model_name)) = (folder, model_name) {
+                        let model = folder.join(model_name);
+                        let tokens = folder.join("tokens.txt");
+                        let data = folder.join("espeak-ng-data");
+                        if let Ok((pcm, rate)) = crate::local::preview_piper(
+                            &model.to_string_lossy(),
+                            &tokens.to_string_lossy(),
+                            &data.to_string_lossy(),
+                            line,
+                        ) {
+                            return Ok(VoicePreview {
+                                engine: "piper".into(),
+                                sample_rate: rate,
+                                wav_base64: base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    crate::local::speech::wav_bytes(&pcm, rate),
+                                ),
+                            });
+                        }
+                    }
+                    return Err(msg("Voice preview runs in the Android app."));
+                }
+                crate::local::speech::SpokenEngine::System => break,
+            }
+        }
+        Err(msg("Voice preview runs in the Android app."))
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn save_hf_token(app: AppHandle, token: String) -> Result<crate::local::speech::VoiceStatus> {
+    app.state::<Vault>()
+        .set_hf_token(&app.state::<NativeBridge>(), &token)
+        .map_err(|err| msg(err.to_string()))?;
+    voice_status(&app)
+}
+
+#[tauri::command]
+pub fn clear_hf_token(app: AppHandle) -> Result<crate::local::speech::VoiceStatus> {
+    app.state::<Vault>()
+        .delete_hf_token(&app.state::<NativeBridge>())
+        .map_err(|err| msg(err.to_string()))?;
+    voice_status(&app)
 }
 
 fn use_local_for_talk(app: &AppHandle) {
@@ -1009,7 +1447,11 @@ pub async fn select_local_model(app: AppHandle, id: String) -> Result<Vec<crate:
 }
 
 #[tauri::command]
-pub async fn import_local_model(app: AppHandle, name: String, family: String) -> Result<Vec<crate::local::PackInfo>> {
+pub async fn import_local_model(
+    app: AppHandle,
+    name: String,
+    family: String,
+) -> Result<Vec<crate::local::PackInfo>> {
     blocking(app, move |app| {
         let dir = crate::local::model_dir(&app).map_err(msg)?;
         let incoming = dir.join("llm-custom").join("incoming.gguf");
@@ -1017,8 +1459,11 @@ pub async fn import_local_model(app: AppHandle, name: String, family: String) ->
             std::fs::create_dir_all(parent).map_err(|err| msg(err.to_string()))?;
         }
         let dest = incoming.to_string_lossy().to_string();
-        let picked = app.state::<crate::native::NativeBridge>().pick_gguf(&dest)?;
-        crate::local::import_custom_file(&dir, std::path::Path::new(&picked), &name, &family).map_err(msg)?;
+        let picked = app
+            .state::<crate::native::NativeBridge>()
+            .pick_gguf(&dest)?;
+        crate::local::import_custom_file(&dir, std::path::Path::new(&picked), &name, &family)
+            .map_err(msg)?;
         use_local_for_talk(&app);
         Ok(crate::local::pack_status(&dir))
     })
@@ -1036,7 +1481,9 @@ pub async fn download_custom_local_model(
     let hub = app.state::<Arc<Hub>>().inner().clone();
     let dir = crate::local::model_dir(&app).map_err(msg)?;
     tokio::task::spawn_blocking(move || {
-        crate::local::download_custom_model(&dir, &url, &sha256, &name, &family, |progress| hub.emit("voice://pack", progress))
+        crate::local::download_custom_model(&dir, &url, &sha256, &name, &family, |progress| {
+            hub.emit("voice://pack", progress)
+        })
     })
     .await
     .map_err(|e| msg(e.to_string()))?
@@ -1048,72 +1495,136 @@ pub async fn download_custom_local_model(
 #[tauri::command]
 pub fn finance_snapshot(app: AppHandle, locale: Option<String>) -> crate::finance::Snapshot {
     if let Some(locale) = locale.filter(|value| !value.trim().is_empty()) {
-        app.state::<crate::finance::Finance>().remember_locale(&locale);
+        app.state::<crate::finance::Finance>()
+            .remember_locale(&locale);
     }
     app.state::<crate::finance::Finance>().snapshot(&app)
 }
 
 #[tauri::command]
-pub fn save_finance_account(app: AppHandle, account: crate::finance::AccountDraft) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().save_account(&app, account).map_err(msg)
+pub fn save_finance_account(
+    app: AppHandle,
+    account: crate::finance::AccountDraft,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .save_account(&app, account)
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn save_finance_transaction(app: AppHandle, transaction: crate::finance::TransactionDraft) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().save_transaction(&app, transaction).map_err(msg)
+pub fn save_finance_transaction(
+    app: AppHandle,
+    transaction: crate::finance::TransactionDraft,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .save_transaction(&app, transaction)
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn save_finance_rule(app: AppHandle, rule: crate::finance::RuleDraft) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().save_rule(&app, rule).map_err(msg)
+pub fn save_finance_rule(
+    app: AppHandle,
+    rule: crate::finance::RuleDraft,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .save_rule(&app, rule)
+        .map_err(msg)
 }
 
 #[tauri::command]
 pub fn delete_finance_account(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().delete_account(&app, &id).map_err(msg)
+    app.state::<crate::finance::Finance>()
+        .delete_account(&app, &id)
+        .map_err(msg)
 }
 
 #[tauri::command]
 pub fn delete_finance_transaction(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().delete_transaction(&app, &id).map_err(msg)
+    app.state::<crate::finance::Finance>()
+        .delete_transaction(&app, &id)
+        .map_err(msg)
 }
 
 #[tauri::command]
 pub fn delete_finance_rule(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().delete_rule(&app, &id).map_err(msg)
+    app.state::<crate::finance::Finance>()
+        .delete_rule(&app, &id)
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn set_finance_default_currency(app: AppHandle, currency: String) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().set_default_currency(&app, &currency).map_err(msg)
+pub fn set_finance_default_currency(
+    app: AppHandle,
+    currency: String,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .set_default_currency(&app, &currency)
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn rename_finance_category(app: AppHandle, from: String, to: String) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().rename_category_name(&app, &from, &to).map_err(msg)
+pub fn rename_finance_category(
+    app: AppHandle,
+    from: String,
+    to: String,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .rename_category_name(&app, &from, &to)
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn mark_finance_paid(app: AppHandle, id: String, date: Option<String>) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().mark_paid_on(&app, &id, date.as_deref().unwrap_or("")).map_err(msg)
+pub fn mark_finance_paid(
+    app: AppHandle,
+    id: String,
+    date: Option<String>,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .mark_paid_on(&app, &id, date.as_deref().unwrap_or(""))
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn export_finance_pdf(app: AppHandle, filter: crate::finance::PdfRequest) -> Result<crate::finance::ExportedPdf> {
-    app.state::<crate::finance::Finance>().export_pdf(&app, &filter).map_err(msg)
+pub fn export_finance_pdf(
+    app: AppHandle,
+    filter: crate::finance::PdfRequest,
+) -> Result<crate::finance::ExportedPdf> {
+    app.state::<crate::finance::Finance>()
+        .export_pdf(&app, &filter)
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn refresh_finance_rates(app: AppHandle, force: Option<bool>) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().refresh_rates(&app, force.unwrap_or(false)).map_err(msg)
+pub fn refresh_finance_rates(
+    app: AppHandle,
+    force: Option<bool>,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .refresh_rates(&app, force.unwrap_or(false))
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn set_finance_manual_rate(app: AppHandle, base: String, quote: String, rate: String, override_live: Option<bool>) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().set_manual_rate(&app, &base, &quote, &rate, override_live.unwrap_or(false)).map_err(msg)
+pub fn set_finance_manual_rate(
+    app: AppHandle,
+    base: String,
+    quote: String,
+    rate: String,
+    override_live: Option<bool>,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .set_manual_rate(&app, &base, &quote, &rate, override_live.unwrap_or(false))
+        .map_err(msg)
 }
 
 #[tauri::command]
-pub fn finance_schedule_action(app: AppHandle, id: String, action: String, date: Option<String>) -> Result<crate::finance::Snapshot> {
-    app.state::<crate::finance::Finance>().schedule_action(&app, &id, &action, date.as_deref().unwrap_or("")).map_err(msg)
+pub fn finance_schedule_action(
+    app: AppHandle,
+    id: String,
+    action: String,
+    date: Option<String>,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .schedule_action(&app, &id, &action, date.as_deref().unwrap_or(""))
+        .map_err(msg)
 }

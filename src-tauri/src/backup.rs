@@ -13,10 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::Zeroize;
 
-use crate::{
-    actions::Note,
-    people::Person,
-};
+use crate::{actions::Note, people::Person};
 
 const MAGIC: &[u8] = b"GVB1";
 const ITERATIONS: u32 = 210_000;
@@ -73,7 +70,15 @@ pub struct Preview {
 
 impl Payload {
     pub fn notes_and_people(notes: Vec<Note>, people: Vec<Person>) -> Self {
-        Self { kind: "grok-voice-backup".into(), version: 1, notes, people, keys: Vec::new(), memory: None, finance: None }
+        Self {
+            kind: "grok-voice-backup".into(),
+            version: 1,
+            notes,
+            people,
+            keys: Vec::new(),
+            memory: None,
+            finance: None,
+        }
     }
 
     pub fn preview(&self) -> Preview {
@@ -82,12 +87,32 @@ impl Payload {
             people: self.people.len(),
             reminders: self.people.iter().map(|p| p.reminders.len()).sum(),
             keys: self.keys.len(),
-            facts: self.memory.as_ref().map(|bundle| bundle.facts.len()).unwrap_or(0),
-            sessions: self.memory.as_ref().map(|bundle| bundle.sessions.len()).unwrap_or(0),
+            facts: self
+                .memory
+                .as_ref()
+                .map(|bundle| bundle.facts.len())
+                .unwrap_or(0),
+            sessions: self
+                .memory
+                .as_ref()
+                .map(|bundle| bundle.sessions.len())
+                .unwrap_or(0),
             has_memory: self.memory.is_some(),
-            accounts: self.finance.as_ref().map(|bundle| bundle.accounts.len()).unwrap_or(0),
-            transactions: self.finance.as_ref().map(|bundle| bundle.transactions.len()).unwrap_or(0),
-            rules: self.finance.as_ref().map(|bundle| bundle.rules.len()).unwrap_or(0),
+            accounts: self
+                .finance
+                .as_ref()
+                .map(|bundle| bundle.accounts.len())
+                .unwrap_or(0),
+            transactions: self
+                .finance
+                .as_ref()
+                .map(|bundle| bundle.transactions.len())
+                .unwrap_or(0),
+            rules: self
+                .finance
+                .as_ref()
+                .map(|bundle| bundle.rules.len())
+                .unwrap_or(0),
             has_finance: self.finance.is_some(),
         }
     }
@@ -107,7 +132,9 @@ pub fn seal(payload: &Payload, passphrase: &str) -> Result<Vec<u8>, String> {
     pbkdf2_hmac::<Sha256>(passphrase.as_bytes(), &salt, ITERATIONS, &mut key_bytes);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
     let nonce = Nonce::from_slice(&nonce_bytes);
-    let cipher_text = cipher.encrypt(nonce, plain.as_ref()).map_err(|_| "Could not encrypt the backup.".to_string())?;
+    let cipher_text = cipher
+        .encrypt(nonce, plain.as_ref())
+        .map_err(|_| "Could not encrypt the backup.".to_string())?;
     key_bytes.zeroize();
     let mut out = Vec::with_capacity(4 + 4 + 16 + 12 + cipher_text.len());
     out.extend_from_slice(MAGIC);
@@ -139,7 +166,8 @@ pub fn open(bytes: &[u8], passphrase: &str) -> Result<Payload, String> {
         "That passphrase did not open this backup.".to_string()
     })?;
     key_bytes.zeroize();
-    let payload: Payload = serde_json::from_slice(&plain).map_err(|_| "The backup opened, but its contents were unreadable.".to_string())?;
+    let payload: Payload = serde_json::from_slice(&plain)
+        .map_err(|_| "The backup opened, but its contents were unreadable.".to_string())?;
     if payload.kind != "grok-voice-backup" || payload.version != 1 {
         return Err("This backup is from a newer version.".into());
     }
@@ -152,15 +180,23 @@ pub fn seal_b64(payload: &Payload, passphrase: &str) -> Result<String, String> {
 }
 
 pub fn open_b64(encoded: &str, passphrase: &str) -> Result<Payload, String> {
-    let bytes = B64.decode(encoded.trim()).map_err(|_| "The backup file was not readable.".to_string())?;
+    let bytes = B64
+        .decode(encoded.trim())
+        .map_err(|_| "The backup file was not readable.".to_string())?;
     open(&bytes, passphrase)
 }
 
 pub fn acceptable_key(key: &BackupKey) -> bool {
-    let provider_ok = matches!(key.provider.as_str(), "xai" | "openai" | "local");
+    let provider_ok = matches!(
+        key.provider.as_str(),
+        "xai" | "openai" | "local" | "huggingface"
+    );
     let id_ok = !key.id.is_empty()
         && key.id.len() <= 64
-        && key.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        && key
+            .id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     let secret = key.secret.trim();
     let secret_ok = !secret.is_empty()
         && secret.len() <= 300
@@ -183,7 +219,12 @@ mod tests {
     use crate::people::{Handles, Person, PersonReminder};
 
     fn sample() -> Payload {
-        let note = Note { id: "n1".into(), title: "Milk".into(), text: "buy milk".into(), created_ms: 5 };
+        let note = Note {
+            id: "n1".into(),
+            title: "Milk".into(),
+            text: "buy milk".into(),
+            created_ms: 5,
+        };
         let person = Person {
             id: "p1".into(),
             android_contact_id: None,
@@ -228,7 +269,11 @@ mod tests {
     #[test]
     fn keys_round_trip_only_when_present() {
         let mut payload = sample();
-        payload.keys.push(BackupKey { id: "k1".into(), provider: "xai".into(), secret: "xai-test-secret".into() });
+        payload.keys.push(BackupKey {
+            id: "k1".into(),
+            provider: "xai".into(),
+            secret: "xai-test-secret".into(),
+        });
         let encoded = seal_b64(&payload, "another secret").unwrap();
         let opened = open_b64(&encoded, "another secret").unwrap();
         assert_eq!(opened.keys.len(), 1);
@@ -253,22 +298,58 @@ mod tests {
     fn memory_round_trips_inside_version_one() {
         let mut payload = sample();
         payload.memory = Some(crate::local_memory::Bundle {
-            facts: vec![crate::local_memory::Fact { id: "f1".into(), text: "I live in Zurich".into(), updated_ms: 1 }],
-            sessions: vec![crate::local_memory::SessionNote { id: "s1".into(), at_ms: 2, text: "You said hello. The reply was hi.".into() }],
+            facts: vec![crate::local_memory::Fact {
+                id: "f1".into(),
+                text: "I live in Zurich".into(),
+                updated_ms: 1,
+            }],
+            sessions: vec![crate::local_memory::SessionNote {
+                id: "s1".into(),
+                at_ms: 2,
+                text: "You said hello. The reply was hi.".into(),
+            }],
             next_id: 2,
         });
         let opened = open(&seal(&payload, "correct horse").unwrap(), "correct horse").unwrap();
         assert_eq!(opened.preview().facts, 1);
         assert!(opened.preview().has_memory);
-        assert_eq!(opened.memory.as_ref().unwrap().facts[0].text, "I live in Zurich");
+        assert_eq!(
+            opened.memory.as_ref().unwrap().facts[0].text,
+            "I live in Zurich"
+        );
     }
 
     #[test]
     fn restore_rejects_unknown_providers_and_whitespace_secrets() {
-        assert!(acceptable_key(&BackupKey { id: "xai-1".into(), provider: "xai".into(), secret: "xai-test-secret".into() }));
-        assert!(acceptable_key(&BackupKey { id: "legacy-xai".into(), provider: "xai".into(), secret: "xai-test-secret".into() }));
-        assert!(!acceptable_key(&BackupKey { id: "k1".into(), provider: "other".into(), secret: "xai-test-secret".into() }));
-        assert!(!acceptable_key(&BackupKey { id: "k 1".into(), provider: "xai".into(), secret: "xai-test-secret".into() }));
-        assert!(!acceptable_key(&BackupKey { id: "k1".into(), provider: "xai".into(), secret: "has space".into() }));
+        assert!(acceptable_key(&BackupKey {
+            id: "xai-1".into(),
+            provider: "xai".into(),
+            secret: "xai-test-secret".into()
+        }));
+        assert!(acceptable_key(&BackupKey {
+            id: "legacy-xai".into(),
+            provider: "xai".into(),
+            secret: "xai-test-secret".into()
+        }));
+        assert!(acceptable_key(&BackupKey {
+            id: "hf-token".into(),
+            provider: "huggingface".into(),
+            secret: "hf_test_token".into()
+        }));
+        assert!(!acceptable_key(&BackupKey {
+            id: "k1".into(),
+            provider: "other".into(),
+            secret: "xai-test-secret".into()
+        }));
+        assert!(!acceptable_key(&BackupKey {
+            id: "k 1".into(),
+            provider: "xai".into(),
+            secret: "xai-test-secret".into()
+        }));
+        assert!(!acceptable_key(&BackupKey {
+            id: "k1".into(),
+            provider: "xai".into(),
+            secret: "has space".into()
+        }));
     }
 }

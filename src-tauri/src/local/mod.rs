@@ -1,23 +1,29 @@
-//! On-device Talk: Moonshine or a NeMo transducer for speech, a small GGUF chat model, and Piper TTS.
-//! Utterance mode, not full duplex. The phone tools stay on `actions::run`.
+//! On-device Talk: Moonshine or a NeMo transducer for speech, a small GGUF chat model,
+//! and Piper or Phonon for the voice. Utterance mode, not full duplex.
+//! The phone tools stay on `actions::run`.
 
 mod engine;
+pub use engine::preview_piper;
 #[cfg(target_os = "android")]
-pub(crate) use engine::{notice_sample_rate, synthesize_notice};
+pub(crate) use engine::{notice_sample_rate, set_notice_rate, synthesize_notice};
 mod gguf;
 mod mode;
 mod packs;
+pub mod phonon;
 mod session;
+pub mod speech;
 mod turn;
 mod vad;
 mod web;
 
 pub use mode::public_search_enabled;
+#[allow(unused_imports)]
 pub use packs::{
-    PackInfo, delete_pack, download_custom_model, download_pack, import_custom_file, model_dir,
-    pack_status, packs_ready, select_model,
+    PackInfo, PackProgress, delete_pack, download_custom_model, download_pack, import_custom_file,
+    model_dir, pack_status, packs_ready, select_model,
 };
 pub use session::{answer_text, run_session};
+pub use speech::talk_ready;
 pub use web::lookup as public_search;
 pub use web::{OFFLINE, network_block};
 

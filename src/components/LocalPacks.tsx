@@ -130,7 +130,7 @@ export function LocalPacks({ showHeading = true, onChanged }: { showHeading?: bo
     }
   };
 
-  const speech = packs.filter((pack) => pack.kind !== "llm" && pack.kind !== "custom");
+  const speech = packs.filter((pack) => pack.kind !== "llm" && pack.kind !== "custom" && pack.kind !== "phonon");
   const models = packs.filter((pack) => pack.kind === "llm" || pack.kind === "custom");
   const bulk = packs.filter((pack) => pack.kind === "speech" || pack.id === "llm" || (pack.kind === undefined && pack.id !== "llm-custom"));
   const needed = [...speech, ...models.filter((pack) => pack.selected)];
