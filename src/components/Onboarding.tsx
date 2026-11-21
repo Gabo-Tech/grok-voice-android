@@ -437,6 +437,7 @@ export function Onboarding({
               {t("Save this key")}
             </Button>
             <p className="text-sm leading-6 text-muted-foreground">{t("A cloud key is optional. The phone can answer without one after the offline pack is downloaded.")}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t("Messages and calls stay off until you allow them under Settings, Phone access. Notification text is read on this phone. A cloud model sees it only during a conversation you started.")}</p>
           </>
         )}
       </div>

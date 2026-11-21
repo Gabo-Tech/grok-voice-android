@@ -52,9 +52,13 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 | “Remind me tomorrow at 9 to call Sam” | A notification at that local time. |
 | “What’s on my calendar today?” | Reads the phone calendar. Android asks for calendar access the first time. |
 | “Add lunch with Ana tomorrow at 1” | Saved on this app's Calendar. If you omit the end time, it lasts one hour. |
-| “Call Mom” | Looks up that People nickname. A preferred channel wins; otherwise the dialer opens after you say yes. The call is not placed for you. |
+| “Call Mom” | Looks up that People nickname. A preferred channel wins. Placing the call confirms the number and dials after you say yes. Opening the dialer still does not dial by itself. |
 | “Text Sam that I’m late” | Opens the text app with the draft. You tap Send. |
 | “Message Ana” | If Ana’s preferred channel is WhatsApp, Signal, text, or email, that app opens after you confirm. |
+| “Read my notifications” | Relevant messages, after you turn message reading on under Settings, Phone access. People first, then direct messages. |
+| “Tell Mom next Saturday” | Talk reads the exact reply and the app aloud, and sends only after you say yes. |
+| “Place a call to Mom” | Says the number, then dials after you say yes. |
+| “Answer it” | Answers the ringing call only when you say so. |
 | “What’s Ana’s preferred channel?” | Spoken from People. WhatsApp, the dialer, and the other apps stay closed. |
 | “When’s Sam’s birthday?” | Reads the date saved on that person. |
 | “Remind me every year for Mom’s birthday on March 3” | A yearly notification on this phone. It stays on the person all year and shows under Time once the heads-up day arrives. |
@@ -62,6 +66,8 @@ During a session the assistant can act on the phone. It calls the tool, then tel
 | “Snooze that 10 minutes” | Delays the reminder that just rang, or asks which one. |
 
 **People** is under **Settings**. It is an overlay on this phone, not a second contacts app. Phone numbers and email still come from Android contacts. Nicknames, aliases, a favorite, a note, a preferred channel (call, text, WhatsApp, Signal, or email), and dated reminders (birthday, anniversary, or a custom date) stay in Grok Voice. Unlink or delete removes only that overlay. Asking for a fact answers in the conversation. A call, text, or chat still waits for a clear yes, and nothing is sent until you confirm in that app.
+
+**Messages and calls** are under **Settings → Phone access**. Message reading is off until you turn it on. Notification access is a system setting, and the allow list starts with messaging apps (WhatsApp, Signal, Telegram, SMS, and mail). Talk ranks people you saved above other direct messages, and it skips promos, system notices, and less relevant groups. It says the sender, the app, and the message in your language. A reply is read back exactly — send “Next Saturday” to Mom on WhatsApp? — and is sent only after a clear yes, using the notification’s reply button when that app provides one. Otherwise a draft opens and you still tap Send. Nothing is uploaded in the background. A cloud model sees the text only during a conversation you started, and only if that model is the one you chose. Placing a call confirms the contact and number, then dials. Answering, declining, and hanging up happen only when you say so. Announcing a new message or an incoming caller while Listen is on is off until you opt in. Message text is kept in a short memory cache, hidden on the lock screen unless you turn that off, and skipped while Do Not Disturb is blocking alerts.
 
 The bottom bar is **Talk**, **Notes**, **Calendar**, **Time**, **Finance**, and **Settings**. Back and add sit in that bar when a screen needs them. Lists stay quiet by default; tap **+** to add, or open a row to edit. Voice still works for create, edit, and delete (“change that note”, “delete the lunch event”, “move my reminder to 5”). Calendar access is requested from the Calendar tab or the first time Talk reads the phone calendar. If the phone has no writable calendar account, an event added on the Calendar screen is saved in the app instead.
 

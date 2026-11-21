@@ -1098,6 +1098,21 @@ pub fn access_status(app: AppHandle) -> Result<serde_json::Value> {
 }
 
 #[tauri::command]
+pub fn inbox_apps(app: AppHandle) -> Result<serde_json::Value> {
+    let raw = app.state::<NativeBridge>().inbox_apps().map_err(|e| msg(e.to_string()))?;
+    serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub fn request_call_access(app: AppHandle, kind: String) -> Result<serde_json::Value> {
+    let raw = app
+        .state::<NativeBridge>()
+        .request_call_access(&kind)
+        .map_err(|e| msg(e.to_string()))?;
+    serde_json::from_str(&raw).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
 pub fn open_access_settings(app: AppHandle, kind: String) -> Result<serde_json::Value> {
     let raw = app
         .state::<NativeBridge>()

@@ -436,7 +436,7 @@ pub fn tool_definitions() -> Value {
             "type": "object",
             "properties": {}
         })),
-        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, the default music player, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English, Spanish, or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. musicPlayer is local, Musify, YouTube, YouTube Music, or system. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
+        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, the default music player, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English, Spanish, or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. musicPlayer is local, Musify, YouTube, YouTube Music, or system. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. messageTriage turns message reading on or off. announceMessages and announceCalls stay off until set. redactLocked hides message text on the lock screen. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
             "type": "object",
             "properties": {
                 "language": { "type": "string" },
@@ -537,7 +537,41 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["kind", "id", "confirmed"]
         })),
-        fn_tool("read_notifications", "Read the titles of notifications currently posted on this phone. Does not open them. If access is off, say so.", json!({ "type": "object", "properties": {} })),
+        fn_tool("read_notifications", "Relevant messages. Speak the detail and do not invent one. Message text stays on the phone except in this conversation.", json!({ "type": "object", "properties": {} })),
+        fn_tool("reply_message", "Confirm, then send. First call uses confirmed false and the exact text. After a yes, call again with confirmed true. Never send on the first call.", json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "sender": { "type": "string" },
+                "text": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["text", "confirmed"]
+        })),
+        fn_tool("place_call", "Confirm, then dial. First call uses confirmed false. After a yes, call again with confirmed true. Do not dial because a message arrived.", json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "phone": { "type": "string" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["confirmed"]
+        })),
+        fn_tool("answer_call", "Only if they say answer. Pass confirmed true. Do not ask twice and do not answer just because a phone is ringing.", json!({
+            "type": "object",
+            "properties": { "confirmed": { "type": "boolean" } },
+            "required": ["confirmed"]
+        })),
+        fn_tool("decline_call", "Only if they say decline. Pass confirmed true. Do not decline just because a phone is ringing.", json!({
+            "type": "object",
+            "properties": { "confirmed": { "type": "boolean" } },
+            "required": ["confirmed"]
+        })),
+        fn_tool("end_call", "Only if they say hang up. Pass confirmed true. Do not hang up unless they ask.", json!({
+            "type": "object",
+            "properties": { "confirmed": { "type": "boolean" } },
+            "required": ["confirmed"]
+        })),
         fn_tool("set_dnd", "Set Do Not Disturb. mode is off, priority, alarms, or none. Call immediately. If access is off, say so.", json!({
             "type": "object",
             "properties": { "mode": { "type": "string" } },
@@ -1759,7 +1793,12 @@ fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>
         }
         "find_contact" => return crate::people::find_contact(app, args["name"].as_str().unwrap_or("")).map(Some),
         "get_person" => return crate::people::describe_person(app, args["name"].as_str().unwrap_or("")).map(Some),
-        "read_notifications" => bridge.read_notifications().map_err(|e| e.to_string())?,
+        "read_notifications" => return crate::inbox::tool_read(app).map(Some),
+        "reply_message" => return crate::inbox::tool_reply(app, args).map(Some),
+        "place_call" => return crate::inbox::tool_place(app, args).map(Some),
+        "answer_call" => return crate::inbox::tool_answer(app, args).map(Some),
+        "decline_call" => return crate::inbox::tool_decline(app, args).map(Some),
+        "end_call" => return crate::inbox::tool_end(app, args).map(Some),
         "set_dnd" => bridge.set_dnd(args["mode"].as_str().unwrap_or("")).map_err(|e| e.to_string())?,
         "go_home" => bridge.go_home().map_err(|e| e.to_string())?,
         "phone_status" => bridge.phone_status().map_err(|e| e.to_string())?,

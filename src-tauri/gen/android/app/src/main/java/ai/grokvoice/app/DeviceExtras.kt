@@ -12,7 +12,6 @@ import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Settings
 import androidx.core.content.ContextCompat
-import org.json.JSONArray
 import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
@@ -20,15 +19,7 @@ import java.util.Date
 /** Phone status, Do Not Disturb, home, birthdays, and last call or text. No message bodies are kept. */
 object DeviceExtras {
   fun notifications(context: Context): String {
-    if (!NoticeListener.enabled(context)) {
-      return fail("Notification access is off. Turn it on in Settings. Nothing was read.")
-    }
-    val rows = JSONArray()
-    for (item in NoticeListener.current().take(12)) {
-      rows.put(JSONObject().put("title", item.title).put("text", item.text))
-    }
-    val detail = if (rows.length() == 0) "No notifications are posted." else "${rows.length()} notifications are posted."
-    return JSONObject().put("ok", true).put("notifications", rows).put("detail", detail).toString()
+    return Inbox.snapshot(context)
   }
 
   fun dnd(context: Context, mode: String): String {
@@ -91,6 +82,8 @@ object DeviceExtras {
       .put("callLog", if (granted(context, Manifest.permission.READ_CALL_LOG)) "granted" else "denied")
       .put("sms", if (granted(context, Manifest.permission.READ_SMS)) "granted" else "denied")
       .put("audio", if (LocalMusic.canRead(context)) "granted" else "denied")
+      .put("placeCall", if (granted(context, Manifest.permission.CALL_PHONE)) "granted" else "denied")
+      .put("answerCall", if (granted(context, Manifest.permission.ANSWER_PHONE_CALLS)) "granted" else "denied")
       .toString()
   }
 
