@@ -784,6 +784,24 @@ function Activity({
   );
 }
 
+function unitName(unit: string | undefined, t: (text: string) => string): string {
+  if (unit === "troy_oz") return t("Troy ounce");
+  if (unit === "gram") return t("Gram");
+  if (unit === "kilogram") return t("Kilogram");
+  if (unit === "share") return t("One share");
+  if (unit === "coin") return t("Coin");
+  return unit || "";
+}
+
+function priceAgo(ms: number): string {
+  const minutes = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (minutes < 1) return fill("just now", {});
+  if (minutes < 60) return fill("{n} min ago", { n: minutes });
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return fill("{n} h ago", { n: hours });
+  return fill("{n} d ago", { n: Math.round(hours / 24) });
+}
+
 function AccountList({
   rows,
   transactions,
@@ -852,11 +870,22 @@ function AccountRows({
                   {owed && posture !== "credit" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 ? ` · ${t("Remaining")}` : ""}
                   {account.kind === "investment" && account.investmentType ? ` · ${t(typeLabel(account.investmentType))}` : ""}
                   {account.kind === "investment" && account.shownBalanceMinor != null ? ` · ${t("Worth")}` : ""}
+                  {account.units ? ` · ${account.units}${account.measureUnit ? ` ${unitName(account.measureUnit, t)}` : ""}` : ""}
                   {account.calendarEventId ? ` · ${t("On Calendar")}` : ""}
                 </p>
               </div>
-              <p className={cn("shrink-0 text-right text-xl leading-6 font-medium tabular-nums", displayMinor == null && "text-base font-normal text-muted-foreground")}>{money}</p>
+              <p className={cn("shrink-0 text-right text-xl leading-6 font-medium tabular-nums", (account.marketWorthMinor ?? displayMinor) == null && "text-base font-normal text-muted-foreground")}>
+                {account.marketWorthMinor != null && account.marketWorthCurrency ? formatMoney(account.marketWorthMinor, account.marketWorthCurrency) : money}
+              </p>
             </RowButton>
+            {account.marketPrice != null ? (
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                {account.marketPrice} {account.marketPriceCurrency}
+                {account.marketEstimated ? ` · ${t("AI estimate")}` : account.marketSource === "manual" ? ` · ${t("Your price")}` : account.marketSource ? ` · ${account.marketSource}` : ""}
+                {account.marketStale ? ` · ${t("Rates are stale")}` : ""}
+                {account.marketFetchedMs ? ` · ${fill("Updated {ago}", { ago: priceAgo(account.marketFetchedMs) })}` : ""}
+              </p>
+            ) : null}
             {owed && payoff && payoff.paid > 0 ? (
               <div className="mt-2">
                 <span className="fin-track">
@@ -1129,6 +1158,8 @@ function AccountSheet({
   const [investmentType, setInvestmentType] = useState("custom");
   const [valueMode, setValueMode] = useState("stated");
   const [units, setUnits] = useState("");
+  const [measureUnit, setMeasureUnit] = useState("");
+  const [priceOverride, setPriceOverride] = useState(false);
   const [unitPrice, setUnitPrice] = useState("");
   const [leadDays, setLeadDays] = useState(2);
   const [creditLimit, setCreditLimit] = useState("");
@@ -1160,6 +1191,8 @@ function AccountSheet({
     setInvestmentType(editing?.investmentType || "custom");
     setValueMode(editing?.units ? "units" : "stated");
     setUnits(editing?.units || "");
+    setMeasureUnit(editing?.measureUnit || "");
+    setPriceOverride(Boolean(editing?.priceOverride));
     setUnitPrice(majorString(editing?.priceMinor, editing?.currency || finance.snapshot.defaultCurrency || ""));
     setLeadDays(editing?.leadDays ?? 2);
     setCreditLimit(majorString(editing?.creditLimitMinor, editing?.currency || finance.snapshot.defaultCurrency));
@@ -1188,7 +1221,10 @@ function AccountSheet({
       color,
       investmentType: investment ? investmentType : "",
       units: valueMode === "units" ? units : "",
+      unit: valueMode === "units" ? measureUnit : "",
       unitPrice: valueMode === "units" ? unitPrice : "",
+      priceOverride: valueMode === "units" ? priceOverride : false,
+      touchOverride: valueMode === "units",
       valueMode,
       leadDays,
       changeKind: true,
@@ -1326,7 +1362,7 @@ function AccountSheet({
           <>
             <Field label={t("Type")}>
               <div className="chip-scroller">
-                {["stock", "fund", "crypto", "property", "collectible", "stake", "custom"].map((id) => (
+                {["stock", "fund", "crypto", "metal", "property", "collectible", "stake", "custom"].map((id) => (
                   <Chip key={id} on={investmentType === id} onClick={() => setInvestmentType(id)}>{t(typeLabel(id))}</Chip>
                 ))}
               </div>
@@ -1339,12 +1375,29 @@ function AccountSheet({
             </Field>
             {valueMode === "units" && (
               <>
-                <Field label={t("Units")}>
+                <Field label={t("Quantity")}>
                   <Input inputMode="decimal" value={units} onChange={(e) => setUnits(e.target.value)} />
+                </Field>
+                <Field label={t("Unit")}>
+                  <div className="chip-scroller">
+                    {[
+                      ["troy_oz", "Troy ounce"],
+                      ["gram", "Gram"],
+                      ["kilogram", "Kilogram"],
+                      ["share", "One share"],
+                      ["coin", "Coin"],
+                    ].map(([id, label]) => (
+                      <Chip key={id} on={measureUnit === id} onClick={() => setMeasureUnit(id)}>{t(label)}</Chip>
+                    ))}
+                  </div>
                 </Field>
                 <Field label={t("Price each")}>
                   <Input inputMode="decimal" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
                 </Field>
+                <label className="mt-2 flex items-start gap-2 text-sm leading-5">
+                  <input type="checkbox" className="mt-1 size-4" checked={priceOverride} onChange={(event) => setPriceOverride(event.target.checked)} />
+                  <span>{t("Use this instead of the live price")}</span>
+                </label>
               </>
             )}
           </>

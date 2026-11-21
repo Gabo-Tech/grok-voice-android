@@ -346,7 +346,19 @@ export interface FinanceAccount {
   color: string;
   investmentType: string;
   units: string;
+  measureUnit?: string;
   priceMinor: number | null;
+  priceOverride?: boolean;
+  marketWorthMinor?: number | null;
+  marketWorthCurrency?: string;
+  marketPrice?: number | null;
+  marketPriceCurrency?: string;
+  marketSource?: string;
+  marketFetchedMs?: number;
+  marketStale?: boolean;
+  marketEstimated?: boolean;
+  marketUnit?: string;
+  marketSymbol?: string;
   leadDays: number | null;
   shownBalanceMinor: number | null;
   creditLimitMinor: number | null;
@@ -431,6 +443,23 @@ export interface FinanceSnapshot {
   defaultCurrency: string;
   categories: FinanceCategory[];
   fx?: FinanceFx;
+  prices?: FinancePrices;
+}
+
+export interface FinancePriceQuote {
+  symbol: string;
+  kind: string;
+  price: number;
+  currency: string;
+  source: string;
+  fetchedMs: number;
+  estimated?: boolean;
+}
+
+export interface FinancePrices {
+  quotes: FinancePriceQuote[];
+  manual: { symbol: string; price: number; currency: string; asOf?: string; overrideLive?: boolean }[];
+  disabled: string[];
 }
 
 export interface FinanceFxLeg {
@@ -477,7 +506,10 @@ export interface FinanceAccountDraft {
   color?: string;
   investmentType?: string;
   units?: string;
+  unit?: string;
   unitPrice?: string;
+  priceOverride?: boolean;
+  touchOverride?: boolean;
   valueMode?: string;
   leadDays?: number | null;
   changeKind?: boolean;
@@ -817,6 +849,10 @@ export const api = {
   refreshFinanceRates: (force = false) => invoke<FinanceSnapshot>("refresh_finance_rates", { force }),
   setFinanceManualRate: (base: string, quote: string, rate: string, overrideLive = false) =>
     invoke<FinanceSnapshot>("set_finance_manual_rate", { base, quote, rate, overrideLive }),
+  setFinanceManualPrice: (symbol: string, price: string, currency: string, overrideLive = false) =>
+    invoke<FinanceSnapshot>("set_finance_manual_price", { symbol, price, currency, overrideLive }),
+  setFinancePriceProvider: (id: string, enabled: boolean) =>
+    invoke<FinanceSnapshot>("set_finance_price_provider", { id, enabled }),
   financeScheduleAction: (id: string, action: string, date?: string) =>
     invoke<FinanceSnapshot>("finance_schedule_action", { id, action, date: date ?? null }),
 };

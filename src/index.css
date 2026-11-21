@@ -620,8 +620,60 @@ html.keyboard-open .app-safe-bar {
   padding-bottom: var(--keyboard-pad);
 }
 
-html.keyboard-open .talk-mic {
+.talk-head {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 220ms ease, opacity 180ms ease;
+}
+
+html.keyboard-open .talk-mic-panel {
   display: none;
+}
+
+.talk-head > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.talk-head-off {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.talk-mic-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+
+.talk-mic-panel > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.talk-mic-panel.open {
+  grid-template-rows: 1fr;
+}
+
+.listen-live {
+  animation: listen-pulse 1.8s ease-out infinite;
+}
+
+@keyframes listen-pulse {
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talk-head,
+  .talk-mic-panel,
+  .listen-live {
+    transition: none;
+    animation: none;
+  }
 }
 
 html.keyboard-open .talk-composer {

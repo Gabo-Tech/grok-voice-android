@@ -136,6 +136,35 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
             {t("Clear rate")}
           </Button>
         </div>
+        <h2 className="mt-6 text-sm font-extrabold tracking-wide text-muted-foreground uppercase">{t("Market prices")}</h2>
+        <p className="mt-2 text-sm leading-5 text-muted-foreground">{t("Live price for the day. Native amounts stay on each item.")}</p>
+        <ul className="mt-3 space-y-2">
+          {(finance.snapshot.prices?.quotes || []).map((row) => (
+            <li key={`${row.symbol}-${row.source}`} className="text-sm leading-5 break-words">
+              {row.symbol} · {row.price} {row.currency}
+              {row.estimated ? ` · ${t("AI estimate")}` : ` · ${row.source}`}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {["coingecko", "coinpaprika", "kraken", "gold-api", "atlantis"].map((id) => {
+            const off = (finance.snapshot.prices?.disabled || []).some((row) => row.toLowerCase() === id);
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={!off}
+                className={cn("stamp min-h-12", !off && "stamp-on")}
+                onClick={() => finance.setPriceProvider(id, off)}
+              >
+                {id}
+              </button>
+            );
+          })}
+        </div>
+        <Button type="button" className="mt-3" disabled={finance.busy} onClick={() => finance.refreshRates(true)}>
+          {t("Refresh prices")}
+        </Button>
         {manual.map((row) => (
           <div key={`${row.base}-${row.quote}`} className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
             <p>

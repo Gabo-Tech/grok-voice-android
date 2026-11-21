@@ -14,6 +14,7 @@ mod error;
 mod files;
 mod finance;
 mod finance_fx;
+mod finance_prices;
 mod finance_pdf;
 mod finance_schedule;
 mod http;
@@ -114,6 +115,14 @@ pub fn run() {
             });
             app.manage(Engine::spawn(app.handle().clone()));
             app.state::<crate::native::NativeBridge>().refresh_widgets();
+            let price_app = app.handle().clone();
+            let _ = std::thread::Builder::new().name("prices".into()).spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(30));
+                loop {
+                    let _ = price_app.state::<finance::Finance>().refresh_rates(&price_app, false);
+                    std::thread::sleep(std::time::Duration::from_secs(60 * 60));
+                }
+            });
             let update_app = app.handle().clone();
             let _ = std::thread::Builder::new()
                 .name("update-check".into())
@@ -219,6 +228,8 @@ pub fn run() {
             commands::export_finance_pdf,
             commands::refresh_finance_rates,
             commands::set_finance_manual_rate,
+            commands::set_finance_manual_price,
+            commands::set_finance_price_provider,
             commands::finance_schedule_action,
         ])
         .build(tauri::generate_context!())

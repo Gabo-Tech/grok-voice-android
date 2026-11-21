@@ -200,6 +200,7 @@ export function typeLabel(kind: string): string {
   if (kind === "stock") return "Stock";
   if (kind === "fund") return "Fund";
   if (kind === "crypto") return "Crypto";
+  if (kind === "metal") return "Metal";
   if (kind === "property") return "Property";
   if (kind === "collectible") return "Collectible";
   if (kind === "stake") return "Private stake";

@@ -38,6 +38,9 @@ pub fn rates_redirect() -> reqwest::redirect::Policy {
         "api.coingecko.com",
         "api.coinbase.com",
         "api.kraken.com",
+        "api.coinpaprika.com",
+        "api.gold-api.com",
+        "atlantisdatasolutions.com",
     ])
 }
 
@@ -193,6 +196,9 @@ mod tests {
             "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur",
             "https://api.coinbase.com/v2/exchange-rates?currency=EUR",
             "https://api.kraken.com/0/public/Ticker?pair=XXBTZEUR",
+            "https://api.coinpaprika.com/v1/tickers/xmr-monero?quotes=EUR",
+            "https://api.gold-api.com/price/XAU/EUR",
+            "https://atlantisdatasolutions.com/v1/us/etfs/SPY",
         ];
         let patterns = [
             "api.frankfurter.dev",
@@ -203,6 +209,9 @@ mod tests {
             "api.coingecko.com",
             "api.coinbase.com",
             "api.kraken.com",
+            "api.coinpaprika.com",
+            "api.gold-api.com",
+            "atlantisdatasolutions.com",
         ];
         for url in hosts {
             assert!(https_url_allowed(url, &patterns), "{url}");

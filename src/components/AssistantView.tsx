@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Send, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { ChevronDown, Info, Mic, Send, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
 import { Notice } from "@/components/PageChrome";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, type Settings, type VoiceAccount } from "@/lib/api";
 import { packsReadyForTalk, readyProvider, recoveryFor, settingsLabel, type SettingsDestination } from "@/lib/flow";
@@ -44,6 +43,11 @@ function inline(block: string): ReactNode[] {
   });
 }
 
+function previewQuery(name: string): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get(name) === "1";
+}
+
 function sessionClock(openSinceMs: number | null | undefined) {
   if (!openSinceMs) return "";
   const seconds = Math.max(0, Math.floor((Date.now() - openSinceMs) / 1000));
@@ -68,7 +72,14 @@ export function AssistantView({
   const [draft, setDraft] = useState("");
   const [preferLocal, setPreferLocal] = useState(false);
   const [packsReady, setPacksReady] = useState(false);
+  const [focus, setFocus] = useState(() => sessionStorage.getItem("grok-talk-focus") === "1" || previewQuery("focus"));
+  const [micOpen, setMicOpen] = useState(() => localStorage.getItem("grok-mic-open") === "1" || previewQuery("mic"));
+  const [aboutListen, setAboutListen] = useState(false);
+  const [listenHint, setListenHint] = useState(false);
+  const [focusHint, setFocusHint] = useState(false);
+  const lastTap = useRef(0);
   const clock = sessionClock(voice.usage?.openSinceMs);
+  const live = ["connecting", "listening", "thinking", "speaking"].includes(voice.phase);
   useEffect(() => {
     if (!isTauri()) return;
     void api.getSettings().then((settings) => setPreferLocal(settings.preferLocalOnWake)).catch(() => {});
@@ -90,42 +101,100 @@ export function AssistantView({
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [voice.rows, voice.busy, voice.sending]);
+  useEffect(() => {
+    sessionStorage.setItem("grok-talk-focus", focus ? "1" : "0");
+  }, [focus]);
+  useEffect(() => {
+    localStorage.setItem("grok-mic-open", micOpen ? "1" : "0");
+  }, [micOpen]);
+  useEffect(() => {
+    if (!focusHint) return;
+    const id = window.setTimeout(() => setFocusHint(false), 2400);
+    return () => window.clearTimeout(id);
+  }, [focusHint]);
 
+  const onChatPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button, a, input, textarea, label, [role='button']")) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    const now = Date.now();
+    if (now - lastTap.current < 350) {
+      lastTap.current = 0;
+      if (!focus && sessionStorage.getItem("grok-focus-hint") !== "1") {
+        sessionStorage.setItem("grok-focus-hint", "1");
+        setFocusHint(true);
+      }
+      setFocus((on) => !on);
+      return;
+    }
+    lastTap.current = now;
+  };
+  const onMic = () => {
+    if (micOpen) {
+      setMicOpen(false);
+      return;
+    }
+    setMicOpen(true);
+    if (!live) void voice.toggleSession();
+  };
   const recovery = voice.lastError ? recoveryFor(voice.lastError) : null;
   const provider = readyProvider(voice.provider, accounts, preferLocal, packsReady);
   const inCall = voice.provider.length > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="shrink-0 px-1 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="masthead text-[1.85rem]">{t("Talk")}</h1>
-          {clock ? <p className="stamp">{clock}</p> : null}
+      <header className={cn("talk-head shrink-0 px-1", focus && "talk-head-off")}>
+        <div>
+          <div className="flex items-start justify-between gap-3 pb-3">
+            <h1 className="masthead text-[1.85rem]">{t("Talk")}</h1>
+            {clock ? <p className="stamp">{clock}</p> : null}
+          </div>
+          <div className="masthead-rule" />
+          <div className="mt-3 flex flex-wrap items-center gap-2 pb-3">
+            <p className="stamp">
+              {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
+            </p>
+            <button
+              type="button"
+              className={cn("stamp min-h-12 gap-2 px-3", voice.wakeEnabled && "stamp-on listen-live")}
+              aria-pressed={voice.wakeEnabled}
+              aria-label={voice.wakeEnabled ? t("Listen is on") : t("Listen is off")}
+              onClick={() => {
+                const next = !voice.wakeEnabled;
+                void voice.toggleWake(next);
+                if (next && localStorage.getItem("grok-listen-hint") !== "1") {
+                  localStorage.setItem("grok-listen-hint", "1");
+                  setListenHint(true);
+                }
+              }}
+            >
+              <Mic className="size-4" aria-hidden />
+              {voice.wakeEnabled ? t("Listen · On") : t("Listen · Off")}
+            </button>
+            <button
+              type="button"
+              className="grid size-12 shrink-0 place-items-center text-muted-foreground"
+              aria-expanded={aboutListen}
+              aria-label={t("About Listen")}
+              onClick={() => setAboutListen((on) => !on)}
+            >
+              <Info className="size-5" aria-hidden />
+            </button>
+          </div>
+          {listenHint ? <p className="pb-3 text-sm leading-5 text-muted-foreground">{t("Stays on in the background until you turn it off.")}</p> : null}
+          {aboutListen ? (
+            <div className="mb-3 border border-border px-3 py-3 text-sm leading-5 text-muted-foreground">
+              <p>{wakeTrained ? t("Stays on after you leave, lock the screen, or clear the app. Turn this off to stop.") : t("Hey Grok is not enrolled yet.")}</p>
+              {!wakeTrained ? (
+                <Button type="button" variant="outline" className="mt-3" onClick={() => onOpenSettings("wake")}>
+                  {t("Set up Hey Grok")}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        <div className="masthead-rule" />
-        <p className="stamp mt-3">
-          {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
-        </p>
       </header>
-
-      <div className="mag-panel mb-3 shrink-0">
-        <label className="flex min-h-12 items-center justify-between gap-3">
-          <span>
-            <span className="block text-base text-foreground">{t("Listen")}</span>
-            <span className="block text-sm leading-5 text-muted-foreground">
-              {voice.wakeEnabled ? t("On") : t("Off")}
-              {wakeTrained ? `. ${t("Stays on after you leave, lock the screen, or clear the app. Turn this off to stop.")}` : `. ${t("Hey Grok is not enrolled yet.")}`}
-              {clock ? ` · ${clock}` : ""}
-            </span>
-          </span>
-          <Switch checked={voice.wakeEnabled} onCheckedChange={(v) => void voice.toggleWake(v)} />
-        </label>
-        {!wakeTrained && (
-          <Button type="button" variant="outline" className="mt-2 w-full" onClick={() => onOpenSettings("wake")}>
-            {t("Set up Hey Grok")}
-          </Button>
-        )}
-      </div>
 
       {voice.lastError && (
         <Notice
@@ -137,7 +206,7 @@ export function AssistantView({
         />
       )}
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1">
+      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1" onPointerUp={onChatPointerUp}>
         {voice.rows.length === 0 ? (
           <div className="py-6">
             <p className="text-base leading-6 text-foreground">{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
@@ -220,17 +289,41 @@ export function AssistantView({
           aria-label={t("Type a message")}
           className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border border-border bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
         />
-        <button
-          type="submit"
-          disabled={voice.sending || draft.trim().length === 0}
-          aria-label={t("Send")}
-          className="grid size-12 shrink-0 place-items-center border border-foreground text-foreground disabled:opacity-40"
-        >
-          <Send className="size-5" strokeWidth={1.25} />
-        </button>
+        {draft.trim().length > 0 ? (
+          <button
+            type="submit"
+            disabled={voice.sending}
+            aria-label={t("Send")}
+            className="grid size-12 shrink-0 place-items-center border border-foreground text-foreground disabled:opacity-40"
+          >
+            <Send className="size-5" strokeWidth={1.25} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-pressed={micOpen}
+            aria-label={micOpen ? t("Hide voice") : t("Show voice")}
+            onClick={onMic}
+            className={cn("grid size-12 shrink-0 place-items-center border border-foreground text-foreground", micOpen && "bg-foreground text-background")}
+          >
+            <Mic className="size-5" strokeWidth={1.25} />
+          </button>
+        )}
       </form>
-      <div className="talk-mic shrink-0 pt-4">
-        <GlowRing phase={voice.phase} level={voice.level} onPress={() => void voice.toggleSession()} />
+      {live && !micOpen ? (
+        <button type="button" className="mt-2 min-h-12 w-full text-left text-sm text-foreground" onClick={() => setMicOpen(true)}>
+          {t(voice.phase === "speaking" ? "Speaking" : voice.phase === "thinking" ? "Thinking" : voice.phase === "connecting" ? "Connecting" : "Listening")}
+        </button>
+      ) : null}
+      {focusHint ? <p className="pt-2 text-center text-sm text-muted-foreground">{t("Double-tap to show header")}</p> : null}
+      <div className={cn("talk-mic-panel", micOpen && "open")}>
+        <div>
+          <button type="button" className="mx-auto mt-2 flex min-h-12 items-center gap-1 px-3 text-sm text-muted-foreground" aria-label={t("Hide voice")} onClick={() => setMicOpen(false)}>
+            <ChevronDown className="size-4" aria-hidden />
+            {t("Hide voice")}
+          </button>
+          <GlowRing phase={voice.phase} level={voice.level} onPress={() => void voice.toggleSession()} />
+        </div>
       </div>
     </div>
   );
