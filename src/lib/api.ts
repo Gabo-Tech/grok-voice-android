@@ -258,6 +258,18 @@ export interface Settings {
   customTheme?: string;
   /** `language`, `packs`, `packs-run`, `preview`, `cloud`, `done`, or `skipped`. */
   setupStep?: string;
+  /** Read messaging notifications. Off until the user turns it on. */
+  messageTriage?: boolean;
+  /** Speak a new direct message while Listen is on. Off by default. */
+  announceMessages?: boolean;
+  /** Speak who is calling while Listen is on. Off by default. */
+  announceCalls?: boolean;
+  /** Hide message text while the lock screen is up. */
+  redactLocked?: boolean;
+  /** Comma-separated packages when `messageAppsCustom` is set. */
+  messageApps?: string;
+  /** False keeps the built-in messaging apps. */
+  messageAppsCustom?: boolean;
 }
 
 export interface PlanPiece {
@@ -616,6 +628,15 @@ export interface AccessStatus {
   callLog: string;
   sms: string;
   audio?: string;
+  placeCall?: string;
+  answerCall?: string;
+}
+
+export interface InboxApp {
+  packageName: string;
+  label: string;
+  installed: boolean;
+  messaging: boolean;
 }
 
 export interface ExportedBackup {
@@ -811,6 +832,8 @@ export const api = {
   confirmHandoff: () => invoke<unknown>("confirm_handoff"),
   dismissHandoff: () => invoke<void>("dismiss_handoff"),
   accessStatus: () => invoke<AccessStatus>("access_status"),
+  inboxApps: () => invoke<{ ok?: boolean; apps?: InboxApp[] }>("inbox_apps"),
+  requestCallAccess: (kind: "place" | "answer") => invoke<AccessStatus>("request_call_access", { kind }),
   openAccessSettings: (kind: "notifications" | "dnd") => invoke<unknown>("open_access_settings", { kind }),
   requestHistoryAccess: () => invoke<PermissionStatus>("request_history_access"),
   requestAudioAccess: () => invoke<{ audio?: string; openedSettings?: boolean }>("request_audio_access"),

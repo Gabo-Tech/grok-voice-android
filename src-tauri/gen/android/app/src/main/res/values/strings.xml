@@ -92,4 +92,7 @@
     <string name="alarm_media_silent">YouTube audio uses the media volume, which is silent. The default alarm sound is playing.</string>
     <string name="alarm_channel_name">Alarm sound</string>
     <string name="alarm_channel_desc">Shown while a chosen alarm sound plays. The sound itself plays separately.</string>
+    <string name="inbox_announce">%1$s on %2$s. %3$s</string>
+    <string name="inbox_announce_hidden">%1$s on %2$s sent a message.</string>
+    <string name="inbox_call_announce">%1$s is calling.</string>
 </resources>

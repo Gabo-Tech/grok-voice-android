@@ -5,28 +5,37 @@ import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
-/** Reads notifications that are already posted. The user turns this on in system settings. */
+/** Reads notifications the user has allowed. Message bodies stay in Inbox's memory cache. */
 class NoticeListener : NotificationListenerService() {
   data class Row(val title: String, val text: String)
 
   override fun onListenerConnected() {
+    Inbox.onConnected(this)
     refresh()
   }
 
+  override fun onDestroy() {
+    Inbox.onDestroy(this)
+    super.onDestroy()
+  }
+
   override fun onNotificationPosted(sbn: StatusBarNotification?) {
+    if (sbn != null) Inbox.onPosted(this, sbn)
     refresh()
   }
 
   override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+    if (sbn != null) Inbox.onRemoved(sbn)
     refresh()
   }
 
   private fun refresh() {
     val rows = activeNotifications?.mapNotNull { posted ->
+      val pkg = posted.packageName ?: return@mapNotNull null
+      if (Inbox.tracks(pkg)) return@mapNotNull null
       val extras = posted.notification.extras
       val title = extras?.getCharSequence("android.title")?.toString()?.trim().orEmpty()
-      val text = extras?.getCharSequence("android.text")?.toString()?.trim().orEmpty()
-      if (title.isEmpty() && text.isEmpty()) null else Row(title.ifEmpty { posted.packageName }, text.take(140))
+      if (title.isEmpty()) null else Row(title, "")
     }.orEmpty()
     current = rows
   }

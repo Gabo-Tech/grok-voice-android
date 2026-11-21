@@ -94,6 +94,38 @@ pub struct Settings {
     /// `language`, `packs`, `packs-run`, `preview`, `cloud`, `done`, or `skipped`.
     #[serde(default)]
     pub setup_step: String,
+    /// Read messaging notifications for Talk. Off until the user opts in.
+    #[serde(default)]
+    pub message_triage: bool,
+    /// Speak a new direct message while Listen is on. Off by default.
+    #[serde(default)]
+    pub announce_messages: bool,
+    /// Speak who is calling while Listen is on. Off by default. Never answers.
+    #[serde(default)]
+    pub announce_calls: bool,
+    /// Omit message text while the lock screen is up.
+    #[serde(default = "default_on")]
+    pub redact_locked: bool,
+    /// Comma-separated packages. Used only when `message_apps_custom` is set.
+    #[serde(default)]
+    pub message_apps: String,
+    /// False keeps the built-in messaging apps. True uses `message_apps`.
+    #[serde(default)]
+    pub message_apps_custom: bool,
+}
+
+fn default_on() -> bool {
+    true
+}
+
+fn stored_message_apps(raw: &str) -> String {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty() && item.len() <= 120)
+        .filter(|item| item.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '_'))
+        .take(40)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 impl Default for Settings {
@@ -127,6 +159,12 @@ impl Default for Settings {
             appearance: String::new(),
             custom_theme: String::new(),
             setup_step: String::new(),
+            message_triage: false,
+            announce_messages: false,
+            announce_calls: false,
+            redact_locked: true,
+            message_apps: String::new(),
+            message_apps_custom: false,
         }
     }
 }
@@ -201,6 +239,7 @@ impl SettingsStore {
             s.setup_step = self.get().setup_step.clone();
         }
         s.setup_step = crate::local::stack::normalize_step(&s.setup_step);
+        s.message_apps = stored_message_apps(&s.message_apps);
         if s.setup_step.is_empty() {
             s.setup_step = if s.onboarded {
                 crate::local::stack::STEP_DONE.into()
@@ -642,8 +681,10 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
         format!("Spoken alerts say {}.", settings.spoken_name)
     };
     let player = crate::music::player_name(&settings.music_player);
+    let messages = if settings.message_triage { "on" } else { "off" };
+    let announce = if settings.announce_messages { "on" } else { "off" };
     let detail = format!(
-        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. Default music player is {player}. Grok voice is {}. OpenAI voice is {}. {order} Days before a birthday stay on that person.",
+        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Message reading is {messages}. Announcing new messages is {announce}. Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. Default music player is {player}. Grok voice is {}. OpenAI voice is {}. {order} Days before a birthday stay on that person.",
         settings.idle_timeout_secs, settings.voice, settings.openai_voice
     );
     json!({
@@ -672,6 +713,10 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
         },
         "spokenName": settings.spoken_name,
         "musicPlayer": crate::music::stored_player(&settings.music_player),
+        "messageTriage": settings.message_triage,
+        "announceMessages": settings.announce_messages,
+        "announceCalls": settings.announce_calls,
+        "redactLocked": settings.redact_locked,
         "detail": detail
     })
 }
@@ -701,7 +746,7 @@ pub fn edit_settings(
         .collect();
     if !unknown.is_empty() {
         return Err(format!(
-            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, spoken name, the default music player, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
+            "That is not a setting ({}). You can change language, local speech, Prefer on device, Listen, notification delivery, spoken name, message reading, announcing messages, announcing calls, hiding message text on the lock screen, the default music player, quiet gap seconds, daily voice budget minutes, monthly voice budget minutes, hard stop, voice, model, instructions, echo guard, or wake threshold. Days before a birthday are lead days on that person.",
             unknown.join(", ")
         ));
     }
@@ -862,6 +907,26 @@ pub fn edit_settings(
             crate::music::player_name(&next.music_player)
         ));
     }
+    if let Some(on) = first_bool(args, &["messageTriage", "readMessages"]) {
+        next.message_triage = on;
+        changed = true;
+        notes.push(format!("Message reading is {}.", on_off(on)));
+    }
+    if let Some(on) = first_bool(args, &["announceMessages"]) {
+        next.announce_messages = on;
+        changed = true;
+        notes.push(format!("Announcing new messages is {}.", on_off(on)));
+    }
+    if let Some(on) = first_bool(args, &["announceCalls"]) {
+        next.announce_calls = on;
+        changed = true;
+        notes.push(format!("Announcing calls is {}.", on_off(on)));
+    }
+    if let Some(on) = first_bool(args, &["redactLocked", "hideMessageText"]) {
+        next.redact_locked = on;
+        changed = true;
+        notes.push(format!("Hiding message text on the lock screen is {}.", on_off(on)));
+    }
 
     let mut pending = None;
     let mut listen = None;
@@ -999,6 +1064,12 @@ fn known_setting(key: &str) -> bool {
             | "musicPlayer"
             | "defaultMusicPlayer"
             | "music"
+            | "messageTriage"
+            | "readMessages"
+            | "announceMessages"
+            | "announceCalls"
+            | "redactLocked"
+            | "hideMessageText"
     )
 }
 

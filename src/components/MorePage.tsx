@@ -12,9 +12,10 @@ import { PeoplePage } from "@/components/PeoplePage";
 import { WakeView } from "@/components/WakeView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { VoiceState } from "@/hooks/useVoice";
-import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type InboxApp, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
 import { providerLabel } from "@/lib/flow";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
 import { normalizeAppearance, rememberCustomTheme } from "@/lib/appearance";
@@ -582,7 +583,7 @@ export function MorePage({
           section: "access",
           icon: <Bell className="size-4" />,
           title: t("Phone access"),
-          detail: t("What this app may read on the phone."),
+          detail: t("Messages, calls, notifications, and Do Not Disturb."),
         },
       ],
     },
@@ -948,6 +949,8 @@ function MemorySection() {
 function AccessSection() {
   const t = useT();
   const [status, setStatus] = useState<AccessStatus | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [apps, setApps] = useState<InboxApp[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = () => {
@@ -956,7 +959,29 @@ function AccessSection() {
 
   useEffect(() => {
     refresh();
+    void api.getSettings().then(setSettings).catch((e) => setError(errorText(e)));
+    void api.inboxApps().then((rows) => setApps(rows.apps ?? [])).catch(() => setApps([]));
   }, []);
+
+  const save = (patch: Partial<Settings>) => {
+    if (!settings) return;
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    void api.saveSettings(next).then(setSettings).catch((e) => setError(errorText(e)));
+  };
+
+  const allowed = new Set(
+    settings && !settings.messageAppsCustom
+      ? apps.filter((app) => app.messaging).map((app) => app.packageName)
+      : (settings?.messageApps ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+  );
+
+  const toggleApp = (pkg: string) => {
+    const next = new Set(allowed);
+    if (next.has(pkg)) next.delete(pkg);
+    else next.add(pkg);
+    save({ messageAppsCustom: true, messageApps: [...next].join(",") });
+  };
 
   return (
     <div className="space-y-4 pb-6">
@@ -964,10 +989,80 @@ function AccessSection() {
       <p className="text-sm leading-6 text-muted-foreground">
         {t("These are asked only when you turn them on. Notification access and Do Not Disturb open system settings. Call and text history is a separate permission and is not read until you allow it.")}
       </p>
+      <p className="text-sm leading-6 text-muted-foreground">
+        {t("Message text stays on this phone. It reaches a cloud model only while you are talking with that model, and only because you asked. Nothing is uploaded in the background.")}
+      </p>
+      <div className="flex min-h-12 items-center justify-between gap-3 border border-border px-3 py-2">
+        <div>
+          <p className="text-sm">{t("Read messages")}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{t("Off until you turn this on. Talk can then read messages from the apps you allow, and say who wrote them.")}</p>
+        </div>
+        <Switch checked={settings?.messageTriage === true} onCheckedChange={(on) => save({ messageTriage: on })} disabled={!settings} />
+      </div>
+      <div className="flex min-h-12 items-center justify-between gap-3 border border-border px-3 py-2">
+        <div>
+          <p className="text-sm">{t("Announce while Listen is on")}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{t("Off by default. A new direct message is spoken on this phone. Groups, Do Not Disturb, and the lock screen are respected.")}</p>
+        </div>
+        <Switch checked={settings?.announceMessages === true} onCheckedChange={(on) => save({ announceMessages: on })} disabled={!settings} />
+      </div>
+      <div className="flex min-h-12 items-center justify-between gap-3 border border-border px-3 py-2">
+        <div>
+          <p className="text-sm">{t("Hide text on the lock screen")}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{t("While the phone is locked, Talk says who wrote, not the words.")}</p>
+        </div>
+        <Switch checked={settings?.redactLocked !== false} onCheckedChange={(on) => save({ redactLocked: on })} disabled={!settings} />
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm">{t("Apps Talk may read")}</p>
+        <p className="text-xs leading-5 text-muted-foreground">{t("Messaging apps are allowed until you change this list. Other notifications are ignored.")}</p>
+        {apps.filter((app) => app.installed || !app.messaging).map((app) => (
+          <button
+            key={app.packageName}
+            type="button"
+            className="flex min-h-12 w-full items-center justify-between border border-border px-3 text-left text-sm"
+            onClick={() => toggleApp(app.packageName)}
+            disabled={!settings}
+          >
+            <span>
+              {app.label}
+              {!app.installed ? <span className="ml-2 text-xs uppercase text-muted-foreground">{t("Not installed")}</span> : null}
+            </span>
+            <span className="text-xs uppercase">{allowed.has(app.packageName) ? t("Allowed") : t("Blocked")}</span>
+          </button>
+        ))}
+        <Button type="button" variant="outline" className="w-full" disabled={!settings} onClick={() => save({ messageAppsCustom: false, messageApps: "" })}>
+          {t("Messaging apps only")}
+        </Button>
+      </div>
+      <p className="text-sm leading-6 text-muted-foreground">{t("Notification access is required before any message is read.")}</p>
       <button type="button" className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm" onClick={() => void api.openAccessSettings("notifications").then(refresh)}>
         <span>{t("Notification access")}</span>
         <span className="text-xs uppercase">{accessWord(status?.notificationListener, t)}</span>
       </button>
+      <button
+        type="button"
+        className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm"
+        onClick={() => void api.requestCallAccess("place").then(setStatus).catch((e) => setError(errorText(e)))}
+      >
+        <span>{t("Place calls")}</span>
+        <span className="text-xs uppercase">{accessWord(status?.placeCall, t)}</span>
+      </button>
+      <button
+        type="button"
+        className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm"
+        onClick={() => void api.requestCallAccess("answer").then(setStatus).catch((e) => setError(errorText(e)))}
+      >
+        <span>{t("Answer calls")}</span>
+        <span className="text-xs uppercase">{accessWord(status?.answerCall, t)}</span>
+      </button>
+      <div className="flex min-h-12 items-center justify-between gap-3 border border-border px-3 py-2">
+        <div>
+          <p className="text-sm">{t("Announce incoming calls")}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{t("Off by default. Listen says who is calling. The call is not answered unless you say so.")}</p>
+        </div>
+        <Switch checked={settings?.announceCalls === true} onCheckedChange={(on) => save({ announceCalls: on })} disabled={!settings} />
+      </div>
       <button type="button" className="flex h-12 w-full items-center justify-between border border-border px-3 text-left text-sm" onClick={() => void api.openAccessSettings("dnd").then(refresh)}>
         <span>{t("Do Not Disturb")}</span>
         <span className="text-xs uppercase">{accessWord(status?.dnd, t)}</span>

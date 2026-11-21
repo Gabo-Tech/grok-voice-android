@@ -93,5 +93,8 @@
     <string name="alarm_media_silent">YouTube-Audio nutzt die Medienlautstärke, und die ist stumm. Der Standard-Weckton spielt.</string>
     <string name="alarm_channel_name">Weckton</string>
     <string name="alarm_channel_desc">Sichtbar, während ein gewählter Weckton läuft. Der Ton selbst spielt getrennt.</string>
+    <string name="inbox_announce">%1$s über %2$s. %3$s</string>
+    <string name="inbox_announce_hidden">%1$s über %2$s hat eine Nachricht geschickt.</string>
+    <string name="inbox_call_announce">%1$s ruft an.</string>
 </resources>
 

@@ -50,6 +50,38 @@ object SpokenAlerts {
     return readSettings(context).optString("notificationDelivery", "") == "spoken"
   }
 
+  /** On-device only. Does not start Talk and does not send the line anywhere. */
+  fun speakLine(context: Context, line: String, duringRing: Boolean = false) {
+    val spoken = line.trim()
+    if (spoken.isEmpty()) return
+    val app = context.applicationContext
+    worker.execute {
+      try {
+        val am = app.getSystemService(AudioManager::class.java) ?: return@execute
+        val busy = if (duringRing) {
+          am.mode == AudioManager.MODE_IN_CALL || am.mode == AudioManager.MODE_IN_COMMUNICATION
+        } else {
+          inCall(am)
+        }
+        if (busy) return@execute
+        if (RustBridge.loadCore() && RustBridge.talkOutputBusy()) return@execute
+        playAndroid(app, spoken)
+      } catch (t: Throwable) {
+        Log.w(TAG, "inbox announce failed", t)
+      }
+    }
+  }
+
+  fun quietForAnnounce(context: Context, calls: Boolean): Boolean {
+    val nm = context.getSystemService(NotificationManager::class.java) ?: return false
+    val filter = nm.currentInterruptionFilter
+    if (filter == NotificationManager.INTERRUPTION_FILTER_NONE || filter == NotificationManager.INTERRUPTION_FILTER_ALARMS) {
+      return true
+    }
+    if (!calls && filter == NotificationManager.INTERRUPTION_FILTER_PRIORITY) return true
+    return false
+  }
+
   fun enqueue(
     context: Context,
     id: Int,

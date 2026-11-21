@@ -131,7 +131,12 @@ class EventIdArgs {
     ),
     Permission(strings = [Manifest.permission.READ_CONTACTS], alias = "contacts"),
     Permission(strings = [Manifest.permission.READ_CALL_LOG], alias = "callLog"),
-    Permission(strings = [Manifest.permission.READ_SMS], alias = "sms")
+    Permission(strings = [Manifest.permission.READ_SMS], alias = "sms"),
+    Permission(strings = [Manifest.permission.CALL_PHONE], alias = "placeCall"),
+    Permission(
+      strings = [Manifest.permission.ANSWER_PHONE_CALLS, Manifest.permission.READ_PHONE_STATE],
+      alias = "answerCall"
+    )
   ]
 )
 class VoicePlugin(private val activity: Activity) : Plugin(activity) {
@@ -512,7 +517,56 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun readNotifications(invoke: Invoke) {
-    resolveJson(invoke, DeviceExtras.notifications(activity.applicationContext))
+    resolveJson(invoke, Inbox.snapshot(activity.applicationContext))
+  }
+
+  @InvokeArg
+  class ReplyArgs {
+    var id: String = ""
+    var text: String = ""
+  }
+
+  @Command
+  fun replyInbox(invoke: Invoke) {
+    val args = invoke.parseArgs(ReplyArgs::class.java)
+    resolveJson(invoke, Inbox.reply(activity.applicationContext, args.id, args.text))
+  }
+
+  @InvokeArg
+  class PhoneCallArgs {
+    var action: String = ""
+    var number: String = ""
+  }
+
+  @Command
+  fun phoneCall(invoke: Invoke) {
+    val args = invoke.parseArgs(PhoneCallArgs::class.java)
+    val result = when (args.action) {
+      "state" -> PhoneCalls.state(activity.applicationContext)
+      "place" -> PhoneCalls.place(activity, args.number)
+      "answer" -> PhoneCalls.answer(activity.applicationContext)
+      "decline" -> PhoneCalls.decline(activity.applicationContext)
+      "end" -> PhoneCalls.end(activity.applicationContext)
+      else -> """{"ok":false,"error":"inbox-answer-none"}"""
+    }
+    resolveJson(invoke, result)
+  }
+
+  @InvokeArg
+  class ShareMessageArgs {
+    var pkg: String = ""
+    var text: String = ""
+  }
+
+  @Command
+  fun shareMessage(invoke: Invoke) {
+    val args = invoke.parseArgs(ShareMessageArgs::class.java)
+    resolveJson(invoke, Inbox.share(activity, args.pkg, args.text))
+  }
+
+  @Command
+  fun inboxApps(invoke: Invoke) {
+    resolveJson(invoke, Inbox.apps(activity.applicationContext))
   }
 
   @Command

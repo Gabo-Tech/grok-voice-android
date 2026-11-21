@@ -460,6 +460,49 @@ mod imp {
             self.plugin_json("readNotifications", ())
         }
 
+        pub fn reply_inbox(&self, id: &str, text: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                id: &'a str,
+                text: &'a str,
+            }
+            self.plugin_json("replyInbox", Args { id, text })
+        }
+
+        pub fn phone_call(&self, action: &str, number: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                action: &'a str,
+                number: &'a str,
+            }
+            self.plugin_json("phoneCall", Args { action, number })
+        }
+
+        pub fn share_message(&self, package: &str, text: &str) -> Result<String> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                pkg: &'a str,
+                text: &'a str,
+            }
+            self.plugin_json("shareMessage", Args { pkg: package, text })
+        }
+
+        pub fn inbox_apps(&self) -> Result<String> {
+            self.plugin_json("inboxApps", ())
+        }
+
+        pub fn request_call_access(&self, kind: &str) -> Result<String> {
+            let alias = match kind {
+                "answer" => "answerCall",
+                _ => "placeCall",
+            };
+            let _: serde_json::Value = self
+                .handle
+                .run_mobile_plugin("requestPermissions", PermArgs { permissions: vec![alias] })
+                .map_err(|e| msg(e.to_string()))?;
+            self.access_status()
+        }
+
         pub fn set_dnd(&self, mode: &str) -> Result<String> {
             #[derive(Serialize)]
             struct Args<'a> {
@@ -771,7 +814,30 @@ mod imp {
         }
 
         pub fn read_notifications(&self) -> Result<String> {
-            Ok(r#"{"ok":false,"error":"Notifications are read on the Android phone."}"#.into())
+            Ok(r#"{"ok":false,"listener":false,"messages":[]}"#.into())
+        }
+
+        pub fn reply_inbox(&self, _id: &str, _text: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"code":"no-reply"}"#.into())
+        }
+
+        pub fn phone_call(&self, action: &str, _number: &str) -> Result<String> {
+            if action == "state" {
+                return Ok(r#"{"ringing":false,"offhook":false,"name":"","answerPermission":false,"answerAction":false,"declineAction":false,"hangupAction":false}"#.into());
+            }
+            Ok(r#"{"ok":false,"error":"Calls are placed on the Android phone."}"#.into())
+        }
+
+        pub fn share_message(&self, _package: &str, _text: &str) -> Result<String> {
+            Ok(r#"{"ok":false,"error":"Drafts open on the Android phone."}"#.into())
+        }
+
+        pub fn inbox_apps(&self) -> Result<String> {
+            Ok(crate::inbox::catalog_value(&[]).to_string())
+        }
+
+        pub fn request_call_access(&self, _kind: &str) -> Result<String> {
+            self.access_status()
         }
 
         pub fn set_dnd(&self, _mode: &str) -> Result<String> {
@@ -787,7 +853,7 @@ mod imp {
         }
 
         pub fn access_status(&self) -> Result<String> {
-            Ok(r#"{"notificationListener":"unknown","dnd":"unknown","callLog":"unknown","sms":"unknown","audio":"unknown"}"#.into())
+            Ok(r#"{"notificationListener":"unknown","dnd":"unknown","callLog":"unknown","sms":"unknown","audio":"unknown","placeCall":"unknown","answerCall":"unknown"}"#.into())
         }
 
         pub fn open_access_settings(&self, _kind: &str) -> Result<String> {

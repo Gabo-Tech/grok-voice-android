@@ -19,6 +19,7 @@ mod finance_pdf;
 mod finance_schedule;
 mod http;
 mod i18n;
+mod inbox;
 mod local;
 mod local_memory;
 mod memory;
@@ -195,6 +196,8 @@ pub fn run() {
             commands::confirm_handoff,
             commands::dismiss_handoff,
             commands::access_status,
+            commands::inbox_apps,
+            commands::request_call_access,
             commands::open_access_settings,
             commands::request_history_access,
             commands::request_audio_access,

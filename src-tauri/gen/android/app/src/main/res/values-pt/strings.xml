@@ -93,5 +93,8 @@
     <string name="alarm_media_silent">O áudio do YouTube usa o volume de mídia, que está no silêncio. O som padrão do alarme está tocando.</string>
     <string name="alarm_channel_name">Som do alarme</string>
     <string name="alarm_channel_desc">Visível enquanto um som de alarme escolhido toca. O som em si toca à parte.</string>
+    <string name="inbox_announce">%1$s no %2$s. %3$s</string>
+    <string name="inbox_announce_hidden">%1$s no %2$s enviou uma mensagem.</string>
+    <string name="inbox_call_announce">%1$s está ligando.</string>
 </resources>
 
