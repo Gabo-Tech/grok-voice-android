@@ -36,6 +36,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "{name} is shown on the {chart} chart.": "{name} se muestra en el gráfico {chart}.",
     "Portfolio value changed by {amount}, {percent} percent, since {date}.": "La cartera cambió {amount}, un {percent} por ciento, desde {date}.",
     "No portfolio history is saved yet.": "Aún no hay historial de la cartera.",
+    "Refresh price now": "Actualizar el precio ahora",
+    "Could not refresh the price.": "No se ha podido actualizar el precio.",
   },
   de: {
     Palette: "Palette",
@@ -71,6 +73,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "{name} is shown on the {chart} chart.": "{name} ist in der Grafik {chart} zu sehen.",
     "Portfolio value changed by {amount}, {percent} percent, since {date}.": "Der Portfoliowert hat sich seit {date} um {amount} geändert, {percent} Prozent.",
     "No portfolio history is saved yet.": "Noch keine Portfolio-Historie gespeichert.",
+    "Refresh price now": "Preis jetzt aktualisieren",
+    "Could not refresh the price.": "Der Preis konnte nicht aktualisiert werden.",
   },
   pt: {
     Palette: "Paleta",
@@ -106,6 +110,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "{name} is shown on the {chart} chart.": "{name} aparece no gráfico {chart}.",
     "Portfolio value changed by {amount}, {percent} percent, since {date}.": "A carteira mudou {amount}, {percent} por cento, desde {date}.",
     "No portfolio history is saved yet.": "Ainda não há histórico da carteira.",
+    "Refresh price now": "Atualizar o preço agora",
+    "Could not refresh the price.": "Não foi possível atualizar o preço.",
   },
   "ca-ES-valencia": {
     Palette: "Paleta",
@@ -141,5 +147,7 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "{name} is shown on the {chart} chart.": "{name} es mostra en el gràfic {chart}.",
     "Portfolio value changed by {amount}, {percent} percent, since {date}.": "La cartera ha canviat {amount}, un {percent} per cent, des de {date}.",
     "No portfolio history is saved yet.": "Encara no hi ha historial de la cartera.",
+    "Refresh price now": "Actualitza el preu ara",
+    "Could not refresh the price.": "No s'ha pogut actualitzar el preu.",
   },
 };

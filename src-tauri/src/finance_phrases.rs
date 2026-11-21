@@ -172,6 +172,7 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("{name} is shown on the {chart} chart.", "{name} se muestra en el gráfico {chart}."),
     ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "La cartera cambió {amount}, un {percent} por ciento, desde {date}."),
     ("No portfolio history is saved yet.", "Aún no hay historial de la cartera."),
+    ("No holding matches {name}.", "Ninguna posición coincide con {name}."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -348,6 +349,7 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("{name} is shown on the {chart} chart.", "{name} ist in der Grafik {chart} zu sehen."),
     ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "Der Portfoliowert hat sich seit {date} um {amount} geändert, {percent} Prozent."),
     ("No portfolio history is saved yet.", "Noch keine Portfolio-Historie gespeichert."),
+    ("No holding matches {name}.", "Kein Bestand passt zu {name}."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -524,6 +526,7 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("{name} is shown on the {chart} chart.", "{name} aparece no gráfico {chart}."),
     ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "A carteira mudou {amount}, {percent} por cento, desde {date}."),
     ("No portfolio history is saved yet.", "Ainda não há histórico da carteira."),
+    ("No holding matches {name}.", "Nenhuma posição corresponde a {name}."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -700,4 +703,5 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("{name} is shown on the {chart} chart.", "{name} es mostra en el gràfic {chart}."),
     ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "La cartera ha canviat {amount}, un {percent} per cent, des de {date}."),
     ("No portfolio history is saved yet.", "Encara no hi ha historial de la cartera."),
+    ("No holding matches {name}.", "Cap posició coincideix amb {name}."),
 ];
