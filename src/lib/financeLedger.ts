@@ -206,10 +206,17 @@ function parseQty(text: string): string {
   return match ? match[1].replace(",", ".") : "";
 }
 
+function aliasKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[_/-]+/g, " ").replace(/\s+/g, " ");
+}
+
 function aliasOf(account: HoldingShape): { symbol: string; kind: string } | null {
-  const keys = [account.ticker, account.currency, account.name, account.notes].map((value) => (value || "").trim().toLowerCase());
+  const keys = [account.name, account.ticker, account.currency, account.notes].map((value) => aliasKey(value || ""));
   for (const key of keys) {
+    if (!key) continue;
     if (ALIAS[key]) return ALIAS[key];
+    const compact = key.replace(/ /g, "");
+    if (ALIAS[compact]) return ALIAS[compact];
   }
   if (looksCrypto(account.currency || "")) return { symbol: (account.currency || "").toUpperCase(), kind: "crypto" };
   return null;
@@ -241,7 +248,7 @@ export function positionOf(account: HoldingShape, display: string, book: RateBoo
   const quantity = quantityOf(account);
   const kind = alias?.kind || (account.investmentType === "stock" || account.investmentType === "fund" ? "stock" : account.investmentType || "");
   const unit = measureOf(account, kind);
-  const symbol = (account.ticker || alias?.symbol || "").toUpperCase();
+  const symbol = (alias?.symbol || account.ticker || "").toUpperCase();
   const quote = quotes.find((row) => row.symbol.toUpperCase() === symbol && row.price > 0);
   const manual = Boolean(account.priceOverride) || account.investmentType === "collectible" || account.investmentType === "property" || account.investmentType === "custom";
 
