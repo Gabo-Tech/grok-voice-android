@@ -19,8 +19,8 @@ pub const TROY_OZ_GRAMS: f64 = 31.1034768;
 pub const CRYPTO_PROVIDERS: &[&str] = &["coingecko", "coinpaprika", "kraken"];
 /// Spot metals per troy ounce. gold-api.com is the keyless source whose terms allow this.
 pub const METAL_PROVIDERS: &[&str] = &["gold-api"];
-/// US ETF last official close. A symbol that is not listed there stays unpriced.
-pub const STOCK_PROVIDERS: &[&str] = &["atlantis"];
+/// US ETF last close is keyless. Individual stocks use an optional user key, in this order.
+pub const STOCK_PROVIDERS: &[&str] = &["atlantis", "finnhub", "alphavantage", "twelvedata"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AssetRef {
@@ -69,6 +69,20 @@ pub struct PriceBook {
     /// Provider ids the user turned off. Empty means every provider is on.
     #[serde(default)]
     pub disabled: Vec<String>,
+    /// Optional keys the user typed in Settings. Empty means that provider is skipped.
+    #[serde(default)]
+    pub keys: PriceKeys,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceKeys {
+    #[serde(default)]
+    pub finnhub: String,
+    #[serde(default)]
+    pub alphavantage: String,
+    #[serde(default)]
+    pub twelvedata: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -371,17 +385,60 @@ fn fill_metals(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
 }
 
 fn fill_stocks(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>) {
-    if !provider_enabled(book, "atlantis") {
-        return;
-    }
-    for asset in assets.iter().filter(|asset| asset.kind == "stock") {
-        let url = format!("https://atlantisdatasolutions.com/v1/us/etfs/{}", asset.symbol);
-        if let Ok(body) = get(&url) {
-            if let Some((price, currency)) = parse_atlantis_etf(&body) {
-                put_api(book, asset, price, &currency, "atlantis", now_ms);
+    for asset in assets.iter().filter(|asset| asset.kind == "stock" || asset.kind == "fund") {
+        if provider_enabled(book, "atlantis") && !fresh_api(book, asset, now_ms) {
+            let url = format!("https://atlantisdatasolutions.com/v1/us/etfs/{}", asset.symbol);
+            if let Ok(body) = get(&url) {
+                if let Some((price, currency)) = parse_atlantis_etf(&body) {
+                    put_api(book, asset, price, &currency, "atlantis", now_ms);
+                }
+            }
+        }
+        if provider_enabled(book, "finnhub") && !book.keys.finnhub.trim().is_empty() && !fresh_api(book, asset, now_ms) {
+            let url = format!("https://finnhub.io/api/v1/quote?symbol={}&token={}", enc(&asset.symbol), enc(book.keys.finnhub.trim()));
+            if let Ok(body) = get(&url) {
+                if let Some((price, currency)) = parse_finnhub_quote(&body) {
+                    put_api(book, asset, price, &currency, "finnhub", now_ms);
+                }
+            }
+        }
+        if provider_enabled(book, "alphavantage") && !book.keys.alphavantage.trim().is_empty() && !fresh_api(book, asset, now_ms) {
+            let url = format!("https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={}&apikey={}", enc(&asset.symbol), enc(book.keys.alphavantage.trim()));
+            if let Ok(body) = get(&url) {
+                if let Some((price, currency)) = parse_alpha_quote(&body) {
+                    put_api(book, asset, price, &currency, "alphavantage", now_ms);
+                }
+            }
+        }
+        if provider_enabled(book, "twelvedata") && !book.keys.twelvedata.trim().is_empty() && !fresh_api(book, asset, now_ms) {
+            let url = format!("https://api.twelvedata.com/quote?symbol={}&apikey={}", enc(&asset.symbol), enc(book.keys.twelvedata.trim()));
+            if let Ok(body) = get(&url) {
+                if let Some((price, currency)) = parse_twelve_quote(&body) {
+                    put_api(book, asset, price, &currency, "twelvedata", now_ms);
+                }
             }
         }
     }
+}
+
+pub fn parse_finnhub_quote(body: &str) -> Option<(f64, String)> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let price = json_rate(value.get("c")?)?;
+    if price.is_finite() && price > 0.0 { Some((price, "USD".into())) } else { None }
+}
+
+pub fn parse_alpha_quote(body: &str) -> Option<(f64, String)> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let quote = value.get("Global Quote")?;
+    let price = json_rate(quote.get("05. price")?)?;
+    if price.is_finite() && price > 0.0 { Some((price, "USD".into())) } else { None }
+}
+
+pub fn parse_twelve_quote(body: &str) -> Option<(f64, String)> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let price = json_rate(value.get("close")?)?;
+    let currency = value.get("currency").and_then(|item| item.as_str()).unwrap_or("USD").to_ascii_uppercase();
+    if price.is_finite() && price > 0.0 && currency.len() == 3 { Some((price, currency)) } else { None }
 }
 
 fn put_api(book: &mut PriceBook, asset: &AssetRef, price: f64, currency: &str, source: &str, now_ms: i64) {
@@ -779,7 +836,7 @@ mod tests {
     }
 
     fn book_with(quote: Spot) -> PriceBook {
-        PriceBook { quotes: vec![quote], manual: Vec::new(), disabled: Vec::new() }
+        PriceBook { quotes: vec![quote], manual: Vec::new(), disabled: Vec::new(), keys: PriceKeys::default() }
     }
 
     #[test]

@@ -365,6 +365,13 @@ export interface FinanceAccount {
   dueDay: number | null;
   statementDay: number | null;
   lastFour: string;
+  /** What you paid, in `purchaseCurrency`. Optional. */
+  purchaseMinor?: number | null;
+  purchaseCurrency?: string;
+  purchaseDate?: string;
+  /** Your estimates over time. The latest is the current value when there is no live price. */
+  valuations?: { asOf: string; amountMinor: number; currency: string }[];
+  isin?: string;
 }
 
 export interface FinanceTransaction {

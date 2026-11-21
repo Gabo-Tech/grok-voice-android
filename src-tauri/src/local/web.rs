@@ -261,6 +261,7 @@ mod tests {
             "move_transactions",
             "mark_paid",
             "export_finance_pdf",
+            "open_finance",
         ] {
             assert!(network_block(name, false).is_none(), "{name} stays available offline");
         }
