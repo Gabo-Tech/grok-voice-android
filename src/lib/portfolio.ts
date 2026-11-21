@@ -57,6 +57,31 @@ export function seriesFor(points: ValuePoint[], ids: string[], from: string): Se
   return out;
 }
 
+/**
+ * First day on which every holding in `ids` has a saved point.
+ * Earlier days are partial snapshots and must not be the baseline of a percent change.
+ */
+export function firstCompleteDate(points: ValuePoint[], ids: string[], from: string): string {
+  const wanted = new Set(ids);
+  if (wanted.size === 0) return "";
+  const seen = new Set<string>();
+  const days = [...new Set(points.filter((point) => wanted.has(point.accountId) && (!from || point.date >= from)).map((point) => point.date))].sort();
+  for (const date of days) {
+    for (const point of points) {
+      if (point.date === date && wanted.has(point.accountId)) seen.add(point.accountId);
+    }
+    if (seen.size === wanted.size) return date;
+  }
+  return "";
+}
+
+/** The series from the first complete snapshot. Empty when a holding in `ids` never appears. */
+export function completeSeries(points: ValuePoint[], ids: string[], from: string): SeriesPoint[] {
+  const start = firstCompleteDate(points, ids, from);
+  if (!start) return [];
+  return seriesFor(points, ids, start > from ? start : from);
+}
+
 export function changeOf(points: SeriesPoint[]): { amountMinor: number; percent: number; from: string; to: string } | null {
   if (points.length < 2) return null;
   const start = points[0];

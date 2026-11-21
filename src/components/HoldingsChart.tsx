@@ -14,7 +14,7 @@ import { bookFromStatus } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { inBounds } from "@/lib/chartPeriod";
-import { changeOf, seriesFor, type ValuePoint } from "@/lib/portfolio";
+import { changeOf, completeSeries, seriesFor, type ValuePoint } from "@/lib/portfolio";
 import { fill, useT } from "@/lib/i18n";
 
 const PREF_KEY = "grok-finance-allocation";
@@ -111,7 +111,6 @@ export function HoldingsChart({
       original: row.quantity,
       className: row.assetClass,
       unpriced: true,
-      note: t("No price"),
     })),
   ];
   const vis = useChartVisibility("holdings", legend.map((row) => ({ id: row.id, label: row.label, className: row.className })));
@@ -133,14 +132,15 @@ export function HoldingsChart({
   }, [history]);
   const portVis = useChartVisibility("portfolio", [{ id: "total", label: t("Portfolio value"), className: "total" }, ...portfolioItems]);
   const shownIds = portfolioItems.filter((item) => !portVis.hidden.has(item.id)).map((item) => item.id);
-  const totalSeries = seriesFor(historyIn, portfolioItems.map((item) => item.id), from);
+  const portfolioIds = portfolioItems.map((item) => item.id);
+  const totalSeries = completeSeries(historyIn, portfolioIds, from);
   const change = changeOf(totalSeries);
   const lineSeries = [
     portVis.hidden.has("total") ? null : { id: "total", color: "var(--brand)", points: totalSeries },
     ...shownIds.map((id) => ({
       id,
       color: "var(--text-tertiary)",
-      points: seriesFor(historyIn, [id], from),
+      points: completeSeries(historyIn, [id], from),
     })),
   ].filter((row): row is { id: string; color: string; points: { date: string; valueMinor: number }[] } => Boolean(row && row.points.length));
   const portRows: LegendRow[] = [
@@ -195,6 +195,7 @@ export function HoldingsChart({
         />
       </ChartCard>
 
+      <div data-shot="portfolio">
       <ChartCard title={t("Portfolio value")}>
         <p className="fin-muted text-[13px] leading-4">{fill("In {code}. History starts when a real price is saved.", { code: code || "—" })}</p>
         <ChartPeriodBar period={portfolioPeriod.period} onChange={portfolioPeriod.setPeriod} />
@@ -217,6 +218,7 @@ export function HoldingsChart({
         )}
         <Legend rows={portRows} hidden={portVis.hidden} currency={code} onToggle={portVis.toggle} onShowAll={portVis.showAll} anyHidden={portVis.anyHidden} />
       </ChartCard>
+      </div>
     </div>
   );
 }

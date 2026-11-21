@@ -4,7 +4,7 @@ import type { FinanceAccount, FinanceCategory, FinanceFx, FinanceTransaction } f
 import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
-import { buildMoneyFlow, linkedIds, type FlowNode, type MoneyFlow } from "@/lib/moneyFlow";
+import { buildMoneyFlow, layoutSankey, type FlowNode, type MoneyFlow } from "@/lib/moneyFlow";
 import { formatMoney } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
 
@@ -51,6 +51,7 @@ export function MoneyFlowPanel({
           currency: tx.currency,
           direction: tx.direction,
           category: tx.category,
+          subcategory: tx.subcategory,
           date: tx.date,
           accountKind: kinds.get(tx.accountId) || "",
           fromKind: kinds.get(tx.fromAccountId) || "",
@@ -66,7 +67,8 @@ export function MoneyFlowPanel({
           nodeColors: { ...Object.fromEntries(categories.map((row) => [row.name, row.color])), ...colors },
           labels: {
             income: t("Income"),
-            drawn: t("Drawn from savings"),
+            drawn: t("From savings"),
+            total: t("Total"),
             surplus: t("Surplus"),
             other: t("Other"),
             uncategorized: t("Uncategorized"),
@@ -136,6 +138,7 @@ function FlowBody({
   const t = useT();
   const [selected, setSelected] = useState("");
   const [painting, setPainting] = useState("");
+  const [drill, setDrill] = useState("");
   if (flow.state === "needs-rate") {
     return <p className="mt-3 text-[15px] leading-5">{fill("Combined total needs a rate for {codes}.", { codes: flow.missing.join(", ") })}</p>;
   }
@@ -146,7 +149,12 @@ function FlowBody({
   const other = flow.nodes.find((row) => row.id === "out:other");
   return (
     <div style={zoom === 1 ? undefined : { transform: `scale(${zoom})`, transformOrigin: "top center" }}>
-      <FlowSvg flow={flow} selected={selected} onSelect={setSelected} />
+      {drill ? (
+        <button type="button" className="fin-chip mt-2" onClick={() => setDrill("")}>
+          {t("Back")}
+        </button>
+      ) : null}
+      <FlowSvg flow={flow} selected={selected} drill={drill} onSelect={setSelected} onDrill={setDrill} />
       {node ? <FlowDetail node={node} currency={flow.currency} onPaint={() => setPainting(painting === node.id ? "" : node.id)} /> : null}
       {painting && node ? (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -174,7 +182,7 @@ function FlowDetail({ node, currency, onPaint }: { node: FlowNode; currency: str
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[15px] leading-5">{node.label}</p>
-          <p className="fin-muted text-[13px] leading-4">{fill("{percent}% of income", { percent })}</p>
+          <p className="fin-muted text-[13px] leading-4">{fill("{percent}%", { percent })}</p>
           {node.originals.length > 0 ? <p className="fin-muted text-[13px] leading-4">{node.originals.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ")}</p> : null}
         </div>
         <div className="text-right">
@@ -198,7 +206,20 @@ function FlowDetail({ node, currency, onPaint }: { node: FlowNode; currency: str
   );
 }
 
-function FlowSvg({ flow, selected, onSelect }: { flow: Extract<MoneyFlow, { state: "ready" }>; selected: string; onSelect: (id: string) => void }) {
+function FlowSvg({
+  flow,
+  selected,
+  drill,
+  onSelect,
+  onDrill,
+}: {
+  flow: Extract<MoneyFlow, { state: "ready" }>;
+  selected: string;
+  drill: string;
+  onSelect: (id: string) => void;
+  onDrill: (id: string) => void;
+}) {
+  const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(320);
   useEffect(() => {
@@ -210,79 +231,48 @@ function FlowSvg({ flow, selected, onSelect }: { flow: Extract<MoneyFlow, { stat
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  const sources = flow.nodes.filter((node) => node.role === "source");
-  const sinks = flow.nodes.filter((node) => node.role === "sink");
-  const pool = flow.nodes.find((node) => node.id === "pool");
+  const drilled = drill ? flow.nodes.find((node) => node.id === drill && node.role === "sink") : undefined;
+  const sources = drilled ? [drilled] : flow.nodes.filter((node) => node.role === "source");
+  const pool = drilled || flow.nodes.find((node) => node.id === "pool");
+  const sinks = drilled
+    ? drilled.children.map((child) => flow.nodes.find((node) => node.id === child.id)).filter((node): node is FlowNode => Boolean(node))
+    : flow.nodes.filter((node) => node.role === "sink");
   if (!pool) return null;
-  const row = 40;
-  const ribbon = 22;
-  const poolH = 36;
-  const height = sources.length * row + ribbon + poolH + ribbon + Math.max(sinks.length, 1) * row + 2;
-  const colL = Math.round(width * 0.62);
-  const colR = width - 6;
-  const span = Math.max(24, colR - colL);
-  const max = Math.max(...flow.nodes.map((node) => node.amountMinor), 1);
-  const bar = (amount: number) => Math.max(8, (amount / max) * span);
-  const keep = selected ? linkedIds(flow, selected) : null;
-  const dim = (id: string) => (keep && !keep.has(id) ? 0.2 : 1);
-  const sourceY = (index: number) => index * row + 4;
-  const poolY = sources.length * row + ribbon;
-  const sinkY = (index: number) => poolY + poolH + ribbon + index * row;
+  if (drilled && sinks.length === 0) {
+    return <p className="mt-3 text-[15px] leading-5">{t("No subcategories yet")}</p>;
+  }
+  const columns = [sources.map((node) => node.id), drilled ? [] : ["pool"], sinks.map((node) => node.id)].filter((column) => column.length > 0);
+  const amounts: Record<string, number> = {};
+  for (const node of [...sources, ...(drilled ? [] : [pool]), ...sinks]) amounts[node.id] = node.amountMinor;
+  const laid = layoutSankey(columns, amounts, flow.links, width);
+  const labelOf = (id: string) => flow.nodes.find((node) => node.id === id);
   const percent = (share: number) => (share > 0 && share < 0.001 ? "<0.1%" : `${Math.round(share * 1000) / 10}%`);
   return (
     <div ref={box} className="mt-2 w-full min-w-0">
-      <svg viewBox={`0 0 ${width} ${height}`} className="block h-auto w-full" role="img" aria-label={pool.label}>
-        {flow.links
-          .filter((link) => link.target === "pool")
-          .map((link) => {
-            const index = sources.findIndex((node) => node.id === link.source);
-            const node = sources[index];
-            if (!node || index < 0) return null;
-            const x = colL + bar(node.amountMinor) / 2;
-            const y = sourceY(index) + 28;
-            const path = `M ${x} ${y} C ${x} ${y + ribbon / 2}, ${colL + span / 2} ${poolY}, ${colL + span / 2} ${poolY + 4}`;
-            return <path key={link.source} d={path} fill="none" stroke={node.color} strokeWidth={Math.max(3, bar(link.amountMinor) * 0.45)} strokeOpacity={0.45 * dim(link.source)} strokeLinecap="butt" />;
-          })}
-        {flow.links
-          .filter((link) => link.source === "pool")
-          .map((link) => {
-            const index = sinks.findIndex((node) => node.id === link.target);
-            const node = sinks[index];
-            if (!node || index < 0) return null;
-            const x = colL + bar(node.amountMinor) / 2;
-            const y = sinkY(index) + 8;
-            const fromY = poolY + poolH - 6;
-            const path = `M ${colL + span / 2} ${fromY} C ${colL + span / 2} ${fromY + ribbon / 2}, ${x} ${y - 8}, ${x} ${y}`;
-            return <path key={link.target} d={path} fill="none" stroke={node.color} strokeWidth={Math.max(3, bar(link.amountMinor) * 0.45)} strokeOpacity={0.45 * dim(link.target)} strokeLinecap="butt" />;
-          })}
-        {sources.map((node, index) => (
-          <g key={node.id} opacity={dim(node.id)} onClick={() => onSelect(node.id)}>
-            <text x={4} y={sourceY(index) + 16} fill="currentColor" fontSize={13}>
-              {trim(node.label, 16)}
-            </text>
-            <text x={4} y={sourceY(index) + 32} fill="currentColor" fontSize={13} opacity={0.72}>
-              {`${formatMoney(node.amountMinor, flow.currency)} · ${percent(node.share)}`}
-            </text>
-            <rect x={colL} y={sourceY(index) + 18} width={bar(node.amountMinor)} height={10} rx={2} fill={node.color} />
-          </g>
-        ))}
-        <g opacity={dim("pool")} onClick={() => onSelect("pool")}>
-          <text x={4} y={poolY + 14} fill="currentColor" fontSize={13}>
-            {trim(`${pool.label} · ${formatMoney(pool.amountMinor, flow.currency)}`, 22)}
-          </text>
-          <rect x={colL} y={poolY + 16} width={span} height={14} rx={2} fill={pool.color} />
-        </g>
-        {sinks.map((node, index) => (
-          <g key={node.id} opacity={dim(node.id)} onClick={() => onSelect(node.id)}>
-            <rect x={colL} y={sinkY(index) + 8} width={bar(node.amountMinor)} height={10} rx={2} fill={node.color} />
-            <text x={4} y={sinkY(index) + 16} fill="currentColor" fontSize={13}>
-              {trim(node.label, 18)}
-            </text>
-            <text x={4} y={sinkY(index) + 32} fill="currentColor" fontSize={13} opacity={0.72}>
-              {`${formatMoney(node.amountMinor, flow.currency)} · ${percent(node.share)}`}
-            </text>
-          </g>
-        ))}
+      <svg viewBox={`0 0 ${width} ${laid.height}`} className="block h-auto w-full overflow-visible" role="img" aria-label={pool.label}>
+        {laid.ribbons.map((ribbon) => {
+          const node = labelOf(ribbon.source);
+          const dim = selected && selected !== ribbon.source && selected !== ribbon.target && selected !== "pool" ? 0.2 : 0.55;
+          return <path key={`${ribbon.source}-${ribbon.target}`} d={ribbon.d} fill={node?.color || "var(--text-tertiary)"} fillOpacity={dim} />;
+        })}
+        {laid.nodes.map((boxNode) => {
+          const node = labelOf(boxNode.id);
+          if (!node) return null;
+          const dim = selected && selected !== node.id && selected !== "pool" ? 0.35 : 1;
+          const open = node.role === "sink" && node.children.length > 0 && !drilled;
+          return (
+            <g key={node.id} opacity={dim} onClick={() => (open ? onDrill(node.id) : onSelect(node.id))}>
+              <rect x={0} y={boxNode.y} width={width} height={boxNode.h} fill="transparent" />
+              <rect x={boxNode.x} y={boxNode.barY} width={Math.max(boxNode.w, 8)} height={boxNode.barH} fill={node.color} />
+              <text x={boxNode.w + 8} y={boxNode.y + 18} fill="currentColor" fontSize={13}>
+                {trim(node.label, 22)}
+              </text>
+              <text x={boxNode.w + 8} y={boxNode.y + 34} fill="currentColor" fontSize={13} opacity={0.72}>
+                {`${formatMoney(node.amountMinor, flow.currency)} · ${percent(node.share)}`}
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );

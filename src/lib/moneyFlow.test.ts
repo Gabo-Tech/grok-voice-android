@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow } from "./moneyFlow.ts";
+import { buildMoneyFlow, flowConserved, layoutSankey } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
 import type { RateBook } from "./financeMath.ts";
@@ -117,6 +117,64 @@ const blocked = buildMoneyFlow(
 );
 assert.equal(blocked.state, "needs-rate");
 if (blocked.state === "needs-rate") assert.deepEqual(blocked.missing, ["JPY"]);
+
+assert.equal(flowConserved(flow), true);
+assert.equal(flowConserved(deficit), true);
+assert.equal(flowConserved(surplus), true);
+assert.equal(flowConserved(tiny), true);
+
+const nested = buildMoneyFlow(
+  [
+    { amountMinor: 20000, currency: "CHF", direction: "income", category: "Salary", date: "2026-11-01" },
+    { amountMinor: 8000, currency: "CHF", direction: "expense", category: "Housing", subcategory: "Rent", date: "2026-11-02" },
+    { amountMinor: 2000, currency: "CHF", direction: "expense", category: "Vacuum", date: "2026-11-03" },
+    { amountMinor: 30000, currency: "CHF", direction: "expense", category: "Food", date: "2026-11-04" },
+  ],
+  {
+    display: "CHF",
+    book,
+    nowMs: now,
+    start: "2026-11-01",
+    end: "2026-11-30",
+    threshold: 1,
+    categories: [
+      { name: "Housing", color: "#112233", kind: "expense" },
+      { name: "Vacuum", color: "#445566", kind: "expense", parent: "Housing" },
+      { name: "Food", color: "#778899", kind: "expense" },
+    ],
+  },
+);
+assert.equal(nested.state, "ready");
+if (nested.state === "ready") {
+  assert.equal(flowConserved(nested), true);
+  const housing = nested.nodes.find((node) => node.label === "Housing" && node.role === "sink");
+  assert.ok(housing);
+  assert.equal(housing.amountMinor, 10000);
+  assert.equal(housing.children.length, 2);
+  assert.equal(nested.nodes.some((node) => node.label === "Vacuum" && node.role === "child"), true);
+  assert.equal(nested.nodes.some((node) => node.label === "Drawn from savings"), false);
+  const drawn = nested.nodes.find((node) => node.kind === "drawn");
+  assert.equal(drawn?.label, "From savings");
+  assert.equal(drawn?.amountMinor, 20000);
+  const amounts: Record<string, number> = {};
+  for (const node of nested.nodes) amounts[node.id] = node.amountMinor;
+  const columns = [
+    nested.nodes.filter((node) => node.role === "source").map((node) => node.id),
+    ["pool"],
+    nested.nodes.filter((node) => node.role === "sink").map((node) => node.id),
+  ];
+  const laid = layoutSankey(columns, amounts, nested.links, 320);
+  const poolBox = laid.nodes.find((node) => node.id === "pool");
+  assert.ok(poolBox);
+  const intoPool = laid.ribbons.filter((ribbon) => ribbon.target === "pool").reduce((sum, ribbon) => sum + ribbon.amountMinor, 0);
+  const outOfPool = laid.ribbons.filter((ribbon) => ribbon.source === "pool").reduce((sum, ribbon) => sum + ribbon.amountMinor, 0);
+  assert.equal(intoPool, poolBox.w > 0 ? nested.nodes.find((node) => node.id === "pool")?.amountMinor : 0);
+  assert.equal(outOfPool, intoPool);
+  for (const ribbon of laid.ribbons) {
+    const width = ribbon.d.match(/L ([0-9.]+) /);
+    assert.ok(width, ribbon.d);
+  }
+}
 
 const saved = migrateCategories(
   [{ name: "Groceries", color: "#112233" }, { name: "Salary", color: "nope" }],

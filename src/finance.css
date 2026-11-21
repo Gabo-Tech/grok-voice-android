@@ -103,10 +103,32 @@
   width: 100%;
   max-width: 100%;
   overflow: hidden;
-  background: var(--fin-canvas);
-  border-top: var(--frame) solid var(--fin-line);
-  position: relative;
-  z-index: 2;
+  background: var(--surface-0, var(--fin-canvas));
+  border-bottom: 1px solid var(--line-soft, var(--fin-line));
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.finance [data-shot] {
+  scroll-margin-top: 64px;
+}
+
+.finance .fin-tight {
+  padding-top: 12px;
+  padding-bottom: 4px;
+}
+
+.finance .fin-primary {
+  min-height: 44px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius, 2px);
+  background: var(--text-primary, var(--fin-ink));
+  color: var(--surface-0, var(--canvas));
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .finance .fin-actions {

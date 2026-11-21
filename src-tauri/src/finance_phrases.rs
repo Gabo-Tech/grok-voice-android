@@ -1,4 +1,6 @@
 const ES_FINANCE: &[(&str, &str)] = &[
+    ("Filed under {name}.", "Archivado en {name}."),
+    ("Create the category {name} to use it.", "Crea la categoría {name} para usarla."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "Programado {label} de {amount} el {date}. Sigue previsto hasta que lo marques."),
     ("Saved {label} of {amount} on {date}.", "Guardado {label} de {amount} el {date}."),
     (" Account: {name}.", " Cuenta: {name}."),
@@ -180,6 +182,8 @@ const ES_FINANCE: &[(&str, &str)] = &[
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
+    ("Filed under {name}.", "Abgelegt unter {name}."),
+    ("Create the category {name} to use it.", "Lege die Kategorie {name} an, um sie zu nutzen."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "{label} über {amount} am {date} ist eingeplant. Es bleibt geplant, bis du es markierst."),
     ("Saved {label} of {amount} on {date}.", "{label} über {amount} am {date} gespeichert."),
     (" Account: {name}.", " Konto: {name}."),
@@ -361,6 +365,8 @@ const DE_FINANCE: &[(&str, &str)] = &[
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
+    ("Filed under {name}.", "Arquivado em {name}."),
+    ("Create the category {name} to use it.", "Cria a categoria {name} para a usar."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "Programado {label} de {amount} em {date}. Continua previsto até você marcar."),
     ("Saved {label} of {amount} on {date}.", "Salvo {label} de {amount} em {date}."),
     (" Account: {name}.", " Conta: {name}."),
@@ -542,6 +548,8 @@ const PT_FINANCE: &[(&str, &str)] = &[
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
+    ("Filed under {name}.", "Arxivat en {name}."),
+    ("Create the category {name} to use it.", "Crea la categoria {name} per a usar-la."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "Programat {label} de {amount} el {date}. Continua previst fins que el marques."),
     ("Saved {label} of {amount} on {date}.", "Guardat {label} de {amount} el {date}."),
     (" Account: {name}.", " Compte: {name}."),

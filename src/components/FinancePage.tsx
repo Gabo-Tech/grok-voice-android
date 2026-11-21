@@ -308,6 +308,22 @@ export function FinancePage({
         active={active}
       >
         {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
+        <div role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10">
+          {FINANCE_TABS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`finance-tab-${id}`}
+              aria-selected={tab === id}
+              aria-controls={`finance-panel-${id}`}
+              className="fin-tab"
+              onClick={() => chooseTab(id)}
+            >
+              {t(tabLabel(id))}
+            </button>
+          ))}
+        </div>
         {tab === "overview" ? (
           <div role="tabpanel" id="finance-panel-overview" aria-labelledby="finance-tab-overview" data-finance-tabpanel="overview">
             <Overview
@@ -321,7 +337,35 @@ export function FinancePage({
               onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))}
               onOpenExpenses={() => chooseTab("activity")}
               onOpenIncome={() => chooseTab("activity")}
+              onRefreshPrices={() => {
+                const book = bookFromStatus(finance.snapshot.fx);
+                const quotes = finance.snapshot.prices?.quotes || [];
+                const display = (finance.snapshot.defaultCurrency || "").toUpperCase();
+                for (const account of accounts) {
+                  if (!isHoldingAccount(account)) continue;
+                  const position = positionOf(account, display, book, quotes, Date.now());
+                  if (position.unpriced) finance.refreshHolding(account.id);
+                }
+              }}
             />
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                className="fin-primary"
+                onClick={() => {
+                  setTxPreset("expense");
+                  setEditingTx(null);
+                  setSheet("transaction");
+                }}
+              >
+                {t("Add expense")}
+              </button>
+              <div className="flex flex-wrap gap-x-4">
+                <button type="button" className="fin-chip" onClick={openIncome}>{t("Add income")}</button>
+                <button type="button" className="fin-chip" onClick={openBank}>{t("Add account")}</button>
+                <button type="button" className="fin-chip" onClick={openBill}>{t("Program a bill")}</button>
+              </div>
+            </div>
             <div className="mt-4" data-shot="flow">
               <MoneyFlowPanel
                 transactions={finance.snapshot.transactions}
@@ -418,7 +462,7 @@ export function FinancePage({
               fx={finance.snapshot.fx}
               quotes={finance.snapshot.prices?.quotes || []}
             />
-            <div className="mt-6">
+            <div className="mt-6" data-shot="holdings-chart">
               <HoldingsChart
                 accounts={accounts}
                 display={finance.snapshot.defaultCurrency}
@@ -450,22 +494,6 @@ export function FinancePage({
           </button>
         </div>
       ) : null}
-      <div role="tablist" aria-label={t("Finance")} className="fin-tabs">
-        {FINANCE_TABS.map((id) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            id={`finance-tab-${id}`}
-            aria-selected={tab === id}
-            aria-controls={`finance-panel-${id}`}
-            className="fin-tab"
-            onClick={() => chooseTab(id)}
-          >
-            {t(tabLabel(id))}
-          </button>
-        ))}
-      </div>
       <TransactionSheet
         open={sheet === "transaction"}
         finance={finance}
@@ -499,6 +527,7 @@ function Overview({
   onFocus,
   onOpenExpenses,
   onOpenIncome,
+  onRefreshPrices,
 }: {
   finance: FinanceState;
   empty: boolean;
@@ -510,10 +539,11 @@ function Overview({
   onFocus: (focus: WorthFocus) => void;
   onOpenExpenses: () => void;
   onOpenIncome: () => void;
+  onRefreshPrices: () => void;
 }) {
   const t = useT();
   return (
-    <div className="fin-stack w-full min-w-0 space-y-6">
+    <div className="fin-stack w-full min-w-0 space-y-3">
       <FinanceDashboard
         finance={finance}
         accounts={accounts}
@@ -523,6 +553,7 @@ function Overview({
         onFocus={onFocus}
         onOpenExpenses={onOpenExpenses}
         onOpenIncome={onOpenIncome}
+        onRefreshPrices={onRefreshPrices}
       />
       {empty ? (
         <div className="fin-stack w-full min-w-0 space-y-3">
@@ -980,7 +1011,7 @@ function TxRows({
         return (
           <RowButton key={tx.id} onClick={() => onOpen(tx)}>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base">{tx.category || t(directionLabel(tx.direction))}</p>
+              <p className="truncate text-base">{[tx.category, tx.subcategory].filter(Boolean).join(" · ") || t(directionLabel(tx.direction))}</p>
               <p className="text-sm text-muted-foreground">
                 {tx.date} · {t(classLabel(tx.recurrence))}
                 {account ? ` · ${account.name}` : ""}
@@ -1015,6 +1046,7 @@ function TransactionSheet({
   const [currency, setCurrency] = useState(finance.snapshot.defaultCurrency);
   const [direction, setDirection] = useState(presetDirection || "expense");
   const [category, setCategory] = useState("");
+  const [subcategory, setSubcategory] = useState("");
   const [accountId, setAccountId] = useState("");
   const [fromId, setFromId] = useState("");
   const [date, setDate] = useState("");
@@ -1031,6 +1063,7 @@ function TransactionSheet({
     setCurrency(editing?.currency || finance.snapshot.defaultCurrency);
     setDirection(editing?.direction || presetDirection || "expense");
     setCategory(editing?.category || "");
+    setSubcategory(editing?.subcategory || "");
     setAccountId(editing?.accountId || "");
     setFromId(editing?.fromAccountId || "");
     setDate(editing?.date || "");
@@ -1054,6 +1087,7 @@ function TransactionSheet({
       currency,
       direction,
       category,
+      subcategory,
       accountId: target.id,
       accountName: target.name,
       accountKind: target.kind,
@@ -1097,8 +1131,23 @@ function TransactionSheet({
       }
     >
       <div className="space-y-4">
-        <Field label={t("Category or payee")}>
-          <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t("Lunch, rent, salary")} />
+        <Field label={t("Category")}>
+          <Input value={category} onChange={(e) => { setCategory(e.target.value); setSubcategory(""); }} placeholder={t("Housing, food, salary")} list="finance-categories" />
+          <datalist id="finance-categories">
+            {finance.snapshot.categories.filter((row) => !row.parent).map((row) => (
+              <option key={row.name} value={row.name} />
+            ))}
+          </datalist>
+        </Field>
+        <Field label={t("Subcategory")}>
+          <Input value={subcategory} onChange={(e) => setSubcategory(e.target.value)} placeholder={t("Rent, groceries")} list="finance-subcategories" />
+          <datalist id="finance-subcategories">
+            {finance.snapshot.categories
+              .filter((row) => row.parent && row.parent.toLowerCase() === category.trim().toLowerCase())
+              .map((row) => (
+                <option key={row.name} value={row.name} />
+              ))}
+          </datalist>
         </Field>
         <Field label={t("Amount")}>
           <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-16 text-3xl tabular-nums" autoFocus />
@@ -1610,6 +1659,7 @@ function CategorySheet({ open, finance, onClose }: { open: boolean; finance: Fin
   const t = useT();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [name, setName] = useState("");
+  const [parent, setParent] = useState("");
   const [kind, setKind] = useState("expense");
   const [mergeInto, setMergeInto] = useState<Record<string, string>>({});
   const rows = [...finance.snapshot.categories].sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
@@ -1624,7 +1674,13 @@ function CategorySheet({ open, finance, onClose }: { open: boolean; finance: Fin
               <option key={item} value={item}>{t(categoryKindLabel(item))}</option>
             ))}
           </select>
-          <Button type="button" onClick={() => { if (!name.trim()) return; finance.editCategory({ action: "create", name: name.trim(), kind, order: rows.length }); setName(""); }}>{t("Add")}</Button>
+          <Input aria-label={t("Parent")} value={parent} onChange={(event) => setParent(event.target.value)} placeholder={t("Parent")} list="finance-parents" />
+          <datalist id="finance-parents">
+            {rows.filter((row) => !row.parent).map((row) => (
+              <option key={row.name} value={row.name} />
+            ))}
+          </datalist>
+          <Button type="button" onClick={() => { if (!name.trim()) return; finance.editCategory({ action: "create", name: name.trim(), kind, parent: parent.trim(), order: rows.length }); setName(""); }}>{parent.trim() ? t("Add subcategory") : t("Add")}</Button>
         </div>
         <Button type="button" variant="ghost" onClick={() => {
           for (const suggestion of ["Salary", "Freelance", "Housing", "Food", "Transport", "Subscriptions", "Health", "Savings", "Investing"]) {

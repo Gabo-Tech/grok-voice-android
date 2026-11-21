@@ -8,6 +8,8 @@ export interface CategoryRecord {
   kind?: string;
   icon?: string;
   order?: number;
+  /** Empty for a top-level category. A subcategory names its parent. */
+  parent?: string;
 }
 
 export interface CategoryUse {
@@ -61,12 +63,14 @@ export function migrateCategories(categories: CategoryRecord[], uses: CategoryUs
     const name = category.name.trim();
     if (!name || seen.has(fold(name))) return;
     seen.add(fold(name));
+    const parent = (category.parent || "").trim();
     next.push({
       name,
       color: /^#[0-9A-Fa-f]{6}$/.test(category.color || "") ? category.color : PALETTE[index % PALETTE.length],
       kind: category.kind || kindOf(name, uses),
       icon: category.icon || SUGGESTED_CATEGORIES.find((row) => fold(row.name) === fold(name))?.icon || "",
       order: category.order ?? index,
+      parent: parent && fold(parent) !== fold(name) ? parent : "",
     });
   });
   const blanks = uses.some((row) => !row.category.trim());

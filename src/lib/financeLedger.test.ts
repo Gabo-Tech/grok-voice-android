@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { addMonths, headlineOf, plannedHits, type RateBook, type ScheduleShape } from "./financeMath.ts";
 import { allocation, barsFor, debtRatio, flowParts, formatQuantity, gainOf, isHoldingAccount, monthActivity, monthCash, netOfVisible, netWorthParts, persistedColor, positionOf, scaledBars, shareOf, worthBuckets, ALLOCATION_PRESETS, type AllocInput, type Quote } from "./financeLedger.ts";
 import { nextHidden } from "./chartPrefs.ts";
-import { changeOf, seriesFor } from "./portfolio.ts";
+import { changeOf, completeSeries, seriesFor } from "./portfolio.ts";
 
 const now = Date.UTC(2026, 10, 21, 12, 0);
 const book: RateBook = {
@@ -430,5 +430,21 @@ const series = seriesFor(
 );
 assert.equal(series[1].valueMinor, 240);
 assert.equal(changeOf(series)?.amountMinor, 140);
+
+const partialHistory = [
+  { accountId: "quan", date: "2026-09-01", quantity: "", valueMinor: 100000, currency: "CHF", source: "stated", name: "Quanloop" },
+  { accountId: "quan", date: "2026-11-01", quantity: "", valueMinor: 100000, currency: "CHF", source: "stated", name: "Quanloop" },
+  { accountId: "xmr", date: "2026-11-01", quantity: "1", valueMinor: 300000, currency: "CHF", source: "coingecko", name: "XMR" },
+  { accountId: "quan", date: "2026-11-20", quantity: "", valueMinor: 110000, currency: "CHF", source: "stated", name: "Quanloop" },
+  { accountId: "xmr", date: "2026-11-20", quantity: "1", valueMinor: 320000, currency: "CHF", source: "coingecko", name: "XMR" },
+];
+const partialSeries = seriesFor(partialHistory, ["quan", "xmr"], "2026-09-01");
+assert.equal(partialSeries[0].valueMinor, 100000);
+assert.ok((changeOf(partialSeries)?.percent || 0) > 100);
+const complete = completeSeries(partialHistory, ["quan", "xmr"], "2026-09-01");
+assert.equal(complete[0].date, "2026-11-01");
+assert.equal(complete[0].valueMinor, 400000);
+assert.equal(changeOf(complete)?.amountMinor, 30000);
+assert.ok(Math.abs((changeOf(complete)?.percent || 0) - 7.5) < 0.2);
 
 console.log("finance ledger ok");

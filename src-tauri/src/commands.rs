@@ -1639,9 +1639,10 @@ pub fn edit_finance_category(
     kind: Option<String>,
     icon: Option<String>,
     order: Option<i32>,
+    parent: Option<String>,
 ) -> Result<crate::finance::Snapshot> {
     app.state::<crate::finance::Finance>()
-        .edit_category_on(&app, &action, &name, to.as_deref().unwrap_or(""), color.as_deref().unwrap_or(""), kind.as_deref().unwrap_or(""), icon.as_deref().unwrap_or(""), order.unwrap_or(0))
+        .edit_category_on(&app, &action, &name, to.as_deref().unwrap_or(""), color.as_deref().unwrap_or(""), kind.as_deref().unwrap_or(""), icon.as_deref().unwrap_or(""), order.unwrap_or(0), parent.as_deref().unwrap_or(""))
         .map_err(msg)
 }
 

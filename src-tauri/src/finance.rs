@@ -174,6 +174,8 @@ pub struct Transaction {
     #[serde(default)]
     pub category: String,
     #[serde(default)]
+    pub subcategory: String,
+    #[serde(default)]
     pub account_id: String,
     #[serde(default)]
     pub from_account_id: String,
@@ -214,6 +216,8 @@ pub struct Rule {
     pub next_date: String,
     #[serde(default)]
     pub category: String,
+    #[serde(default)]
+    pub subcategory: String,
     #[serde(default)]
     pub account_id: String,
     #[serde(default)]
@@ -300,6 +304,9 @@ pub struct Category {
     pub icon: String,
     #[serde(default)]
     pub order: i32,
+    /// Empty for a top-level category. A subcategory stores its parent's name.
+    #[serde(default)]
+    pub parent: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -528,6 +535,8 @@ pub struct TransactionDraft {
     #[serde(default)]
     pub category: String,
     #[serde(default)]
+    pub subcategory: String,
+    #[serde(default)]
     pub account_id: String,
     #[serde(default)]
     pub account_name: String,
@@ -567,6 +576,8 @@ pub struct RuleDraft {
     pub next_date: String,
     #[serde(default)]
     pub category: String,
+    #[serde(default)]
+    pub subcategory: String,
     #[serde(default)]
     pub account_id: String,
     #[serde(default)]
@@ -759,9 +770,9 @@ impl Finance {
         self.commit(app, store)
     }
 
-    pub fn edit_category_on(&self, app: &AppHandle, action: &str, name: &str, to: &str, color: &str, kind: &str, icon: &str, order: i32) -> Result<Snapshot, String> {
+    pub fn edit_category_on(&self, app: &AppHandle, action: &str, name: &str, to: &str, color: &str, kind: &str, icon: &str, order: i32, parent: &str) -> Result<Snapshot, String> {
         let mut store = self.lock().clone();
-        edit_category(&mut store, action, name, to, color, kind, icon, order)?;
+        edit_category_parent(&mut store, action, name, to, color, kind, icon, order, parent)?;
         self.commit(app, store)
     }
 
@@ -981,7 +992,7 @@ pub fn tool_definitions() -> Value {
     json!([
         fn_tool(
             "log_money",
-            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list. id edits that one saved transaction and does not rewrite other ones. payInFull true pays the balance owed. Charging a card is direction expense with account set to the card: card debt rises, the bank does not move, and it counts as an expense. Paying a card is direction payment with fromAccount: it is not an expense. Paying more than the balance owed is allowed and leaves a credit, a negative amount owed. Confirm that new credit. Do not refuse the overpay. payInFull when nothing is owed, or the card is already in credit, does not move money: say there is nothing to pay. If they name an amount while the card is already in credit, pay that amount from fromAccount and the credit grows. A charge on a card that is in credit is still direction expense: it reduces the credit first and can leave a positive debt, and the whole charge is an expense. currency may be a crypto ticker such as BTC. Spending that currency from its balance reduces the units. If the units are not enough, refuse. A missing exchange rate refuses the payment. Never use 1:1. If the card, the funding account, or the amount is missing, or two names match, the error is the one question to ask. Pass items to log several expenses in one call. Each saved row includes id. Speak only rows in saved. If failed is not empty, say those errors and do not say they were logged. A phrase may correct itself, such as 79.95, no wait, 63.96, which saves 63.96 only. Account names match ignoring case, spaces, hyphens, punctuation, and diacritics, and a single close prefix or typo matches too: Swiss card is Swisscard when that card exists. Logging never creates an account or card. If none match, or several do, ask and list the closest names. Create one only with save_account after they explicitly ask to add it. To change an existing expense, pass its id, or matchAmount, matchCategory, matchAccount, and matchDate, plus the new amount. That edits the same id. Do not add a second expense.",
+            "Log an expense, income, or a payment toward a card, loan, or other debt on this phone. amount is the number they said. currency is whatever they named; omit it to use that account's saved currency, or the Finance default. Do not assume USD. direction is expense, income, or payment. account is a nickname. accountKind is bank, cash, credit_card, loan, other_debt, investment, or other when creating that nickname. fromAccount is the bank or cash a payment came from. date is YYYY-MM-DD, tomorrow, or a day of the month. recurrence is once, recurring, or irregular. cadence is daily, weekly, monthly, or yearly. leadDays is how many days before a future payment to remind them, in this app only. Do not invent a balance, due date, or account number. A future payment, due, or income date is also saved on this app's Calendar and Time list. id edits that one saved transaction and does not rewrite other ones. payInFull true pays the balance owed. Charging a card is direction expense with account set to the card: card debt rises, the bank does not move, and it counts as an expense. Paying a card is direction payment with fromAccount: it is not an expense. Paying more than the balance owed is allowed and leaves a credit, a negative amount owed. Confirm that new credit. Do not refuse the overpay. payInFull when nothing is owed, or the card is already in credit, does not move money: say there is nothing to pay. If they name an amount while the card is already in credit, pay that amount from fromAccount and the credit grows. A charge on a card that is in credit is still direction expense: it reduces the credit first and can leave a positive debt, and the whole charge is an expense. currency may be a crypto ticker such as BTC. Spending that currency from its balance reduces the units. If the units are not enough, refuse. A missing exchange rate refuses the payment. Never use 1:1. If the card, the funding account, or the amount is missing, or two names match, the error is the one question to ask. Pass items to log several expenses in one call. Each saved row includes id. Speak only rows in saved. If failed is not empty, say those errors and do not say they were logged. A phrase may correct itself, such as 79.95, no wait, 63.96, which saves 63.96 only. Account names match ignoring case, spaces, hyphens, punctuation, and diacritics, and a single close prefix or typo matches too: Swiss card is Swisscard when that card exists. Logging never creates an account or card. If none match, or several do, ask and list the closest names. Create one only with save_account after they explicitly ask to add it. To change an existing expense, pass its id, or matchAmount, matchCategory, matchAccount, and matchDate, plus the new amount. That edits the same id. Do not add a second expense. category must already exist. subcategory is a child of that category. notes is the description. Do not invent a category from the description. If none fits, leave category empty. confirmCategory true creates it only after the user agrees. create category Name, or create subcategory Name under Parent, is that agreement.",
             json!({
                 "type": "object",
                 "properties": {
@@ -989,6 +1000,8 @@ pub fn tool_definitions() -> Value {
                     "amount": { "type": "string" },
                     "currency": { "type": "string" },
                     "category": { "type": "string" },
+                    "subcategory": { "type": "string" },
+                    "confirmCategory": { "type": "boolean", "description": "True only after the user agrees to create a new category." },
                     "account": { "type": "string" },
                     "accountKind": { "type": "string" },
                     "fromAccount": { "type": "string" },
@@ -1492,6 +1505,7 @@ fn guard_payment(store: &Store, direction: &str, account_id: &str, from_id: &str
         currency: currency.to_string(),
         direction: "payment".into(),
         category: String::new(),
+        subcategory: String::new(),
         account_id: account_id.to_string(),
         from_account_id: from_id.to_string(),
         date: String::new(),
@@ -1533,6 +1547,7 @@ fn guard_crypto_spend(store: &Store, direction: &str, account_id: &str, from_id:
         currency: currency.to_string(),
         direction: direction.to_string(),
         category: String::new(),
+        subcategory: String::new(),
         account_id: account_id.to_string(),
         from_account_id: from_id.to_string(),
         date: String::new(),
@@ -2342,8 +2357,11 @@ fn log_single(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, 
     if direction != "payment" {
         guard_crypto_spend(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
     }
-    let category = clean_text(args["category"].as_str().unwrap_or(""), 80)?;
-    let notes = clean_text(args["notes"].as_str().unwrap_or(""), 500)?;
+    let raw_category = clean_text(args["category"].as_str().unwrap_or(""), 80)?;
+    let raw_sub = clean_text(args["subcategory"].as_str().unwrap_or(""), 80)?;
+    let mut notes = clean_text(args["notes"].as_str().unwrap_or(""), 500)?;
+    let confirm_category = args["confirmCategory"].as_bool().unwrap_or(false);
+    let (category, subcategory, hint) = assign_categories(store, &raw_category, &raw_sub, &mut notes, confirm_category);
     let link = class == "recurring" || is_link_date(&provided, &direction, clock.today);
     let pay_name = if category.is_empty() {
         account_name(store, &account_id).unwrap_or_else(|| direction.clone())
@@ -2385,6 +2403,7 @@ fn log_single(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, 
         currency: currency.clone(),
         direction: direction.clone(),
         category: category.clone(),
+        subcategory: subcategory.clone(),
         account_id: account_id.clone(),
         from_account_id: from_account_id.clone(),
         date: date.clone(),
@@ -2427,7 +2446,10 @@ fn log_single(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, 
     if linked {
         detail.push_str(&calendar_clause(&cadence, &provided));
     }
-    remember_category(store, &category);
+    if !hint.is_empty() {
+        detail.push(' ');
+        detail.push_str(&hint);
+    }
     if let Some(rolled) = rolled {
         detail.push(' ');
         detail.push_str(&rolled);
@@ -3229,6 +3251,7 @@ fn sync_generated_rule(store: &mut Store, account: &Account, clock: &Clock) {
         weekdays: Vec::new(),
         next_date: date.clone(),
         category: account.kind.clone(),
+        subcategory: String::new(),
         account_id: account.id.clone(),
         notes: String::new(),
         calendar_event_id: String::new(),
@@ -3275,6 +3298,7 @@ fn apply_transaction_form(store: &mut Store, draft: &TransactionDraft, clock: &C
         guard_crypto_spend(store, &direction, &account_id, &from_account_id, amount_minor, &currency, clock)?;
     }
     let category = clean_text(&draft.category, 80)?;
+    let subcategory = clean_text(&draft.subcategory, 80)?;
     let notes = clean_text(&draft.notes, 500)?;
     let link = class == "recurring" || is_link_date(&provided, &direction, clock.today);
     let rule_id = if link {
@@ -3289,7 +3313,8 @@ fn apply_transaction_form(store: &mut Store, draft: &TransactionDraft, clock: &C
         amount_minor,
         currency,
         direction,
-        category,
+        category: category.clone(),
+        subcategory: subcategory.clone(),
         account_id,
         from_account_id,
         date,
@@ -3310,7 +3335,10 @@ fn apply_transaction_form(store: &mut Store, draft: &TransactionDraft, clock: &C
     } else {
         store.transactions.push(tx);
     }
-    remember_category(store, &draft.category);
+    remember_category(store, &category);
+    if !subcategory.is_empty() {
+        remember_child(store, &subcategory, &category);
+    }
     Ok(())
 }
 
@@ -3453,6 +3481,7 @@ fn upsert_named_rule(
         weekdays: weekdays.to_vec(),
         next_date: date.into(),
         category: category.into(),
+        subcategory: String::new(),
         account_id: account_id.into(),
         notes: notes.into(),
         calendar_event_id: String::new(),
@@ -3964,6 +3993,7 @@ fn due_flow(store: &Store, today: NaiveDate) -> Vec<Transaction> {
                 currency: rule.currency.clone(),
                 direction: rule.direction.clone(),
                 category: if rule.category.is_empty() { rule.name.clone() } else { rule.category.clone() },
+                subcategory: rule.subcategory.clone(),
                 account_id: rule.account_id.clone(),
                 from_account_id: String::new(),
                 date: iso(date),
@@ -4101,7 +4131,7 @@ fn holding_resolved(store: &Store, account: &Account) -> Option<crate::finance_p
     Some(asset)
 }
 
-const PRICE_CACHE_VERSION: u32 = 2;
+const PRICE_CACHE_VERSION: u32 = 3;
 
 /// Drop provider ids that cannot be a price: a version change, a non-positive quote, or a pin whose holding has no live price.
 fn invalidate_price_cache(store: &mut Store) -> bool {
@@ -4143,10 +4173,11 @@ fn remember_pin(store: &mut Store, account_id: &str, asset: &crate::finance_pric
         return;
     }
     if let Some(pin) = store.provider_pins.iter_mut().find(|pin| pin.account_id == account_id) {
-        if pin.coingecko_id.is_empty() {
+        // A known coin replaces a pin saved under the wrong id, such as epic-chain for EPIC Cash.
+        if !asset.coingecko_id.is_empty() && !pin.coingecko_id.eq_ignore_ascii_case(&asset.coingecko_id) {
             pin.coingecko_id = asset.coingecko_id.clone();
         }
-        if pin.paprika_id.is_empty() {
+        if !asset.paprika_id.is_empty() && !pin.paprika_id.eq_ignore_ascii_case(&asset.paprika_id) {
             pin.paprika_id = asset.paprika_id.clone();
         }
     } else {
@@ -4502,8 +4533,14 @@ fn ai_spot(app: &AppHandle, asset: &crate::finance_prices::AssetRef) -> Result<(
     let vault = app.state::<crate::vault::Vault>();
     let bridge = app.state::<crate::native::NativeBridge>();
     let accounts = vault.accounts(&bridge).map_err(|err| err.to_string())?;
+    let name = if asset.label.trim().is_empty() { asset.symbol.clone() } else { asset.label.clone() };
+    let hint = if asset.symbol.eq_ignore_ascii_case("EPIC") {
+        " This is Epic Cash (Epic Private Internet Cash, CoinGecko epic-cash). Not Epic Chain."
+    } else {
+        ""
+    };
     let prompt = format!(
-        "Current market price of one {} of {} ({}). Reply with JSON only: {{\"price\": number, \"currency\": \"USD\"}}. If you are not sure of a real price, reply {{\"price\": null}}.",
+        "Current market price of one {} of {name} (ticker {}, {}).{hint} Reply with JSON only: {{\"price\": number, \"currency\": \"USD\"}}. price is a positive number. currency is USD or EUR.",
         asset.holding_unit, asset.symbol, asset.kind
     );
     for provider in ["xai", "openai"] {
@@ -4525,7 +4562,7 @@ fn ai_xai(secret: &str, prompt: &str) -> Result<String, String> {
     let value: serde_json::Value = client
         .post("https://api.x.ai/v1/responses")
         .bearer_auth(secret)
-        .json(&json!({ "model": "grok-4.7", "temperature": 0, "input": prompt }))
+        .json(&json!({ "model": "grok-4.7", "temperature": 0, "tools": [{ "type": "web_search" }], "input": prompt }))
         .send()
         .map_err(|_| "no estimate".to_string())?
         .json()
@@ -6241,15 +6278,122 @@ fn units_times_price(units: &str, price_minor: i64) -> Result<i64, String> {
 }
 
 fn remember_category(store: &mut Store, name: &str) {
+    remember_child(store, name, "");
+}
+
+fn remember_child(store: &mut Store, name: &str, parent: &str) {
     let name = name.trim();
     if name.is_empty() {
         return;
     }
-    if store.categories.iter().any(|category| fold(&category.name) == fold(name)) {
+    let parent = parent.trim();
+    if let Some(category) = store.categories.iter_mut().find(|category| fold(&category.name) == fold(name)) {
+        if !parent.is_empty() && category.parent.is_empty() && !fold(parent).eq_ignore_ascii_case(&fold(name)) {
+            category.parent = parent.to_string();
+        }
         return;
     }
     let color = PALETTE[store.categories.len() % PALETTE.len()].to_string();
-    store.categories.push(Category { name: name.to_string(), color, ..Category::default() });
+    let kind = if fold(name) == "uncategorized" { "expense".into() } else { String::new() };
+    store.categories.push(Category {
+        name: name.to_string(),
+        color,
+        kind,
+        parent: if parent.is_empty() || fold(parent) == fold(name) { String::new() } else { parent.to_string() },
+        ..Category::default()
+    });
+}
+
+/// Voice logging never creates a category unless `confirm` is set. A description is matched to an existing category.
+fn assign_categories(store: &mut Store, category: &str, subcategory: &str, notes: &mut String, confirm: bool) -> (String, String, String) {
+    let mut category = category.trim().to_string();
+    let mut subcategory = subcategory.trim().to_string();
+    let mut hint = String::new();
+    if category.is_empty() {
+        let guess = suggest_category(store, &format!("{subcategory} {}", notes));
+        if !guess.is_empty() {
+            category = guess.clone();
+            hint = spoken("Filed under {name}.", &[("name", &guess)]);
+        }
+    } else if let Some(found) = store.categories.iter().find(|row| fold(&row.name) == fold(&category) && row.parent.is_empty()) {
+        category = found.name.clone();
+    } else if confirm {
+        let requested = category.clone();
+        remember_category(store, &requested);
+        category = store.categories.iter().find(|row| fold(&row.name) == fold(&requested)).map(|row| row.name.clone()).unwrap_or(requested);
+    } else {
+        hint = spoken("Create the category {name} to use it.", &[("name", &category)]);
+    }
+    if !subcategory.is_empty() {
+        let exists = store.categories.iter().any(|row| fold(&row.name) == fold(&subcategory) && fold(&row.parent) == fold(&category));
+        if exists {
+            subcategory = store.categories.iter().find(|row| fold(&row.name) == fold(&subcategory)).map(|row| row.name.clone()).unwrap_or(subcategory);
+        } else if confirm {
+            remember_child(store, &subcategory, &category);
+        } else {
+            if notes.trim().is_empty() {
+                *notes = subcategory.clone();
+            }
+            subcategory.clear();
+        }
+    }
+    (category, subcategory, hint)
+}
+
+fn suggest_category(store: &Store, text: &str) -> String {
+    let folded = fold(text);
+    if folded.is_empty() {
+        return String::new();
+    }
+    let mut best = String::new();
+    let mut score = 0i32;
+    for category in store.categories.iter().filter(|row| row.parent.is_empty()) {
+        let name = fold(&category.name);
+        if name.is_empty() || name == "uncategorized" {
+            continue;
+        }
+        if folded.contains(&name) {
+            let next = 100 + name.len() as i32;
+            if next > score {
+                score = next;
+                best = category.name.clone();
+            }
+        }
+    }
+    if !best.is_empty() {
+        return best;
+    }
+    const HINTS: &[(&str, &str)] = &[
+        ("rent", "Housing"),
+        ("alquiler", "Housing"),
+        ("miete", "Housing"),
+        ("renda", "Housing"),
+        ("lloguer", "Housing"),
+        ("vacuum", "Housing"),
+        ("cleaner", "Housing"),
+        ("grocery", "Groceries"),
+        ("grocer", "Groceries"),
+        ("supermerc", "Groceries"),
+        ("food", "Food"),
+        ("comida", "Food"),
+        ("essen", "Food"),
+        ("restaurant", "Food"),
+        ("coffee", "Food"),
+        ("cafe", "Food"),
+        ("uber", "Transport"),
+        ("salary", "Salary"),
+        ("sueldo", "Salary"),
+        ("gehalt", "Salary"),
+        ("nomina", "Salary"),
+    ];
+    for (word, name) in HINTS {
+        if folded.contains(word) {
+            if let Some(found) = store.categories.iter().find(|row| row.parent.is_empty() && fold(&row.name) == fold(name)) {
+                return found.name.clone();
+            }
+        }
+    }
+    String::new()
 }
 
 fn rename_category(store: &mut Store, from: &str, to: &str) -> Result<(), String> {
@@ -6266,10 +6410,21 @@ fn rename_category(store: &mut Store, from: &str, to: &str) -> Result<(), String
         if fold(&tx.category) == fold(&previous) {
             tx.category = to.clone();
         }
+        if fold(&tx.subcategory) == fold(&previous) {
+            tx.subcategory = to.clone();
+        }
     }
     for rule in &mut store.rules {
         if fold(&rule.category) == fold(&previous) {
             rule.category = to.clone();
+        }
+        if fold(&rule.subcategory) == fold(&previous) {
+            rule.subcategory = to.clone();
+        }
+    }
+    for category in &mut store.categories {
+        if fold(&category.parent) == fold(&previous) {
+            category.parent = to.clone();
         }
     }
     Ok(())
@@ -6299,6 +6454,10 @@ fn ensure_categories(store: &mut Store) -> bool {
 }
 
 pub fn edit_category(store: &mut Store, action: &str, name: &str, to: &str, color: &str, kind: &str, icon: &str, order: i32) -> Result<(), String> {
+    edit_category_parent(store, action, name, to, color, kind, icon, order, "")
+}
+
+pub fn edit_category_parent(store: &mut Store, action: &str, name: &str, to: &str, color: &str, kind: &str, icon: &str, order: i32, parent: &str) -> Result<(), String> {
     let action = fold(action);
     let name = name.trim();
     match action.as_str() {
@@ -6311,10 +6470,22 @@ pub fn edit_category(store: &mut Store, action: &str, name: &str, to: &str, colo
                 if !color.is_empty() { category.color = color.to_string(); }
                 if !kind.is_empty() { category.kind = kind.to_string(); }
                 if !icon.is_empty() { category.icon = icon.to_string(); }
+                if !parent.trim().is_empty() { category.parent = parent.trim().to_string(); }
                 return Ok(());
             }
             let swatch = if color.trim().is_empty() { PALETTE[store.categories.len() % PALETTE.len()].to_string() } else { color.trim().to_string() };
-            store.categories.push(Category { name: label, color: swatch, kind: kind.trim().to_string(), icon: icon.trim().to_string(), order });
+            let parent = parent.trim();
+            if !parent.is_empty() && !store.categories.iter().any(|category| fold(&category.name) == fold(parent) && category.parent.is_empty()) {
+                return Err("No category with that name.".into());
+            }
+            store.categories.push(Category {
+                name: label,
+                color: swatch,
+                kind: kind.trim().to_string(),
+                icon: icon.trim().to_string(),
+                order,
+                parent: parent.to_string(),
+            });
             Ok(())
         }
         "rename" => rename_category(store, name, to),
@@ -6380,6 +6551,20 @@ fn category_phrase(store: &mut Store, phrase: &str) -> Option<Result<String, Str
     let folded = fold(phrase);
     if folded.contains("money flow") || folded.contains("flujo de dinero") || folded.contains("geldfluss") || folded.contains("fluxo de dinheiro") || folded.contains("flux de diners") {
         return Some(Ok(spoken("Showing the money flow.", &[])));
+    }
+    if folded.starts_with("create ") && (folded.contains("subcategory") || folded.contains("subcategoria") || folded.contains("unterkategorie")) {
+        let parent = [" under ", " bajo ", " unter ", " em ", " sota "]
+            .iter()
+            .find_map(|mark| phrase.to_lowercase().rfind(mark).map(|index| phrase[index + mark.len()..].trim().to_string()));
+        let Some(parent) = parent.filter(|name| !name.is_empty()) else {
+            return Some(Err("A category needs a name.".into()));
+        };
+        let name = phrase.split_whitespace().skip(2).take_while(|word| !matches!(fold(word).as_str(), "under" | "bajo" | "unter" | "em" | "sota")).collect::<Vec<_>>().join(" ");
+        if name.trim().is_empty() {
+            return Some(Err("A category needs a name.".into()));
+        }
+        remember_category(store, parent.trim());
+        return Some(edit_category_parent(store, "create", name.trim(), "", "", "expense", "", store.categories.len() as i32, parent.trim()).map(|_| spoken("Saved {name}.", &[("name", name.trim())])));
     }
     if folded.starts_with("create ") && folded.contains("category") {
         let kind = if folded.contains("income") { "income" } else if folded.contains("saving") { "savings" } else if folded.contains("invest") { "investment" } else if folded.contains("debt") { "debt" } else { "expense" };
@@ -6548,6 +6733,7 @@ fn mark_paid(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, S
         currency: currency.clone(),
         direction: direction.clone(),
         category: rule.name.clone(),
+        subcategory: rule.subcategory.clone(),
         account_id: rule.account_id.clone(),
         from_account_id: String::new(),
         date: posted,
@@ -7462,6 +7648,7 @@ mod tests {
             weekdays: Vec::new(),
             next_date: start.into(),
             category: String::new(),
+            subcategory: String::new(),
             account_id: String::new(),
             notes: String::new(),
             calendar_event_id: String::new(),
@@ -7489,6 +7676,7 @@ mod tests {
             currency: "EUR".into(),
             direction: direction.into(),
             category: String::new(),
+            subcategory: String::new(),
             account_id: account.into(),
             from_account_id: from.into(),
             date: date.into(),
@@ -8053,6 +8241,7 @@ mod tests {
             currency: "EUR".into(),
             direction: "expense".into(),
             category: "Renew travel card".into(),
+            subcategory: String::new(),
             account_id: String::new(),
             from_account_id: String::new(),
             date: "2025-11-01".into(),
