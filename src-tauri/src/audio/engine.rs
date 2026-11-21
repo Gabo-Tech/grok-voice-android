@@ -458,7 +458,7 @@ impl EngineThread {
                 });
                 self.hub.emit("voice://wake_enabled", on);
                 if on && self.detector.is_none() {
-                    self.hub.warn("wake word not trained yet — tap the ring to talk, or enroll “Hey Grok” in the Wake tab");
+                    self.hub.warn("Hey Grok is not enrolled yet. Tap the ring to talk, or set it up in Settings.");
                 }
                 if on {
                     self.service_failures = 0;

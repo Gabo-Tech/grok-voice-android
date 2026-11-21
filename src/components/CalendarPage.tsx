@@ -199,7 +199,6 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
               const on = sameDay(day, selected);
               const dayEvents = monthEvents.filter((event) => overlapsDay(event, day));
               const count = dayEvents.length;
-              const money = dayEvents.some((event) => event.source === "finance");
               const today = sameDay(day, new Date());
               return (
                 <button
@@ -208,12 +207,12 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
                   onClick={() => setSelected(day)}
                   aria-label={`${day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}, ${count} ${count === 1 ? t("event") : t("events")}`}
                   aria-pressed={on}
-                  className={`flex h-12 flex-col items-center justify-center text-sm tabular-nums ${
+                  className={`flex h-14 flex-col items-center justify-center text-sm tabular-nums ${
                     on ? "bg-foreground text-background" : "text-foreground"
-                  } ${today && !on ? "underline decoration-2 underline-offset-2" : ""}`}
+                  } ${today && !on ? "underline decoration-[var(--brand)] decoration-1 underline-offset-4" : ""}`}
                 >
                   {day.getDate()}
-                  <span className="text-[10px] leading-3" style={money ? { color: "var(--gold)" } : undefined}>{count > 0 ? count : ""}</span>
+                  <span className="text-[13px] leading-4">{count > 0 ? count : ""}</span>
                 </button>
               );
             })}

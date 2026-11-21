@@ -214,11 +214,11 @@ export function VoiceHome({
         </p>
       </div>
 
-      <ul className="flex flex-wrap gap-2 px-1">
-        <li className="border border-border px-3 py-2 text-sm">{offlineReady ? t("Offline-ready") : t("Not offline yet")}</li>
-        <li className="border border-border px-3 py-2 text-sm">{downloaded ? t("Downloaded") : t("Not downloaded")}</li>
-        <li className="border border-border px-3 py-2 text-sm">{cloudKey ? t("Cloud key saved") : t("No cloud key")}</li>
-        {voiceStatus?.hfHasToken ? <li className="border border-border px-3 py-2 text-sm">{t("Token saved")}</li> : null}
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-sm text-muted-foreground">
+        <li>{offlineReady ? t("Offline-ready") : t("Not offline yet")}</li>
+        <li>{downloaded ? t("Downloaded") : t("Not downloaded")}</li>
+        <li>{cloudKey ? t("Cloud key saved") : t("No cloud key")}</li>
+        {voiceStatus?.hfHasToken ? <li>{t("Token saved")}</li> : null}
       </ul>
 
       {unfinished ? (

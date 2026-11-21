@@ -352,7 +352,23 @@ function paletteFor(choice: AppearanceChoice, prefersLight: boolean): Palette {
 }
 
 function paintPalette(root: HTMLElement, palette: Palette) {
+  const light = palette.scheme === "light";
   const tokens: Record<string, string> = {
+    "--surface-0": palette.canvas,
+    "--surface-1": palette.panel,
+    "--surface-2": palette.panel2,
+    "--text-primary": palette.ink,
+    "--text-tertiary": palette.muted,
+    "--text-mix": light ? "#161514" : "#F3F1EC",
+    "--brand": palette.gold,
+    "--brand-ink": palette.onGold,
+    "--brand-deep": palette.goldDeep,
+    "--positive": palette.sage,
+    "--negative": palette.rose,
+    "--line": palette.frameColor,
+    "--line-soft": palette.rule,
+    "--scheme": palette.scheme,
+    "--elevation": light ? "0 1px 2px rgba(26, 27, 30, 0.04)" : "none",
     "--canvas": palette.canvas,
     "--panel": palette.panel,
     "--panel-2": palette.panel2,
@@ -365,10 +381,9 @@ function paintPalette(root: HTMLElement, palette: Palette) {
     "--frame": palette.frame,
     "--frame-color": palette.frameColor,
     "--rule": palette.rule,
-    "--kicker": palette.kicker,
-    "--grain": palette.grain,
+    "--kicker": palette.muted,
+    "--grain": "transparent",
     "--on-gold": palette.onGold,
-    "--scheme": palette.scheme,
   };
   for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
   root.style.colorScheme = palette.scheme;

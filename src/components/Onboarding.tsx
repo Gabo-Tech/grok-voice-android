@@ -330,8 +330,8 @@ export function Onboarding({
   return (
     <div className="flex h-full flex-col px-5 py-6">
       <header className="mb-6 text-center">
-        <p className="text-[11px] tracking-[0.35em] text-primary uppercase">{t("Setup")}</p>
-        <h1 className="mt-1 text-lg font-semibold tracking-[0.22em]">GROK//VOICE</h1>
+        <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
+        <h1 className="masthead mt-2 text-3xl">Grok Voice</h1>
       </header>
 
       <ol className="mb-6 flex items-start gap-1">
@@ -341,13 +341,11 @@ export function Onboarding({
             <li key={item.id} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
               <span
                 className={cn(
-                  "grid size-7 place-items-center rounded-full border text-xs",
-                  state === "done" && "border-primary bg-primary text-primary-foreground",
-                  state === "now" && "border-primary text-primary",
-                  state === "later" && "border-border text-muted-foreground",
+                  "text-[13px] leading-4",
+                  state === "now" ? "text-foreground underline decoration-[var(--brand)] underline-offset-4" : "text-muted-foreground",
                 )}
               >
-                {state === "done" ? <Check className="size-3.5" /> : index + 1}
+                {state === "done" ? <Check className="mx-auto size-3.5" /> : index + 1}
               </span>
               <span className={cn("text-center text-xs", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item.label)}</span>
             </li>
@@ -365,7 +363,7 @@ export function Onboarding({
                   key={item.id}
                   type="button"
                   onClick={() => setLang(item.id)}
-                  className={cn("min-h-12 border px-2 py-2 text-sm", lang === item.id ? "border-foreground text-foreground" : "border-border text-muted-foreground")}
+                  className={cn("min-h-12 px-3 text-sm", lang === item.id ? "bg-foreground text-background" : "text-muted-foreground")}
                 >
                   {t(item.label)}
                 </button>

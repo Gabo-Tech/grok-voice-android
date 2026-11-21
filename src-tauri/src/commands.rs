@@ -295,7 +295,7 @@ pub async fn record_wake_sample(
     engine.send(Ctl::Record { secs, reply });
     let pcm = tauri::async_runtime::spawn_blocking(move || {
         rx.recv_timeout(Duration::from_secs_f32(secs + 6.0))
-            .map_err(|_| msg("recording timed out — is the microphone available?"))
+            .map_err(|_| msg("Recording timed out. Is the microphone available?"))
     })
     .await
     .map_err(|e| msg(e.to_string()))??

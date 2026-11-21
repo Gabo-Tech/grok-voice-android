@@ -656,7 +656,7 @@ export function MorePage({
   return (
     <PageChrome title={t("Settings")} subtitle={t("Voice, music, and this phone")} active={active && section === "menu"}>
       <ListenStatus />
-      <div className="mag-panel mb-6">
+      <div className="mb-8">
         <p className="text-base text-foreground">
           {first ? `${t("Tried first")}: ${t(providerLabel(first.provider))}` : t("No voice yet")}
         </p>
@@ -693,7 +693,7 @@ export function MorePage({
       {visibleGroups.map((group) => {
         const open = query.length > 0 || openGroups[group.id] !== false;
         return (
-          <section key={group.id} className="mag-panel mb-4">
+          <section key={group.id} className="mb-8 border-t border-border pt-5">
             <button
               type="button"
               className="mb-2 flex min-h-12 w-full items-center justify-between gap-3 text-left"
@@ -1203,7 +1203,7 @@ function BackupPage() {
         {t("Export backup")}
       </Button>
       <div className="border-t border-border pt-4">
-        <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
+        <p className="text-[13px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {t("Replace notes, People, and Finance on this phone. Reminders that are not tied to a person stay. Confirm after you review the file.")}
         </p>
@@ -1301,7 +1301,7 @@ function ListenStatus() {
   }, []);
   if (!health) return null;
   return (
-    <div className="mb-4 border border-border px-3 py-3">
+    <div className="mb-8">
       <p className="text-base text-foreground">{listenTitle(health.health, t)}</p>
       <p className="mt-1 text-sm leading-6 text-muted-foreground">{listenBody(health.health, t)}</p>
       {health.health === "battery" ? (
@@ -1343,7 +1343,7 @@ function MenuRow({
 }) {
   return (
     <RowButton onClick={onClick} className="items-center">
-      <span className={cn("grid size-12 place-items-center border border-border text-foreground")}>{icon}</span>
+      <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">{icon}</span>
       <div className="min-w-0 flex-1">
         <p className="text-base text-foreground">{title}</p>
         <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p>
