@@ -13,17 +13,25 @@ import {
   type FinancePdfRequest,
   type FinanceTransactionDraft,
 } from "@/lib/api";
+import { financeSample } from "@/lib/financeSample";
 import { emptyFinance, minorExponent, withShown } from "@/lib/money";
 
 function phoneLocale(): string {
   return typeof navigator === "undefined" ? "" : navigator.language;
 }
 
+function previewSample(): string | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("sample")) return null;
+  return (params.get("currency") || "CHF").toUpperCase();
+}
+
 let previewId = 1;
 
 export function useFinance() {
   const inApp = isTauri();
-  const [snapshot, setSnapshot] = useState<FinanceSnapshot>(() => emptyFinance(phoneLocale()));
+  const [snapshot, setSnapshot] = useState<FinanceSnapshot>(() => (previewSample() ? financeSample(previewSample() || "CHF") : emptyFinance(phoneLocale())));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

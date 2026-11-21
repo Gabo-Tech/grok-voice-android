@@ -21,6 +21,7 @@ import {
   type MoneyPart,
   type RateBook,
 } from "@/lib/financeMath";
+import { flowParts as flowPartsOf, monthActivity, netWorthParts } from "@/lib/financeLedger";
 import { formatMoney } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
 import { financePanels, type FinancePlace } from "@/lib/financeTabs";
@@ -142,10 +143,12 @@ export function FinanceDashboard({
   const display = (finance.snapshot.defaultCurrency || "").toUpperCase();
   const book = useMemo(() => bookFromStatus(finance.snapshot.fx), [finance.snapshot.fx]);
   const nowMs = useMemo(() => Date.now(), [finance.snapshot]);
+  const quotes = finance.snapshot.prices?.quotes || [];
   const worth = useMemo(
     () => netWorth(accounts.map((account) => worthAccount(account))),
     [accounts],
   );
+  const net = useMemo(() => netWorthParts(accounts, display, book, quotes, nowMs), [accounts, display, book, quotes, nowMs]);
   const bounds = monthBounds(today);
   const flow = useMemo(() => cashFlow(finance.snapshot.transactions, bounds.start, bounds.end), [finance.snapshot.transactions, bounds.start, bounds.end]);
   const previous = useMemo(
@@ -165,11 +168,34 @@ export function FinanceDashboard({
   const yesterday = addDays(today, -1);
   const nextPlan = useMemo(() => projectWindow([], planned, today, horizon, today, false), [planned, today, horizon]);
   const overduePlan = useMemo(() => projectWindow([], planned, "1970-01-01", yesterday, today, false), [planned, today, yesterday]);
-  const worthParts = useMemo(() => worth.map((row) => ({ amountMinor: row.net, currency: row.currency })), [worth]);
-  const flowParts = useMemo(() => flow.map((row) => ({ amountMinor: row.left, currency: row.currency })), [flow]);
-  const spentParts = useMemo(() => periodParts(txs, bounds.start, bounds.end, "expense"), [txs, bounds.start, bounds.end]);
+  const worthParts = net.parts.length > 0 ? net.parts : worth.map((row) => ({ amountMinor: row.net, currency: row.currency }));
+  const realized = useMemo(
+    () =>
+      monthActivity(
+        txs,
+        planned
+          .filter((hit) => !txs.some((tx) => tx.ruleId === hit.scheduleId && (tx.occurrenceDate || tx.date) === hit.date))
+          .map((hit) => ({ date: hit.date, direction: hit.direction, amountMinor: hit.amountMinor, currency: hit.currency })),
+        bounds.start,
+        bounds.end,
+        today,
+      ),
+    [txs, planned, bounds.start, bounds.end, today],
+  );
+  const spentParts = useMemo(() => flowPartsOf(realized, bounds.start, bounds.end, "expense"), [realized, bounds.start, bounds.end]);
   const paidParts = useMemo(() => periodParts(txs, bounds.start, bounds.end, "payment"), [txs, bounds.start, bounds.end]);
-  const earnedParts = useMemo(() => periodParts(txs, bounds.start, bounds.end, "income"), [txs, bounds.start, bounds.end]);
+  const earnedParts = useMemo(() => flowPartsOf(realized, bounds.start, bounds.end, "income"), [realized, bounds.start, bounds.end]);
+  const resultFlow = useMemo(() => cashFlow(realized, bounds.start, bounds.end), [realized, bounds.start, bounds.end]);
+  const flowParts = useMemo(() => resultFlow.map((row) => ({ amountMinor: row.left, currency: row.currency })), [resultFlow]);
+  const cardDebtParts = useMemo(
+    () =>
+      accounts.flatMap((account) =>
+        account.kind === "credit_card" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 && account.currency
+          ? [{ amountMinor: account.shownBalanceMinor, currency: account.currency }]
+          : [],
+      ),
+    [accounts],
+  );
   const comingOutParts = useMemo(() => listed(comingOut), [comingOut]);
   const incomeParts = useMemo(() => listed(incomeRows), [incomeRows]);
   const payoutParts = useMemo(() => listed(payoutRows), [payoutRows]);
@@ -215,30 +241,23 @@ export function FinanceDashboard({
         <section className="fin-panel" data-finance-panel="net-worth">
           <h2 className="fin-kicker">{t("Net worth")}</h2>
           <p className="fin-muted mt-2 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
-          {worth.length === 0 ? (
+          {worthParts.length === 0 ? (
             <p className="mt-4 text-base">{t("No balances stated yet")}</p>
           ) : (
             <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
           )}
+          {net.unpriced.length > 0 ? <p className="fin-muted mt-2 text-sm leading-5">{fill("No price for {name}", { name: net.unpriced.join(", ") })}</p> : null}
           <div className="mt-4 grid w-full min-w-0 grid-cols-2 gap-2">
             <FocusChip label={t("You own")} onClick={() => onFocus("owned")} />
             <FocusChip label={t("You owe")} onClick={() => onFocus("debt")} />
             <FocusChip label={t("Invested")} onClick={() => onFocus("invested")} />
             <FocusChip label={t("Cash & savings")} onClick={() => onFocus("cash")} />
           </div>
-          {heads.moves.state !== "empty" ? (
+          {flowParts.length > 0 ? (
             <div className="mt-4 border-t border-border pt-3">
-              <p className="text-sm font-medium">{t("Change this month")}</p>
-              <p className="fin-muted mt-1 text-sm leading-5">{t("From what you recorded. A holding stays at the price you entered.")}</p>
-              <CombinedHeadline
-                parts={moves.map((row) => ({ amountMinor: row.change, currency: row.currency }))}
-                display={display}
-                book={book}
-                nowMs={nowMs}
-                busy={finance.busy}
-                size="text-2xl"
-                tone="auto"
-              />
+              <p className="text-sm font-medium">{t("Cash flow")}</p>
+              <p className="fin-muted mt-1 text-sm leading-5">{t("From income and expenses this month. A card payment is not included.")}</p>
+              <CombinedHeadline parts={flowParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-2xl" tone="auto" />
             </div>
           ) : null}
         </section>
@@ -333,6 +352,18 @@ export function FinanceDashboard({
           nowMs={nowMs}
           busy={finance.busy}
         />
+      ) : null}
+
+      {panels.includes("card-debt") ? (
+        <section className="fin-panel" data-finance-panel="card-debt">
+          <h2 className="fin-kicker">{t("Card debt")}</h2>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("What the cards owe right now. A payment later is not another expense.")}</p>
+          {cardDebtParts.length === 0 ? (
+            <p className="mt-4 text-base">{t("No card debt")}</p>
+          ) : (
+            <CombinedHeadline parts={cardDebtParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="out" />
+          )}
+        </section>
       ) : null}
 
       {panels.includes("result") ? (
