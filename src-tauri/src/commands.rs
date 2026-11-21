@@ -1677,6 +1677,13 @@ pub fn refresh_finance_rates(
 }
 
 #[tauri::command]
+pub fn refresh_holding_price(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .refresh_holding(&app, &id)
+        .map_err(msg)
+}
+
+#[tauri::command]
 pub fn set_finance_manual_price(
     app: AppHandle,
     symbol: String,

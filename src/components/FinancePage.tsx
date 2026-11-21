@@ -412,6 +412,8 @@ export function FinancePage({
               action={t("Add investment")}
               onAdd={openInvestment}
               onOpen={openAccount}
+              onRefreshPrice={(account) => finance.refreshHolding(account.id)}
+              priceNote={finance.snapshot.prices?.lastError || ""}
               display={finance.snapshot.defaultCurrency}
               fx={finance.snapshot.fx}
               quotes={finance.snapshot.prices?.quotes || []}
@@ -798,6 +800,8 @@ function AccountList({
   onAdd,
   onOpen,
   onPay,
+  onRefreshPrice,
+  priceNote = "",
   display = "",
   fx,
   quotes = [],
@@ -812,12 +816,14 @@ function AccountList({
   onAdd: () => void;
   onOpen: (account: FinanceAccount) => void;
   onPay?: (account: FinanceAccount) => void;
+  onRefreshPrice?: (account: FinanceAccount) => void;
+  priceNote?: string;
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
 }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} display={display} fx={fx} quotes={quotes} />;
+  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} priceNote={priceNote} display={display} fx={fx} quotes={quotes} />;
 }
 
 function AccountRows({
@@ -827,6 +833,8 @@ function AccountRows({
   rules,
   onPaid,
   onPay,
+  onRefreshPrice,
+  priceNote = "",
   display = "",
   fx,
   quotes = [],
@@ -837,6 +845,8 @@ function AccountRows({
   rules: FinanceState["snapshot"]["rules"];
   onPaid: (id: string) => void;
   onPay?: (account: FinanceAccount) => void;
+  onRefreshPrice?: (account: FinanceAccount) => void;
+  priceNote?: string;
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
@@ -897,6 +907,10 @@ function AccountRows({
                 {account.marketStale ? ` · ${t("Rates are stale")}` : ""}
                 {account.marketFetchedMs ? ` · ${fill("Updated {ago}", { ago: priceAgo(account.marketFetchedMs) })}` : ""}
               </p>
+            ) : null}
+            {position.unpriced && priceNote ? <p className="mt-1 text-sm leading-5 text-muted-foreground">{t(priceNote)}</p> : null}
+            {onRefreshPrice ? (
+              <button type="button" className="fin-chip mt-3 min-h-12 w-full" onClick={() => onRefreshPrice(account)}>{t("Refresh price now")}</button>
             ) : null}
             {owed && payoff && payoff.paid > 0 ? (
               <div className="mt-2">

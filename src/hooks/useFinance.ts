@@ -214,6 +214,14 @@ export function useFinance() {
     [inApp, run],
   );
 
+  const refreshHolding = useCallback(
+    (id: string) => {
+      if (!inApp) return;
+      void run(() => api.refreshHoldingPrice(id));
+    },
+    [inApp, run],
+  );
+
   const refreshRates = useCallback((force = false) => {
     if (!inApp) return;
     setBusy(true);
@@ -291,6 +299,7 @@ export function useFinance() {
     markPaid,
     scheduleAction,
     refreshRates,
+    refreshHolding,
     setManualRate,
     setPriceProvider,
     exportPdf,

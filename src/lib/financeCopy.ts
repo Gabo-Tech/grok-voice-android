@@ -66,6 +66,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     Up: "Subir",
     Down: "Bajar",
     Merge: "Unir",
+    "Refresh price now": "Actualizar el precio ahora",
+    "Could not refresh the price.": "No se ha podido actualizar el precio.",
   },
   de: {
     Palette: "Palette",
@@ -131,6 +133,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     Up: "Nach oben",
     Down: "Nach unten",
     Merge: "Zusammenführen",
+    "Refresh price now": "Preis jetzt aktualisieren",
+    "Could not refresh the price.": "Der Preis konnte nicht aktualisiert werden.",
   },
   pt: {
     Palette: "Paleta",
@@ -196,6 +200,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     Up: "Subir",
     Down: "Descer",
     Merge: "Unir",
+    "Refresh price now": "Atualizar o preço agora",
+    "Could not refresh the price.": "Não foi possível atualizar o preço.",
   },
   "ca-ES-valencia": {
     Palette: "Paleta",
@@ -261,5 +267,7 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     Up: "Puja",
     Down: "Baixa",
     Merge: "Unix",
+    "Refresh price now": "Actualitza el preu ara",
+    "Could not refresh the price.": "No s'ha pogut actualitzar el preu.",
   },
 };

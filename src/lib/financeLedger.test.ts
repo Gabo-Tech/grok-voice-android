@@ -87,6 +87,19 @@ const epic = positionOf({ name: "EPIC Cash", kind: "other", currency: "CHF", not
 assert.equal(epic.quantity, "128.60340395");
 assert.equal(epic.symbol, "EPIC");
 assert.equal(epic.unpriced, false);
+const cased = positionOf({ name: "Epic Cash", kind: "custom", currency: "CHF", notes: "2", ticker: "ETH", investmentType: "other" }, "EUR", book, quotes, now);
+assert.equal(cased.symbol, "EPIC");
+assert.equal(cased.unpriced, false);
+const estimate = positionOf(
+  { name: "EPIC Cash", kind: "investment", currency: "CHF", units: "1", ticker: "EPIC" },
+  "EUR",
+  book,
+  [{ symbol: "EPIC", price: 0.77, currency: "EUR", source: "ai", fetchedMs: now, estimated: true }],
+  now,
+);
+assert.equal(estimate.estimated, true);
+assert.equal(estimate.source, "ai");
+assert.equal(estimate.unpriced, false);
 
 const cached = positionOf(
   { name: "Silver", kind: "investment", currency: "CHF", units: "5", measureUnit: "troy_oz" },
