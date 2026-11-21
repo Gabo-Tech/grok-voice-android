@@ -135,7 +135,7 @@ export function RowButton({
       onClick={onClick}
       style={style}
       className={cn(
-        "row-item flex min-h-12 w-full shrink-0 items-start gap-3 px-1 py-3.5 text-left transition-colors active:bg-white/5",
+        "row-item flex min-h-12 w-full shrink-0 items-start gap-3 px-0 py-3.5 text-left transition-colors active:bg-foreground/5",
         className,
       )}
     >

@@ -86,7 +86,7 @@ export function DebugPanel({
     if (!settings) return;
     try {
       setSettings(await api.saveSettings(settings));
-      setSaved("Saved — applies to the next session.");
+      setSaved("Saved. Applies to the next session.");
     } catch (e) {
       setSaved(errorText(e));
     }

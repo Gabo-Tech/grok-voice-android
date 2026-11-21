@@ -94,9 +94,7 @@ export function ThemePicker({
             body={t(choice.body)}
             pressed={selected === choice.id}
             canvas={PRESETS[choice.id].canvas}
-            panel={PRESETS[choice.id].panel}
             ink={PRESETS[choice.id].ink}
-            gold={PRESETS[choice.id].gold}
             onClick={() => commit(choice.id)}
           />
         ))}
@@ -105,9 +103,7 @@ export function ThemePicker({
           body={t("Dark uses Graphite. Light uses Stone.")}
           pressed={selected === "system"}
           canvas="#0E0F11"
-          panel="#F4F2EE"
           ink="#EEECE8"
-          gold="#C4B5A0"
           split
           onClick={() => commit("system")}
         />
@@ -116,20 +112,18 @@ export function ThemePicker({
           body={t("Pick every color.")}
           pressed={selected === "custom"}
           canvas={preview.canvas}
-          panel={preview.panel}
           ink={preview.ink}
-          gold={preview.gold}
           wide
           onClick={() => commit("custom", colors)}
         />
       </div>
       {selected === "custom" ? (
-        <div className="mt-4 min-w-0 max-w-full border-[2.5px] border-border p-3">
-          <div className="min-w-0 border-[2.5px] p-3" style={{ background: preview.canvas, color: preview.ink, borderColor: preview.frameColor }}>
-            <p className="text-xs font-extrabold tracking-[0.14em] uppercase" style={{ color: preview.gold }}>
+        <div className="mt-6 min-w-0 max-w-full border-t border-border pt-5">
+          <div className="min-w-0 px-4 py-5" style={{ background: preview.canvas, color: preview.ink }}>
+            <p className="text-xs tracking-[0.16em] uppercase" style={{ color: preview.muted }}>
               {t("Live preview")}
             </p>
-            <p className="mt-2 text-2xl leading-none font-extrabold tracking-wide uppercase">{t("Net worth")}</p>
+            <p className="mt-3 text-2xl leading-none font-medium tracking-tight">{t("Net worth")}</p>
             <p className="mt-3 text-sm" style={{ color: preview.sage }}>
               {t("Income")}
             </p>
@@ -140,13 +134,13 @@ export function ThemePicker({
           <div className="mt-4 space-y-3">
             {FIELDS.map((field) => (
               <label key={field.key} className="block min-w-0">
-                <span className="text-xs font-extrabold tracking-[0.12em] uppercase">{t(field.label)}</span>
-                <span className="mt-1 flex min-w-0 items-center gap-2">
+                <span className="text-xs tracking-[0.14em] uppercase text-muted-foreground">{t(field.label)}</span>
+                <span className="mt-1 flex min-w-0 items-center gap-3">
                   <input
                     type="color"
                     aria-label={t(field.label)}
-                    value={parseHex(colors[field.key]) || "#000000"}
-                    className="h-12 w-14 shrink-0 border-[2.5px] border-current bg-transparent p-1"
+                    value={parseHex(colors[field.key]) || "#1A1B1E"}
+                    className="h-12 w-12 shrink-0 border-0 bg-transparent p-0"
                     onChange={(event) => setField(field.key, event.target.value)}
                   />
                   <input
@@ -155,7 +149,7 @@ export function ThemePicker({
                     autoCapitalize="characters"
                     spellCheck={false}
                     aria-label={`${t(field.label)} #`}
-                    className="h-12 min-w-0 flex-1 border-[2.5px] border-border bg-transparent px-3 font-mono text-base uppercase"
+                    className="h-12 min-w-0 flex-1 border-0 border-b border-border bg-transparent px-0 font-mono text-base uppercase"
                     onChange={(event) => setField(field.key, event.target.value.toUpperCase())}
                   />
                 </span>
@@ -163,11 +157,11 @@ export function ThemePicker({
             ))}
           </div>
           <label className="mt-4 block min-w-0">
-            <span className="text-xs font-extrabold tracking-[0.12em] uppercase">{t("Start from")}</span>
+            <span className="text-xs tracking-[0.14em] uppercase text-muted-foreground">{t("Start from")}</span>
             <select
               value={seed}
               aria-label={t("Start from")}
-              className="mt-1 h-12 w-full max-w-full border-[2.5px] border-border bg-transparent px-3 text-base"
+              className="mt-1 h-12 w-full max-w-full border-0 border-b border-border bg-transparent px-0 text-base"
               onChange={(event) => setSeed(event.target.value as PresetId)}
             >
               {PRESET_CHOICES.map((choice) => (
@@ -191,9 +185,7 @@ function Swatch({
   body,
   pressed,
   canvas,
-  panel,
   ink,
-  gold,
   split,
   wide,
   onClick,
@@ -202,9 +194,7 @@ function Swatch({
   body: string;
   pressed: boolean;
   canvas: string;
-  panel: string;
   ink: string;
-  gold: string;
   split?: boolean;
   wide?: boolean;
   onClick: () => void;
@@ -214,17 +204,14 @@ function Swatch({
       type="button"
       aria-pressed={pressed}
       onClick={onClick}
-      className={cn("min-h-24 min-w-0 px-3 py-3 text-left", wide && "col-span-2", pressed && "outline outline-2 outline-offset-2")}
+      className={cn("min-h-24 min-w-0 px-3 py-3 text-left", wide && "col-span-2", pressed && "shadow-[inset_0_-2px_0_var(--brand)]")}
       style={{
         background: split ? "linear-gradient(135deg, #0E0F11 50%, #F4F2EE 50%)" : canvas,
         color: split ? "#EEECE8" : ink,
-        border: `2.5px solid ${pressed ? gold : ink}`,
-        outlineColor: "var(--gold)",
       }}
     >
       <span className="mb-2 flex min-w-0 items-center gap-2">
-        <span className="inline-block h-3 w-8 shrink-0" style={{ background: panel, border: `2px solid ${gold}` }} />
-        <span className="truncate text-xs font-extrabold tracking-[0.14em] uppercase">{title}</span>
+        <span className="truncate text-xs tracking-[0.14em] uppercase">{title}</span>
       </span>
       <span className="block text-xs leading-4 break-words opacity-80">{body}</span>
     </button>

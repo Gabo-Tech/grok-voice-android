@@ -172,14 +172,14 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
     <>
       <PageChrome title={t("Time")} subtitle={subtitle} onAdd={() => openNew("reminder")} addLabel={t("New reminder")} active={active}>
         <div className="mb-4 grid grid-cols-2 gap-2">
-          <button type="button" className="h-12 border border-border text-sm" onClick={() => openNew("alarm")}>
+          <button type="button" className="h-12 text-sm underline underline-offset-4" onClick={() => openNew("alarm")}>
             {t("New alarm")}
           </button>
-          <button type="button" className="h-12 border border-border text-sm" onClick={() => openNew("timer")}>
+          <button type="button" className="h-12 text-sm underline underline-offset-4" onClick={() => openNew("timer")}>
             {t("New countdown")}
           </button>
         </div>
-        <div className="chip-scroller mb-4">
+        <div className="mb-6 flex flex-wrap gap-x-4 gap-y-1">
           {(["all", ...KINDS] as const).map((item) => (
             <button
               key={item}
@@ -187,8 +187,8 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
               onClick={() => setKindFilter(item)}
               className={
                 kindFilter === item
-                  ? "h-12 shrink-0 border border-foreground px-3 text-sm text-foreground"
-                  : "h-12 shrink-0 border border-border px-3 text-sm text-muted-foreground"
+                  ? "min-h-11 px-0 text-sm text-foreground underline decoration-[var(--brand)] underline-offset-4"
+                  : "min-h-11 px-0 text-sm text-muted-foreground"
               }
             >
               {item === "all" ? t("All") : item === "timer" ? t("Countdowns") : item === "alarm" ? t("Alarms") : t("Reminders")}

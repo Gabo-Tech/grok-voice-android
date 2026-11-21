@@ -213,7 +213,7 @@ fn trim_silence(pcm: &[f32]) -> Result<(&[f32], f32)> {
     let peak_rms = rms.iter().copied().fold(0.0f32, f32::max);
     let peak = pcm.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     if peak_rms < 0.01 {
-        return Err(msg("That was too quiet — hold the phone closer and say “Hey Grok”."));
+        return Err(msg("That was too quiet. Hold the phone closer and say “Hey Grok”."));
     }
     let threshold = (peak_rms * 0.15).max(0.005);
     let first = rms.iter().position(|&r| r > threshold).unwrap_or(0);
@@ -223,10 +223,10 @@ fn trim_silence(pcm: &[f32]) -> Result<(&[f32], f32)> {
     let end = ((last + 1 + pad) * FRAME).min(pcm.len());
     let speech_ms = ((last + 1 - first) * 10) as u64;
     if speech_ms < 250 {
-        return Err(msg("Too short — say the full phrase “Hey Grok”."));
+        return Err(msg("Too short. Say the full phrase “Hey Grok”."));
     }
     if speech_ms > 2_000 {
-        return Err(msg("Too long — say only “Hey Grok”, in a quiet spot."));
+        return Err(msg("Too long. Say only “Hey Grok”, in a quiet spot."));
     }
     Ok((&pcm[start..end], peak))
 }

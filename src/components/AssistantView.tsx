@@ -152,7 +152,7 @@ export function AssistantView({
           </div>
           <div className="masthead-rule" />
           <div className="mt-3 flex flex-wrap items-center gap-2 pb-3">
-            <p className="stamp">
+            <p className="text-sm text-muted-foreground">
               {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
             </p>
             <button
@@ -287,14 +287,14 @@ export function AssistantView({
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t("Type a message")}
           aria-label={t("Type a message")}
-          className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border border-border bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground"
+          className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-0 border-b border-[var(--line)] bg-transparent px-0 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-[var(--text-primary)]"
         />
         {draft.trim().length > 0 ? (
           <button
             type="submit"
             disabled={voice.sending}
             aria-label={t("Send")}
-            className="grid size-12 shrink-0 place-items-center border border-foreground text-foreground disabled:opacity-40"
+            className="grid size-12 shrink-0 place-items-center bg-foreground text-background disabled:opacity-40"
           >
             <Send className="size-5" strokeWidth={1.25} />
           </button>
@@ -304,7 +304,7 @@ export function AssistantView({
             aria-pressed={micOpen}
             aria-label={micOpen ? t("Hide voice") : t("Show voice")}
             onClick={onMic}
-            className={cn("grid size-12 shrink-0 place-items-center border border-foreground text-foreground", micOpen && "bg-foreground text-background")}
+            className={cn("grid size-12 shrink-0 place-items-center text-foreground", micOpen && "bg-foreground text-background")}
           >
             <Mic className="size-5" strokeWidth={1.25} />
           </button>
