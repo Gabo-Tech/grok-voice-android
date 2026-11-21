@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import type { FinanceAccount, FinanceFx, FinanceTransaction } from "@/lib/api";
+import type { FinanceAccount, FinanceFx, FinancePrices, FinanceTransaction } from "@/lib/api";
+import { barsFor, formatQuantity, positionOf } from "@/lib/financeLedger";
 import { bookFromStatus, headlineOf, type Headline, type MoneyPart, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
 import { displayColor, isDebt, netByCurrency, sixMonths } from "@/lib/financeView";
@@ -23,6 +24,7 @@ export function FinanceCarousel({
   planned = [],
   display = "",
   fx,
+  prices,
   busy = false,
   onOpenSettings,
   onPick,
@@ -32,6 +34,7 @@ export function FinanceCarousel({
   planned?: { currency: string; income: number; expense: number }[];
   display?: string;
   fx?: FinanceFx | null;
+  prices?: FinancePrices | null;
   busy?: boolean;
   onOpenSettings?: () => void;
   onPick: (pick: ChartPick) => void;
@@ -115,16 +118,29 @@ export function FinanceCarousel({
         }
       }
     }
-    const bars = accounts
-      .map((account, index) => ({
-        label: account.name,
-        value: Math.abs(account.shownBalanceMinor ?? 0),
-        color: displayColor(account.color, index),
-        caption: account.shownBalanceMinor == null ? t("Not set") : formatMoney(account.shownBalanceMinor, account.currency),
-        pick: { accountId: account.id, currency: account.currency },
-      }))
-      .filter((bar) => bar.label);
-    if (bars.length > 0) cards.push({ key: "bars", title: t("Every account"), body: <Bars rows={bars} onPick={onPick} /> });
+    const scaled = barsFor(accounts, code, book, prices?.quotes || [], nowMs);
+    const paint = (rows: typeof scaled.assets, debt: boolean) =>
+      rows.map((row, index) => {
+        const account = accounts.find((item) => item.id === row.id);
+        const position = account ? positionOf(account, code, book, prices?.quotes || [], nowMs) : null;
+        const quantity = account ? formatQuantity(account.units || position?.quantity || "") : "";
+        const native = position && position.nativeMinor != null && position.nativeCurrency && position.nativeCurrency !== code ? formatMoney(position.nativeMinor, position.nativeCurrency) : "";
+        const caption = row.unpriced
+          ? fill("No price for {name}", { name: row.label })
+          : [row.displayMinor != null ? formatMoney(row.displayMinor, code) : "", native, quantity].filter(Boolean).join(" · ");
+        return {
+          label: row.label,
+          value: row.included ? Math.abs(row.displayMinor || 0) : 0,
+          width: row.width,
+          color: displayColor(account?.color || "", index),
+          caption,
+          pick: { accountId: row.id, group: debt ? ("debt" as const) : undefined },
+        };
+      });
+    const assetBars = paint(scaled.assets, false);
+    const debtBars = paint(scaled.debts, true);
+    if (assetBars.length > 0) cards.push({ key: "bars", title: t("Assets"), body: <Bars rows={assetBars} onPick={onPick} /> });
+    if (debtBars.length > 0) cards.push({ key: "debt-bars", title: t("Debts"), body: <Bars rows={debtBars} onPick={onPick} /> });
     if (planned.some((row) => row.income || row.expense)) {
       const income = headlineOf(planned.map((row) => ({ amountMinor: row.income, currency: row.currency })), code, book, nowMs);
       const expense = headlineOf(planned.map((row) => ({ amountMinor: row.expense, currency: row.currency })), code, book, nowMs);
@@ -369,23 +385,26 @@ function Bars({
   rows,
   onPick,
 }: {
-  rows: Array<{ label: string; value: number; color: string; caption: string; pick: ChartPick }>;
+  rows: Array<{ label: string; value: number; width?: number; color: string; caption: string; pick: ChartPick }>;
   onPick: (pick: ChartPick) => void;
 }) {
   const max = Math.max(...rows.map((row) => row.value), 1);
   return (
     <div className="space-y-3">
-      {rows.map((row) => (
-        <button key={`${row.label}-${row.caption}`} type="button" className="block min-h-12 w-full min-w-0 text-left" onClick={() => onPick(row.pick)}>
-          <span className="flex min-w-0 items-baseline justify-between gap-3">
-            <span className="min-w-0 truncate text-base">{row.label}</span>
-            <span className="fin-num shrink-0 text-base">{row.caption}</span>
-          </span>
-          <span className="fin-track mt-1 block">
-            <span className="block h-full" style={{ width: `${Math.max(4, (row.value / max) * 100)}%`, background: row.color }} />
-          </span>
-        </button>
-      ))}
+      {rows.map((row) => {
+        const width = row.width != null ? row.width * 100 : (row.value / max) * 100;
+        return (
+          <button key={`${row.label}-${row.caption}`} type="button" className="block min-h-12 w-full min-w-0 text-left" onClick={() => onPick(row.pick)}>
+            <span className="flex min-w-0 items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate text-base">{row.label}</span>
+              <span className="fin-num shrink-0 text-right text-sm">{row.caption}</span>
+            </span>
+            <span className="fin-track mt-1 block">
+              <span className="block h-full" style={{ width: `${row.value ? Math.max(width, 4) : 0}%`, background: row.color }} />
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

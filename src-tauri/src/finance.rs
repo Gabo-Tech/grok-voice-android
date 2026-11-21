@@ -141,6 +141,26 @@ pub struct Account {
     /// Last four digits only. Never a full card number.
     #[serde(default)]
     pub last_four: String,
+    /// What you paid, when you said so. Empty until then.
+    #[serde(default)]
+    pub purchase_minor: Option<i64>,
+    #[serde(default)]
+    pub purchase_currency: String,
+    #[serde(default)]
+    pub purchase_date: String,
+    /// Your own estimates, oldest first. The latest is the current value of a manual asset.
+    #[serde(default)]
+    pub valuations: Vec<Valuation>,
+    #[serde(default)]
+    pub isin: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Valuation {
+    pub as_of: String,
+    pub amount_minor: i64,
+    pub currency: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -438,6 +458,20 @@ pub struct AccountDraft {
     pub edit_statement_day: bool,
     #[serde(default)]
     pub edit_last_four: bool,
+    #[serde(default)]
+    pub purchase: String,
+    #[serde(default)]
+    pub purchase_currency: String,
+    #[serde(default)]
+    pub purchase_date: String,
+    #[serde(default)]
+    pub revalue: String,
+    #[serde(default)]
+    pub revalue_currency: String,
+    #[serde(default)]
+    pub revalue_date: String,
+    #[serde(default)]
+    pub isin: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1072,6 +1106,15 @@ pub fn tool_definitions() -> Value {
             })
         ),
         fn_tool(
+            "open_finance",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, or charts. overview is net worth, this month's expenses, income, cash flow, and card debt. activity is transactions. accounts includes banks, cash, cards, and loans. holdings is investments, crypto, metals, and manual assets. plan is what is coming. charts scrolls the overview charts. Do not invent a rate.",
+            json!({
+                "type": "object",
+                "properties": { "view": { "type": "string" } },
+                "required": ["view"]
+            })
+        ),
+        fn_tool(
             "export_finance_pdf",
             "Write a Finance PDF on this phone and open the share sheet. Nothing is uploaded and no exchange rate is invented. Call first with confirmed false, say the period, then call with confirmed true. period is this_month, last_month, last_6, year, all, or YYYY-MM. account, category, currency, and direction filter the summary the same way as the screen. Charts use nicknames and the user's colors.",
             json!({
@@ -1103,7 +1146,7 @@ pub fn voice_money_hint() -> &'static str {
 pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     if !matches!(
         name,
-        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf"
+        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf" | "open_finance"
     ) {
         return Ok(None);
     }
@@ -1119,13 +1162,32 @@ pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Valu
 fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     if !matches!(
         name,
-        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf"
+        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf" | "open_finance"
     ) {
         return Ok(None);
     }
     let finance = app.state::<Finance>();
     if name == "export_finance_pdf" {
         return export_from_tool(app, &finance, args);
+    }
+    if name == "open_finance" {
+        let view = screen_view(args["view"].as_str().unwrap_or("overview"));
+        touch_view(app, view);
+        let store = finance.lock().clone();
+        let today = Local::now().date_naive();
+        let ask = Ask {
+            view: if view == "holdings" { "investments".into() } else { view.into() },
+            month: String::new(),
+            kind: String::new(),
+            account: String::new(),
+            direction: String::new(),
+            recurrence: String::new(),
+            query: String::new(),
+            amount: String::new(),
+            date: String::new(),
+        };
+        let detail = speak(&store, &ask, today);
+        return Ok(Some(json!({ "ok": true, "view": view, "detail": detail, "defaultCurrency": effective_default(&store, &currency_locale(app, &store)) })));
     }
     if name == "list_finance" {
         let _ = finance.refresh_rates(app, args["refresh"].as_bool().unwrap_or(false));
@@ -1139,6 +1201,9 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         }
         let ask = ask_from(args);
         let detail = speak(&store, &ask, today);
+        if let Some(view) = named_screen(&ask.view) {
+            touch_view(app, view);
+        }
         let snap = snapshot_of(&store, &currency_locale(app, &store), today);
         return Ok(Some(json!({
             "ok": true,
@@ -1790,6 +1855,98 @@ fn split_expense_clauses(phrase: &str) -> Vec<String> {
     clauses.into_iter().map(|clause| clause.trim_matches(|ch: char| ch == '.' || ch == ';').trim().to_string()).filter(|clause| !clause.is_empty()).collect()
 }
 
+fn color_command(phrase: &str) -> Option<(String, String)> {
+    let folded = fold(phrase);
+    let verb = ["make", "color", "colour", "pinta", "pon ", "poe ", "mach", "farbe", "fes ", "haz ", "paint"].iter().any(|word| folded.contains(word));
+    if !verb {
+        return None;
+    }
+    let colors = [
+        ("gray", "#8A8A8A"),
+        ("grey", "#8A8A8A"),
+        ("gris", "#8A8A8A"),
+        ("grau", "#8A8A8A"),
+        ("cinza", "#8A8A8A"),
+        ("cinzent", "#8A8A8A"),
+        ("grisa", "#8A8A8A"),
+        ("blue", "#0072B2"),
+        ("azul", "#0072B2"),
+        ("blau", "#0072B2"),
+        ("green", "#009E73"),
+        ("verde", "#009E73"),
+        ("grun", "#009E73"),
+        ("orange", "#E69F00"),
+        ("naranja", "#E69F00"),
+        ("laranja", "#E69F00"),
+    ];
+    let hit = colors.iter().find(|(word, _)| folded.split_whitespace().any(|token| token == *word))?;
+    let mut words = Vec::new();
+    for word in phrase.split_whitespace() {
+        let token = fold(word.trim_matches(|ch: char| !ch.is_alphanumeric()));
+        if token.is_empty() || colors.iter().any(|(name, _)| token == *name) {
+            continue;
+        }
+        if matches!(token.as_str(), "make" | "color" | "colour" | "pinta" | "pon" | "poe" | "mach" | "farbe" | "fes" | "haz" | "paint" | "the" | "a" | "la" | "el" | "die" | "der" | "das" | "o") {
+            continue;
+        }
+        words.push(word.trim_matches(|ch: char| !ch.is_alphanumeric()).to_string());
+    }
+    let name = title_phrase(&words.join(" "));
+    if name.trim().is_empty() {
+        return None;
+    }
+    Some((name, (*hit.1).to_string()))
+}
+
+#[derive(Debug)]
+struct PhysicalPhrase {
+    name: String,
+    amount: String,
+    currency: String,
+    date: String,
+    revalue: bool,
+}
+
+/// A watch, a car, art, or anything with no market feed. Live holdings stay on the other parser.
+fn parse_physical(phrase: &str) -> Option<PhysicalPhrase> {
+    let folded = fold(phrase);
+    if folded.contains("ounce") || folded.contains("onza") || folded.contains("gram") || folded.contains("share") || folded.contains("accion") || folded.contains("aktie") || folded.contains("onca") {
+        return None;
+    }
+    let revalue = folded.contains("worth") || folded.contains(" vale") || folded.contains("wert") || folded.contains(" val ");
+    let bought = folded.contains("bought") || folded.contains("compre") || folded.contains("gekauft") || folded.contains("comprat") || folded.contains("purchase");
+    if !bought && !revalue {
+        return None;
+    }
+    let (amount, currency) = scan_amounts(phrase).into_iter().next()?;
+    if amount.trim().is_empty() {
+        return None;
+    }
+    let mut name_words = Vec::new();
+    for word in phrase.split_whitespace() {
+        let token = fold(word.trim_matches(|ch: char| !ch.is_alphanumeric()));
+        if token.is_empty() || token.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+        if matches!(
+            token.as_str(),
+            "i" | "my" | "a" | "an" | "the" | "for" | "is" | "now" | "worth" | "bought" | "buy" | "purchase" | "purchased" | "comprei" | "compre" | "comprat" | "gekauft" | "mein" | "meine" | "mi" | "el" | "la" | "un" | "una" | "vale" | "wert" | "val" | "de" | "por" | "fur" | "on" | "dated" | "date" | "um" | "meu" | "minha" | "para"
+        ) {
+            continue;
+        }
+        if crate::finance_fx::is_fiat(&token) || matches!(token.as_str(), "btc" | "eth" | "xmr" | "eur" | "usd" | "chf") {
+            continue;
+        }
+        name_words.push(word.trim_matches(|ch: char| !ch.is_alphanumeric()).to_string());
+    }
+    let name = title_phrase(&name_words.join(" "));
+    if name.trim().is_empty() {
+        return None;
+    }
+    let date = phrase.split_whitespace().find(|word| word.len() >= 10 && word.as_bytes().get(4) == Some(&b'-')).unwrap_or("").to_string();
+    Some(PhysicalPhrase { name, amount, currency, date, revalue: revalue && !bought })
+}
+
 fn scan_amounts(text: &str) -> Vec<(String, String)> {
     let chars: Vec<char> = text.chars().collect();
     let mut index = 0;
@@ -2435,9 +2592,18 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
             return Ok(spoken("Default currency is {code} when you do not name one.", &[("code", &store.default_currency)]));
         }
     }
-    let hinted = args.get("phrase").and_then(|value| value.as_str()).and_then(crate::finance_prices::parse_holding_phrase);
+    let phrase = args.get("phrase").and_then(|value| value.as_str()).unwrap_or("");
+    let physical = parse_physical(phrase);
+    let painted = color_command(phrase);
+    let hinted = crate::finance_prices::parse_holding_phrase(phrase);
     let named = if args["name"].as_str().unwrap_or("").trim().is_empty() {
-        hinted.as_ref().map(|row| title_phrase(&row.query)).unwrap_or_default()
+        if let Some(hit) = physical.as_ref() {
+            hit.name.clone()
+        } else if let Some((name, _)) = painted.as_ref() {
+            name.clone()
+        } else {
+            hinted.as_ref().map(|row| title_phrase(&row.query)).unwrap_or_default()
+        }
     } else {
         args["name"].as_str().unwrap_or("").to_string()
     };
@@ -2501,7 +2667,34 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
         edit_due_day: false,
         edit_statement_day: false,
         edit_last_four: false,
+        purchase: String::new(),
+        purchase_currency: String::new(),
+        purchase_date: String::new(),
+        revalue: String::new(),
+        revalue_currency: String::new(),
+        revalue_date: String::new(),
+        isin: String::new(),
     };
+    if args.get("phrase").and_then(|value| value.as_str()).is_some() {
+        if let Some((_, swatch)) = painted {
+            draft.color = swatch;
+        }
+        if let Some(hit) = physical {
+            draft.kind = if draft.kind.trim().is_empty() { "investment".into() } else { draft.kind };
+            draft.investment_type = if hit.revalue { draft.investment_type } else { "collectible".into() };
+            if hit.revalue {
+                draft.revalue = hit.amount;
+                draft.revalue_currency = hit.currency;
+                draft.revalue_date = hit.date;
+            } else {
+                draft.purchase = hit.amount.clone();
+                draft.purchase_currency = hit.currency.clone();
+                draft.purchase_date = hit.date.clone();
+                draft.balance = hit.amount;
+                draft.currency = hit.currency;
+            }
+        }
+    }
     paint_holding(&mut draft, args);
     if !draft.units.trim().is_empty() && (!draft.unit_price.trim().is_empty() || !draft.unit.trim().is_empty() || draft.investment_type == "crypto" || draft.investment_type == "stock" || draft.investment_type == "fund" || draft.investment_type == "metal") {
         draft.value_mode = "units".into();
@@ -2692,7 +2885,7 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
     if !draft.currency.trim().is_empty() {
         account.currency = canonical_currency(&draft.currency)?;
     }
-    if mask.color {
+    if mask.color || !draft.color.trim().is_empty() {
         account.color = if draft.color.trim().is_empty() { account.color.clone() } else { normalize_color(&draft.color)? };
     }
     if account.color.is_empty() {
@@ -2811,6 +3004,35 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
         } else {
             Some(resolve_money(&draft.contribution, &account.currency, &clock.default_currency)?.0)
         };
+    }
+    if !draft.purchase.trim().is_empty() {
+        let (minor, currency) = resolve_money(&draft.purchase, if draft.purchase_currency.trim().is_empty() { &account.currency } else { &draft.purchase_currency }, &clock.default_currency)?;
+        account.purchase_minor = Some(minor);
+        account.purchase_currency = currency;
+        if !draft.purchase_date.trim().is_empty() {
+            account.purchase_date = require_date(&draft.purchase_date, "", clock.today)?;
+        }
+        account.investment_type = if account.investment_type.is_empty() { "collectible".into() } else { account.investment_type };
+        account.price_override = true;
+    }
+    if !draft.revalue.trim().is_empty() {
+        let (minor, currency) = resolve_money(&draft.revalue, if draft.revalue_currency.trim().is_empty() { &account.currency } else { &draft.revalue_currency }, &clock.default_currency)?;
+        let dated = if draft.revalue_date.trim().is_empty() { iso(clock.today) } else { require_date(&draft.revalue_date, "", clock.today)? };
+        account.valuations.push(Valuation { as_of: dated.clone(), amount_minor: minor, currency: currency.clone() });
+        account.balance_minor = Some(minor);
+        account.currency = currency;
+        account.balance_as_of = dated;
+        account.balance_updated_ms = clock.ms;
+        account.price_override = true;
+        if account.kind != "investment" {
+            account.kind = "investment".into();
+        }
+        if account.investment_type.is_empty() {
+            account.investment_type = "collectible".into();
+        }
+    }
+    if !draft.isin.trim().is_empty() {
+        account.isin = draft.isin.trim().to_ascii_uppercase();
     }
     apply_card_fields(&mut account, draft, clock)?;
     account.updated_ms = clock.ms;
@@ -3453,6 +3675,11 @@ fn empty_account(id: String) -> Account {
         due_day: None,
         statement_day: None,
         last_four: String::new(),
+        purchase_minor: None,
+        purchase_currency: String::new(),
+        purchase_date: String::new(),
+        valuations: Vec::new(),
+        isin: String::new(),
     }
 }
 
@@ -3507,6 +3734,8 @@ fn step_balance(balance: i64, kind: &str, currency: &str, role: Role, direction:
     let delta = match role {
         Role::Source => -amount,
         Role::Primary => match (kind, direction) {
+            (_, "transfer") if is_debt(kind) => -amount,
+            (_, "transfer") => amount,
             ("credit_card" | "loan" | "other_debt", "expense") => amount,
             ("credit_card" | "loan" | "other_debt", "payment" | "income") => -amount,
             ("credit_card" | "loan" | "other_debt", _) => 0,
@@ -3584,13 +3813,115 @@ fn paint_holding(draft: &mut AccountDraft, args: &Value) {
     }
 }
 
+fn flow_transactions(store: &Store, today: NaiveDate) -> Vec<Transaction> {
+    let mut rows = store.transactions.clone();
+    rows.extend(due_flow(store, today));
+    rows
+}
+
+/// Occurrences that have come due and were not posted. A card payment stays a payment, so it is not an expense.
+fn due_flow(store: &Store, today: NaiveDate) -> Vec<Transaction> {
+    let mut extra = Vec::new();
+    for rule in &store.rules {
+        if matches!(rule.status.as_str(), "paused" | "stopped" | "completed") {
+            continue;
+        }
+        if !matches!(rule.direction.as_str(), "income" | "expense") {
+            continue;
+        }
+        let Some(amount) = rule.amount_minor else { continue };
+        if amount == 0 || rule.currency.trim().is_empty() {
+            continue;
+        }
+        let spec = rule_spec(rule);
+        let settled = settled_dates(store, &rule.id);
+        for date in crate::finance_schedule::occurrence_dates(&spec, today) {
+            if date > today || settled.contains(&date) || spec.skipped.contains(&date) {
+                continue;
+            }
+            extra.push(Transaction {
+                id: format!("due-{}-{}", rule.id, iso(date)),
+                amount_minor: amount,
+                currency: rule.currency.clone(),
+                direction: rule.direction.clone(),
+                category: if rule.category.is_empty() { rule.name.clone() } else { rule.category.clone() },
+                account_id: rule.account_id.clone(),
+                from_account_id: String::new(),
+                date: iso(date),
+                notes: String::new(),
+                recurrence: "recurring".into(),
+                rule_id: rule.id.clone(),
+                created_ms: 0,
+                updated_ms: 0,
+                occurrence_date: iso(date),
+            });
+        }
+    }
+    extra
+}
+
+fn recover_quantity(account: &mut Account) -> bool {
+    let mut dirty = false;
+    let normalized_unit = normalize_measure(&account.measure_unit);
+    if !normalized_unit.is_empty() && normalized_unit != account.measure_unit {
+        account.measure_unit = normalized_unit;
+        dirty = true;
+    }
+    let messy = account.units.chars().any(|ch| ch.is_ascii_alphabetic());
+    if account.units.trim().is_empty() || messy {
+        let blob = format!("{} {} {}", account.units, account.notes, account.name);
+        if let Some(parsed) = crate::finance_prices::parse_holding_phrase(&blob) {
+            let named = holding_name_resolves(account) || crate::finance_prices::resolve_holding(&parsed.query, "", "", "", "").is_some();
+            let digits = !parsed.quantity.is_empty() && parsed.quantity.chars().all(|ch| ch.is_ascii_digit() || ch == '.');
+            if digits && (named || messy) && account.units != parsed.quantity {
+                account.units = parsed.quantity;
+                dirty = true;
+            }
+            if account.measure_unit.trim().is_empty() && !parsed.unit.is_empty() {
+                account.measure_unit = normalize_measure(&parsed.unit);
+                dirty = true;
+            }
+        }
+    }
+    if account.units.trim().is_empty() && crate::finance_fx::is_crypto(&account.currency) {
+        if let Some(minor) = account.balance_minor {
+            let text = quantity_text(minor, &account.currency);
+            if !text.is_empty() {
+                account.units = text;
+                dirty = true;
+            }
+        }
+    }
+    dirty
+}
+
+fn holding_name_resolves(account: &Account) -> bool {
+    crate::finance_prices::resolve_holding(&account.name, &account.ticker, &account.currency, &account.investment_type, &format!("{} {}", account.notes, account.measure_unit)).is_some()
+}
+
+fn quantity_text(amount: i64, currency: &str) -> String {
+    let labeled = format_minor(amount, currency);
+    labeled.split_whitespace().next().unwrap_or("").to_string()
+}
+
 fn link_holdings(store: &mut Store) -> bool {
     let mut dirty = false;
     for account in &mut store.accounts {
-        if account.kind != "investment" && !crate::finance_fx::is_crypto(&account.currency) {
+        dirty |= recover_quantity(account);
+        if matches!(account.kind.as_str(), "bank" | "credit_card" | "loan" | "other_debt") {
+            continue;
+        }
+        if account.kind == "cash" && !crate::finance_fx::is_crypto(&account.currency) && !holding_name_resolves(account) {
             continue;
         }
         let Some(asset) = holding_of(account) else { continue };
+        if account.kind == "cash" && asset.kind != "crypto" {
+            continue;
+        }
+        if matches!(account.kind.as_str(), "other" | "custom" | "") {
+            account.kind = "investment".into();
+            dirty = true;
+        }
         if account.ticker.trim().is_empty() {
             account.ticker = asset.symbol.clone();
             dirty = true;
@@ -3852,7 +4183,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
     transactions.sort_by(|a, b| b.date.cmp(&a.date).then(b.created_ms.cmp(&a.created_ms)));
     let mut rules = store.rules.clone();
     rules.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
-    let totals = period_totals(&transactions, &period, "", "", "");
+    let totals = period_totals(&flow_transactions(store, today), &period, "", "", "");
     let upcoming = upcoming_items(store, today);
     Snapshot {
         accounts,
@@ -4098,7 +4429,7 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
     };
     let direction = normalize_direction(&ask.direction).unwrap_or_default();
     let class = if ask.recurrence == "once" { "" } else { ask.recurrence.as_str() };
-    let totals = period_totals(&store.transactions, &month, &account_id, &direction, &class);
+    let totals = period_totals(&flow_transactions(store, today), &month, &account_id, &direction, &class);
     let display = effective_default(store, &current_locale());
     let mut detail = speak_totals(store, &totals, &month, &display);
     if !account_id.is_empty() || !kind.is_empty() {
@@ -4109,7 +4440,45 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
         detail.push(' ');
         detail.push_str(&speak_coming(store, today));
     }
+    let asked = fold(&format!("{} {}", ask.query, ask.account));
+    if asked.contains("percent") || asked.contains("porcentaje") || asked.contains("percentatge") || asked.contains("prozent") || asked.contains("portfolio") || asked.contains("cartera") {
+        detail.push(' ');
+        detail.push_str(&portfolio_share_line(store, &format!("{} {}", ask.account, ask.query), &display, Local::now().timestamp_millis()));
+    }
     detail
+}
+
+fn portfolio_share_line(store: &Store, needle: &str, display: &str, now_ms: i64) -> String {
+    let mut rows: Vec<(String, i64)> = Vec::new();
+    for account in &store.accounts {
+        if is_debt(&account.kind) || account.kind == "cash" || account.kind == "bank" {
+            continue;
+        }
+        let view = view_of(store, account, now_ms, display);
+        let worth = if view.market_worth_minor.is_some() && view.market_worth_currency.eq_ignore_ascii_case(display) {
+            view.market_worth_minor
+        } else if let Some(shown) = view.shown_balance_minor {
+            crate::finance_fx::convert(shown, &account.currency, display, &store.fx, now_ms).map(|row| row.amount_minor)
+        } else {
+            None
+        };
+        if let Some(amount) = worth {
+            if amount > 0 {
+                rows.push((account.name.clone(), amount));
+            }
+        }
+    }
+    let total: i64 = rows.iter().map(|row| row.1).sum();
+    if total <= 0 {
+        return spoken("Nothing priced yet.", &[]);
+    }
+    let folded = fold(needle);
+    let Some((name, amount)) = rows.iter().find(|(name, _)| folded.contains(&fold(name)) || fold(name).contains(&folded.trim())) else {
+        return spoken("No priced holding matches that name.", &[]);
+    };
+    let percent = ((*amount as f64) * 100.0 / total as f64).round() as i64;
+    let percent = percent.to_string();
+    spoken("{name} is {percent} percent of the portfolio.", &[("name", name), ("percent", &percent)])
 }
 
 fn current_locale() -> String {
@@ -4190,12 +4559,22 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
             let account = &store.accounts[index];
             let mut line = match shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()) {
                 None => {
-                    let count = transactions_on(store, &account.id);
-                    if count == 0 {
-                        spoken("{name} has no balance saved.", &[("name", &account.name)])
+                    let worth = worth_sentence(store, account, Local::now().timestamp_millis(), &effective_default(store, &current_locale()));
+                    if !account.units.trim().is_empty() || !worth.is_empty() {
+                        let qty = if account.units.trim().is_empty() {
+                            String::new()
+                        } else {
+                            spoken("Quantity {qty}.", &[("qty", &account.units)])
+                        };
+                        format!("{qty} {worth}").trim().to_string()
                     } else {
-                        let count = count.to_string();
-                        spoken("{name} has no balance saved, and {count} transactions.", &[("name", &account.name), ("count", &count)])
+                        let count = transactions_on(store, &account.id);
+                        if count == 0 {
+                            spoken("{name} has no balance saved.", &[("name", &account.name)])
+                        } else {
+                            let count = count.to_string();
+                            spoken("{name} has no balance saved, and {count} transactions.", &[("name", &account.name), ("count", &count)])
+                        }
                     }
                 }
                 Some(minor) => {
@@ -4204,6 +4583,12 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
                         "credit_card" if minor < 0 => spoken("{name} has a credit of {amount}.", &[("name", &account.name), ("amount", &amount)]),
                         "credit_card" if minor == 0 => spoken("{name} is paid up.", &[("name", &account.name)]),
                         "credit_card" | "loan" | "other_debt" => spoken("{name} owes {amount}.", &[("name", &account.name), ("amount", &amount)]),
+                        "investment" if account.price_override => spoken("Your estimate for {name} is {amount}.", &[("name", &account.name), ("amount", &amount)]),
+                        "investment" if !account.units.trim().is_empty() => {
+                            let qty = spoken("Quantity {qty}.", &[("qty", &account.units)]);
+                            let worth = worth_sentence(store, account, Local::now().timestamp_millis(), &effective_default(store, &current_locale()));
+                            format!("{qty} {worth}")
+                        }
                         "investment" => spoken("{name} is worth {amount}.", &[("name", &account.name), ("amount", &amount)]),
                         _ => spoken("{name} is {amount}.", &[("name", &account.name), ("amount", &amount)]),
                     };
@@ -4771,8 +5156,28 @@ fn event_ids(store: &Store) -> Vec<String> {
 }
 
 fn touch(app: &AppHandle) {
+    touch_view(app, "");
+}
+
+fn touch_view(app: &AppHandle, view: &str) {
     if let Some(hub) = app.try_state::<std::sync::Arc<crate::diagnostics::Hub>>() {
-        hub.emit("voice://finance", json!({}));
+        hub.emit("voice://finance", json!({ "view": view }));
+    }
+}
+
+fn screen_view(view: &str) -> &'static str {
+    named_screen(&fold(view)).unwrap_or("overview")
+}
+
+fn named_screen(view: &str) -> Option<&'static str> {
+    match view {
+        "overview" | "home" | "summary" => Some("overview"),
+        "activity" | "transactions" | "expenses" | "income" => Some("activity"),
+        "accounts" | "cards" | "debts" => Some("accounts"),
+        "holdings" | "investments" => Some("holdings"),
+        "plan" | "coming" | "upcoming" | "schedules" => Some("plan"),
+        "charts" => Some("overview"),
+        _ => None,
     }
 }
 
@@ -4823,7 +5228,8 @@ fn normalize_direction(value: &str) -> Result<String, String> {
     match fold(value).as_str() {
         "income" | "in" | "earned" | "salary" | "payday" => Ok("income".into()),
         "expense" | "spent" | "spend" | "out" | "purchase" | "charge" => Ok("expense".into()),
-        "payment" | "pay" | "transfer" | "contribution" | "invest" => Ok("payment".into()),
+        "payment" | "pay" | "contribution" | "invest" => Ok("payment".into()),
+        "transfer" | "move" => Ok("transfer".into()),
         "" => Ok(String::new()),
         _ => Err("Direction is income, expense, or payment.".into()),
     }
@@ -6120,13 +6526,14 @@ fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
     let net_parts: Vec<(i64, String)> = nets.into_iter().map(|row| (row.net_minor, row.currency)).collect();
     let month_key = format!("{:04}-{:02}", today.year(), today.month());
     let mut month_by: Vec<(String, i64)> = Vec::new();
-    for tx in &store.transactions {
+    let flowed = flow_transactions(store, today);
+    for tx in &flowed {
         if !tx.date.starts_with(&month_key) || tx.currency.is_empty() {
             continue;
         }
         let delta = match tx.direction.as_str() {
             "income" => tx.amount_minor,
-            "expense" | "payment" => -tx.amount_minor,
+            "expense" => -tx.amount_minor,
             _ => 0,
         };
         if delta == 0 {
@@ -7298,5 +7705,123 @@ mod tests {
         assert!(link_holdings(&mut linked));
         assert_eq!(linked.accounts[0].ticker, "XAG");
         assert_eq!(linked.accounts[0].measure_unit, "troy_oz");
+    }
+
+    #[test]
+    fn old_holdings_price_and_totals_follow_the_main_currency() {
+        let mut store = Store::default();
+        store.default_currency = "CHF".into();
+        store.fx.per_eur.push(crate::finance_fx::FxLeg { currency: "EUR".into(), per_eur: 1.0 });
+        store.fx.per_eur.push(crate::finance_fx::FxLeg { currency: "CHF".into(), per_eur: 0.95 });
+        store.fx.per_eur.push(crate::finance_fx::FxLeg { currency: "USD".into(), per_eur: 1.08 });
+        let now = 1_700_000_000_000;
+        store.prices.quotes.push(crate::finance_prices::Spot { symbol: "XAG".into(), kind: "metal".into(), price: 28.4, currency: "EUR".into(), source: "gold-api".into(), fetched_ms: now, estimated: false });
+        store.prices.quotes.push(crate::finance_prices::Spot { symbol: "EPIC".into(), kind: "crypto".into(), price: 0.18, currency: "EUR".into(), source: "coinpaprika".into(), fetched_ms: now, estimated: false });
+        store.prices.quotes.push(crate::finance_prices::Spot { symbol: "XMR".into(), kind: "crypto".into(), price: 320.0, currency: "EUR".into(), source: "coingecko".into(), fetched_ms: now, estimated: false });
+        store.prices.quotes.push(crate::finance_prices::Spot { symbol: "ZANO".into(), kind: "crypto".into(), price: 0.42, currency: "EUR".into(), source: "coingecko".into(), fetched_ms: now - 48 * 60 * 60 * 1000, estimated: false });
+        let mut silver = empty_account("s".into());
+        silver.name = "Silver".into();
+        silver.kind = "other".into();
+        silver.currency = "CHF".into();
+        silver.units = "5".into();
+        silver.measure_unit = "ounces".into();
+        silver.notes = "5 ounces".into();
+        silver.investment_type = "custom".into();
+        let mut epic = empty_account("e".into());
+        epic.name = "EPIC Cash".into();
+        epic.kind = "other".into();
+        epic.currency = "CHF".into();
+        epic.notes = "128.60340395".into();
+        epic.investment_type = "custom".into();
+        let mut xmr = empty_account("x".into());
+        xmr.name = "XMR".into();
+        xmr.kind = "investment".into();
+        xmr.currency = "XMR".into();
+        xmr.units = "2.969859854727".into();
+        xmr.ticker = "XMR".into();
+        let mut zano = empty_account("z".into());
+        zano.name = "ZANO".into();
+        zano.kind = "investment".into();
+        zano.currency = "ZANO".into();
+        zano.units = "16.46".into();
+        zano.ticker = "ZANO".into();
+        store.accounts.extend([silver, epic, xmr, zano]);
+        assert!(link_holdings(&mut store));
+        let silver = store.accounts.iter().find(|account| account.name == "Silver").unwrap();
+        assert_eq!(silver.kind, "investment");
+        assert_eq!(silver.ticker, "XAG");
+        assert_eq!(silver.measure_unit, "troy_oz");
+        assert_eq!(silver.units, "5");
+        let note = market_note(&store, silver, now, "CHF").unwrap();
+        assert!(note.worth_minor.unwrap_or(0) > 0);
+        assert_eq!(note.worth_currency, "CHF");
+        assert_eq!(note.source, "gold-api");
+        let epic = store.accounts.iter().find(|account| account.name == "EPIC Cash").unwrap();
+        assert_eq!(epic.units, "128.60340395");
+        assert_eq!(epic.ticker, "EPIC");
+        let xmr = store.accounts.iter().find(|account| account.name == "XMR").unwrap();
+        assert_eq!(xmr.units, "2.969859854727");
+        let zano = store.accounts.iter().find(|account| account.name == "ZANO").unwrap();
+        let zano_note = market_note(&store, zano, now, "EUR").unwrap();
+        assert!(zano_note.stale);
+        assert!(zano_note.worth_minor.is_some());
+        let stale_only = {
+            let mut bare = store.clone();
+            bare.prices.quotes.retain(|row| row.symbol != "XAG");
+            bare.prices.quotes.push(crate::finance_prices::Spot { symbol: "XAG".into(), kind: "metal".into(), price: 28.4, currency: "EUR".into(), source: "gold-api".into(), fetched_ms: now - 3 * 24 * 60 * 60 * 1000, estimated: false });
+            let silver = bare.accounts.iter().find(|account| account.name == "Silver").unwrap().clone();
+            market_note(&bare, &silver, now, "CHF").unwrap()
+        };
+        assert!(stale_only.worth_minor.is_some());
+        assert!(stale_only.stale);
+        let today = NaiveDate::from_ymd_opt(2026, 11, 21).unwrap();
+        let clock = clock(today);
+        log_single(&mut store, &json!({"direction": "expense", "amount": "18.50", "currency": "CHF", "category": "Coffee", "date": "2026-11-03"}), &clock).unwrap();
+        log_single(&mut store, &json!({"direction": "expense", "amount": "42.99", "currency": "USD", "category": "Groceries", "account": "Swisscard", "accountKind": "credit_card", "date": "2026-11-04"}), &clock).unwrap_err();
+        let mut card = empty_account("card".into());
+        card.name = "Swisscard".into();
+        card.kind = "credit_card".into();
+        card.currency = "CHF".into();
+        card.balance_minor = Some(62_785);
+        store.accounts.push(card);
+        let mut bank = empty_account("bank".into());
+        bank.name = "ZKB".into();
+        bank.kind = "bank".into();
+        bank.currency = "CHF".into();
+        bank.balance_minor = Some(50_000);
+        store.accounts.push(bank);
+        log_single(&mut store, &json!({"direction": "expense", "amount": "42.99", "currency": "USD", "category": "Groceries", "account": "Swisscard", "date": "2026-11-04"}), &clock).unwrap();
+        log_single(&mut store, &json!({"direction": "payment", "amount": "20", "currency": "CHF", "account": "Swisscard", "fromAccount": "ZKB", "date": "2026-11-06"}), &clock).unwrap();
+        log_single(&mut store, &json!({"direction": "transfer", "amount": "5", "currency": "CHF", "account": "ZKB", "fromAccount": "ZKB", "date": "2026-11-07"}), &clock).unwrap();
+        store.rules.push(due_rule("power", "Power", "expense", "monthly", "2026-11-18", 0, Some(9_000), "recurring"));
+        store.rules.last_mut().unwrap().currency = "CHF".into();
+        let totals = period_totals(&flow_transactions(&store, today), "2026-11", "", "", "");
+        let chf = totals.iter().find(|row| row.currency == "CHF").unwrap();
+        assert!(chf.expense_minor >= 1_850 + 9_000, "due power and the manual coffee both count: {}", chf.expense_minor);
+        assert_eq!(chf.payment_minor, 2_000);
+        let usd = totals.iter().find(|row| row.currency == "USD").unwrap();
+        assert_eq!(usd.expense_minor, 4_299);
+        assert_eq!(usd.payment_minor, 0);
+        let card = store.accounts.iter().find(|account| account.name == "Swisscard").unwrap();
+        let owed = shown_with_fx(card, &store.transactions, &store.fx, clock.ms).unwrap();
+        assert!(owed > 62_785, "the card charge raises what is owed once");
+        let paid = store.transactions.iter().find(|tx| tx.direction == "payment").unwrap();
+        assert_ne!(paid.direction, "expense");
+        account_from_tool(&mut store, &json!({"phrase": "I bought a Rolex for 12000 CHF"}), &clock).unwrap();
+        let rolex = store.accounts.iter().find(|account| account.name == "Rolex").unwrap();
+        assert_eq!(rolex.purchase_minor, Some(1_200_000));
+        assert_eq!(rolex.investment_type, "collectible");
+        account_from_tool(&mut store, &json!({"phrase": "my Rolex is now worth 14000"}), &clock).unwrap();
+        let rolex = store.accounts.iter().find(|account| account.name == "Rolex").unwrap();
+        assert_eq!(rolex.balance_minor, Some(1_400_000));
+        assert_eq!(rolex.valuations.len(), 1);
+        account_from_tool(&mut store, &json!({"phrase": "make silver gray"}), &clock).unwrap();
+        let silver = store.accounts.iter().find(|account| account.name == "Silver").unwrap();
+        assert_eq!(silver.color.to_ascii_uppercase(), "#8A8A8A");
+        let share = portfolio_share_line(&store, "XMR", "CHF", clock.ms);
+        assert!(share.contains("XMR"), "{share}");
+        assert!(share.contains("percent") || share.contains("%") || share.chars().any(|ch| ch.is_ascii_digit()), "{share}");
+        assert!(screen_view("charts") == "overview");
+        assert_eq!(screen_view("holdings"), "holdings");
     }
 }

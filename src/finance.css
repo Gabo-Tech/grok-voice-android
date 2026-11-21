@@ -278,6 +278,17 @@
   border-color: var(--fin-line);
 }
 
+.finance .fin-slice {
+  transform-origin: 120px 120px;
+  transition: opacity 180ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finance .fin-slice {
+    transition: none;
+  }
+}
+
 .finance .sheet-panel,
 .finance.sheet-root .sheet-panel {
   background: var(--fin-panel);

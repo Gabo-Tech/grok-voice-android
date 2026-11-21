@@ -434,9 +434,11 @@ assert.equal(settings.includes("Manual rates"), true);
 assert.equal(settings.includes("Use this instead of the live rate"), true);
 assert.equal(settings.includes('inputMode="decimal"'), true);
 
-assert.deepEqual(financePanels("overview"), ["net-worth", "expenses", "income", "result", "upcoming"]);
-assert.deepEqual(financePanels("expenses"), ["expenses", "activity", "coming-expenses"]);
+assert.deepEqual(financePanels("overview"), ["net-worth", "expenses", "income", "card-debt", "result", "upcoming"]);
+assert.deepEqual(financePanels("activity"), ["expenses", "income", "activity"]);
+assert.deepEqual(financePanels("expenses"), ["expenses", "income", "activity"]);
 assert.deepEqual(financePanels("income"), ["income", "activity", "coming-income", "payouts"]);
+assert.deepEqual(financePanels("plan"), ["coming-expenses", "coming-income", "payouts"]);
 let panelAt = -1;
 for (const id of financePanels("overview")) {
   const token = `data-finance-panel="${id}"`;
@@ -462,10 +464,11 @@ assert.equal(more.includes("<CurrencyEditor"), true);
 assert.equal(settings.includes("Today's rate"), true);
 assert.equal(settings.includes("Manual rates"), true);
 
-assert.deepEqual([...FINANCE_TABS], ["overview", "expenses", "income", "accounts", "charts"]);
+assert.deepEqual([...FINANCE_TABS], ["overview", "activity", "accounts", "holdings", "plan"]);
 assert.equal(readFinanceTab(null), "overview");
-assert.equal(readFinanceTab("charts"), "charts");
-assert.equal(readFinanceTab("activity"), "overview");
+assert.equal(readFinanceTab("charts"), "overview");
+assert.equal(readFinanceTab("activity"), "activity");
+assert.equal(readFinanceTab("holdings"), "holdings");
 assert.equal(readFinanceTab("rates"), "overview");
 for (const id of FINANCE_TABS) {
   assert.ok(page.includes(`tab === "${id}"`), id);

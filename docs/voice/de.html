@@ -88,7 +88,7 @@
       <li>„Was ist 1 Bitcoin in Euro?“ Spricht einen geholten, gespeicherten oder manuellen Kurs. Erfindet keinen. Fehlt er: „Für BTC in EUR ist kein Kurs gespeichert. Kurse aktualisieren, oder in den Einstellungen einen manuellen Kurs setzen.“</li>
       <li>„Aktualisiere die Finanzkurse.“ Holt das Buch von heute. Schlägt das fehl, bleibt das letzte Buch.</li>
     </ul>
-    <p>Es gibt keinen eigenen Befehl „schieb Münzen von Wallet A nach B“. Das als Ausgabe und Einnahme zu buchen würde es im Monat doppelt zählen. Änder die beiden Salden direkt. Das berührt das Ergebnis nicht.</p>
+    <p>„Verschieb 5 Franken von ZKB nach Bargeld.“ Eine Umbuchung. Beide Konten müssen schon da sein. Sie ist keine Einnahme und keine Ausgabe. Das Monatsergebnis bleibt gleich. Kartenzahlung und Tilgung funktionieren genauso.</p>
     <h2>Finanzen — Anlagen und eigene Werte</h2>
     <ul>
       <li>„Füg eine Anlage namens Quanloop im Wert von 3280 Euro hinzu.“ Bleibt eine Anlage. Wird nicht zur Karte oder Münze.</li>
@@ -99,6 +99,10 @@
       <li>„Lösche die Uhr.“ Grok fragt zuerst nach.</li>
       <li>Der genannte Wert ist deine Zahl. Kein erfundener Kurs. Weicht die Währung von der Anzeige ab, braucht das gemeinsame Vermögen trotzdem einen echten Kurs.</li>
       <li>„Nitroeggs zahlt alle 10 Tage 14 Dollar in Monero.“ Eine geplante Auszahlung. Sie bleibt geplant, bis du sie markierst.</li>
+      <li>„Zeig mein Positionsdiagramm.“ Öffnet Positionen. Der Kreis ist der Wert in deiner Hauptwährung.</li>
+      <li>„Wie viel Prozent meines Portfolios ist XMR?“ Der Anteil der bewerteten Positionen, dieselbe Summe wie im Diagramm.</li>
+      <li>„Mach Silber grau.“ Speichert die Farbe. Sie gilt im Kreis, in den Balken und in der Liste.</li>
+      <li>„Ich habe eine Rolex für 12000 CHF gekauft.“ „Meine Rolex ist jetzt 14000 wert.“ Deine Schätzung, kein Live-Preis.</li>
     </ul>
     <h2>Kurse</h2>
     <p>Fiat probiert Frankfurter, dann open.er-api.com, die EZB und currency-api. Krypto probiert CoinGecko, dann Coinbase, Kraken und currency-api. Spätere Bücher füllen nur Ticker, die vorher fehlten. Ein Abruf pro lokalem Tag. Einstellungen → Aktualisieren erzwingt einen Abruf. Ein manueller Kurs in den Einstellungen ist der letzte Weg, außer du markierst ihn als Ersatz für den heutigen Kurs. Dieselbe Währung ist eins zu eins. Fehlt ein anderer Kurs, braucht die gemeinsame Summe einen Kurs und der kombinierte Betrag ist 0. Native Beträge bleiben.</p>
