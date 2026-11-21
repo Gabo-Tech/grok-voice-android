@@ -48,7 +48,8 @@
 /* Graphite is the default. Ink and Stone override the same tokens. */
 :root,
 html[data-appearance="graphite"] {
-    --radius: 0px;
+    --radius: 8px;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
     --canvas: #0e0f11;
     --panel: #17181b;
     --panel-2: #1c1d21;
@@ -58,8 +59,8 @@ html[data-appearance="graphite"] {
     --gold-deep: #b8a48a;
     --sage: #7d9a86;
     --rose: #c48984;
-    --frame: 2.5px;
-    --frame-color: #9a9690;
+    --frame: 1px;
+    --frame-color: #6a6762;
     --rule: rgba(232, 230, 227, 0.28);
     --kicker: var(--gold);
     --grain: rgba(238, 236, 232, 0.55);
@@ -100,21 +101,21 @@ html[data-appearance="graphite"] {
 }
 
 html[data-appearance="ink"] {
-    --canvas: #070708;
-    --panel: #101114;
-    --panel-2: #16171b;
+    --canvas: #121214;
+    --panel: #1a1b1f;
+    --panel-2: #222328;
     --ink: #f7f4ee;
     --muted-ink: #b7b3aa;
     --gold: #c4b5a0;
     --gold-deep: #b8a48a;
     --sage: #8eae98;
     --rose: #d09a96;
-    --frame: 3px;
-    --frame-color: #e8e4dc;
+    --frame: 1px;
+    --frame-color: #6a6762;
     --rule: rgba(247, 244, 238, 0.35);
     --kicker: var(--ink);
     --grain: rgba(247, 244, 238, 0.7);
-    --on-gold: #070708;
+    --on-gold: #121214;
     --scheme: dark;
     color-scheme: dark;
 }
@@ -122,15 +123,15 @@ html[data-appearance="ink"] {
 html[data-appearance="stone"] {
     --canvas: #f4f2ee;
     --panel: #fbfaf7;
-    --panel-2: #ffffff;
+    --panel-2: #f7f4ef;
     --ink: #1a1b1e;
     --muted-ink: #5e5a54;
     --gold: #6f5a42;
     --gold-deep: #8c7358;
     --sage: #2f6a48;
     --rose: #8e3f3b;
-    --frame: 2.5px;
-    --frame-color: #2a2826;
+    --frame: 1px;
+    --frame-color: #7a7268;
     --rule: rgba(26, 27, 30, 0.18);
     --kicker: #5c4632;
     --grain: rgba(26, 27, 30, 0.45);
@@ -149,8 +150,8 @@ html[data-appearance="midnight"] {
     --gold-deep: #a89478;
     --sage: #7f9e8c;
     --rose: #c48b8a;
-    --frame: 2.5px;
-    --frame-color: #8e97a8;
+    --frame: 1px;
+    --frame-color: #6e7c90;
     --rule: rgba(231, 228, 220, 0.28);
     --kicker: #c6b59a;
     --grain: rgba(231, 228, 220, 0.5);
@@ -160,28 +161,28 @@ html[data-appearance="midnight"] {
 }
 
 html[data-appearance="carbon"] {
-    --canvas: #000000;
-    --panel: #0a0a0a;
-    --panel-2: #141414;
+    --canvas: #141416;
+    --panel: #1c1c1f;
+    --panel-2: #26262a;
     --ink: #f4f1ea;
     --muted-ink: #9a958c;
     --gold: #c4b5a0;
     --gold-deep: #b8a48a;
     --sage: #86a892;
     --rose: #c98984;
-    --frame: 3px;
-    --frame-color: #e8e4dc;
+    --frame: 1px;
+    --frame-color: #6a6762;
     --rule: rgba(244, 241, 234, 0.32);
     --kicker: #f4f1ea;
     --grain: rgba(244, 241, 234, 0.65);
-    --on-gold: #000000;
+    --on-gold: #141416;
     --scheme: dark;
     color-scheme: dark;
 }
 
 html[data-appearance="ivory"] {
     --canvas: #fbf7f0;
-    --panel: #ffffff;
+    --panel: #f7f3ec;
     --panel-2: #f6f1e8;
     --ink: #1c1916;
     --muted-ink: #6b645c;
@@ -189,8 +190,8 @@ html[data-appearance="ivory"] {
     --gold-deep: #6f5838;
     --sage: #2e6b46;
     --rose: #8c3e3a;
-    --frame: 2.5px;
-    --frame-color: #2a241e;
+    --frame: 1px;
+    --frame-color: #7a7268;
     --rule: rgba(28, 25, 22, 0.16);
     --kicker: #6f5838;
     --grain: rgba(28, 25, 22, 0.4);
@@ -204,13 +205,13 @@ html[data-appearance="sand"] {
     --panel: #f3e9d6;
     --panel-2: #efe4ce;
     --ink: #3a2e22;
-    --muted-ink: #7a6a58;
+    --muted-ink: #5c4e3e;
     --gold: #8c6239;
     --gold-deep: #6e4c2a;
     --sage: #3e6b4f;
     --rose: #8e4a42;
-    --frame: 2.5px;
-    --frame-color: #4a3b2c;
+    --frame: 1px;
+    --frame-color: #7a7268;
     --rule: rgba(58, 46, 34, 0.2);
     --kicker: #6e4c2a;
     --grain: rgba(58, 46, 34, 0.4);
@@ -229,8 +230,8 @@ html[data-appearance="forest"] {
     --gold-deep: #a89468;
     --sage: #8fb59a;
     --rose: #c4928c;
-    --frame: 2.5px;
-    --frame-color: #9aa898;
+    --frame: 1px;
+    --frame-color: #6e7c72;
     --rule: rgba(232, 228, 216, 0.28);
     --kicker: #c6b48a;
     --grain: rgba(232, 228, 216, 0.5);
@@ -249,8 +250,8 @@ html[data-appearance="plum"] {
     --gold-deep: #a89078;
     --sage: #86a494;
     --rose: #c48a96;
-    --frame: 2.5px;
-    --frame-color: #b4a4b0;
+    --frame: 1px;
+    --frame-color: #7a6e78;
     --rule: rgba(240, 235, 228, 0.28);
     --kicker: #c4b09a;
     --grain: rgba(240, 235, 228, 0.5);
@@ -285,6 +286,29 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 100%;
   line-height: 1.5;
+}
+
+.text-xs {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+input,
+textarea,
+select,
+button {
+  border-radius: var(--radius);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 input[type="datetime-local"],
@@ -407,6 +431,7 @@ input[type="time"] {
   overflow: hidden;
   border: var(--frame) solid var(--frame-color);
   border-bottom: 0;
+  border-radius: calc(var(--radius) * 2) calc(var(--radius) * 2) 0 0;
   background: var(--panel);
   color: var(--ink);
   padding-bottom: env(safe-area-inset-bottom);
@@ -485,10 +510,10 @@ body::before {
 h1,
 .masthead {
   font-family: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", sans-serif;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  line-height: 0.95;
+  line-height: 1.15;
 }
 
 .masthead-rule {
@@ -500,7 +525,7 @@ h1,
 
 .chapter {
   color: var(--kicker);
-  font-size: 0.78rem;
+  font-size: 0.8125rem;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -510,14 +535,15 @@ h1,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2rem;
-  border: 2px solid var(--gold);
+  min-height: 3rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
   background: transparent;
   color: var(--kicker);
-  padding: 0 0.7rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -530,8 +556,9 @@ h1,
   position: relative;
   background: var(--panel);
   border: var(--frame) solid var(--frame-color);
-  padding: 1rem 1rem 1.1rem;
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.16);
+  border-radius: var(--radius);
+  padding: 1rem;
+  box-shadow: var(--shadow);
 }
 
 .mag-panel::before,

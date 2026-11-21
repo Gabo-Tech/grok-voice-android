@@ -73,17 +73,17 @@ object WidgetTheme {
   private fun p(canvas: String, panel: String, ink: String, muted: String, accent: String, border: String, income: String, expense: String, onAccent: String) =
     Palette(Color.parseColor(canvas), Color.parseColor(panel), Color.parseColor(ink), Color.parseColor(muted), Color.parseColor(accent), Color.parseColor(border), Color.parseColor(income), Color.parseColor(expense), Color.parseColor(onAccent))
 
-  private val GRAPHITE = p("#0E0F11", "#17181B", "#EEECE8", "#8B8A86", "#C4B5A0", "#9A9690", "#7D9A86", "#C48984", "#1A1B1E")
+  private val GRAPHITE = p("#0E0F11", "#17181B", "#EEECE8", "#8B8A86", "#C4B5A0", "#6A6762", "#7D9A86", "#C48984", "#1A1B1E")
 
   private val PRESETS = mapOf(
     "graphite" to GRAPHITE,
-    "ink" to p("#070708", "#101114", "#F7F4EE", "#B7B3AA", "#C4B5A0", "#E8E4DC", "#8EAE98", "#D09A96", "#070708"),
-    "stone" to p("#F4F2EE", "#FBFAF7", "#1A1B1E", "#5E5A54", "#6F5A42", "#2A2826", "#2F6A48", "#8E3F3B", "#F4F2EE"),
-    "midnight" to p("#0B1220", "#121A2B", "#E7E4DC", "#8E97A8", "#C6B59A", "#8E97A8", "#7F9E8C", "#C48B8A", "#0B1220"),
-    "carbon" to p("#000000", "#0A0A0A", "#F4F1EA", "#9A958C", "#C4B5A0", "#E8E4DC", "#86A892", "#C98984", "#000000"),
-    "ivory" to p("#FBF7F0", "#FFFFFF", "#1C1916", "#6B645C", "#8A6E49", "#2A241E", "#2E6B46", "#8C3E3A", "#FBF7F0"),
-    "sand" to p("#E7DCC8", "#F3E9D6", "#3A2E22", "#7A6A58", "#8C6239", "#4A3B2C", "#3E6B4F", "#8E4A42", "#F3E9D6"),
-    "forest" to p("#101612", "#18201B", "#E8E4D8", "#8E9A8E", "#C6B48A", "#9AA898", "#8FB59A", "#C4928C", "#101612"),
-    "plum" to p("#161218", "#211C24", "#F0EBE4", "#A398A4", "#C4B09A", "#B4A4B0", "#86A494", "#C48A96", "#161218"),
+    "ink" to p("#121214", "#1A1B1F", "#F7F4EE", "#B7B3AA", "#C4B5A0", "#6A6762", "#8EAE98", "#D09A96", "#121214"),
+    "stone" to p("#F4F2EE", "#FBFAF7", "#1A1B1E", "#5E5A54", "#6F5A42", "#7A7268", "#2F6A48", "#8E3F3B", "#F4F2EE"),
+    "midnight" to p("#0B1220", "#121A2B", "#E7E4DC", "#8E97A8", "#C6B59A", "#6E7C90", "#7F9E8C", "#C48B8A", "#0B1220"),
+    "carbon" to p("#141416", "#1C1C1F", "#F4F1EA", "#9A958C", "#C4B5A0", "#6A6762", "#86A892", "#C98984", "#141416"),
+    "ivory" to p("#FBF7F0", "#F7F3EC", "#1C1916", "#6B645C", "#8A6E49", "#7A7268", "#2E6B46", "#8C3E3A", "#FBF7F0"),
+    "sand" to p("#E7DCC8", "#F3E9D6", "#3A2E22", "#5C4E3E", "#8C6239", "#7A7268", "#3E6B4F", "#8E4A42", "#F3E9D6"),
+    "forest" to p("#101612", "#18201B", "#E8E4D8", "#8E9A8E", "#C6B48A", "#6E7C72", "#8FB59A", "#C4928C", "#101612"),
+    "plum" to p("#161218", "#211C24", "#F0EBE4", "#A398A4", "#C4B09A", "#7A6E78", "#86A494", "#C48A96", "#161218"),
   )
 }
