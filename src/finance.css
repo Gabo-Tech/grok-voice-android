@@ -25,11 +25,11 @@
 
 .finance .fin-kicker,
 .finance .chapter {
-  color: var(--kicker);
-  font-size: 0.8125rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  color: var(--text-tertiary, var(--kicker));
+  font-size: var(--text-min, 13px);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .finance .fin-stack,
@@ -46,33 +46,18 @@
   max-width: 100%;
   margin-left: 0;
   margin-right: 0;
-  background: var(--fin-panel);
-  border: var(--frame) solid var(--fin-line);
-  box-shadow: var(--fin-shadow);
-  padding: 1.05rem 1rem 1.15rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 1.05rem 0 1.15rem;
 }
 
 .finance .fin-panel::before,
 .finance .fin-panel::after {
-  content: "";
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-color: var(--gold-deep);
-  border-style: solid;
-  pointer-events: none;
-}
-
-.finance .fin-panel::before {
-  top: 5px;
-  left: 5px;
-  border-width: 1.5px 0 0 1.5px;
-}
-
-.finance .fin-panel::after {
-  right: 5px;
-  bottom: 5px;
-  border-width: 0 1.5px 1.5px 0;
+  content: none;
+  display: none;
+  border: 0;
 }
 
 .finance .fin-stack > .fin-panel,
@@ -92,11 +77,12 @@
   max-width: 100%;
   margin-left: 0;
   margin-right: 0;
-  background: var(--fin-panel-2);
-  border: var(--frame) solid var(--fin-line);
-  border-left-color: var(--fin-gold);
-  box-shadow: var(--fin-shadow);
-  padding: 1.05rem 1rem 1.15rem;
+  background: transparent;
+  border: 0;
+  border-top: var(--border-width, 1px) solid var(--line-soft, var(--fin-line));
+  border-radius: 0;
+  box-shadow: none;
+  padding: 1.05rem 0 1.15rem;
 }
 
 .finance .fin-num {
@@ -161,41 +147,46 @@
   min-height: 48px;
   padding: 0.4rem 0.1rem 0.45rem;
   border: 0;
-  border-bottom: 3px solid transparent;
+  border-bottom: 1px solid transparent;
   background: transparent;
-  color: var(--fin-muted);
-  font-family: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", sans-serif;
-  font-size: 13px;
-  font-weight: 800;
+  color: var(--text-tertiary, var(--fin-muted));
+  font-family: inherit;
+  font-size: var(--text-min, 13px);
+  font-weight: 500;
   letter-spacing: 0;
   line-height: 1.15;
   text-align: center;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: normal;
   overflow-wrap: normal;
 }
 
 .finance .fin-tab[aria-selected="true"] {
-  color: var(--fin-ink);
-  border-bottom-color: var(--fin-gold);
+  color: var(--text-primary, var(--fin-ink));
+  border-bottom-color: var(--brand, var(--fin-gold));
 }
 
 .finance .fin-chip {
-  min-height: 48px;
-  border: var(--frame) solid var(--fin-line);
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius, 2px);
   background: transparent;
-  color: var(--fin-ink);
-  padding: 0 0.85rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: var(--text-secondary, var(--fin-ink));
+  padding: 0 0.35rem;
+  font-family: inherit;
+  font-size: var(--text-min, 13px);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.28em;
 }
 
 .finance .fin-chip[aria-pressed="true"] {
-  background: var(--fin-gold);
-  border-color: var(--fin-gold);
-  color: var(--on-gold);
+  background: var(--text-primary, var(--fin-ink));
+  color: var(--surface-0, var(--canvas));
+  text-decoration: none;
 }
 
 .finance .fin-dot {
@@ -207,7 +198,7 @@
 
 .finance .fin-dot.on {
   width: 18px;
-  background: var(--fin-gold);
+  background: var(--text-primary, var(--fin-ink));
 }
 
 .finance .fin-swatch {
@@ -219,9 +210,9 @@
 
 .finance .fin-track {
   display: block;
-  height: 10px;
-  background: var(--fin-panel-2);
-  border: 2px solid var(--fin-line);
+  height: 2px;
+  background: var(--surface-2, var(--fin-panel-2));
+  border: 0;
   overflow: hidden;
 }
 
@@ -231,10 +222,11 @@
   max-width: 100%;
   margin-left: 0;
   margin-right: 0;
-  border-style: dashed;
-  border-width: var(--frame);
+  border-style: solid;
+  border-width: 0;
+  border-top: var(--border-width, 1px) solid var(--line-soft, var(--fin-line));
   background: transparent;
-  box-shadow: var(--fin-shadow);
+  box-shadow: none;
 }
 
 .finance .fin-carousel {
@@ -254,8 +246,18 @@
 }
 
 .finance .fin-hero-num {
-  font-size: 3rem;
-  line-height: 0.95;
+  font-size: var(--text-display, 48px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.finance .fin-hero-unit {
+  margin-inline-end: 0.12em;
+  font-size: var(--text-unit, 24px);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 @media (max-width: 420px) {

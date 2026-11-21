@@ -93,10 +93,10 @@ export function HoldingsChart({
     [rows, pref],
   );
   const legend: LegendRow[] = [
-    ...pie.slices.map((slice) => ({
+    ...pie.slices.map((slice, index) => ({
       id: slice.id,
       label: sliceLabel(slice.label, slice.other, t),
-      color: slice.color,
+      color: index === 0 ? "var(--brand)" : "var(--text-tertiary)",
       amountMinor: slice.amountMinor,
       currency: code,
       original: [slice.quantity, slice.members.length === 1 ? rows.find((row) => row.id === slice.members[0].id)?.native || "" : ""].filter(Boolean).join(" · "),
@@ -124,7 +124,6 @@ export function HoldingsChart({
       /* The choice still applies for this visit. */
     }
   };
-  const palette = ALLOCATION_PRESETS[pref.preset];
   const historyIn = history.filter((point) => inBounds(point.date, portfolioPeriod.bounds.start, portfolioPeriod.bounds.end));
   const from = "";
   const portfolioItems = useMemo(() => {
@@ -137,22 +136,22 @@ export function HoldingsChart({
   const totalSeries = seriesFor(historyIn, portfolioItems.map((item) => item.id), from);
   const change = changeOf(totalSeries);
   const lineSeries = [
-    portVis.hidden.has("total") ? null : { id: "total", color: "var(--gold)", points: totalSeries },
-    ...shownIds.map((id, index) => ({
+    portVis.hidden.has("total") ? null : { id: "total", color: "var(--brand)", points: totalSeries },
+    ...shownIds.map((id) => ({
       id,
-      color: palette[index % palette.length],
+      color: "var(--text-tertiary)",
       points: seriesFor(historyIn, [id], from),
     })),
   ].filter((row): row is { id: string; color: string; points: { date: string; valueMinor: number }[] } => Boolean(row && row.points.length));
   const portRows: LegendRow[] = [
-    { id: "total", label: t("Portfolio value"), color: "var(--gold)", amountMinor: totalSeries.length ? totalSeries[totalSeries.length - 1].valueMinor : null, currency: code, className: "total" },
-    ...portfolioItems.map((item, index) => {
+    { id: "total", label: t("Portfolio value"), color: "var(--brand)", amountMinor: totalSeries.length ? totalSeries[totalSeries.length - 1].valueMinor : null, currency: code, className: "total" },
+    ...portfolioItems.map((item) => {
       const points = seriesFor(historyIn, [item.id], from);
       const last = points.length ? points[points.length - 1] : undefined;
       return {
         id: item.id,
         label: item.label,
-        color: palette[index % palette.length],
+        color: "var(--text-tertiary)",
         amountMinor: last?.valueMinor ?? null,
         currency: code,
         className: item.className,
@@ -190,7 +189,7 @@ export function HoldingsChart({
             if (account) onRecolor(account, color);
             setPainting("");
           }}
-          colors={palette}
+          colors={["var(--brand)", "var(--text-primary)", "var(--text-tertiary)", "var(--line)"]}
           painting={painting}
           setPainting={setPainting}
         />

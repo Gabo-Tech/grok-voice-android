@@ -3,10 +3,8 @@ import { createPortal } from "react-dom";
 import type { FinanceAccount, FinanceCategory, FinanceFx, FinanceTransaction } from "@/lib/api";
 import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
-import { ALLOCATION_PRESETS } from "@/lib/financeLedger";
 import { bookFromStatus } from "@/lib/financeMath";
 import { buildMoneyFlow, linkedIds, type FlowNode, type MoneyFlow } from "@/lib/moneyFlow";
-import { PALETTE } from "@/lib/financeView";
 import { formatMoney } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
 
@@ -152,7 +150,7 @@ function FlowBody({
       {node ? <FlowDetail node={node} currency={flow.currency} onPaint={() => setPainting(painting === node.id ? "" : node.id)} /> : null}
       {painting && node ? (
         <div className="mt-2 flex flex-wrap gap-1">
-          {[...PALETTE, ...ALLOCATION_PRESETS.okabe.filter((color) => color !== "#000000"), ...ALLOCATION_PRESETS.dusk].map((swatch) => (
+          {["var(--brand)", "var(--text-primary)", "var(--text-tertiary)", "var(--line)"].map((swatch) => (
             <button key={swatch} type="button" className="fin-icon" aria-label={swatch} onClick={() => onPaint(node.id, swatch)}>
               <span className="fin-swatch" style={{ background: swatch }} />
             </button>

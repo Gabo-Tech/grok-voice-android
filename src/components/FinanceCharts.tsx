@@ -54,7 +54,7 @@ export function FinanceCarousel({
   const buckets = useMemo(() => worthBuckets(accounts, code, book, quotes, nowMs), [accounts, code, book, quotes, nowMs]);
   const ringRows = useMemo(() => {
     const labels = { money: t("Money"), debt: t("Debts"), investment: t("Investments"), credit: t("Card credit") };
-    const colors = { money: SAGE, debt: ROSE, investment: GOLD, credit: "var(--fin-gold)" };
+    const colors = { money: "var(--brand)", debt: "var(--negative)", investment: "var(--text-tertiary)", credit: "var(--text-tertiary)" };
     return buckets.buckets
       .filter((bucket) => bucket.id !== "debt" && bucket.amountMinor > 0)
       .map((bucket) => ({
@@ -204,7 +204,7 @@ function DebtAgainstAssets({ owed, assets, currency, original }: { owed: number;
     <div className="mt-3">
       <p className="text-[13px] leading-4 font-extrabold tracking-wide uppercase">{t("Debts vs assets")}</p>
       <span className="fin-track mt-2 block">
-        <span className="block h-full" style={{ width, background: ROSE }} />
+        <span className="block h-full" style={{ width, background: "var(--negative)" }} />
       </span>
       <p className="mt-2 text-[13px] leading-4">
         <span className="fin-num">{formatMoney(owed, currency)}</span>
