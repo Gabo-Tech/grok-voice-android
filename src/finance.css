@@ -9,7 +9,7 @@
   --fin-gold: var(--gold);
   --fin-sage: var(--sage);
   --fin-rose: var(--rose);
-  --fin-shadow: 4px 4px 0 rgba(0, 0, 0, 0.16);
+  --fin-shadow: var(--shadow);
   color: var(--fin-ink);
   background: transparent;
 }
@@ -26,7 +26,7 @@
 .finance .fin-kicker,
 .finance .chapter {
   color: var(--kicker);
-  font-size: 0.78rem;
+  font-size: 0.8125rem;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;

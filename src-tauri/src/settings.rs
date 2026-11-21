@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(stored_appearance("", "plum"), "plum");
         assert_eq!(stored_appearance("", "stone"), "stone");
         assert_eq!(stored_appearance("ink", "stone"), "ink");
-        let graphite = "#0E0F11,#17181B,#9A9690,#EEECE8,#C4B5A0,#7D9A86,#C48984";
+        let graphite = "#0E0F11,#17181B,#6A6762,#EEECE8,#C4B5A0,#7D9A86,#C48984";
         assert_eq!(stored_custom_theme(graphite, ""), graphite);
         assert_eq!(stored_custom_theme("nope", graphite), graphite);
         assert_eq!(stored_custom_theme("", graphite), graphite);
