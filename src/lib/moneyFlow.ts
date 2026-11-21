@@ -1,5 +1,4 @@
 import { convertMinor, type RateBook } from "./financeMath.ts";
-import { PALETTE } from "./financeView.ts";
 import { inBounds } from "./chartPeriod.ts";
 import type { CategoryRecord } from "./financeCategories.ts";
 
@@ -188,19 +187,14 @@ export function buildMoneyFlow(
     }
   }
 
-  const colorFor = (bucket: Bucket, index: number) => {
+  const colorFor = (bucket: Bucket, accent: boolean) => {
     const custom = opts.nodeColors?.[bucket.id] || opts.nodeColors?.[bucket.label];
-    if (custom && /^#[0-9A-Fa-f]{6}$/.test(custom)) return custom;
-    const saved = categoryOf(categories, bucket.label);
-    if (saved?.color && /^#[0-9A-Fa-f]{6}$/.test(saved.color)) return saved.color;
-    if (bucket.kind === "drawn") return "#8C6A3F";
-    if (bucket.kind === "surplus") return "#6E8B74";
-    if (bucket.kind === "other") return "#7A6A58";
-    if (bucket.id === "pool") return "#C4B5A0";
-    return PALETTE[index % PALETTE.length];
+    if (custom && (/^#[0-9A-Fa-f]{6}$/.test(custom) || custom.startsWith("var("))) return custom;
+    if (bucket.id === "pool" || accent) return "var(--brand)";
+    return "var(--text-tertiary)";
   };
 
-  const toNode = (bucket: Bucket, role: FlowNode["role"], index: number): FlowNode => {
+  const toNode = (bucket: Bucket, role: FlowNode["role"]): FlowNode => {
     const members = ((bucket as Bucket & { members?: Bucket[] }).members || []).map((row) => ({
       id: row.id,
       label: row.label,
@@ -214,7 +208,7 @@ export function buildMoneyFlow(
       kind: bucket.kind,
       amountMinor: bucket.amount,
       share: bucket.amount / shareBase,
-      color: colorFor(bucket, index),
+      color: colorFor(bucket, bucket.id === accentId),
       originals: originalsOf(bucket),
       members,
     };
@@ -222,6 +216,7 @@ export function buildMoneyFlow(
 
   const sourceNodes = [...sources.values()].filter((row) => row.amount > 0).sort((a, b) => a.order - b.order || b.amount - a.amount);
   const sinkNodes = [...sinks.values()].filter((row) => row.amount > 0).sort((a, b) => a.order - b.order || b.amount - a.amount);
+  const accentId = [...sourceNodes].filter((row) => row.kind !== "drawn").sort((a, b) => b.amount - a.amount)[0]?.id || "";
   const poolNode: FlowNode = {
     id: "pool",
     label: labels.income,
@@ -229,11 +224,11 @@ export function buildMoneyFlow(
     kind: "pool",
     amountMinor: pool,
     share: incomeMinor > 0 ? pool / incomeMinor : 1,
-    color: colorFor({ id: "pool", label: labels.income, kind: "pool", amount: pool, originals: new Map(), order: 0 }, 0),
+    color: colorFor({ id: "pool", label: labels.income, kind: "pool", amount: pool, originals: new Map(), order: 0 }, true),
     originals: [],
     members: [],
   };
-  const nodes = [...sourceNodes.map((row, index) => toNode(row, "source", index)), poolNode, ...sinkNodes.map((row, index) => toNode(row, "sink", index))];
+  const nodes = [...sourceNodes.map((row) => toNode(row, "source")), poolNode, ...sinkNodes.map((row) => toNode(row, "sink"))];
   const links: FlowLink[] = [
     ...sourceNodes.map((row) => ({ source: row.id, target: "pool", amountMinor: row.amount })),
     ...sinkNodes.map((row) => ({ source: "pool", target: row.id, amountMinor: row.amount })),

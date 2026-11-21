@@ -87,6 +87,20 @@ export function compactMoney(minor: number, currency: string): string {
   return `${sign}${abs.toFixed(2)}`;
 }
 
+/** Currency unit and the figure, so a hero can set the unit at half the figure size. */
+export function moneyParts(minor: number, currency: string): { unit: string; figure: string } {
+  const exp = minorExponent(currency);
+  const value = minor / 10 ** exp;
+  try {
+    const parts = new Intl.NumberFormat(undefined, { style: "currency", currency }).formatToParts(value);
+    const unit = parts.filter((part) => part.type === "currency").map((part) => part.value).join("") || currency;
+    const figure = parts.filter((part) => part.type !== "currency").map((part) => part.value).join("").trim();
+    return { unit, figure: figure || String(value) };
+  } catch {
+    return { unit: currency, figure: value.toFixed(Math.min(exp, 2)) };
+  }
+}
+
 export function formatMoney(minor: number | null | undefined, currency: string): string {
   if (minor == null || !currency) return "";
   const exp = minorExponent(currency);

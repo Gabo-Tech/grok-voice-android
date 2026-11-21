@@ -1,6 +1,6 @@
 import type { RateBook } from "@/lib/financeMath";
 import { headlineOf, nativeParts, type Headline, type MoneyPart } from "@/lib/financeMath";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, moneyParts } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -46,10 +46,19 @@ export function CombinedHeadline({
     );
   }
   const signed = tone === "auto" ? (head.amountMinor < 0 ? "out" : head.amountMinor > 0 ? "in" : undefined) : tone;
+  const hero = size === "text-5xl" || size === "text-4xl";
+  const split = hero ? moneyParts(head.amountMinor, head.currency) : null;
   return (
     <div className="mt-4 max-w-full">
-      <p className={cn("fin-num leading-none font-medium break-words", size, signed === "in" && "fin-in", signed === "out" && "fin-out")}>
-        {formatMoney(head.amountMinor, head.currency)}
+      <p className={cn("fin-num leading-none font-medium break-words", hero ? "fin-hero-num" : size, signed === "in" && "fin-in", signed === "out" && "fin-out")}>
+        {split ? (
+          <>
+            <span className="fin-hero-unit">{split.unit}</span>
+            {split.figure}
+          </>
+        ) : (
+          formatMoney(head.amountMinor, head.currency)
+        )}
       </p>
       {rateCaption(head, t) ? <p className="fin-muted mt-1 text-[13px] leading-5 break-words">{rateCaption(head, t)}</p> : null}
       <NativeAside parts={parts} display={display} />
@@ -68,9 +77,20 @@ export function StaticHeadline({ head, size = "text-4xl" }: { head: Headline; fe
       </div>
     );
   }
+  const hero = size === "text-5xl" || size === "text-4xl";
+  const split = hero ? moneyParts(head.amountMinor, head.currency) : null;
   return (
     <div className="mt-4 max-w-full">
-      <p className={cn("fin-num leading-none font-medium break-words", size, head.amountMinor < 0 && "fin-out")}>{formatMoney(head.amountMinor, head.currency)}</p>
+      <p className={cn("fin-num leading-none font-medium break-words", hero ? "fin-hero-num" : size, head.amountMinor < 0 && "fin-out")}>
+        {split ? (
+          <>
+            <span className="fin-hero-unit">{split.unit}</span>
+            {split.figure}
+          </>
+        ) : (
+          formatMoney(head.amountMinor, head.currency)
+        )}
+      </p>
       {rateCaption(head, t) ? <p className="fin-muted mt-1 text-[13px] leading-5 break-words">{rateCaption(head, t)}</p> : null}
     </div>
   );

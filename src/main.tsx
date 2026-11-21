@@ -5,8 +5,6 @@ import { bootAppearance } from "@/lib/appearance";
 import { installHistory } from "@/lib/history";
 import { installKeyboardInset } from "@/lib/keyboard";
 import "./index.css";
-import "./luxury.css";
-
 bootAppearance();
 installKeyboardInset();
 installHistory();
