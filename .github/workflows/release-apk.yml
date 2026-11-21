@@ -158,8 +158,9 @@ jobs:
             if [ "$code" -eq 0 ]; then
               exit 0
             fi
-            if [ "$attempt" -lt 3 ] && grep -q "429" "$log"; then
-              echo "Maven Central rate limited the build (attempt ${attempt}). Waiting before retry."
+            if [ "$attempt" -lt 3 ] && grep -Eq "429|Too Many Requests|Could not GET|Could not resolve|Could not find org.jetbrains.kotlin|Read timed out|Connection reset" "$log"; then
+              echo "Dependency download failed (attempt ${attempt}). Waiting before retry."
+              rm -rf src-tauri/gen/android/.gradle src-tauri/gen/android/buildSrc/.gradle
               sleep $((attempt * 45))
               continue
             fi
