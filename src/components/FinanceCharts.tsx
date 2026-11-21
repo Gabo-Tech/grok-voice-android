@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
 import type { FinanceAccount, FinanceFx, FinancePrices, FinanceTransaction } from "@/lib/api";
 import { ChartCard, Donut, Legend, LineChart, monthName, useChartVisibility, type LegendRow } from "@/components/ChartKit";
-import { worthBuckets } from "@/lib/financeLedger";
+import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
+import { inBounds, monthsIn } from "@/lib/chartPeriod";
+import { debtRatio, netOfVisible, worthBuckets } from "@/lib/financeLedger";
 import { bookFromStatus, headlineOf, type MoneyPart, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
-import { displayColor, isDebt, sixMonths } from "@/lib/financeView";
+import { displayColor, isDebt } from "@/lib/financeView";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 
 const SAGE = "var(--sage)";
@@ -39,6 +41,10 @@ export function FinanceCarousel({
   onPick: (pick: ChartPick) => void;
 }) {
   const t = useT();
+  const allocationPeriod = useChartPeriod("allocation");
+  const categoryPeriod = useChartPeriod("category");
+  const debtPeriod = useChartPeriod("debts");
+  const trendPeriod = useChartPeriod("trend", "6m");
   const scroller = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
   const book = useMemo(() => bookFromStatus(fx), [fx]);
@@ -47,10 +53,10 @@ export function FinanceCarousel({
   const quotes = prices?.quotes || [];
   const buckets = useMemo(() => worthBuckets(accounts, code, book, quotes, nowMs), [accounts, code, book, quotes, nowMs]);
   const ringRows = useMemo(() => {
-    const labels = { money: t("Money"), debt: t("Debts"), investment: t("Investments") };
-    const colors = { money: SAGE, debt: ROSE, investment: GOLD };
+    const labels = { money: t("Money"), debt: t("Debts"), investment: t("Investments"), credit: t("Card credit") };
+    const colors = { money: SAGE, debt: ROSE, investment: GOLD, credit: "var(--fin-gold)" };
     return buckets.buckets
-      .filter((bucket) => bucket.amountMinor > 0)
+      .filter((bucket) => bucket.id !== "debt" && bucket.amountMinor > 0)
       .map((bucket) => ({
         id: bucket.id,
         label: labels[bucket.id],
@@ -62,9 +68,16 @@ export function FinanceCarousel({
         note: bucket.unpriced.length ? fill("No price for {name}", { name: bucket.unpriced.join(", ") }) : "",
       }));
   }, [buckets, code, t]);
-  const categoryRows = useMemo(() => categoryLegend(transactions, code, book, nowMs), [transactions, code, book, nowMs]);
+  const debtBucket = buckets.buckets.find((bucket) => bucket.id === "debt");
+  const categoryRows = useMemo(
+    () => categoryLegend(transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end),
+    [transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end],
+  );
   const debtRows = useMemo(() => debtLegend(accounts, code, book, nowMs), [accounts, code, book, nowMs]);
-  const trend = useMemo(() => trendPoints(transactions, code, book, nowMs), [transactions, code, book, nowMs]);
+  const trend = useMemo(
+    () => trendPoints(transactions, code, book, nowMs, trendPeriod.bounds.start, trendPeriod.bounds.end),
+    [transactions, code, book, nowMs, trendPeriod.bounds.start, trendPeriod.bounds.end],
+  );
   const ringVis = useChartVisibility("allocation", ringRows);
   const categoryVis = useChartVisibility("category", categoryRows);
   const debtVis = useChartVisibility("debts", debtRows);
@@ -79,7 +92,16 @@ export function FinanceCarousel({
           key: "allocation",
           body: (
             <ChartCard title={t("Money, debts, and investments")}>
-              <Donut rows={ringRows} hidden={ringVis.hidden} center={formatMoney(visibleTotal(ringRows, ringVis.hidden), code)} />
+              <p className="fin-muted text-[13px] leading-4">{t("Latest balances. This period does not rewrite them.")}</p>
+              <ChartPeriodBar period={allocationPeriod.period} onChange={allocationPeriod.setPeriod} />
+              <Donut
+                rows={ringRows}
+                hidden={ringVis.hidden}
+                caption={t("Net worth")}
+                center={formatMoney(netOfVisible(buckets.buckets, ringVis.hidden).net, code)}
+                debtRatio={debtRatio(netOfVisible(buckets.buckets, ringVis.hidden).assets, debtBucket?.amountMinor || 0)}
+              />
+              <DebtAgainstAssets owed={debtBucket?.amountMinor || 0} assets={netOfVisible(buckets.buckets, ringVis.hidden).assets} currency={code} original={debtBucket?.natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ") || ""} />
               <Legend rows={ringRows} hidden={ringVis.hidden} currency={code} onToggle={ringVis.toggle} onShowAll={ringVis.showAll} anyHidden={ringVis.anyHidden} />
             </ChartCard>
           ),
@@ -90,6 +112,7 @@ export function FinanceCarousel({
           key: "category",
           body: (
             <ChartCard title={t("By category")}>
+              <ChartPeriodBar period={categoryPeriod.period} onChange={categoryPeriod.setPeriod} />
               <Legend rows={categoryRows} hidden={categoryVis.hidden} currency={code} onToggle={categoryVis.toggle} onShowAll={categoryVis.showAll} anyHidden={categoryVis.anyHidden} />
             </ChartCard>
           ),
@@ -100,7 +123,9 @@ export function FinanceCarousel({
           key: "debts",
           body: (
             <ChartCard title={t("Debts")}>
-              <Donut rows={debtRows} hidden={debtVis.hidden} center={formatMoney(visibleTotal(debtRows, debtVis.hidden), code)} />
+              <p className="fin-muted text-[13px] leading-4">{t("Latest balances. This period does not rewrite them.")}</p>
+              <ChartPeriodBar period={debtPeriod.period} onChange={debtPeriod.setPeriod} />
+              <Donut rows={debtRows} hidden={debtVis.hidden} caption={t("Owed")} center={formatMoney(visibleTotal(debtRows, debtVis.hidden), code)} />
               <Legend rows={debtRows} hidden={debtVis.hidden} currency={code} onToggle={debtVis.toggle} onShowAll={debtVis.showAll} anyHidden={debtVis.anyHidden} />
             </ChartCard>
           ),
@@ -111,7 +136,7 @@ export function FinanceCarousel({
           key: "trend",
           body: (
             <TrendCard
-              title={fill("Income vs expenses, last 6 months", {})}
+              title={t("Income vs expenses")}
               points={trend.points}
               currency={code}
               missing={trend.missing}
@@ -122,6 +147,7 @@ export function FinanceCarousel({
               onShowAll={trendVis.showAll}
               anyHidden={trendVis.anyHidden}
               onPick={(month) => onPick({ month })}
+              period={<ChartPeriodBar period={trendPeriod.period} onChange={trendPeriod.setPeriod} />}
             />
           ),
         }
@@ -165,15 +191,34 @@ export function FinanceCarousel({
 }
 
 function visibleTotal(rows: LegendRow[], hidden: Set<string>): number {
-  return rows.reduce((sum, row) => (hidden.has(row.id) || row.amountMinor == null ? sum : sum + row.amountMinor), 0);
+  return rows.reduce((sum, row) => (hidden.has(row.id) || row.omitShare || row.amountMinor == null ? sum : sum + row.amountMinor), 0);
 }
 
-function categoryLegend(txs: FinanceTransaction[], display: string, book: RateBook | null, nowMs: number): LegendRow[] {
-  const now = new Date();
-  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+function DebtAgainstAssets({ owed, assets, currency, original }: { owed: number; assets: number; currency: string; original: string }) {
+  const t = useT();
+  if (owed <= 0 && !original) return null;
+  const ratio = debtRatio(assets, owed);
+  const percent = ratio > 0 && ratio < 0.001 ? "<0.1" : String(Math.round(ratio * 1000) / 10);
+  const width = `${Math.min(100, ratio * 100)}%`;
+  return (
+    <div className="mt-3">
+      <p className="text-[13px] leading-4 font-extrabold tracking-wide uppercase">{t("Debts vs assets")}</p>
+      <span className="fin-track mt-2 block">
+        <span className="block h-full" style={{ width, background: ROSE }} />
+      </span>
+      <p className="mt-2 text-[13px] leading-4">
+        <span className="fin-num">{formatMoney(owed, currency)}</span>
+        <span className="fin-muted"> · {fill("{percent}% of assets", { percent })}</span>
+      </p>
+      {original ? <p className="fin-muted text-[13px] leading-4">{original}</p> : null}
+    </div>
+  );
+}
+
+function categoryLegend(txs: FinanceTransaction[], display: string, book: RateBook | null, nowMs: number, start: string, end: string): LegendRow[] {
   const by = new Map<string, { name: string; parts: MoneyPart[] }>();
   for (const tx of txs) {
-    if (tx.direction !== "expense" || !tx.date.startsWith(key) || !tx.currency || !tx.amountMinor) continue;
+    if (tx.direction !== "expense" || !inBounds(tx.date, start, end) || !tx.currency || !tx.amountMinor) continue;
     const name = tx.category || "Expense";
     const row = by.get(name) ?? { name, parts: [] };
     row.parts.push({ amountMinor: tx.amountMinor, currency: tx.currency });
@@ -218,9 +263,9 @@ function debtLegend(accounts: FinanceAccount[], display: string, book: RateBook 
   });
 }
 
-function trendPoints(txs: FinanceTransaction[], display: string, book: RateBook | null, nowMs: number) {
+function trendPoints(txs: FinanceTransaction[], display: string, book: RateBook | null, nowMs: number, start: string, end: string) {
   const missing = new Set<string>();
-  const points = sixMonths().map((key) => {
+  const points = monthsIn(start, end).map((key) => {
     const incomeParts: MoneyPart[] = [];
     const expenseParts: MoneyPart[] = [];
     for (const tx of txs) {
@@ -252,12 +297,14 @@ function TrendCard({
   onShowAll,
   anyHidden,
   onPick,
+  period,
 }: {
   title: string;
   points: Array<{ key: string; income: number; expense: number; net: number }>;
   currency: string;
   missing: string[];
   busy: boolean;
+  period?: ReactElement;
   onOpenSettings?: () => void;
   hidden: Set<string>;
   onToggle: (id: string) => void;
@@ -278,6 +325,7 @@ function TrendCard({
   if (missing.length) {
     return (
       <ChartCard title={title}>
+        {period}
         <p className="text-[15px] leading-5">{busy ? fill("Checking the rate for {codes}.", { codes: missing.join(", ") }) : fill("Combined total needs a rate for {codes}.", { codes: missing.join(", ") })}</p>
         {onOpenSettings && !busy ? (
           <button type="button" className="fin-textbtn mt-2" onClick={onOpenSettings}>{t("Settings")}</button>
@@ -293,6 +341,7 @@ function TrendCard({
   return (
     <ChartCard title={title}>
       <p className="fin-muted text-[13px] leading-4">{fill("In {code}. This month is still open.", { code: currency })}</p>
+      {period}
       <LineChart series={series} currency={currency} partial={current} onPick={(date) => { setFocus(date); onPick(date); }} />
       {chosen ? (
         <p className="fin-muted mt-1 text-[13px] leading-5">

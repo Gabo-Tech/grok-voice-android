@@ -270,6 +270,10 @@ struct Store {
     #[serde(default)]
     categories: Vec<Category>,
     #[serde(default)]
+    flow_colors: Vec<NodeColor>,
+    #[serde(default)]
+    categories_ready: bool,
+    #[serde(default)]
     fx: crate::finance_fx::FxBook,
     #[serde(default)]
     prices: crate::finance_prices::PriceBook,
@@ -281,10 +285,24 @@ struct Store {
     provider_pins: Vec<crate::finance_history::ProviderPin>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Category {
     pub name: String,
+    #[serde(default)]
+    pub color: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub icon: String,
+    #[serde(default)]
+    pub order: i32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeColor {
+    pub id: String,
     #[serde(default)]
     pub color: String,
 }
@@ -299,6 +317,8 @@ pub struct Bundle {
     pub default_currency: String,
     #[serde(default)]
     pub categories: Vec<Category>,
+    #[serde(default)]
+    pub flow_colors: Vec<NodeColor>,
     #[serde(default)]
     pub fx: crate::finance_fx::FxBook,
     #[serde(default)]
@@ -383,6 +403,8 @@ pub struct Snapshot {
     pub period: String,
     pub default_currency: String,
     pub categories: Vec<Category>,
+    #[serde(default)]
+    pub flow_colors: Vec<NodeColor>,
     pub fx: FxStatus,
     pub prices: crate::finance_prices::PriceBook,
     #[serde(default)]
@@ -627,7 +649,11 @@ impl Finance {
     }
 
     pub fn snapshot(&self, app: &AppHandle) -> Snapshot {
-        let store = self.lock();
+        let mut store = self.lock().clone();
+        if ensure_categories(&mut store) {
+            let _ = Self::persist(&self.path, &store);
+            *self.lock() = store.clone();
+        }
         snapshot_of(&store, &currency_locale(app, &store), Local::now().date_naive())
     }
 
@@ -639,6 +665,7 @@ impl Finance {
             rules: store.rules.clone(),
             default_currency: store.default_currency.clone(),
             categories: store.categories.clone(),
+            flow_colors: store.flow_colors.clone(),
             fx: store.fx.clone(),
             prices: store.prices.clone(),
             history: store.history.clone(),
@@ -654,6 +681,7 @@ impl Finance {
         store.rules = bundle.rules;
         store.default_currency = bundle.default_currency;
         store.categories = bundle.categories;
+        store.flow_colors = bundle.flow_colors;
         store.fx = bundle.fx;
         store.prices = bundle.prices;
         store.history = bundle.history;
@@ -720,6 +748,12 @@ impl Finance {
     pub fn rename_category_name(&self, app: &AppHandle, from: &str, to: &str) -> Result<Snapshot, String> {
         let mut store = self.lock().clone();
         rename_category(&mut store, from, to)?;
+        self.commit(app, store)
+    }
+
+    pub fn edit_category_on(&self, app: &AppHandle, action: &str, name: &str, to: &str, color: &str, kind: &str, icon: &str, order: i32) -> Result<Snapshot, String> {
+        let mut store = self.lock().clone();
+        edit_category(&mut store, action, name, to, color, kind, icon, order)?;
         self.commit(app, store)
     }
 
@@ -1127,14 +1161,17 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview is net worth, this month (income, expenses, card payments, result, cash flow), and the next 30 days. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is allocation, category, debts, trend, holdings, or portfolio. action is hide, show, only, or reset, and name is a holding or a class such as crypto. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview is net worth, this month (income, expenses, card payments, result, cash flow), and the next 30 days. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow is where the money went. period is this, last, 3m, 6m, ytd, 1y, all, or custom, with start and end when custom. action is hide, show, only, or reset, and name is a holding or a class such as crypto. Do not invent a rate.",
             json!({
                 "type": "object",
                 "properties": {
                     "view": { "type": "string" },
                     "chart": { "type": "string", "description": "allocation, category, debts, trend, holdings, or portfolio" },
                     "action": { "type": "string", "description": "hide, show, only, or reset" },
-                    "name": { "type": "string", "description": "Holding name or class such as Quanloop or crypto" }
+                    "name": { "type": "string", "description": "Holding name or class such as Quanloop or crypto" },
+                    "period": { "type": "string", "description": "this, last, 3m, 6m, ytd, 1y, all, or custom" },
+                    "start": { "type": "string", "description": "Custom range start, YYYY-MM-DD" },
+                    "end": { "type": "string", "description": "Custom range end, YYYY-MM-DD" }
                 },
                 "required": ["view"]
             })
@@ -1200,7 +1237,10 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         let chart = args["chart"].as_str().unwrap_or("").trim().to_string();
         let action = args["action"].as_str().unwrap_or("").trim().to_string();
         let chart_name = args["name"].as_str().unwrap_or("").trim().to_string();
-        touch_chart(app, view, &chart, &action, &chart_name);
+        let period = args["period"].as_str().unwrap_or("").trim().to_string();
+        let start = args["start"].as_str().unwrap_or("").trim().to_string();
+        let end = args["end"].as_str().unwrap_or("").trim().to_string();
+        touch_chart(app, view, &chart, &action, &chart_name, &period, &start, &end);
         let store = finance.lock().clone();
         let today = Local::now().date_naive();
         let raw_view = fold(args["view"].as_str().unwrap_or(""));
@@ -2503,6 +2543,9 @@ fn paint_schedule_args(rule: &mut Rule, args: &Value) {
 }
 
 fn apply_phrase(store: &mut Store, phrase: &str, clock: &Clock) -> Result<String, String> {
+    if let Some(done) = category_phrase(store, phrase) {
+        return done;
+    }
     let parsed = crate::finance_schedule::parse_phrase(phrase, clock.today, &clock.default_currency)?;
     match parsed.kind.as_str() {
         "transaction" => log_single(
@@ -4376,6 +4419,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
         period,
         default_currency: effective_default(store, locale),
         categories: store.categories.clone(),
+        flow_colors: store.flow_colors.clone(),
         fx: fx_status(store, today),
         prices: store.prices.clone(),
         history: store.history.clone(),
@@ -4626,6 +4670,13 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
         detail.push(' ');
         detail.push_str(&speak_coming(store, today));
     }
+    if account_id.is_empty() && kind.is_empty() {
+        let worth = speak_net_worth(store);
+        if !worth.is_empty() {
+            detail.push(' ');
+            detail.push_str(&worth);
+        }
+    }
     let asked = fold(&format!("{} {}", ask.query, ask.account));
     if asked.contains("percent") || asked.contains("porcentaje") || asked.contains("percentatge") || asked.contains("prozent") || asked.contains("portfolio") || asked.contains("cartera") {
         detail.push(' ');
@@ -4672,6 +4723,35 @@ fn current_locale() -> String {
         let current = cell.borrow();
         if current.is_empty() { "en".to_string() } else { current.clone() }
     })
+}
+
+fn speak_net_worth(store: &Store) -> String {
+    let display = effective_default(store, &current_locale());
+    let now_ms = Local::now().timestamp_millis();
+    let accounts = worth_account_list(store, &display, now_ms);
+    let rows = crate::finance_schedule::worth_rows(&accounts);
+    if rows.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<(i64, String)> = rows.iter().map(|row| (row.net_minor, row.currency.clone())).collect();
+    let Some(net) = crate::finance_fx::combine(&parts, &display, &store.fx, now_ms) else {
+        let missing = crate::finance_fx::missing_codes(&parts, &display, &store.fx).join(", ");
+        if missing.is_empty() {
+            return String::new();
+        }
+        return spoken("Net worth needs a rate for {codes}.", &[("codes", &missing)]);
+    };
+    let amount = format_minor(net.amount_minor, &net.currency);
+    let mut line = spoken("Net worth is {amount}.", &[("amount", &amount)]);
+    let owed: Vec<(i64, String)> = rows.iter().filter(|row| row.owed_minor > 0).map(|row| (row.owed_minor, row.currency.clone())).collect();
+    if let Some(debt) = crate::finance_fx::combine(&owed, &display, &store.fx, now_ms) {
+        if debt.amount_minor > 0 {
+            let owed_amount = format_minor(debt.amount_minor, &debt.currency);
+            line.push(' ');
+            line.push_str(&spoken("Debts of {amount} are subtracted.", &[("amount", &owed_amount)]));
+        }
+    }
+    line
 }
 
 fn speak_totals(store: &Store, totals: &[PeriodTotal], month: &str, display: &str) -> String {
@@ -5375,12 +5455,12 @@ fn touch(app: &AppHandle) {
 }
 
 fn touch_view(app: &AppHandle, view: &str) {
-    touch_chart(app, view, "", "", "");
+    touch_chart(app, view, "", "", "", "", "", "");
 }
 
-fn touch_chart(app: &AppHandle, view: &str, chart: &str, action: &str, name: &str) {
+fn touch_chart(app: &AppHandle, view: &str, chart: &str, action: &str, name: &str, period: &str, start: &str, end: &str) {
     if let Some(hub) = app.try_state::<std::sync::Arc<crate::diagnostics::Hub>>() {
-        hub.emit("voice://finance", json!({ "view": view, "chart": chart, "action": action, "name": name }));
+        hub.emit("voice://finance", json!({ "view": view, "chart": chart, "action": action, "name": name, "period": period, "start": start, "end": end }));
     }
 }
 
@@ -6007,7 +6087,7 @@ fn remember_category(store: &mut Store, name: &str) {
         return;
     }
     let color = PALETTE[store.categories.len() % PALETTE.len()].to_string();
-    store.categories.push(Category { name: name.to_string(), color });
+    store.categories.push(Category { name: name.to_string(), color, ..Category::default() });
 }
 
 fn rename_category(store: &mut Store, from: &str, to: &str) -> Result<(), String> {
@@ -6031,6 +6111,152 @@ fn rename_category(store: &mut Store, from: &str, to: &str) -> Result<(), String
         }
     }
     Ok(())
+}
+
+fn ensure_categories(store: &mut Store) -> bool {
+    if store.categories_ready {
+        return false;
+    }
+    for tx in &mut store.transactions {
+        if tx.category.trim().is_empty() {
+            tx.category = "Uncategorized".into();
+        }
+    }
+    if !store.categories.iter().any(|category| fold(&category.name) == "uncategorized") && store.transactions.iter().any(|tx| fold(&tx.category) == "uncategorized") {
+        store.categories.push(Category { name: "Uncategorized".into(), color: "#8C6A3F".into(), kind: "expense".into(), ..Category::default() });
+    }
+    for category in &mut store.categories {
+        if category.kind.is_empty() {
+            let income = store.transactions.iter().any(|tx| fold(&tx.category) == fold(&category.name) && tx.direction == "income");
+            let expense = store.transactions.iter().any(|tx| fold(&tx.category) == fold(&category.name) && tx.direction != "income");
+            category.kind = if income && !expense { "income".into() } else { "expense".into() };
+        }
+    }
+    store.categories_ready = true;
+    true
+}
+
+pub fn edit_category(store: &mut Store, action: &str, name: &str, to: &str, color: &str, kind: &str, icon: &str, order: i32) -> Result<(), String> {
+    let action = fold(action);
+    let name = name.trim();
+    match action.as_str() {
+        "create" => {
+            let label = clean_text(name, 80)?;
+            if label.is_empty() {
+                return Err("A category needs a name.".into());
+            }
+            if let Some(category) = store.categories.iter_mut().find(|category| fold(&category.name) == fold(&label)) {
+                if !color.is_empty() { category.color = color.to_string(); }
+                if !kind.is_empty() { category.kind = kind.to_string(); }
+                if !icon.is_empty() { category.icon = icon.to_string(); }
+                return Ok(());
+            }
+            let swatch = if color.trim().is_empty() { PALETTE[store.categories.len() % PALETTE.len()].to_string() } else { color.trim().to_string() };
+            store.categories.push(Category { name: label, color: swatch, kind: kind.trim().to_string(), icon: icon.trim().to_string(), order });
+            Ok(())
+        }
+        "rename" => rename_category(store, name, to),
+        "merge" => {
+            let into = clean_text(to, 80)?;
+            if into.is_empty() {
+                return Err("A category needs a name.".into());
+            }
+            if !store.categories.iter().any(|category| fold(&category.name) == fold(&into)) {
+                remember_category(store, &into);
+            }
+            let previous = store.categories.iter().find(|category| fold(&category.name) == fold(name)).map(|category| category.name.clone()).ok_or("No category with that name.")?;
+            for tx in &mut store.transactions {
+                if fold(&tx.category) == fold(&previous) { tx.category = into.clone(); }
+            }
+            for rule in &mut store.rules {
+                if fold(&rule.category) == fold(&previous) { rule.category = into.clone(); }
+            }
+            store.categories.retain(|category| fold(&category.name) != fold(&previous));
+            Ok(())
+        }
+        "delete" => {
+            let previous = store.categories.iter().find(|category| fold(&category.name) == fold(name)).map(|category| category.name.clone()).ok_or("No category with that name.")?;
+            if !store.categories.iter().any(|category| fold(&category.name) == "uncategorized") {
+                store.categories.push(Category { name: "Uncategorized".into(), color: "#8C6A3F".into(), kind: "expense".into(), ..Category::default() });
+            }
+            for tx in &mut store.transactions {
+                if fold(&tx.category) == fold(&previous) { tx.category = "Uncategorized".into(); }
+            }
+            for rule in &mut store.rules {
+                if fold(&rule.category) == fold(&previous) { rule.category = "Uncategorized".into(); }
+            }
+            store.categories.retain(|category| fold(&category.name) != fold(&previous) || fold(&previous) == "uncategorized");
+            Ok(())
+        }
+        "color" | "kind" | "icon" | "order" | "paint" => {
+            if action == "paint" {
+                let id = if name.is_empty() { to.trim().to_string() } else { name.to_string() };
+                if id.is_empty() || color.trim().is_empty() {
+                    return Err("A category needs a name.".into());
+                }
+                if let Some(row) = store.flow_colors.iter_mut().find(|row| row.id == id) {
+                    row.color = color.trim().to_string();
+                } else {
+                    store.flow_colors.push(NodeColor { id, color: color.trim().to_string() });
+                }
+                return Ok(());
+            }
+            let Some(category) = store.categories.iter_mut().find(|category| fold(&category.name) == fold(name)) else {
+                return Err("No category with that name.".into());
+            };
+            if action == "color" { category.color = color.trim().to_string(); }
+            if action == "kind" { category.kind = kind.trim().to_string(); }
+            if action == "icon" { category.icon = icon.trim().to_string(); }
+            if action == "order" { category.order = order; }
+            Ok(())
+        }
+        _ => Err("A category needs a name.".into()),
+    }
+}
+
+fn category_phrase(store: &mut Store, phrase: &str) -> Option<Result<String, String>> {
+    let folded = fold(phrase);
+    if folded.contains("money flow") || folded.contains("flujo de dinero") || folded.contains("geldfluss") || folded.contains("fluxo de dinheiro") || folded.contains("flux de diners") {
+        return Some(Ok(spoken("Showing the money flow.", &[])));
+    }
+    if folded.starts_with("create ") && folded.contains("category") {
+        let kind = if folded.contains("income") { "income" } else if folded.contains("saving") { "savings" } else if folded.contains("invest") { "investment" } else if folded.contains("debt") { "debt" } else { "expense" };
+        let name = phrase.rsplit_once("category").map(|(_, rest)| rest.trim()).unwrap_or("").trim_matches(|ch: char| !ch.is_alphanumeric() && ch != ' ');
+        let name = name.trim();
+        if name.is_empty() {
+            return Some(Err("A category needs a name.".into()));
+        }
+        return Some(edit_category(store, "create", name, "", "", kind, "", store.categories.len() as i32).map(|_| spoken("Saved {name}.", &[("name", name)])));
+    }
+    let lower = phrase.to_lowercase();
+    let marker = lower.rfind(" as ").or_else(|| lower.rfind(" als "))?;
+    if !(folded.starts_with("categorize") || folded.starts_with("categorise") || folded.starts_with("categoriza") || folded.starts_with("klassifiz") || folded.starts_with("classifica") || folded.starts_with("classifica")) {
+        return None;
+    }
+    let left = phrase[..marker].trim();
+    let right = phrase[marker + 4..].trim().trim_matches(|ch: char| ch == '.' || ch == '!');
+    let mut needle = fold(left);
+    for word in ["categorize", "categorise", "categoriza", "my", "the", "expense", "expenses", "income", "pago", "gasto", "ingreso"] {
+        needle = needle.replace(word, " ");
+    }
+    let needle = needle.split_whitespace().filter(|word| word.len() > 2).collect::<Vec<_>>().join(" ");
+    if needle.is_empty() || right.is_empty() {
+        return Some(Err("A category needs a name.".into()));
+    }
+    let label = title_phrase(right);
+    let mut hits = 0;
+    for tx in &mut store.transactions {
+        let blob = fold(&format!("{} {}", tx.category, tx.notes));
+        if blob.contains(&needle) {
+            tx.category = label.clone();
+            hits += 1;
+        }
+    }
+    if hits == 0 {
+        return Some(Err("No category with that name.".into()));
+    }
+    let _ = edit_category(store, "create", &label, "", "", "expense", "", store.categories.len() as i32);
+    Some(Ok(spoken("Saved {name}.", &[("name", &label)])))
 }
 
 fn repeating_rule_index(store: &Store, name: &str, account_id: &str, direction: &str) -> Option<usize> {
@@ -6393,17 +6619,33 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
     let invest = combined_amount(&invest_parts, &display, &store.fx, now_ms);
     let net = crate::finance_fx::combine(&parts, &display, &store.fx, now_ms);
     if let (Some(money), Some(debt), Some(invest), Some(net)) = (money, debt, invest, net) {
-        let slices = vec![
-            Slice { label: tr(locale, "Money"), value: money.abs() as f64, color: "#6E8B74".into(), caption: format_minor(money, &display) },
-            Slice { label: tr(locale, "Debts"), value: debt.abs() as f64, color: "#A56B66".into(), caption: format_minor(debt, &display) },
-            Slice { label: tr(locale, "Investments"), value: invest.abs() as f64, color: "#C4B5A0".into(), caption: format_minor(invest, &display) },
+        let owed = debt.max(0);
+        let credit = (-debt).max(0);
+        let mut slices = vec![
+            Slice { label: tr(locale, "Money"), value: money.max(0) as f64, color: "#6E8B74".into(), caption: format_minor(money, &display) },
+            Slice { label: tr(locale, "Investments"), value: invest.max(0) as f64, color: "#C4B5A0".into(), caption: format_minor(invest, &display) },
         ];
-        if slices.iter().any(|slice| slice.value != 0.0) {
+        if credit > 0 {
+            slices.push(Slice { label: tr(locale, "Card credit"), value: credit as f64, color: "#C4B5A0".into(), caption: format_minor(credit, &display) });
+        }
+        slices.retain(|slice| slice.value > 0.0);
+        let assets = money.max(0) + invest.max(0) + credit;
+        let mut numbers = vec![(tr(locale, "Net worth"), format_minor(net.amount_minor, &display))];
+        if owed > 0 {
+            numbers.push((tr(locale, "Debts"), format_minor(owed, &display)));
+            let percent = if assets > 0 { (owed as f64) * 100.0 / assets as f64 } else { 100.0 };
+            let percent = format!("{:.1}", percent);
+            numbers.push((tr(locale, "Debt ratio"), tr(locale, "{percent}% of assets").replace("{percent}", &percent)));
+        }
+        if slices.iter().any(|slice| slice.value != 0.0) || net.amount_minor != 0 || owed > 0 {
             pages.push(Page {
                 title: tr(locale, "Money, debts, and investments"),
                 subtitle: span.label.clone(),
-                notes: vec![tr(locale, "Combined in {code}.").replace("{code}", &display)],
-                numbers: vec![],
+                notes: vec![
+                    tr(locale, "Combined in {code}.").replace("{code}", &display),
+                    tr(locale, "Debts are subtracted from net worth."),
+                ],
+                numbers,
                 rows: vec![],
                 chart: Some(Chart::Donut { center_label: tr(locale, "Net worth"), center_value: format_minor(net.amount_minor, &display), slices }),
             });
@@ -6723,13 +6965,12 @@ fn widget_figure(parts: &[(i64, String)], display: &str, book: &crate::finance_f
     }
 }
 
-fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
-    let display = effective_default(store, &store.locale_hint);
-    let accounts: Vec<crate::finance_schedule::WorthAccount> = store
+fn worth_account_list(store: &Store, display: &str, now_ms: i64) -> Vec<crate::finance_schedule::WorthAccount> {
+    store
         .accounts
         .iter()
         .map(|account| {
-            let view = view_of(store, account, now_ms, &display);
+            let view = view_of(store, account, now_ms, display);
             if let Some(worth) = view.market_worth_minor {
                 crate::finance_schedule::WorthAccount { kind: account.kind.clone(), currency: view.market_worth_currency, shown_minor: Some(worth) }
             } else {
@@ -6740,7 +6981,12 @@ fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
                 }
             }
         })
-        .collect();
+        .collect()
+}
+
+fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
+    let display = effective_default(store, &store.locale_hint);
+    let accounts = worth_account_list(store, &display, now_ms);
     let nets = crate::finance_schedule::worth_rows(&accounts);
     let net_parts: Vec<(i64, String)> = nets.into_iter().map(|row| (row.net_minor, row.currency)).collect();
     let month_key = format!("{:04}-{:02}", today.year(), today.month());
@@ -6875,6 +7121,10 @@ const ES_PDF: &[(&str, &str)] = &[
     ("Holdings", "Posiciones"),
     ("Worth", "Valor"),
     ("Activity", "Movimientos"),
+    ("Card credit", "Saldo a favor"),
+    ("Debt ratio", "Ratio de deuda"),
+    ("{percent}% of assets", "{percent}% de los activos"),
+    ("Debts are subtracted from net worth.", "Las deudas se restan del patrimonio neto."),
 ];
 
 const DE_PDF: &[(&str, &str)] = &[
@@ -6909,6 +7159,10 @@ const DE_PDF: &[(&str, &str)] = &[
     ("Holdings", "Bestände"),
     ("Worth", "Wert"),
     ("Activity", "Bewegungen"),
+    ("Card credit", "Kartenguthaben"),
+    ("Debt ratio", "Schuldenquote"),
+    ("{percent}% of assets", "{percent}% der Vermögenswerte"),
+    ("Debts are subtracted from net worth.", "Schulden werden vom Vermögen abgezogen."),
 ];
 
 const PT_PDF: &[(&str, &str)] = &[
@@ -6943,6 +7197,10 @@ const PT_PDF: &[(&str, &str)] = &[
     ("Holdings", "Posições"),
     ("Worth", "Valor"),
     ("Activity", "Movimentos"),
+    ("Card credit", "Saldo a favor"),
+    ("Debt ratio", "Rácio de dívida"),
+    ("{percent}% of assets", "{percent}% dos ativos"),
+    ("Debts are subtracted from net worth.", "As dívidas são subtraídas do patrimônio líquido."),
 ];
 
 const CA_PDF: &[(&str, &str)] = &[
@@ -6977,6 +7235,10 @@ const CA_PDF: &[(&str, &str)] = &[
     ("Holdings", "Posicions"),
     ("Worth", "Valor"),
     ("Activity", "Moviments"),
+    ("Card credit", "Saldo a favor"),
+    ("Debt ratio", "Ràtio de deute"),
+    ("{percent}% of assets", "{percent}% dels actius"),
+    ("Debts are subtracted from net worth.", "Els deutes es resten del patrimoni net."),
 ];
 
 fn export_from_tool(app: &AppHandle, finance: &Finance, args: &Value) -> Result<Option<Value>, String> {
@@ -7379,6 +7641,76 @@ mod tests {
     }
 
     #[test]
+    fn debts_subtract_from_net_worth_everywhere() {
+        let mut store = Store::default();
+        store.default_currency = "CHF".into();
+        store.locale_hint = "en".into();
+        let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 21).unwrap());
+        account_from_tool(&mut store, &json!({"name": "Cash", "kind": "bank", "balance": "18.44", "currency": "CHF"}), &clock).unwrap();
+        account_from_tool(&mut store, &json!({"name": "Funds", "kind": "investment", "balance": "5554.97", "currency": "CHF", "investmentType": "custom"}), &clock).unwrap();
+        account_from_tool(&mut store, &json!({"name": "Card", "kind": "credit_card", "balance": "2072.66", "currency": "CHF"}), &clock).unwrap();
+        let rows = crate::finance_schedule::worth_rows(&worth_account_list(&store, "CHF", 5_000));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].net_minor, 1_844 + 555_497 - 207_266);
+        assert_ne!(rows[0].net_minor, 1_844 + 555_497 + 207_266);
+        let board = widget_board(&store, clock.today, 5_000);
+        assert_eq!(board.net.minor, Some(1_844 + 555_497 - 207_266));
+        assert_eq!(board.net.text, "3500.75 CHF");
+        let request = PdfRequest { period: "all".into(), account: String::new(), category: String::new(), currency: String::new(), direction: String::new(), from: String::new(), to: String::new(), locale: "en".into() };
+        let pages = pdf_pages(&store, &request, clock.today, "en");
+        let donut = pages.iter().find(|page| page.title == "Money, debts, and investments").expect("donut page");
+        match &donut.chart {
+            Some(crate::finance_pdf::Chart::Donut { center_value, slices, .. }) => {
+                assert!(center_value.contains("3500.75"), "{center_value}");
+                assert!(slices.iter().all(|slice| slice.label != "Debts"));
+                assert!(slices.iter().any(|slice| slice.label == "Money"));
+                assert!(slices.iter().any(|slice| slice.label == "Investments"));
+            }
+            _ => panic!("expected a donut"),
+        }
+        assert!(donut.numbers.iter().any(|(label, value)| label == "Debts" && value.contains("2072.66")));
+        assert!(donut.notes.iter().any(|note| note.contains("subtracted")));
+        let _guard = push_locale("en");
+        let ask = Ask { view: "summary".into(), month: String::new(), kind: String::new(), account: String::new(), direction: String::new(), recurrence: String::new(), query: String::new(), amount: String::new(), date: String::new() };
+        let spoken = speak(&store, &ask, clock.today);
+        assert!(spoken.contains("3500.75 CHF"), "{spoken}");
+        assert!(spoken.contains("2072.66 CHF"), "{spoken}");
+        assert!(!spoken.contains("7646.07"), "{spoken}");
+    }
+
+    #[test]
+    fn categories_migrate_and_a_phrase_assigns_one() {
+        let mut store = Store::default();
+        let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 21).unwrap());
+        log_from_tool(&mut store, &json!({"direction": "expense", "amount": "12.40", "currency": "CHF", "category": "Migros", "account": "Cash", "accountKind": "cash"}), &clock).unwrap();
+        store.transactions[0].notes = "Migros".into();
+        store.transactions[0].category.clear();
+        store.categories_ready = false;
+        assert!(ensure_categories(&mut store));
+        assert_eq!(store.transactions[0].category, "Uncategorized");
+        assert!(store.categories.iter().any(|category| category.name == "Uncategorized"));
+        let color = "#112233".to_string();
+        edit_category(&mut store, "create", "Groceries", "", &color, "expense", "utensils", 2).unwrap();
+        assert_eq!(store.categories.iter().find(|category| category.name == "Groceries").unwrap().color, "#112233");
+        store.transactions[0].category = "Shop".into();
+        apply_phrase(&mut store, "categorize my Migros expense as groceries", &clock).unwrap();
+        assert_eq!(store.transactions[0].category, "Groceries");
+        apply_phrase(&mut store, "create an income category Freelance", &clock).unwrap();
+        let freelance = store.categories.iter().find(|category| category.name == "Freelance").unwrap();
+        assert_eq!(freelance.kind, "income");
+        edit_category(&mut store, "merge", "Groceries", "Food", "", "expense", "", 0).unwrap();
+        assert_eq!(store.transactions[0].category, "Food");
+        assert!(store.categories.iter().all(|category| category.name != "Groceries"));
+        edit_category(&mut store, "paint", "pool", "", "#6E8B74", "", "", 0).unwrap();
+        assert_eq!(store.flow_colors.iter().find(|row| row.id == "pool").unwrap().color, "#6E8B74");
+        let restored = serde_json::to_string(&store.categories).unwrap();
+        assert!(restored.contains("Freelance"));
+        assert!(restored.contains("#112233") || restored.contains("Food"));
+        let colors = serde_json::to_string(&store.flow_colors).unwrap();
+        assert!(colors.contains("#6E8B74"));
+    }
+
+    #[test]
     fn phrases_program_schedules_without_mixing_money() {
         let mut store = Store::default();
         let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 12).unwrap());
@@ -7476,6 +7808,10 @@ mod tests {
             "Holdings",
             "Worth",
             "Activity",
+            "Card credit",
+            "Debt ratio",
+            "{percent}% of assets",
+            "Debts are subtracted from net worth.",
         ];
         for locale in ["es", "de", "pt", "ca-ES-valencia"] {
             for key in keys {

@@ -13,6 +13,8 @@ export interface LegendRow {
   note?: string;
   className?: string;
   unpriced?: boolean;
+  /** Shown in the list, left out of the percentage. Debts must not take a share of a net-worth total. */
+  omitShare?: boolean;
 }
 
 export function useChartVisibility(chartId: string, items: ChartItem[]) {
@@ -126,14 +128,14 @@ export function Legend({
   setPainting?: (id: string) => void;
 }) {
   const t = useT();
-  const visible = rows.filter((row) => !hidden.has(row.id) && !row.unpriced && row.amountMinor != null);
+  const visible = rows.filter((row) => !hidden.has(row.id) && !row.unpriced && row.amountMinor != null && !row.omitShare);
   const total = visible.reduce((sum, row) => sum + (row.amountMinor || 0), 0);
   return (
     <div className="mt-2">
       <ul className="space-y-1">
         {rows.map((row) => {
           const off = hidden.has(row.id);
-          const rawShare = !off && row.amountMinor != null && total > 0 ? (row.amountMinor / total) * 100 : null;
+          const rawShare = !off && !row.omitShare && row.amountMinor != null && total > 0 ? (row.amountMinor / total) * 100 : null;
           const share = rawShare == null ? null : rawShare > 0 && rawShare < 0.1 ? "<0.1" : Math.round(rawShare * 10) / 10;
           return (
             <li key={row.id} className={off ? "opacity-40 transition-opacity" : "transition-opacity"}>
@@ -195,31 +197,47 @@ export function Donut({
   rows,
   hidden,
   center,
+  caption,
+  debtRatio,
 }: {
   rows: Array<{ id: string; label: string; color: string; amountMinor: number | null }>;
   hidden: Set<string>;
   center: string;
+  caption?: string;
+  /** Share of assets that debts represent. Drawn as a rose ring outside the asset donut. */
+  debtRatio?: number;
 }) {
   const slices = rows.filter((row) => !hidden.has(row.id) && (row.amountMinor || 0) > 0);
   const total = slices.reduce((sum, row) => sum + (row.amountMinor || 0), 0) || 1;
   let angle = -90;
   const paths = slices.map((slice) => {
     const sweep = ((slice.amountMinor || 0) / total) * 360;
-    const path = arc(100, 100, 78, 48, angle, angle + Math.max(sweep, 0.8));
+    const path = arc(100, 100, 72, 46, angle, angle + Math.max(sweep, 0.8));
     angle += sweep;
     return { ...slice, path };
   });
+  const ratio = debtRatio != null && debtRatio > 0 ? Math.min(debtRatio, 1) : 0;
+  const label = caption ? `${caption} ${center}` : center;
   return (
-    <svg viewBox="0 0 200 200" className="mx-auto block aspect-square w-full max-w-[280px]" role="img" aria-label={center}>
-      {paths.map((slice) => (
-        <path key={slice.id} d={slice.path} fill={slice.color} className="fin-slice">
-          <title>{slice.label}</title>
-        </path>
-      ))}
-      <text x="100" y="104" textAnchor="middle" fill="currentColor" fontSize="13" className="fin-num">
-        {center}
-      </text>
-    </svg>
+    <div className="relative mx-auto aspect-square w-full max-w-[280px]">
+      <svg viewBox="0 0 200 200" className="block h-full w-full" role="img" aria-label={label}>
+        {ratio > 0 ? (
+          <>
+            <path d={arc(100, 100, 94, 82, -90, 269.2)} fill="var(--fin-line)" />
+            <path d={arc(100, 100, 94, 82, -90, -90 + Math.max(ratio * 360, 1.2))} fill="var(--rose)" />
+          </>
+        ) : null}
+        {paths.map((slice) => (
+          <path key={slice.id} d={slice.path} fill={slice.color} className="fin-slice">
+            <title>{slice.label}</title>
+          </path>
+        ))}
+      </svg>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-12 text-center">
+        {caption ? <span className="text-[13px] leading-4">{caption}</span> : null}
+        <span className="fin-num text-[15px] leading-5 break-words">{center}</span>
+      </div>
+    </div>
   );
 }
 

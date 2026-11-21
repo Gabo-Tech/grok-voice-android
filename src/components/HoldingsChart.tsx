@@ -12,7 +12,9 @@ import {
 } from "@/lib/financeLedger";
 import { bookFromStatus } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
-import { changeOf, rangeStart, seriesFor, type RangeId, type ValuePoint } from "@/lib/portfolio";
+import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
+import { inBounds } from "@/lib/chartPeriod";
+import { changeOf, seriesFor, type ValuePoint } from "@/lib/portfolio";
 import { fill, useT } from "@/lib/i18n";
 
 const PREF_KEY = "grok-finance-allocation";
@@ -51,7 +53,8 @@ export function HoldingsChart({
   const t = useT();
   const [pref, setPref] = useState(readPref);
   const [painting, setPainting] = useState("");
-  const [range, setRange] = useState<RangeId>("3m");
+  const portfolioPeriod = useChartPeriod("portfolio", "3m");
+  const holdingsPeriod = useChartPeriod("holdings");
   const [focus, setFocus] = useState("");
   const book = useMemo(() => bookFromStatus(fx), [fx]);
   const nowMs = useMemo(() => Date.now(), [accounts, fx, prices, display]);
@@ -122,7 +125,8 @@ export function HoldingsChart({
     }
   };
   const palette = ALLOCATION_PRESETS[pref.preset];
-  const from = rangeStart(new Date().toISOString().slice(0, 10), range);
+  const historyIn = history.filter((point) => inBounds(point.date, portfolioPeriod.bounds.start, portfolioPeriod.bounds.end));
+  const from = "";
   const portfolioItems = useMemo(() => {
     const names = new Map<string, { name: string; className: string }>();
     for (const point of history) names.set(point.accountId, { name: point.name, className: point.className || "" });
@@ -130,20 +134,20 @@ export function HoldingsChart({
   }, [history]);
   const portVis = useChartVisibility("portfolio", [{ id: "total", label: t("Portfolio value"), className: "total" }, ...portfolioItems]);
   const shownIds = portfolioItems.filter((item) => !portVis.hidden.has(item.id)).map((item) => item.id);
-  const totalSeries = seriesFor(history, portfolioItems.map((item) => item.id), from);
+  const totalSeries = seriesFor(historyIn, portfolioItems.map((item) => item.id), from);
   const change = changeOf(totalSeries);
   const lineSeries = [
     portVis.hidden.has("total") ? null : { id: "total", color: "var(--gold)", points: totalSeries },
     ...shownIds.map((id, index) => ({
       id,
       color: palette[index % palette.length],
-      points: seriesFor(history, [id], from),
+      points: seriesFor(historyIn, [id], from),
     })),
   ].filter((row): row is { id: string; color: string; points: { date: string; valueMinor: number }[] } => Boolean(row && row.points.length));
   const portRows: LegendRow[] = [
     { id: "total", label: t("Portfolio value"), color: "var(--gold)", amountMinor: totalSeries.length ? totalSeries[totalSeries.length - 1].valueMinor : null, currency: code, className: "total" },
     ...portfolioItems.map((item, index) => {
-      const points = seriesFor(history, [item.id], from);
+      const points = seriesFor(historyIn, [item.id], from);
       const last = points.length ? points[points.length - 1] : undefined;
       return {
         id: item.id,
@@ -162,6 +166,8 @@ export function HoldingsChart({
     <div className="space-y-4">
       <ChartCard title={t("Holdings chart")} action={<PaletteMenu value={pref.preset} onChange={(preset) => save({ ...pref, preset })} />}>
         <p className="fin-muted text-[13px] leading-4">{fill("By value in {code}.", { code: code || "—" })}</p>
+        <p className="fin-muted text-[13px] leading-4">{t("Latest balances. This period does not rewrite them.")}</p>
+        <ChartPeriodBar period={holdingsPeriod.period} onChange={holdingsPeriod.setPeriod} />
         <div className="fin-seg mt-2" role="group" aria-label={t("Holdings chart")}>
           <button type="button" aria-pressed={pref.group === "item"} onClick={() => save({ ...pref, group: "item" })}>{t("By item")}</button>
           <button type="button" aria-pressed={pref.group === "class"} onClick={() => save({ ...pref, group: "class" })}>{t("By class")}</button>
@@ -192,13 +198,7 @@ export function HoldingsChart({
 
       <ChartCard title={t("Portfolio value")}>
         <p className="fin-muted text-[13px] leading-4">{fill("In {code}. History starts when a real price is saved.", { code: code || "—" })}</p>
-        <div className="fin-seg mt-2" role="group" aria-label={t("Portfolio value")}>
-          {(["1m", "3m", "1y", "all"] as RangeId[]).map((id) => (
-            <button key={id} type="button" aria-pressed={range === id} onClick={() => setRange(id)}>
-              {t(rangeLabel(id))}
-            </button>
-          ))}
-        </div>
+        <ChartPeriodBar period={portfolioPeriod.period} onChange={portfolioPeriod.setPeriod} />
         {totalSeries.length === 0 ? (
           <p className="mt-3 text-[15px] leading-5">{t("History starts when a real price is saved.")}</p>
         ) : (
@@ -228,9 +228,3 @@ function sliceLabel(label: string, other: boolean, t: (english: string) => strin
   return label;
 }
 
-function rangeLabel(id: RangeId): string {
-  if (id === "1m") return "1 month";
-  if (id === "3m") return "3 months";
-  if (id === "1y") return "1 year";
-  return "All time";
-}
