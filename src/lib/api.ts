@@ -463,6 +463,7 @@ export interface FinanceSnapshot {
   categories: FinanceCategory[];
   fx?: FinanceFx;
   prices?: FinancePrices;
+  history?: import("@/lib/portfolio").ValuePoint[];
 }
 
 export interface FinancePriceQuote {

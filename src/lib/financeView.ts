@@ -14,7 +14,7 @@ export function isDebt(kind: string): boolean {
 
 export function groupOf(kind: string): "money" | "debt" | "investment" {
   if (isDebt(kind)) return "debt";
-  if (kind === "investment") return "investment";
+  if (kind === "investment" || kind === "other") return "investment";
   return "money";
 }
 

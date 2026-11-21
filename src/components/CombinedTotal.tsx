@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 /** Quiet line under a combined amount. A stale book is labeled. This is not a rate list. */
 function rateCaption(head: Headline, t: (english: string) => string): string {
-  if (head.source === "identity") return head.currency;
+  if (head.source === "identity") return "";
   const bits: string[] = [];
   if (head.source === "manual") bits.push(t("Using your rate"));
   bits.push(fill("Together in {code}", { code: head.currency }));
@@ -51,7 +51,7 @@ export function CombinedHeadline({
       <p className={cn("fin-num leading-none font-medium break-words", size, signed === "in" && "fin-in", signed === "out" && "fin-out")}>
         {formatMoney(head.amountMinor, head.currency)}
       </p>
-      <p className="fin-muted mt-2 text-sm leading-5 break-words">{rateCaption(head, t)}</p>
+      {rateCaption(head, t) ? <p className="fin-muted mt-1 text-[13px] leading-5 break-words">{rateCaption(head, t)}</p> : null}
       <NativeAside parts={parts} display={display} />
     </div>
   );
@@ -71,19 +71,18 @@ export function StaticHeadline({ head, size = "text-4xl" }: { head: Headline; fe
   return (
     <div className="mt-4 max-w-full">
       <p className={cn("fin-num leading-none font-medium break-words", size, head.amountMinor < 0 && "fin-out")}>{formatMoney(head.amountMinor, head.currency)}</p>
-      <p className="fin-muted mt-2 text-sm leading-5 break-words">{rateCaption(head, t)}</p>
+      {rateCaption(head, t) ? <p className="fin-muted mt-1 text-[13px] leading-5 break-words">{rateCaption(head, t)}</p> : null}
     </div>
   );
 }
 
 function NativeAside({ parts, display }: { parts: MoneyPart[]; display: string }) {
-  const t = useT();
   const rows = nativeParts(parts);
   if (rows.length === 0) return null;
   if (rows.length === 1 && rows[0].currency === display.trim().toUpperCase()) return null;
   return (
-    <p className="fin-muted mt-2 text-sm leading-5 break-words">
-      {t("In native amounts")} · {rows.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ")}
+    <p className="fin-muted mt-1 text-[13px] leading-5 break-words">
+      {rows.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ")}
     </p>
   );
 }

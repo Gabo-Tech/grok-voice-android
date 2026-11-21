@@ -434,10 +434,10 @@ assert.equal(settings.includes("Manual rates"), true);
 assert.equal(settings.includes("Use this instead of the live rate"), true);
 assert.equal(settings.includes('inputMode="decimal"'), true);
 
-assert.deepEqual(financePanels("overview"), ["net-worth", "expenses", "income", "card-debt", "result", "upcoming"]);
-assert.deepEqual(financePanels("activity"), ["expenses", "income", "activity"]);
-assert.deepEqual(financePanels("expenses"), ["expenses", "income", "activity"]);
-assert.deepEqual(financePanels("income"), ["income", "activity", "coming-income", "payouts"]);
+assert.deepEqual(financePanels("overview"), ["net-worth", "month", "next"]);
+assert.deepEqual(financePanels("activity"), ["activity"]);
+assert.deepEqual(financePanels("expenses"), ["activity"]);
+assert.deepEqual(financePanels("income"), ["activity", "coming-income", "payouts"]);
 assert.deepEqual(financePanels("plan"), ["coming-expenses", "coming-income", "payouts"]);
 let panelAt = -1;
 for (const id of financePanels("overview")) {
@@ -446,9 +446,11 @@ for (const id of financePanels("overview")) {
   assert.ok(next > panelAt, token);
   panelAt = next;
 }
-assert.ok(dashboard.indexOf('t("Net worth")') < dashboard.indexOf('t("This month\'s expenses")'));
-assert.ok(dashboard.indexOf('t("This month\'s expenses")') < dashboard.indexOf('t("This month\'s income")'));
-assert.ok(dashboard.indexOf('t("This month\'s income")') < dashboard.indexOf('t("This month\'s result")'));
+assert.ok(dashboard.includes('t("Net worth")'));
+assert.ok(dashboard.includes('t("This month")'));
+assert.ok(dashboard.includes('t("Next 30 days")'));
+assert.ok(dashboard.includes('t("Card payments")'));
+assert.ok(dashboard.includes("monthCash"));
 assert.ok(dashboard.includes("financePanels(place)"));
 assert.equal(dashboard.includes("LiveRates"), false);
 

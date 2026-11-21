@@ -21,7 +21,7 @@ import {
   type MoneyPart,
   type RateBook,
 } from "@/lib/financeMath";
-import { flowParts as flowPartsOf, monthActivity, netWorthParts } from "@/lib/financeLedger";
+import { flowParts as flowPartsOf, monthActivity, monthCash, netWorthParts, type CashTx } from "@/lib/financeLedger";
 import { formatMoney } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
 import { financePanels, type FinancePlace } from "@/lib/financeTabs";
@@ -253,13 +253,33 @@ export function FinanceDashboard({
             <FocusChip label={t("Invested")} onClick={() => onFocus("invested")} />
             <FocusChip label={t("Cash & savings")} onClick={() => onFocus("cash")} />
           </div>
-          {flowParts.length > 0 ? (
-            <div className="mt-4 border-t border-border pt-3">
-              <p className="text-sm font-medium">{t("Cash flow")}</p>
-              <p className="fin-muted mt-1 text-sm leading-5">{t("From income and expenses this month. A card payment is not included.")}</p>
-              <CombinedHeadline parts={flowParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-2xl" tone="auto" />
+          {cardDebtParts.length > 0 ? (
+            <div className="mt-3">
+              <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Card debt")}</p>
+              <CombinedHeadline parts={cardDebtParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-2xl" tone="out" />
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {panels.includes("month") ? (
+        <div data-finance-panel="month">
+          <MonthSection txs={txs} accounts={accounts} display={display} book={book} nowMs={nowMs} busy={finance.busy} bounds={bounds} />
+        </div>
+      ) : null}
+
+      {panels.includes("next") ? (
+        <section className="fin-panel fin-card" data-finance-panel="next">
+          <h2 className="fin-kicker">{t("Next 30 days")}</h2>
+          <p className="fin-muted mt-2 text-[13px] leading-5">{t("Bills from cash or a bank, and card payments that are due.")}</p>
+          <button type="button" className="mt-3 block min-h-11 w-full text-left" onClick={openExpenses}>
+            <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Due")}</p>
+            {comingOut.length === 0 ? <p className="fin-muted mt-1 text-[13px]">{t("Nothing due in the next 30 days.")}</p> : <CombinedHeadline parts={comingOutParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="out" />}
+          </button>
+          <button type="button" className="mt-2 block min-h-11 w-full text-left" onClick={openIncome}>
+            <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Coming in")}</p>
+            {comingIn.length === 0 ? <p className="fin-muted mt-1 text-[13px]">{t("Nothing due in the next 30 days.")}</p> : <CombinedHeadline parts={listed(comingIn)} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="in" />}
+          </button>
         </section>
       ) : null}
 
@@ -281,7 +301,7 @@ export function FinanceDashboard({
         </section>
       ) : null}
 
-      {place === "expenses" && panels.includes("activity") ? children : null}
+      {place === "activity" && panels.includes("activity") ? children : null}
 
       {panels.includes("coming-expenses") ? (
         <Coming
@@ -369,7 +389,7 @@ export function FinanceDashboard({
       {panels.includes("result") ? (
         <section className="fin-panel" data-finance-panel="result">
           <h2 className="fin-kicker">{t("This month's result")}</h2>
-          <p className="fin-muted mt-2 text-sm leading-5">{t("Income minus expenses, including charges on a card. A card payment is not included.")}</p>
+          <p className="fin-muted mt-2 text-[13px] leading-5">{t("Income minus expenses. A charge on a card counts once.")}</p>
           {flow.length === 0 ? (
             <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
           ) : (
@@ -592,6 +612,99 @@ function ComingLine({
           {t("Skip")}
         </button>
       </div>
+    </div>
+  );
+}
+
+function MonthSection({
+  txs,
+  accounts,
+  display,
+  book,
+  nowMs,
+  busy,
+  bounds,
+}: {
+  txs: FinanceTransaction[];
+  accounts: FinanceAccount[];
+  display: string;
+  book: RateBook | null;
+  nowMs: number;
+  busy: boolean;
+  bounds: { start: string; end: string };
+}) {
+  const t = useT();
+  const kind = (id: string) => accounts.find((account) => account.id === id)?.kind || "";
+  const rows: CashTx[] = txs
+    .filter((tx) => tx.date >= bounds.start && tx.date <= bounds.end)
+    .map((tx) => ({
+      currency: tx.currency,
+      direction: tx.direction,
+      amountMinor: tx.amountMinor,
+      date: tx.date,
+      accountKind: kind(tx.accountId),
+      fromKind: kind(tx.fromAccountId),
+    }));
+  const lines = monthCash(rows, bounds.start, bounds.end);
+  const parts = (pick: (line: (typeof lines)[number]) => number) => lines.flatMap((line) => (pick(line) ? [{ amountMinor: pick(line), currency: line.currency }] : []));
+  const income = parts((line) => line.income);
+  const expenses = parts((line) => line.expenses);
+  const cards = parts((line) => line.cardPayments);
+  const debts = parts((line) => line.debtPayments);
+  const result = parts((line) => line.result);
+  const flow = parts((line) => line.cashFlow);
+  if (lines.length === 0) {
+    return (
+      <section className="fin-panel fin-card">
+        <h2 className="fin-kicker">{t("This month")}</h2>
+        <p className="mt-3 text-[15px] leading-5">{t("Nothing recorded this month")}</p>
+      </section>
+    );
+  }
+  return (
+    <section className="fin-panel fin-card">
+      <h2 className="fin-kicker">{t("This month")}</h2>
+      <p className="fin-muted mt-2 text-[13px] leading-5">{t("Income minus expenses. A charge on a card counts once.")}</p>
+      <Line label={t("Income")} parts={income} display={display} book={book} nowMs={nowMs} busy={busy} />
+      <Line label={t("Expenses")} parts={expenses} display={display} book={book} nowMs={nowMs} busy={busy} />
+      {cards.length > 0 ? <Line label={t("Card payments")} hint={t("Cash paid to a card. Not a second expense.")} parts={cards} display={display} book={book} nowMs={nowMs} busy={busy} /> : null}
+      {debts.length > 0 ? <Line label={t("Debt payments")} hint={t("Cash paid toward a loan. Not a second expense.")} parts={debts} display={display} book={book} nowMs={nowMs} busy={busy} /> : null}
+      <div className="mt-3 border-t border-border pt-3">
+        <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Result")}</p>
+        <CombinedHeadline parts={result} display={display} book={book} nowMs={nowMs} busy={busy} size="text-4xl" tone="auto" />
+      </div>
+      <div className="mt-2">
+        <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Cash flow")}</p>
+        <p className="fin-muted text-[13px] leading-5">{t("Money that left cash or a bank. A card charge counts when the card is paid.")}</p>
+        <CombinedHeadline parts={flow} display={display} book={book} nowMs={nowMs} busy={busy} size="text-2xl" tone="auto" />
+      </div>
+    </section>
+  );
+}
+
+function Line({
+  label,
+  hint,
+  parts,
+  display,
+  book,
+  nowMs,
+  busy,
+}: {
+  label: string;
+  hint?: string;
+  parts: MoneyPart[];
+  display: string;
+  book: RateBook | null;
+  nowMs: number;
+  busy: boolean;
+}) {
+  if (parts.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-[13px] font-extrabold tracking-wide uppercase">{label}</p>
+      {hint ? <p className="fin-muted text-[13px] leading-4">{hint}</p> : null}
+      <CombinedHeadline parts={parts} display={display} book={book} nowMs={nowMs} busy={busy} size="text-2xl" />
     </div>
   );
 }
