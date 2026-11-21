@@ -8,8 +8,8 @@ let seq = 0;
 let applying = 0;
 let installed = false;
 
-type Snap = { canBack: boolean; label: string };
-let snap: Snap = { canBack: false, label: "Back" };
+type Snap = { canBack: boolean; showBack: boolean; label: string };
+let snap: Snap = { canBack: false, showBack: false, label: "Back" };
 let action: BarAction | null = null;
 const listeners = new Set<() => void>();
 const actionListeners = new Set<() => void>();
@@ -22,8 +22,10 @@ type NavWindow = Window & {
 function publish() {
   const top = steps[steps.length - 1];
   const canBack = overlays.length > 0 || steps.length > 0;
+  // Tab switches stay in the gesture history. The button is only for a sub page.
+  const showBack = overlays.length > 0 || (top != null && top.tag !== "tab");
   const label = overlays.length > 0 ? "Back" : (top?.label ?? "Back");
-  snap = { canBack, label };
+  snap = { canBack, showBack, label };
   listeners.forEach((fn) => fn());
   actionListeners.forEach((fn) => fn());
   try {

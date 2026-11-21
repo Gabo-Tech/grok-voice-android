@@ -748,6 +748,14 @@ function worthBucket(kind: string): "cash" | "invest" | "debt" {
 }
 
 /** Point-in-time net worth from stated balances. Currencies stay apart. Investments use the entered value. */
+/** Prefer a resolved market worth in its currency. Otherwise the native balance. */
+export function worthAccount<T extends WorthAccount & { marketWorthMinor?: number | null; marketWorthCurrency?: string }>(account: T): WorthAccount {
+  if (account.marketWorthMinor != null && account.marketWorthCurrency) {
+    return { kind: account.kind, currency: account.marketWorthCurrency, shownBalanceMinor: account.marketWorthMinor };
+  }
+  return { kind: account.kind, currency: account.currency, shownBalanceMinor: account.shownBalanceMinor };
+}
+
 export function netWorth(accounts: WorthAccount[]): WorthRow[] {
   const by = new Map<string, WorthRow>();
   for (const account of accounts) {

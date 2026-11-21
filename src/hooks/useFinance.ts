@@ -41,6 +41,7 @@ export function useFinance() {
   useEffect(() => {
     load();
     if (!inApp) return;
+    void api.refreshFinanceRates(false).then((next) => setSnapshot(next)).catch(() => {});
     let unlisten: (() => void) | undefined;
     void listen("voice://finance", () => load()).then((fn) => {
       unlisten = fn;
@@ -238,6 +239,21 @@ export function useFinance() {
 
   const exportPdf = useCallback((filter: FinancePdfRequest) => api.exportFinancePdf(filter), []);
 
+  const setPriceProvider = useCallback(
+    (id: string, enabled: boolean) => {
+      if (!inApp) {
+        setSnapshot((current) => {
+          const disabled = (current.prices?.disabled || []).filter((row) => row.toLowerCase() !== id.toLowerCase());
+          if (!enabled) disabled.push(id);
+          return { ...current, prices: { quotes: current.prices?.quotes || [], manual: current.prices?.manual || [], disabled } };
+        });
+        return;
+      }
+      void run(() => api.setFinancePriceProvider(id, enabled));
+    },
+    [inApp, run],
+  );
+
   return {
     snapshot,
     error,
@@ -256,6 +272,7 @@ export function useFinance() {
     scheduleAction,
     refreshRates,
     setManualRate,
+    setPriceProvider,
     exportPdf,
     setError,
   };

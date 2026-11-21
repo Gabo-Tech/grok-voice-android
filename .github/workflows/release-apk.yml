@@ -146,7 +146,26 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build arm64 release APK
-        run: pnpm tauri android build --target aarch64 --apk
+        run: |
+          set -euo pipefail
+          log="${RUNNER_TEMP}/apk-build.log"
+          for attempt in 1 2 3; do
+            set +e
+            pnpm tauri android build --target aarch64 --apk >"$log" 2>&1
+            code=$?
+            set -e
+            cat "$log"
+            if [ "$code" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ] && grep -Eq "429|Too Many Requests|Could not GET|Could not resolve|Could not find org.jetbrains.kotlin|Read timed out|Connection reset" "$log"; then
+              echo "Dependency download failed (attempt ${attempt}). Waiting before retry."
+              rm -rf src-tauri/gen/android/.gradle src-tauri/gen/android/buildSrc/.gradle
+              sleep $((attempt * 45))
+              continue
+            fi
+            exit "$code"
+          done
 
       - name: Sign and verify
         env:

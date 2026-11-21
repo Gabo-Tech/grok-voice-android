@@ -118,8 +118,14 @@ pub struct Account {
     /// Decimal count when worth is units times a stated price. Empty for a stated worth.
     #[serde(default)]
     pub units: String,
+    /// `troy_oz`, `gram`, `kilogram`, `share`, or `coin`. Empty until a holding is linked.
+    #[serde(default)]
+    pub measure_unit: String,
     #[serde(default)]
     pub price_minor: Option<i64>,
+    /// When true, `price_minor` replaces the live quote. Otherwise it is only a fallback.
+    #[serde(default)]
+    pub price_override: bool,
     /// Days before the due date to remind. Missing means two days, and again on the day.
     #[serde(default)]
     pub lead_days: Option<u32>,
@@ -245,6 +251,8 @@ struct Store {
     categories: Vec<Category>,
     #[serde(default)]
     fx: crate::finance_fx::FxBook,
+    #[serde(default)]
+    prices: crate::finance_prices::PriceBook,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -267,6 +275,8 @@ pub struct Bundle {
     pub categories: Vec<Category>,
     #[serde(default)]
     pub fx: crate::finance_fx::FxBook,
+    #[serde(default)]
+    pub prices: crate::finance_prices::PriceBook,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -275,6 +285,34 @@ pub struct AccountView {
     #[serde(flatten)]
     pub account: Account,
     pub shown_balance_minor: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub market_worth_minor: Option<i64>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub market_worth_currency: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub market_price: Option<f64>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub market_price_currency: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub market_source: String,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub market_fetched_ms: i64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub market_stale: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub market_estimated: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub market_unit: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub market_symbol: String,
+}
+
+fn is_zero(value: &i64) -> bool {
+    *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -314,6 +352,7 @@ pub struct Snapshot {
     pub default_currency: String,
     pub categories: Vec<Category>,
     pub fx: FxStatus,
+    pub prices: crate::finance_prices::PriceBook,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -362,8 +401,15 @@ pub struct AccountDraft {
     pub investment_type: String,
     #[serde(default)]
     pub units: String,
+    /// `troy_oz`, `gram`, `kilogram`, `share`, or `coin`.
+    #[serde(default)]
+    pub unit: String,
     #[serde(default)]
     pub unit_price: String,
+    #[serde(default)]
+    pub price_override: bool,
+    #[serde(default)]
+    pub touch_override: bool,
     /// `stated` or `units`. Empty leaves the saved mode alone on a partial update.
     #[serde(default)]
     pub value_mode: String,
@@ -546,6 +592,7 @@ impl Finance {
             default_currency: store.default_currency.clone(),
             categories: store.categories.clone(),
             fx: store.fx.clone(),
+            prices: store.prices.clone(),
         }
     }
 
@@ -557,6 +604,7 @@ impl Finance {
         store.default_currency = bundle.default_currency;
         store.categories = bundle.categories;
         store.fx = bundle.fx;
+        store.prices = bundle.prices;
         self.commit(app, store).map(|_| ())
     }
 
@@ -648,20 +696,30 @@ impl Finance {
         })
     }
 
+    pub fn set_price_provider(&self, app: &AppHandle, id: &str, enabled: bool) -> Result<Snapshot, String> {
+        let mut store = self.lock().clone();
+        crate::finance_prices::set_provider(&mut store.prices, id, enabled);
+        self.commit(app, store)
+    }
+
+    pub fn set_manual_price(&self, app: &AppHandle, symbol: &str, price: &str, currency: &str, override_live: bool) -> Result<Snapshot, String> {
+        let mut store = self.lock().clone();
+        if price.trim().is_empty() {
+            store.prices.manual.retain(|row| !row.symbol.eq_ignore_ascii_case(symbol));
+        } else {
+            let value: f64 = price.trim().replace(',', ".").parse().map_err(|_| "The price has to be a number above zero.".to_string())?;
+            crate::finance_prices::upsert_manual(&mut store.prices, symbol, value, currency, &store.fx.as_of, override_live)?;
+        }
+        self.commit(app, store)
+    }
+
     pub fn refresh_rates(&self, app: &AppHandle, force: bool) -> Result<Snapshot, String> {
-        let store = self.lock().clone();
-        let now_ms = Local::now().timestamp_millis();
-        if !crate::finance_fx::needs_live_fetch(&store.fx, now_ms, force) {
+        let mut store = self.lock().clone();
+        let changed = price_store(app, &mut store, force, force);
+        if !changed {
             return Ok(snapshot_of(&store, &currency_locale(app, &store), Local::now().date_naive()));
         }
-        match crate::finance_fx::fetch_book(&store.fx, now_ms) {
-            Ok(book) => {
-                let mut store = store;
-                store.fx = book;
-                self.commit(app, store)
-            }
-            Err(err) => Err(err),
-        }
+        self.commit(app, store)
     }
 
     /// Unsettled finance occurrences inside [start, end). Reminders stay on their own alarms.
@@ -906,7 +964,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "save_account",
-            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. On a credit card, balance is the amount owed right now and can be updated any time, including zero and a negative credit. Pass -1393.65, or 1393.65 credit, or 200 in credit. That sets the statement balance directly: it is not income, not an expense, and it does not move a funding account. units and unitPrice are a stated count times a stated price, such as 2 at 50 CHF. currency may be fiat or a crypto ticker such as BTC, ETH, XMR, SOL, or DOGE. A crypto balance is units of that currency and can be spent or can receive income. investmentType is stock, fund, crypto, property, collectible, stake, custom, or a short label. A custom asset is kind investment with the worth they stated. That worth is their figure, not an exchange rate. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN. lastFour is only four digits. creditLimit, dueDay, and statementDay are for a credit card. Do not turn a loan or an investment into a card unless changeKind is true because they said to change that same nickname. Spacing, hyphens, and a small typo still select that same nickname, so Swiss card updates Swisscard instead of creating another card. A new account is created only when no saved name matches.",
+            "Save or update a bank, cash, card, loan, other debt, or investment the user described. Match the exact nickname. Never merge different kinds that only share part of a name, such as ZKB and ZKB credit card. kind is bank, cash, credit_card, loan, other_debt, investment, or other. changeKind true only when they explicitly change the kind of that same nickname. balance or worth is only a figure they stated. On a credit card, balance is the amount owed right now and can be updated any time, including zero and a negative credit. Pass -1393.65, or 1393.65 credit, or 200 in credit. That sets the statement balance directly: it is not income, not an expense, and it does not move a funding account. units keeps every decimal, such as 2.969859854727, and unit is troy_oz, gram, kilogram, share, or coin. Ounces of metal are troy ounces. phrase may be the whole sentence, such as 5 ounces of silver, 10 grams of gold, 2.5 shares of Tesla, half a share of VWCE, or 16.46 ZANO. unitPrice is only a price they stated. If the result includes a market worth, say that worth and its source. Do not say a price is missing when that worth is present. currency may be fiat or a crypto ticker such as BTC, ETH, XMR, SOL, or DOGE. A crypto balance is units of that currency and can be spent or can receive income. investmentType is stock, fund, crypto, property, collectible, stake, custom, or a short label. A custom asset is kind investment with the worth they stated. That worth is their figure, not an exchange rate. A later price or worth replaces only what they stated. currency when they name one; otherwise that account's currency, or the Finance default. defaultCurrency sets that default and can be sent alone, for example CHF. color is a hex color such as #E25B45. investmentType is stock, fund, crypto, or custom. newName renames that nickname. leadDays is how many days before a due date to remind them in this app. Do not invent a balance, a price, or an exchange rate. Never store a card number, account number, or PIN. lastFour is only four digits. creditLimit, dueDay, and statementDay are for a credit card. Do not turn a loan or an investment into a card unless changeKind is true because they said to change that same nickname. Spacing, hyphens, and a small typo still select that same nickname, so Swiss card updates Swisscard instead of creating another card. A new account is created only when no saved name matches.",
             json!({
                 "type": "object",
                 "properties": {
@@ -926,7 +984,10 @@ pub fn tool_definitions() -> Value {
                     "color": { "type": "string" },
                     "investmentType": { "type": "string" },
                     "units": { "type": "string" },
+                    "unit": { "type": "string" },
                     "unitPrice": { "type": "string" },
+                    "phrase": { "type": "string" },
+                    "priceOverride": { "type": "boolean" },
                     "newName": { "type": "string" },
                     "changeKind": { "type": "boolean" },
                     "defaultCurrency": { "type": "string" },
@@ -942,7 +1003,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "list_finance",
-            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's book first. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result. view activity, transactions, or search returns each transaction id, date, amount, currency, category, and account. amount, date, query, and account filter that list. transactionCount on an account is how many transactions are attached. Do not say there are none unless that count is zero or transactions is empty.",
+            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's rates and holding prices. Speak a holding's market worth and its source when the detail includes them. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result. view activity, transactions, or search returns each transaction id, date, amount, currency, category, and account. amount, date, query, and account filter that list. transactionCount on an account is how many transactions are attached. Do not say there are none unless that count is zero or transactions is empty.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1067,9 +1128,7 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         return export_from_tool(app, &finance, args);
     }
     if name == "list_finance" {
-        if args["refresh"].as_bool().unwrap_or(false) {
-            let _ = finance.refresh_rates(app, true);
-        }
+        let _ = finance.refresh_rates(app, args["refresh"].as_bool().unwrap_or(false));
         let store = finance.lock().clone();
         let today = Local::now().date_naive();
         let base = args["base"].as_str().unwrap_or("").trim();
@@ -1139,7 +1198,17 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
                 rule_from_tool(&mut store, args, &clock, false)?
             }
         }
-        "save_account" => account_from_tool(&mut store, args, &clock)?,
+        "save_account" => {
+            let saved = account_from_tool(&mut store, args, &clock)?;
+            price_store(app, &mut store, false, true);
+            let extra = store
+                .accounts
+                .iter()
+                .max_by_key(|row| row.updated_ms)
+                .map(|account| worth_sentence(&store, account, clock.ms, &clock.default_currency))
+                .unwrap_or_default();
+            if extra.is_empty() { saved } else { format!("{saved} {extra}") }
+        }
         "mark_paid" => mark_paid(&mut store, args, &clock)?,
         _ => return Ok(None),
     };
@@ -2366,7 +2435,13 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
             return Ok(spoken("Default currency is {code} when you do not name one.", &[("code", &store.default_currency)]));
         }
     }
-    let name = clean_text(args["name"].as_str().unwrap_or(""), 80)?;
+    let hinted = args.get("phrase").and_then(|value| value.as_str()).and_then(crate::finance_prices::parse_holding_phrase);
+    let named = if args["name"].as_str().unwrap_or("").trim().is_empty() {
+        hinted.as_ref().map(|row| title_phrase(&row.query)).unwrap_or_default()
+    } else {
+        args["name"].as_str().unwrap_or("").to_string()
+    };
+    let name = clean_text(&named, 80)?;
     if name.is_empty() {
         return Err("An account needs a nickname.".into());
     }
@@ -2410,7 +2485,10 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
         color: args["color"].as_str().unwrap_or("").trim().to_string(),
         investment_type: args["investmentType"].as_str().unwrap_or("").trim().to_string(),
         units: amount_text(args.get("units")),
+        unit: args["unit"].as_str().unwrap_or("").trim().to_string(),
         unit_price: amount_text(args.get("unitPrice")),
+        price_override: args["priceOverride"].as_bool().unwrap_or(false),
+        touch_override: args.get("unitPrice").is_some() || args.get("priceOverride").is_some(),
         value_mode: String::new(),
         new_name: String::new(),
         lead_days: lead_arg(args),
@@ -2424,7 +2502,10 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
         edit_statement_day: false,
         edit_last_four: false,
     };
-    if args.get("units").is_some() && args.get("unitPrice").is_some() {
+    paint_holding(&mut draft, args);
+    if !draft.units.trim().is_empty() && (!draft.unit_price.trim().is_empty() || !draft.unit.trim().is_empty() || draft.investment_type == "crypto" || draft.investment_type == "stock" || draft.investment_type == "fund" || draft.investment_type == "metal") {
+        draft.value_mode = "units".into();
+    } else if args.get("units").is_some() && args.get("unitPrice").is_some() {
         draft.value_mode = "units".into();
     } else if args.get("balance").is_some() || args.get("worth").is_some() {
         draft.value_mode = "stated".into();
@@ -2641,6 +2722,11 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
             account.balance_minor = Some(worth);
             account.balance_updated_ms = clock.ms;
             account.balance_as_of = iso(clock.today);
+        } else if account.price_minor.is_none() && !account.units.is_empty() && crate::finance_fx::is_crypto(&account.currency) {
+            let minor = parse_minor_signed(&account.units, exponent(&account.currency))?;
+            account.balance_minor = Some(minor);
+            account.balance_updated_ms = clock.ms;
+            account.balance_as_of = iso(clock.today);
         }
     } else if mask.balance {
         if draft.value_mode == "stated" || mask.replace_text {
@@ -2682,6 +2768,12 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
             account.balance_updated_ms = clock.ms;
             account.balance_as_of = iso(clock.today);
         }
+    }
+    if !draft.unit.trim().is_empty() {
+        account.measure_unit = normalize_measure(&draft.unit);
+    }
+    if draft.touch_override {
+        account.price_override = draft.price_override || !draft.unit_price.trim().is_empty();
     }
     if account.currency.is_empty() {
         account.currency = clock.default_currency.clone();
@@ -2735,12 +2827,17 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
 
 fn account_detail(account: &Account) -> String {
     let mut parts = vec![spoken("Saved {name}.", &[("name", &account.name)])];
-    match account.balance_minor {
-        Some(minor) => {
-            let amount = format_minor(minor, &account.currency);
-            parts.push(spoken("Stated balance {amount}.", &[("amount", &amount)]));
+    if !account.units.trim().is_empty() {
+        let unit = measure_spoken(&account.measure_unit);
+        parts.push(spoken("Quantity {qty} {unit}.", &[("qty", &account.units), ("unit", &unit)]));
+    } else {
+        match account.balance_minor {
+            Some(minor) => {
+                let amount = format_minor(minor, &account.currency);
+                parts.push(spoken("Stated balance {amount}.", &[("amount", &amount)]));
+            }
+            None => parts.push(spoken("No balance was stated.", &[])),
         }
-        None => parts.push(spoken("No balance was stated.", &[])),
     }
     let dated = if account.kind == "investment" { account.contribution_date.as_str() } else { account.due_date.as_str() };
     if dated.is_empty() {
@@ -3081,6 +3178,7 @@ fn hydrate_store(store: &mut Store) -> bool {
     for rule in &mut store.rules {
         dirty |= hydrate_rule(rule);
     }
+    dirty |= link_holdings(store);
     dirty
 }
 
@@ -3347,7 +3445,9 @@ fn empty_account(id: String) -> Account {
         color: String::new(),
         investment_type: String::new(),
         units: String::new(),
+        measure_unit: String::new(),
         price_minor: None,
+        price_override: false,
         lead_days: None,
         credit_limit_minor: None,
         due_day: None,
@@ -3419,12 +3519,333 @@ fn step_balance(balance: i64, kind: &str, currency: &str, role: Role, direction:
     balance.saturating_add(delta)
 }
 
+fn normalize_measure(raw: &str) -> String {
+    match fold(raw).as_str() {
+        "oz" | "ozt" | "ounce" | "ounces" | "troy" | "troyoz" | "troy ounce" | "troy ounces" => "troy_oz".into(),
+        "g" | "gram" | "grams" => "gram".into(),
+        "kg" | "kilo" | "kilogram" | "kilograms" => "kilogram".into(),
+        "share" | "shares" => "share".into(),
+        "coin" | "coins" => "coin".into(),
+        other if !other.is_empty() && other.len() <= 16 => other.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn measure_spoken(unit: &str) -> String {
+    let key = match unit {
+        "troy_oz" => "troy ounces",
+        "gram" => "grams",
+        "kilogram" => "kilograms",
+        "share" => "shares",
+        "coin" => "coins",
+        _ => "",
+    };
+    if key.is_empty() { String::new() } else { spoken(key, &[]) }
+}
+
+fn paint_holding(draft: &mut AccountDraft, args: &Value) {
+    let phrase = args.get("phrase").and_then(|value| value.as_str()).unwrap_or("").trim();
+    let blob = format!("{phrase} {} {}", draft.units, draft.name);
+    let Some(parsed) = crate::finance_prices::parse_holding_phrase(phrase).or_else(|| crate::finance_prices::parse_holding_phrase(&blob)) else {
+        return;
+    };
+    if draft.units.trim().is_empty() || draft.units.chars().any(|ch| ch.is_ascii_alphabetic()) {
+        if !parsed.quantity.is_empty() {
+            draft.units = parsed.quantity;
+        }
+    }
+    if draft.unit.trim().is_empty() && !parsed.unit.is_empty() {
+        draft.unit = parsed.unit;
+    }
+    if draft.name.trim().is_empty() && !parsed.query.is_empty() {
+        draft.name = title_phrase(&parsed.query);
+    }
+    if draft.kind.trim().is_empty() {
+        draft.kind = "investment".into();
+    }
+    if let Some(asset) = crate::finance_prices::resolve_holding(&draft.name, &draft.ticker, &draft.currency, &draft.investment_type, &draft.unit) {
+        if draft.ticker.trim().is_empty() {
+            draft.ticker = asset.symbol.clone();
+        }
+        if draft.unit.trim().is_empty() {
+            draft.unit = asset.holding_unit.clone();
+        }
+        if draft.investment_type.trim().is_empty() || draft.investment_type == "custom" {
+            draft.investment_type = match asset.kind.as_str() {
+                "crypto" => "crypto".into(),
+                "stock" => "stock".into(),
+                "metal" => "metal".into(),
+                _ => draft.investment_type.clone(),
+            };
+        }
+        if asset.kind == "crypto" && draft.currency.trim().is_empty() {
+            draft.currency = asset.symbol;
+        }
+    }
+}
+
+fn link_holdings(store: &mut Store) -> bool {
+    let mut dirty = false;
+    for account in &mut store.accounts {
+        if account.kind != "investment" && !crate::finance_fx::is_crypto(&account.currency) {
+            continue;
+        }
+        let Some(asset) = holding_of(account) else { continue };
+        if account.ticker.trim().is_empty() {
+            account.ticker = asset.symbol.clone();
+            dirty = true;
+        }
+        if account.measure_unit.trim().is_empty() {
+            account.measure_unit = asset.holding_unit.clone();
+            dirty = true;
+        }
+        if account.investment_type.is_empty() || (account.investment_type == "custom" && asset.kind != "custom") {
+            let next = match asset.kind.as_str() {
+                "crypto" => "crypto",
+                "stock" => "stock",
+                "metal" => "metal",
+                _ => "",
+            };
+            if !next.is_empty() {
+                account.investment_type = next.into();
+                dirty = true;
+            }
+        }
+    }
+    dirty
+}
+
+fn holding_of(account: &Account) -> Option<crate::finance_prices::AssetRef> {
+    let mut asset = crate::finance_prices::resolve_holding(&account.name, &account.ticker, &account.currency, &account.investment_type, &format!("{} {}", account.notes, account.measure_unit))?;
+    if !account.measure_unit.trim().is_empty() {
+        asset.holding_unit = account.measure_unit.clone();
+    }
+    Some(asset)
+}
+
+fn held_assets(store: &Store) -> Vec<crate::finance_prices::AssetRef> {
+    let mut out = Vec::new();
+    for account in &store.accounts {
+        if let Some(asset) = holding_of(account) {
+            if !out.iter().any(|row: &crate::finance_prices::AssetRef| row.symbol == asset.symbol && row.kind == asset.kind) {
+                out.push(asset);
+            }
+        }
+    }
+    out
+}
+
+struct MarketNote {
+    worth_minor: Option<i64>,
+    worth_currency: String,
+    price: Option<f64>,
+    price_currency: String,
+    source: String,
+    fetched_ms: i64,
+    stale: bool,
+    estimated: bool,
+    unit: String,
+    symbol: String,
+}
+
+fn market_note(store: &Store, account: &Account, now_ms: i64, display: &str) -> Option<MarketNote> {
+    let asset = holding_of(account)?;
+    let qty = if !account.units.trim().is_empty() {
+        account.units.clone()
+    } else {
+        return None;
+    };
+    let (unit_price, currency, source, fetched_ms, stale, estimated) = if account.price_override {
+        let price = account.price_minor?;
+        let exp = exponent(&account.currency);
+        (price as f64 / 10f64.powi(exp as i32), account.currency.clone(), "manual".into(), 0, false, false)
+    } else if let Some(priced) = crate::finance_prices::price_for(&store.prices, &asset, now_ms) {
+        (priced.unit_price, priced.currency, if priced.source == "manual" { "manual".into() } else { priced.provider }, priced.fetched_ms, priced.stale, priced.estimated)
+    } else if let Some(price) = account.price_minor {
+        let exp = exponent(&account.currency);
+        (price as f64 / 10f64.powi(exp as i32), account.currency.clone(), "manual".into(), 0, false, false)
+    } else {
+        return Some(MarketNote {
+            worth_minor: None,
+            worth_currency: String::new(),
+            price: None,
+            price_currency: String::new(),
+            source: String::new(),
+            fetched_ms: 0,
+            stale: false,
+            estimated: false,
+            unit: asset.holding_unit,
+            symbol: asset.symbol,
+        });
+    };
+    let product = crate::finance_prices::quantity_times(&qty, unit_price)?;
+    let exp = crate::finance_fx::exponent(&currency);
+    let minor = crate::finance_prices::major_to_minor(product, exp)?;
+    let (worth_minor, worth_currency) = if display.is_empty() || currency.eq_ignore_ascii_case(display) {
+        (minor, currency.clone())
+    } else if let Some(row) = crate::finance_fx::convert(minor, &currency, display, &store.fx, now_ms) {
+        (row.amount_minor, row.currency)
+    } else {
+        (minor, currency.clone())
+    };
+    Some(MarketNote {
+        worth_minor: Some(worth_minor),
+        worth_currency,
+        price: Some(unit_price),
+        price_currency: currency,
+        source,
+        fetched_ms,
+        stale,
+        estimated,
+        unit: asset.holding_unit,
+        symbol: asset.symbol,
+    })
+}
+
+fn view_of(store: &Store, account: &Account, now_ms: i64, display: &str) -> AccountView {
+    let mut view = AccountView {
+        shown_balance_minor: shown_with_fx(account, &store.transactions, &store.fx, now_ms),
+        market_worth_minor: None,
+        market_worth_currency: String::new(),
+        market_price: None,
+        market_price_currency: String::new(),
+        market_source: String::new(),
+        market_fetched_ms: 0,
+        market_stale: false,
+        market_estimated: false,
+        market_unit: String::new(),
+        market_symbol: String::new(),
+        account: account.clone(),
+    };
+    let Some(note) = market_note(store, account, now_ms, display) else { return view };
+    view.market_worth_minor = note.worth_minor;
+    view.market_worth_currency = note.worth_currency;
+    view.market_price = note.price;
+    view.market_price_currency = note.price_currency;
+    view.market_source = note.source;
+    view.market_fetched_ms = note.fetched_ms;
+    view.market_stale = note.stale;
+    view.market_estimated = note.estimated;
+    view.market_unit = note.unit;
+    view.market_symbol = note.symbol;
+    view
+}
+
+fn worth_sentence(store: &Store, account: &Account, now_ms: i64, display: &str) -> String {
+    let Some(asset) = holding_of(account) else {
+        if account.kind == "investment" && !account.units.trim().is_empty() && account.price_minor.is_none() {
+            return spoken("No market symbol was found for {name}, so it has no fiat worth until you set a price.", &[("name", &account.name)]);
+        }
+        return String::new();
+    };
+    match market_note(store, account, now_ms, display) {
+        Some(note) if note.worth_minor.is_some() && note.estimated => {
+            let amount = format_minor(note.worth_minor.unwrap_or(0), &note.worth_currency);
+            spoken("Worth about {amount}. That price is an AI estimate.", &[("amount", &amount)])
+        }
+        Some(note) if note.worth_minor.is_some() => {
+            let amount = format_minor(note.worth_minor.unwrap_or(0), &note.worth_currency);
+            spoken("Worth about {amount} at the current price from {source}.", &[("amount", &amount), ("source", &note.source)])
+        }
+        _ => spoken("No live price was found for {symbol}. You can set a price in Settings.", &[("symbol", &asset.symbol)]),
+    }
+}
+
+fn price_store(app: &AppHandle, store: &mut Store, force: bool, allow_ai: bool) -> bool {
+    let now_ms = Local::now().timestamp_millis();
+    let mut changed = link_holdings(store);
+    if crate::finance_fx::needs_live_fetch(&store.fx, now_ms, force) {
+        if let Ok(book) = crate::finance_fx::fetch_book(&store.fx, now_ms) {
+            store.fx = book;
+            changed = true;
+        }
+    }
+    let assets = held_assets(store);
+    if crate::finance_prices::needs_refresh(&store.prices, &assets, now_ms, force) || (allow_ai && assets.iter().any(|asset| crate::finance_prices::price_for(&store.prices, asset, now_ms).is_none())) {
+        let next = if allow_ai {
+            crate::finance_prices::refresh_book(&store.prices, &assets, now_ms, force, &crate::finance_prices::blocking_get, Some(&|asset| ai_spot(app, asset)))
+        } else {
+            crate::finance_prices::refresh_book(&store.prices, &assets, now_ms, force, &crate::finance_prices::blocking_get, None)
+        };
+        if next != store.prices {
+            store.prices = next;
+            changed = true;
+        }
+    }
+    let before = store.fx.per_eur.clone();
+    crate::finance_prices::apply_crypto_legs(&mut store.fx, &store.prices);
+    if store.fx.per_eur != before {
+        changed = true;
+    }
+    changed
+}
+
+fn ai_spot(app: &AppHandle, asset: &crate::finance_prices::AssetRef) -> Result<(f64, String), String> {
+    let vault = app.state::<crate::vault::Vault>();
+    let bridge = app.state::<crate::native::NativeBridge>();
+    let accounts = vault.accounts(&bridge).map_err(|err| err.to_string())?;
+    let prompt = format!(
+        "Current market price of one {} of {} ({}). Reply with JSON only: {{\"price\": number, \"currency\": \"USD\"}}. If you are not sure of a real price, reply {{\"price\": null}}.",
+        asset.holding_unit, asset.symbol, asset.kind
+    );
+    for provider in ["xai", "openai"] {
+        let Some(secret) = accounts.iter().find(|row| row.provider == provider && !row.secret.is_empty()).map(|row| row.secret.clone()) else {
+            continue;
+        };
+        let text = if provider == "xai" { ai_xai(&secret, &prompt) } else { ai_openai(&secret, &prompt) };
+        if let Ok(text) = text {
+            if let Ok(parsed) = crate::finance_prices::parse_ai_price(&text) {
+                return Ok(parsed);
+            }
+        }
+    }
+    Err("no estimate".into())
+}
+
+fn ai_xai(secret: &str, prompt: &str) -> Result<String, String> {
+    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(12)).redirect(crate::http::api_redirect()).build().map_err(|_| "no estimate".to_string())?;
+    let value: serde_json::Value = client
+        .post("https://api.x.ai/v1/responses")
+        .bearer_auth(secret)
+        .json(&json!({ "model": "grok-4.7", "temperature": 0, "input": prompt }))
+        .send()
+        .map_err(|_| "no estimate".to_string())?
+        .json()
+        .map_err(|_| "no estimate".to_string())?;
+    let mut text = String::new();
+    if let Some(items) = value["output"].as_array() {
+        for item in items {
+            if let Some(chunks) = item["content"].as_array() {
+                for chunk in chunks {
+                    if let Some(piece) = chunk["text"].as_str() {
+                        text.push_str(piece);
+                    }
+                }
+            }
+        }
+    }
+    if text.trim().is_empty() { Err("no estimate".into()) } else { Ok(text) }
+}
+
+fn ai_openai(secret: &str, prompt: &str) -> Result<String, String> {
+    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(12)).redirect(crate::http::api_redirect()).build().map_err(|_| "no estimate".to_string())?;
+    let value: serde_json::Value = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .bearer_auth(secret)
+        .json(&json!({ "model": "gpt-4o-mini", "temperature": 0, "messages": [{ "role": "user", "content": prompt }] }))
+        .send()
+        .map_err(|_| "no estimate".to_string())?
+        .json()
+        .map_err(|_| "no estimate".to_string())?;
+    value["choices"][0]["message"]["content"].as_str().map(|text| text.to_string()).ok_or_else(|| "no estimate".into())
+}
+
 fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
     let period = format!("{:04}-{:02}", today.year(), today.month());
     let mut accounts: Vec<AccountView> = store
         .accounts
         .iter()
-        .map(|account| AccountView { shown_balance_minor: shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()), account: account.clone() })
+        .map(|account| view_of(store, account, Local::now().timestamp_millis(), &effective_default(store, locale)))
         .collect();
     accounts.sort_by(|a, b| a.account.kind.cmp(&b.account.kind).then(a.account.name.to_ascii_lowercase().cmp(&b.account.name.to_ascii_lowercase())));
     let mut transactions = store.transactions.clone();
@@ -3443,6 +3864,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
         default_currency: effective_default(store, locale),
         categories: store.categories.clone(),
         fx: fx_status(store, today),
+        prices: store.prices.clone(),
     }
 }
 
@@ -3766,7 +4188,7 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
         .into_iter()
         .map(|index| {
             let account = &store.accounts[index];
-            match shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()) {
+            let mut line = match shown_with_fx(account, &store.transactions, &store.fx, Local::now().timestamp_millis()) {
                 None => {
                     let count = transactions_on(store, &account.id);
                     if count == 0 {
@@ -3805,7 +4227,14 @@ fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
                     }
                     line
                 }
+            };
+            let display = effective_default(store, &current_locale());
+            let extra = worth_sentence(store, account, Local::now().timestamp_millis(), &display);
+            if !extra.is_empty() {
+                line.push(' ');
+                line.push_str(&extra);
             }
+            line
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -4928,15 +5357,16 @@ fn units_times_price(units: &str, price_minor: i64) -> Result<i64, String> {
         None => (normalized.as_str(), ""),
     };
     let whole: i128 = whole.parse().map_err(|_| "That amount is too large.".to_string())?;
-    let mut frac_digits: Vec<u8> = frac.bytes().take(6).map(|byte| byte - b'0').collect();
-    while frac_digits.len() < 6 {
+    let mut frac_digits: Vec<u8> = frac.bytes().take(12).map(|byte| byte - b'0').collect();
+    while frac_digits.len() < 12 {
         frac_digits.push(0);
     }
     let mut frac_val: i128 = 0;
     for digit in &frac_digits {
         frac_val = frac_val * 10 + i128::from(*digit);
     }
-    let product = whole * i128::from(price_minor) + (i128::from(price_minor) * frac_val + 500_000) / 1_000_000;
+    let scale: i128 = 1_000_000_000_000;
+    let product = whole * i128::from(price_minor) + (i128::from(price_minor) * frac_val + scale / 2) / scale;
     if product <= 0 || product > 100_000_000_000_000 {
         return Err("That amount is too large.".into());
     }
@@ -5673,10 +6103,17 @@ fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
     let accounts: Vec<crate::finance_schedule::WorthAccount> = store
         .accounts
         .iter()
-        .map(|account| crate::finance_schedule::WorthAccount {
-            kind: account.kind.clone(),
-            currency: account.currency.clone(),
-            shown_minor: shown_balance(account, &store.transactions),
+        .map(|account| {
+            let view = view_of(store, account, now_ms, &display);
+            if let Some(worth) = view.market_worth_minor {
+                crate::finance_schedule::WorthAccount { kind: account.kind.clone(), currency: view.market_worth_currency, shown_minor: Some(worth) }
+            } else {
+                crate::finance_schedule::WorthAccount {
+                    kind: account.kind.clone(),
+                    currency: account.currency.clone(),
+                    shown_minor: shown_with_fx(account, &store.transactions, &store.fx, now_ms),
+                }
+            }
         })
         .collect();
     let nets = crate::finance_schedule::worth_rows(&accounts);
@@ -6834,5 +7271,32 @@ mod tests {
         assert!(ambiguous.starts_with("Which account? I found"), "{ambiguous}");
         let names: Vec<_> = tool_definitions().as_array().unwrap().iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect();
         assert!(names.contains(&"move_transactions".into()));
+    }
+
+    #[test]
+    fn spoken_holdings_keep_full_quantity_and_troy_ounces() {
+        let mut store = Store::default();
+        let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 21).unwrap());
+        let detail = account_from_tool(&mut store, &json!({"phrase": "5 ounces of silver", "kind": "investment"}), &clock).unwrap();
+        let silver = store.accounts.iter().find(|account| account.ticker == "XAG").unwrap();
+        assert_eq!(silver.units, "5");
+        assert_eq!(silver.measure_unit, "troy_oz");
+        assert!(detail.contains("5"), "{detail}");
+        account_from_tool(&mut store, &json!({"phrase": "2.969859854727 XMR", "kind": "investment"}), &clock).unwrap();
+        let xmr = store.accounts.iter().find(|account| account.currency == "XMR" || account.ticker == "XMR").unwrap();
+        assert_eq!(xmr.units, "2.969859854727");
+        assert_ne!(xmr.units, "2.96985985");
+        assert_eq!(units_times_price("0.5", 20_000).unwrap(), 10_000);
+        assert_eq!(units_times_price("0.37", 10_000).unwrap(), 3_700);
+        let fine = units_times_price("2.969859854727", 1_000_000_000).unwrap();
+        assert!(fine > units_times_price("2.96985985", 1_000_000_000).unwrap());
+        let mut linked = Store::default();
+        linked.accounts.push(empty_account("fa9".into()));
+        linked.accounts[0].name = "Silver".into();
+        linked.accounts[0].kind = "investment".into();
+        linked.accounts[0].units = "5".into();
+        assert!(link_holdings(&mut linked));
+        assert_eq!(linked.accounts[0].ticker, "XAG");
+        assert_eq!(linked.accounts[0].measure_unit, "troy_oz");
     }
 }

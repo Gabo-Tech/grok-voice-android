@@ -1646,6 +1646,26 @@ pub fn refresh_finance_rates(
 }
 
 #[tauri::command]
+pub fn set_finance_manual_price(
+    app: AppHandle,
+    symbol: String,
+    price: String,
+    currency: String,
+    override_live: Option<bool>,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .set_manual_price(&app, &symbol, &price, &currency, override_live.unwrap_or(false))
+        .map_err(msg)
+}
+
+#[tauri::command]
+pub fn set_finance_price_provider(app: AppHandle, id: String, enabled: bool) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .set_price_provider(&app, &id, enabled)
+        .map_err(msg)
+}
+
+#[tauri::command]
 pub fn set_finance_manual_rate(
     app: AppHandle,
     base: String,

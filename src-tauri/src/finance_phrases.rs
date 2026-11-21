@@ -149,6 +149,18 @@ const ES_FINANCE: &[(&str, &str)] = &[
     (" Id {id}.", " Identificador {id}."),
     ("{label} {amount} on {account} {date}, id {id}.", "{label} {amount} en {account} el {date}, id {id}."),
     ("unknown", "desconocido"),
+    ("Quantity {qty} {unit}.", "Cantidad {qty} {unit}."),
+    ("troy ounces", "onzas troy"),
+    ("grams", "gramos"),
+    ("kilograms", "kilogramos"),
+    ("shares", "acciones"),
+    ("coins", "monedas"),
+    ("Worth about {amount} at the current price from {source}.", "Vale unos {amount} al precio actual de {source}."),
+    ("Worth about {amount}. That price is an AI estimate.", "Vale unos {amount}. Ese precio es una estimación de la IA."),
+    ("No market symbol was found for {name}, so it has no fiat worth until you set a price.", "No hay un símbolo de mercado para {name}, así que no tiene valor en dinero hasta que pongas un precio."),
+    ("No live price was found for {symbol}. You can set a price in Settings.", "No hay un precio en vivo para {symbol}. Puedes poner un precio en Ajustes."),
+    ("The price has to be a number above zero.", "El precio tiene que ser un número mayor que cero."),
+    ("Say the symbol and a currency, such as 150 EUR for XMR.", "Di el símbolo y una moneda, como 150 EUR por XMR."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -302,6 +314,18 @@ const DE_FINANCE: &[(&str, &str)] = &[
     (" Id {id}.", " Kennung {id}."),
     ("{label} {amount} on {account} {date}, id {id}.", "{label} {amount} auf {account} am {date}, Kennung {id}."),
     ("unknown", "unbekannt"),
+    ("Quantity {qty} {unit}.", "Menge {qty} {unit}."),
+    ("troy ounces", "Feinunzen"),
+    ("grams", "Gramm"),
+    ("kilograms", "Kilogramm"),
+    ("shares", "Aktien"),
+    ("coins", "Münzen"),
+    ("Worth about {amount} at the current price from {source}.", "Ungefähr {amount} wert, zum aktuellen Preis von {source}."),
+    ("Worth about {amount}. That price is an AI estimate.", "Ungefähr {amount} wert. Dieser Preis ist eine KI-Schätzung."),
+    ("No market symbol was found for {name}, so it has no fiat worth until you set a price.", "Für {name} gibt es kein Marktkürzel, also keinen Geldwert, bis du einen Preis einträgst."),
+    ("No live price was found for {symbol}. You can set a price in Settings.", "Für {symbol} gibt es keinen Live-Preis. Du kannst in den Einstellungen einen Preis setzen."),
+    ("The price has to be a number above zero.", "Der Preis muss eine Zahl über null sein."),
+    ("Say the symbol and a currency, such as 150 EUR for XMR.", "Nenn das Kürzel und eine Währung, zum Beispiel 150 EUR für XMR."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -455,6 +479,18 @@ const PT_FINANCE: &[(&str, &str)] = &[
     (" Id {id}.", " Identificador {id}."),
     ("{label} {amount} on {account} {date}, id {id}.", "{label} {amount} em {account} em {date}, id {id}."),
     ("unknown", "desconhecido"),
+    ("Quantity {qty} {unit}.", "Quantidade {qty} {unit}."),
+    ("troy ounces", "onças troy"),
+    ("grams", "gramas"),
+    ("kilograms", "quilogramas"),
+    ("shares", "ações"),
+    ("coins", "moedas"),
+    ("Worth about {amount} at the current price from {source}.", "Vale cerca de {amount} ao preço atual de {source}."),
+    ("Worth about {amount}. That price is an AI estimate.", "Vale cerca de {amount}. Esse preço é uma estimativa da IA."),
+    ("No market symbol was found for {name}, so it has no fiat worth until you set a price.", "Não há um símbolo de mercado para {name}, por isso não tem valor em dinheiro até definires um preço."),
+    ("No live price was found for {symbol}. You can set a price in Settings.", "Não há um preço ao vivo para {symbol}. Podes definir um preço em Ajustes."),
+    ("The price has to be a number above zero.", "O preço tem de ser um número acima de zero."),
+    ("Say the symbol and a currency, such as 150 EUR for XMR.", "Diz o símbolo e uma moeda, como 150 EUR por XMR."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -608,4 +644,16 @@ const CA_FINANCE: &[(&str, &str)] = &[
     (" Id {id}.", " Identificador {id}."),
     ("{label} {amount} on {account} {date}, id {id}.", "{label} {amount} en {account} el {date}, id {id}."),
     ("unknown", "desconegut"),
+    ("Quantity {qty} {unit}.", "Quantitat {qty} {unit}."),
+    ("troy ounces", "unces troy"),
+    ("grams", "grams (g)"),
+    ("kilograms", "quilograms"),
+    ("shares", "accions"),
+    ("coins", "monedes"),
+    ("Worth about {amount} at the current price from {source}.", "Val uns {amount} al preu actual de {source}."),
+    ("Worth about {amount}. That price is an AI estimate.", "Val uns {amount}. Eixe preu és una estimació de la IA."),
+    ("No market symbol was found for {name}, so it has no fiat worth until you set a price.", "No hi ha un símbol de mercat per a {name}, així que no té valor en diners fins que poses un preu."),
+    ("No live price was found for {symbol}. You can set a price in Settings.", "No hi ha un preu en viu per a {symbol}. Pots posar un preu en Configuració."),
+    ("The price has to be a number above zero.", "El preu ha de ser un número major que zero."),
+    ("Say the symbol and a currency, such as 150 EUR for XMR.", "Digues el símbol i una moneda, com 150 EUR per XMR."),
 ];

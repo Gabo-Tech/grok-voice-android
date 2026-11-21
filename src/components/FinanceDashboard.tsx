@@ -11,6 +11,7 @@ import {
   headlineOf,
   monthBounds,
   netWorth,
+  worthAccount,
   netWorthChange,
   plannedHits,
   projectWindow,
@@ -59,7 +60,7 @@ export function missingRateKey(snapshot: FinanceState["snapshot"], nowMs: number
   const today = todayIso();
   const display = (snapshot.defaultCurrency || "").toUpperCase();
   const book = bookFromStatus(snapshot.fx);
-  const worth = netWorth(accounts.map((account) => ({ kind: account.kind, currency: account.currency, shownBalanceMinor: account.shownBalanceMinor })));
+  const worth = netWorth(accounts.map((account) => worthAccount(account)));
   const bounds = monthBounds(today);
   const flow = cashFlow(snapshot.transactions, bounds.start, bounds.end);
   const cards = snapshot.accounts.map(cardShape);
@@ -142,7 +143,7 @@ export function FinanceDashboard({
   const book = useMemo(() => bookFromStatus(finance.snapshot.fx), [finance.snapshot.fx]);
   const nowMs = useMemo(() => Date.now(), [finance.snapshot]);
   const worth = useMemo(
-    () => netWorth(accounts.map((account) => ({ kind: account.kind, currency: account.currency, shownBalanceMinor: account.shownBalanceMinor }))),
+    () => netWorth(accounts.map((account) => worthAccount(account))),
     [accounts],
   );
   const bounds = monthBounds(today);
