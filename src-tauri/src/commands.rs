@@ -1630,6 +1630,22 @@ pub fn rename_finance_category(
 }
 
 #[tauri::command]
+pub fn edit_finance_category(
+    app: AppHandle,
+    action: String,
+    name: String,
+    to: Option<String>,
+    color: Option<String>,
+    kind: Option<String>,
+    icon: Option<String>,
+    order: Option<i32>,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .edit_category_on(&app, &action, &name, to.as_deref().unwrap_or(""), color.as_deref().unwrap_or(""), kind.as_deref().unwrap_or(""), icon.as_deref().unwrap_or(""), order.unwrap_or(0))
+        .map_err(msg)
+}
+
+#[tauri::command]
 pub fn mark_finance_paid(
     app: AppHandle,
     id: String,

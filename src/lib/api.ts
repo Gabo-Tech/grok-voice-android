@@ -507,6 +507,9 @@ export interface FinanceFx {
 export interface FinanceCategory {
   name: string;
   color: string;
+  kind?: string;
+  icon?: string;
+  order?: number;
 }
 
 export interface FinanceAccountDraft {
@@ -876,6 +879,8 @@ export const api = {
   deleteFinanceRule: (id: string) => invoke<FinanceSnapshot>("delete_finance_rule", { id }),
   setFinanceDefaultCurrency: (currency: string) => invoke<FinanceSnapshot>("set_finance_default_currency", { currency }),
   renameFinanceCategory: (from: string, to: string) => invoke<FinanceSnapshot>("rename_finance_category", { from, to }),
+  editFinanceCategory: (draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number }) =>
+    invoke<FinanceSnapshot>("edit_finance_category", draft),
   markFinancePaid: (id: string, date?: string) => invoke<FinanceSnapshot>("mark_finance_paid", { id, date: date ?? null }),
   exportFinancePdf: (filter: FinancePdfRequest) => invoke<ExportedFinancePdf>("export_finance_pdf", { filter }),
   refreshFinanceRates: (force = false) => invoke<FinanceSnapshot>("refresh_finance_rates", { force }),

@@ -426,7 +426,8 @@ export function netWorthParts(
       unpriced.push(account.currency.toUpperCase());
       continue;
     }
-    const signed = isDebt(account.kind) ? -Math.abs(converted.amountMinor) : converted.amountMinor;
+    // A positive card or loan balance is owed, so it lowers net worth. A negative balance is a credit and raises it.
+    const signed = isDebt(account.kind) ? -converted.amountMinor : converted.amountMinor;
     parts.push({ amountMinor: signed, currency: display });
   }
   return { parts, unpriced: [...new Set(unpriced)].sort() };
@@ -645,29 +646,53 @@ export function monthCash(rows: CashTx[], start = "", end = ""): CashLine[] {
 }
 
 export interface WorthBucket {
-  id: "money" | "debt" | "investment";
+  id: "money" | "debt" | "investment" | "credit";
   amountMinor: number;
   natives: { amountMinor: number; currency: string }[];
   unpriced: string[];
 }
 
-/** Same net as net worth: cash and banks, priced holdings, minus debts. Currencies fold into `display`. */
+/** Assets in view, minus the full amount owed. Hiding a debt slice must not add it back. */
+export function netOfVisible(buckets: WorthBucket[], hidden: Iterable<string> = []): { assets: number; owed: number; net: number } {
+  const hide = new Set(hidden);
+  let assets = 0;
+  let owed = 0;
+  for (const bucket of buckets) {
+    if (bucket.id === "debt") {
+      owed += Math.max(0, bucket.amountMinor);
+      continue;
+    }
+    if (hide.has(bucket.id)) continue;
+    assets += Math.max(0, bucket.amountMinor);
+  }
+  return { assets, owed, net: assets - owed };
+}
+
+/** Owed divided by assets. Above 1 means debts are larger than what is owned. Zero when nothing is owed. */
+export function debtRatio(assets: number, owed: number): number {
+  if (owed <= 0) return 0;
+  if (assets <= 0) return 1;
+  return owed / assets;
+}
+
+/** Same net as net worth: cash and banks, priced holdings, and card credit, minus debts. Currencies fold into `display`. */
 export function worthBuckets(
   accounts: Array<HoldingShape & { id?: string; kind: string }>,
   display: string,
   book: RateBook | null,
   quotes: Quote[],
   nowMs: number,
-): { buckets: WorthBucket[]; net: number; currency: string } {
+): { buckets: WorthBucket[]; assets: number; owed: number; net: number; currency: string } {
   const target = display.trim().toUpperCase();
   const buckets: Record<WorthBucket["id"], WorthBucket> = {
     money: { id: "money", amountMinor: 0, natives: [], unpriced: [] },
     debt: { id: "debt", amountMinor: 0, natives: [], unpriced: [] },
     investment: { id: "investment", amountMinor: 0, natives: [], unpriced: [] },
+    credit: { id: "credit", amountMinor: 0, natives: [], unpriced: [] },
   };
   const addNative = (bucket: WorthBucket, amountMinor: number, currency: string) => {
     const code = currency.toUpperCase();
-    if (!code || code === target) return;
+    if (!code || code === target || amountMinor === 0) return;
     const found = bucket.natives.find((row) => row.currency === code);
     if (found) found.amountMinor += amountMinor;
     else bucket.natives.push({ amountMinor, currency: code });
@@ -678,11 +703,14 @@ export function worthBuckets(
         buckets.debt.unpriced.push(account.name);
         continue;
       }
-      const converted = convertMinor(Math.abs(account.shownBalanceMinor), account.currency, target, book, nowMs);
+      const converted = convertMinor(account.shownBalanceMinor, account.currency, target, book, nowMs);
       if (!converted) buckets.debt.unpriced.push(account.currency.toUpperCase());
-      else {
+      else if (converted.amountMinor < 0) {
+        buckets.credit.amountMinor += -converted.amountMinor;
+        addNative(buckets.credit, -account.shownBalanceMinor, account.currency);
+      } else if (converted.amountMinor > 0) {
         buckets.debt.amountMinor += converted.amountMinor;
-        addNative(buckets.debt, Math.abs(account.shownBalanceMinor), account.currency);
+        addNative(buckets.debt, account.shownBalanceMinor, account.currency);
       }
       continue;
     }
@@ -707,8 +735,14 @@ export function worthBuckets(
       addNative(buckets.money, account.shownBalanceMinor, account.currency);
     }
   }
-  const net = buckets.money.amountMinor + buckets.investment.amountMinor - buckets.debt.amountMinor;
-  return { buckets: [buckets.money, buckets.debt, buckets.investment], net, currency: target };
+  const folded = netOfVisible([buckets.money, buckets.debt, buckets.investment, buckets.credit]);
+  return {
+    buckets: [buckets.money, buckets.debt, buckets.investment, buckets.credit],
+    assets: folded.assets,
+    owed: folded.owed,
+    net: folded.net,
+    currency: target,
+  };
 }
 
 export interface HoldingOriginal {

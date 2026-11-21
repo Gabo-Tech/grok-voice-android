@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
+import { MoneyFlowPanel } from "@/components/MoneyFlowChart";
 import { HoldingsChart } from "@/components/HoldingsChart";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
@@ -180,6 +181,13 @@ export function FinancePage({
   }, []);
 
   useEffect(() => {
+    const shot = new URLSearchParams(window.location.search).get("shot");
+    if (!shot) return;
+    const node = document.querySelector(`[data-shot="${shot}"]`);
+    node?.scrollIntoView({ block: "start" });
+  }, [tab]);
+
+  useEffect(() => {
     if (!active || !finance.inApp) return;
     rateDay.current = todayIso();
     finance.refreshRates();
@@ -314,8 +322,18 @@ export function FinancePage({
               onOpenExpenses={() => chooseTab("activity")}
               onOpenIncome={() => chooseTab("activity")}
             />
+            <div className="mt-4" data-shot="flow">
+              <MoneyFlowPanel
+                transactions={finance.snapshot.transactions}
+                accounts={accounts}
+                categories={finance.snapshot.categories}
+                display={finance.snapshot.defaultCurrency}
+                fx={finance.snapshot.fx}
+                onPaintCategory={(name, color) => finance.editCategory({ action: "color", name, color })}
+              />
+            </div>
             <button type="button" className="fin-chip mt-4 w-full" onClick={exportSummary}>{t("Export PDF")}</button>
-            <div className="mt-6" data-finance-charts>
+            <div className="mt-6" data-finance-charts data-shot="donut">
               <FinanceCarousel
                 accounts={chartAccounts}
                 transactions={finance.snapshot.transactions}
@@ -1591,20 +1609,74 @@ function ColorField({ color, onChange }: { color: string; onChange: (color: stri
 function CategorySheet({ open, finance, onClose }: { open: boolean; finance: FinanceState; onClose: () => void }) {
   const t = useT();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const names = finance.snapshot.categories.map((category) => category.name);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState("expense");
+  const [mergeInto, setMergeInto] = useState<Record<string, string>>({});
+  const rows = [...finance.snapshot.categories].sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+  const kinds = ["income", "expense", "savings", "investment", "debt"] as const;
   return (
     <Sheet open={open} title={t("Edit categories")} onClose={onClose} className="finance">
       <div className="space-y-3">
-        {names.length === 0 && <p className="fin-muted text-sm">{t("A category is saved the first time you use it.")}</p>}
-        {names.map((name) => (
-          <div key={name} className="flex gap-2">
-            <Input value={drafts[name] ?? name} onChange={(event) => setDrafts((current) => ({ ...current, [name]: event.target.value }))} />
-            <Button type="button" onClick={() => finance.renameCategory(name, drafts[name] ?? name)}>{t("Rename")}</Button>
+        <div className="flex flex-wrap gap-2">
+          <Input aria-label={t("Name")} value={name} onChange={(event) => setName(event.target.value)} placeholder={t("Name")} />
+          <select aria-label={t("Kind")} className="h-11 border border-[var(--fin-line)] bg-transparent px-2 text-[15px]" value={kind} onChange={(event) => setKind(event.target.value)}>
+            {kinds.map((item) => (
+              <option key={item} value={item}>{t(categoryKindLabel(item))}</option>
+            ))}
+          </select>
+          <Button type="button" onClick={() => { if (!name.trim()) return; finance.editCategory({ action: "create", name: name.trim(), kind, order: rows.length }); setName(""); }}>{t("Add")}</Button>
+        </div>
+        <Button type="button" variant="ghost" onClick={() => {
+          for (const suggestion of ["Salary", "Freelance", "Housing", "Food", "Transport", "Subscriptions", "Health", "Savings", "Investing"]) {
+            const itemKind = suggestion === "Salary" || suggestion === "Freelance" ? "income" : suggestion === "Savings" ? "savings" : suggestion === "Investing" ? "investment" : "expense";
+            finance.editCategory({ action: "create", name: suggestion, kind: itemKind });
+          }
+        }}>{t("Add suggested categories")}</Button>
+        {rows.length === 0 && <p className="fin-muted text-[13px] leading-4">{t("A category is saved the first time you use it.")}</p>}
+        {rows.map((category, index) => (
+          <div key={category.name} className="border border-[var(--fin-line)] p-2">
+            <div className="flex gap-2">
+              <span className="fin-swatch mt-2 shrink-0" style={{ background: category.color || "#6E8B74" }} />
+              <Input value={drafts[category.name] ?? category.name} onChange={(event) => setDrafts((current) => ({ ...current, [category.name]: event.target.value }))} />
+              <Button type="button" onClick={() => finance.editCategory({ action: "rename", name: category.name, to: drafts[category.name] ?? category.name })}>{t("Rename")}</Button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {PALETTE.map((swatch) => (
+                <button key={swatch} type="button" className="fin-icon" aria-label={swatch} onClick={() => finance.editCategory({ action: "color", name: category.name, color: swatch })}>
+                  <span className="fin-swatch" style={{ background: swatch }} />
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {kinds.map((item) => (
+                <button key={item} type="button" className="fin-chip" aria-pressed={(category.kind || "expense") === item} onClick={() => finance.editCategory({ action: "kind", name: category.name, kind: item })}>{t(categoryKindLabel(item))}</button>
+              ))}
+              <button type="button" className="fin-chip" onClick={() => finance.editCategory({ action: "order", name: category.name, order: Math.max(0, index - 1) })}>{t("Up")}</button>
+              <button type="button" className="fin-chip" onClick={() => finance.editCategory({ action: "order", name: category.name, order: index + 1 })}>{t("Down")}</button>
+              <button type="button" className="fin-chip" onClick={() => finance.editCategory({ action: "delete", name: category.name })}>{t("Delete")}</button>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <select aria-label={t("Merge")} className="h-11 min-w-0 flex-1 border border-[var(--fin-line)] bg-transparent px-2 text-[15px]" value={mergeInto[category.name] || ""} onChange={(event) => setMergeInto((current) => ({ ...current, [category.name]: event.target.value }))}>
+                <option value="">{t("Merge")}</option>
+                {rows.filter((row) => row.name !== category.name).map((row) => (
+                  <option key={row.name} value={row.name}>{row.name}</option>
+                ))}
+              </select>
+              <Button type="button" onClick={() => { if (mergeInto[category.name]) finance.editCategory({ action: "merge", name: category.name, to: mergeInto[category.name] }); }}>{t("Merge")}</Button>
+            </div>
           </div>
         ))}
       </div>
     </Sheet>
   );
+}
+
+function categoryKindLabel(kind: string): string {
+  if (kind === "income") return "Income";
+  if (kind === "savings") return "Savings";
+  if (kind === "investment") return "Investing";
+  if (kind === "debt") return "Debt payments";
+  return "Expenses";
 }
 
 function PayCardSheet({

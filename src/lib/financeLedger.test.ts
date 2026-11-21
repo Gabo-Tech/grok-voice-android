@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { addMonths, headlineOf, plannedHits, type RateBook, type ScheduleShape } from "./financeMath.ts";
-import { allocation, barsFor, flowParts, formatQuantity, gainOf, isHoldingAccount, monthActivity, monthCash, netWorthParts, persistedColor, positionOf, scaledBars, shareOf, worthBuckets, ALLOCATION_PRESETS, type AllocInput, type Quote } from "./financeLedger.ts";
+import { allocation, barsFor, debtRatio, flowParts, formatQuantity, gainOf, isHoldingAccount, monthActivity, monthCash, netOfVisible, netWorthParts, persistedColor, positionOf, scaledBars, shareOf, worthBuckets, ALLOCATION_PRESETS, type AllocInput, type Quote } from "./financeLedger.ts";
 import { nextHidden } from "./chartPrefs.ts";
 import { changeOf, seriesFor } from "./portfolio.ts";
 
@@ -283,6 +283,79 @@ const apart = netWorthParts(
 assert.equal(headlineOf(together.parts, "CHF", book, now).amountMinor, headlineOf(apart.parts, "CHF", book, now).amountMinor);
 const buckets = worthBuckets(splitAccounts, "CHF", book, quotes, now);
 assert.equal(buckets.net, headlineOf(together.parts, "CHF", book, now).amountMinor);
+assert.equal(buckets.net, buckets.assets - buckets.owed);
+assert.notEqual(buckets.net, buckets.assets + buckets.owed);
+
+const picture = worthBuckets(
+  [
+    { name: "Cash", kind: "bank", currency: "CHF", shownBalanceMinor: 1_844 },
+    { name: "Funds", kind: "investment", currency: "CHF", investmentType: "custom", shownBalanceMinor: 555_497 },
+    { name: "Card", kind: "credit_card", currency: "CHF", shownBalanceMinor: 207_266 },
+  ],
+  "CHF",
+  book,
+  [],
+  now,
+);
+assert.equal(picture.assets, 1_844 + 555_497);
+assert.equal(picture.owed, 207_266);
+assert.equal(picture.net, 1_844 + 555_497 - 207_266);
+assert.notEqual(picture.net, 1_844 + 555_497 + 207_266);
+assert.equal(debtRatio(picture.assets, picture.owed), 207_266 / (1_844 + 555_497));
+const moneyNatives = picture.buckets.find((row) => row.id === "money");
+const debtNatives = picture.buckets.find((row) => row.id === "debt");
+assert.equal(moneyNatives?.natives.length, 0);
+assert.equal(debtNatives?.natives.length, 0);
+const mixed = worthBuckets(
+  [
+    { name: "Euro cash", kind: "bank", currency: "EUR", shownBalanceMinor: 258 },
+    { name: "Dollar cash", kind: "cash", currency: "USD", shownBalanceMinor: 1_231 },
+    { name: "Home", kind: "bank", currency: "CHF", shownBalanceMinor: 100 },
+    { name: "Abanca", kind: "credit_card", currency: "EUR", shownBalanceMinor: 1_035 },
+  ],
+  "CHF",
+  book,
+  [],
+  now,
+);
+const mixedMoney = mixed.buckets.find((row) => row.id === "money");
+const mixedDebt = mixed.buckets.find((row) => row.id === "debt");
+assert.deepEqual(
+  mixedMoney?.natives.map((row) => row.currency).sort(),
+  ["EUR", "USD"],
+);
+assert.equal(mixedMoney?.natives.find((row) => row.currency === "EUR")?.amountMinor, 258);
+assert.equal(mixedMoney?.natives.find((row) => row.currency === "USD")?.amountMinor, 1_231);
+assert.equal(mixedDebt?.natives.find((row) => row.currency === "EUR")?.amountMinor, 1_035);
+assert.equal(mixedDebt?.natives.some((row) => row.currency === "CHF"), false);
+const credit = worthBuckets(
+  [
+    { name: "Bank", kind: "bank", currency: "CHF", shownBalanceMinor: 10_000 },
+    { name: "Card", kind: "credit_card", currency: "CHF", shownBalanceMinor: -4_000 },
+  ],
+  "CHF",
+  book,
+  [],
+  now,
+);
+assert.equal(credit.owed, 0);
+assert.equal(credit.buckets.find((row) => row.id === "credit")?.amountMinor, 4_000);
+assert.equal(credit.net, 14_000);
+assert.notEqual(credit.net, 6_000);
+const hiddenMoney = netOfVisible(picture.buckets, ["money"]);
+assert.equal(hiddenMoney.net, 555_497 - 207_266);
+assert.equal(hiddenMoney.owed, 207_266);
+const creditParts = netWorthParts(
+  [
+    { name: "Bank", kind: "bank", currency: "CHF", shownBalanceMinor: 10_000 },
+    { name: "Card", kind: "credit_card", currency: "CHF", shownBalanceMinor: -4_000 },
+  ],
+  "CHF",
+  book,
+  [],
+  now,
+);
+assert.equal(creditParts.parts.reduce((sum, part) => sum + part.amountMinor, 0), 14_000);
 
 const rentPlan: ScheduleShape = {
   id: "rent",
