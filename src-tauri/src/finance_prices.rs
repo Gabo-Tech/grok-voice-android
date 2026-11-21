@@ -31,6 +31,8 @@ pub struct AssetRef {
     pub coingecko_id: String,
     pub paprika_id: String,
     pub kraken_pair: String,
+    /// The name the user typed. Search prefers this over a colliding ticker.
+    pub label: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -122,32 +124,40 @@ pub fn needs_refresh(book: &PriceBook, assets: &[AssetRef], now_ms: i64, force: 
 /// Map a holding's name, ticker, or currency onto a symbol. `None` means it stays manual.
 pub fn resolve_holding(name: &str, ticker: &str, currency: &str, investment_type: &str, notes: &str) -> Option<AssetRef> {
     let unit = metal_unit(&format!("{name} {ticker} {notes}"));
-    if let Some(mut asset) = alias(ticker).or_else(|| alias(name)) {
+    let label = if name.trim().is_empty() { ticker.trim().to_string() } else { name.trim().to_string() };
+    if let Some(mut asset) = alias(ticker).or_else(|| alias(name)).or_else(|| alias(&label)) {
         if asset.kind == "metal" {
             asset.holding_unit = unit.to_string();
         }
+        asset.label = label;
         return Some(asset);
     }
     let kind = fold(investment_type);
     if kind == "stock" || kind == "fund" {
         let sym = ticker_token(ticker).or_else(|| ticker_token(name))?;
-        if let Some(asset) = alias(&sym) {
+        if let Some(mut asset) = alias(&sym) {
+            asset.label = label;
             return Some(asset);
         }
         if finance_fx::is_fiat(&sym) {
             return None;
         }
-        return Some(stock_ref(sym));
+        let mut asset = stock_ref(sym);
+        asset.label = label;
+        return Some(asset);
     }
     if kind == "crypto" || finance_fx::is_crypto(currency) {
         let sym = ticker_token(ticker).or_else(|| ticker_token(currency)).or_else(|| ticker_token(name))?;
         if finance_fx::is_fiat(&sym) {
             return None;
         }
-        if let Some(asset) = alias(&sym) {
+        if let Some(mut asset) = alias(&sym) {
+            asset.label = label;
             return Some(asset);
         }
-        return Some(crypto_ref(sym, String::new(), String::new(), String::new()));
+        let mut asset = crypto_ref(sym, String::new(), String::new(), String::new());
+        asset.label = label;
+        return Some(asset);
     }
     None
 }
@@ -307,19 +317,21 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             if fresh_api(book, asset, now_ms) {
                 continue;
             }
-            let query = if asset.coingecko_id.is_empty() { asset.symbol.to_ascii_lowercase() } else { continue };
-            let url = format!("https://api.coingecko.com/api/v3/simple/price?symbols={query}&vs_currencies=eur");
-            if let Ok(body) = get(&url) {
-                if let Ok(rows) = parse_coingecko_symbols(&body) {
-                    if let Some(price) = rows.into_iter().find(|(sym, _)| sym.eq_ignore_ascii_case(&asset.symbol)).map(|(_, price)| price) {
-                        put_api(book, asset, price, "EUR", "coingecko", now_ms);
-                        continue;
+            if asset.coingecko_id.is_empty() {
+                let query = asset.symbol.to_ascii_lowercase();
+                let url = format!("https://api.coingecko.com/api/v3/simple/price?symbols={query}&vs_currencies=eur");
+                if let Ok(body) = get(&url) {
+                    if let Ok(rows) = parse_coingecko_symbols(&body) {
+                        if let Some(price) = rows.into_iter().find(|(sym, _)| sym.eq_ignore_ascii_case(&asset.symbol)).map(|(_, price)| price) {
+                            put_api(book, asset, price, "EUR", "coingecko", now_ms);
+                            continue;
+                        }
                     }
                 }
             }
-            let search = format!("https://api.coingecko.com/api/v3/search?query={}", enc(&asset.symbol));
+            let search = format!("https://api.coingecko.com/api/v3/search?query={}", enc(if asset.label.is_empty() { &asset.symbol } else { &asset.label }));
             if let Ok(body) = get(&search) {
-                if let Some(id) = coingecko_search_id(&body, &asset.symbol) {
+                if let Some(id) = coingecko_search_id(&body, &asset.symbol, &asset.label) {
                     let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={id}&vs_currencies=eur");
                     if let Ok(body) = get(&url) {
                         if let Ok(rows) = parse_coingecko_ids(&body) {
@@ -339,8 +351,8 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             }
             let id = if !asset.paprika_id.is_empty() {
                 asset.paprika_id.clone()
-            } else if let Ok(body) = get(&format!("https://api.coinpaprika.com/v1/search/?q={}&c=currencies&limit=5", enc(&asset.symbol))) {
-                paprika_search_id(&body, &asset.symbol).unwrap_or_default()
+            } else if let Ok(body) = get(&format!("https://api.coinpaprika.com/v1/search/?q={}&c=currencies&limit=8", enc(if asset.label.is_empty() { &asset.symbol } else { &asset.label }))) {
+                paprika_search_id(&body, &asset.symbol, &asset.label).unwrap_or_default()
             } else {
                 String::new()
             };
@@ -510,20 +522,60 @@ pub fn parse_coingecko_symbols(body: &str) -> Result<Vec<(String, f64)>, String>
     Ok(rows.into_iter().map(|(id, price)| (id.to_ascii_uppercase(), price)).collect())
 }
 
-pub fn coingecko_search_id(body: &str, symbol: &str) -> Option<String> {
+pub fn coingecko_search_id(body: &str, symbol: &str, name: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     let coins = value.get("coins")?.as_array()?;
-    let symbol = symbol.trim();
-    let exact = coins.iter().find(|row| row.get("symbol").and_then(|item| item.as_str()).is_some_and(|sym| sym.eq_ignore_ascii_case(symbol)) && row.get("id").and_then(|item| item.as_str()).is_some_and(|id| id.eq_ignore_ascii_case("epic-cash") || !id.contains("chain")));
-    let row = exact.or_else(|| coins.iter().find(|row| row.get("symbol").and_then(|item| item.as_str()).is_some_and(|sym| sym.eq_ignore_ascii_case(symbol))))?;
-    row.get("id").and_then(|item| item.as_str()).map(|id| id.to_string())
+    best_coin(coins, symbol, name)
 }
 
-pub fn paprika_search_id(body: &str, symbol: &str) -> Option<String> {
+pub fn paprika_search_id(body: &str, symbol: &str, name: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     let coins = value.get("currencies")?.as_array()?;
-    let row = coins.iter().find(|row| row.get("symbol").and_then(|item| item.as_str()).is_some_and(|sym| sym.eq_ignore_ascii_case(symbol)))?;
-    row.get("id").and_then(|item| item.as_str()).map(|id| id.to_string())
+    best_coin(coins, symbol, name)
+}
+
+/// Prefer the coin whose name matches what the user typed when several share a ticker.
+fn best_coin(coins: &[serde_json::Value], symbol: &str, name: &str) -> Option<String> {
+    let want_symbol = symbol.trim();
+    let want_name = fold(name);
+    let mut best: Option<(i32, String)> = None;
+    for row in coins {
+        let sym = row.get("symbol").and_then(|item| item.as_str()).unwrap_or("");
+        let id = row.get("id").and_then(|item| item.as_str()).unwrap_or("");
+        let coin_name = fold(row.get("name").and_then(|item| item.as_str()).unwrap_or(""));
+        if id.is_empty() {
+            continue;
+        }
+        let symbol_ok = !want_symbol.is_empty() && sym.eq_ignore_ascii_case(want_symbol);
+        let name_ok = !want_name.is_empty() && (coin_name == want_name || coin_name.contains(&want_name) || want_name.split(' ').all(|token| !token.is_empty() && coin_name.contains(token)));
+        if !symbol_ok && !name_ok {
+            continue;
+        }
+        let mut score = 0;
+        if symbol_ok {
+            score += 20;
+        }
+        if !want_name.is_empty() && coin_name == want_name {
+            score += 80;
+        }
+        if !want_name.is_empty() {
+            for token in want_name.split(' ') {
+                if !token.is_empty() && coin_name.contains(token) {
+                    score += 15;
+                }
+            }
+        }
+        if id.eq_ignore_ascii_case("epic-cash") && want_name.contains("cash") {
+            score += 25;
+        }
+        if id.contains("chain") && !want_name.contains("chain") {
+            score -= 40;
+        }
+        if best.as_ref().map(|(have, _)| score > *have).unwrap_or(true) {
+            best = Some((score, id.to_string()));
+        }
+    }
+    best.map(|(_, id)| id)
 }
 
 pub fn parse_paprika_eur(body: &str) -> Option<f64> {
@@ -759,15 +811,16 @@ fn alias(raw: &str) -> Option<AssetRef> {
         coingecko_id: row.2.into(),
         paprika_id: row.3.into(),
         kraken_pair: row.4.into(),
+        label: String::new(),
     })
 }
 
 fn crypto_ref(symbol: String, coingecko_id: String, paprika_id: String, kraken_pair: String) -> AssetRef {
-    AssetRef { symbol, kind: "crypto".into(), holding_unit: "coin".into(), coingecko_id, paprika_id, kraken_pair }
+    AssetRef { symbol, kind: "crypto".into(), holding_unit: "coin".into(), coingecko_id, paprika_id, kraken_pair, label: String::new() }
 }
 
 fn stock_ref(symbol: String) -> AssetRef {
-    AssetRef { symbol, kind: "stock".into(), holding_unit: "share".into(), coingecko_id: String::new(), paprika_id: String::new(), kraken_pair: String::new() }
+    AssetRef { symbol, kind: "stock".into(), holding_unit: "share".into(), coingecko_id: String::new(), paprika_id: String::new(), kraken_pair: String::new(), label: String::new() }
 }
 
 fn ticker_token(raw: &str) -> Option<String> {
@@ -864,6 +917,11 @@ mod tests {
         assert_eq!(apple.symbol, "AAPL");
         assert!(resolve_holding("Rent", "", "EUR", "custom", "").is_none());
         assert!(resolve_holding("Nitroeggs", "", "CHF", "custom", "").is_none());
+        let body = r#"{"coins":[{"id":"epic-chain","symbol":"EPIC","name":"Epic Chain"},{"id":"epic-cash","symbol":"EPIC","name":"Epic Private Internet Cash"}]}"#;
+        assert_eq!(coingecko_search_id(body, "EPIC", "EPIC Cash").as_deref(), Some("epic-cash"));
+        assert_eq!(coingecko_search_id(body, "EPIC", "Epic Chain").as_deref(), Some("epic-chain"));
+        let paprika = r#"{"currencies":[{"id":"epic-chain","symbol":"EPIC","name":"Epic Chain"},{"id":"epic-epic-cash","symbol":"EPIC","name":"Epic Cash"}]}"#;
+        assert_eq!(paprika_search_id(paprika, "EPIC", "EPIC Cash").as_deref(), Some("epic-epic-cash"));
         let unknown = resolve_holding("Kaspa", "KAS", "KAS", "crypto", "").unwrap();
         assert_eq!(unknown.symbol, "KAS");
         assert!(unknown.coingecko_id.is_empty());

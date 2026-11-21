@@ -1,4 +1,5 @@
 import type { FinanceAccount, FinanceRule, FinanceSnapshot, FinanceTransaction } from "@/lib/api";
+import type { ValuePoint } from "@/lib/portfolio";
 
 /** Preview book shaped like Gabriel's phone: main currency is whatever the snapshot says, not a hardcoded code. */
 export function financeSample(display = "CHF"): FinanceSnapshot {
@@ -176,5 +177,40 @@ export function financeSample(display = "CHF"): FinanceSnapshot {
       manual: [],
       disabled: [],
     },
+    history: sampleHistory(),
   };
+}
+
+function sampleHistory(): ValuePoint[] {
+  const today = new Date();
+  const day = (offset: number) => {
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  };
+  const row = (accountId: string, name: string, className: string, quantity: string, valueMinor: number, nativeMinor: number, nativeCurrency: string, source: string, offset: number): ValuePoint => ({
+    accountId,
+    name,
+    className,
+    quantity,
+    valueMinor,
+    currency: "CHF",
+    nativeMinor,
+    nativeCurrency,
+    source,
+    date: day(offset),
+  });
+  const offsets = [75, 50, 28, 10, 0];
+  const factors = [0.86, 0.92, 1.04, 0.97, 1];
+  const base = [
+    { id: "quanloop", name: "Quanloop", className: "Manual", quantity: "", value: 439045, native: 462153, nativeCurrency: "EUR", source: "stated" },
+    { id: "xmr", name: "XMR", className: "Crypto", quantity: "2.969859854727", value: 90284, native: 95036, nativeCurrency: "EUR", source: "coingecko" },
+    { id: "silver", name: "Silver", className: "Metals", quantity: "5", value: 13490, native: 14200, nativeCurrency: "EUR", source: "gold-api" },
+    { id: "zano", name: "ZANO", className: "Crypto", quantity: "16.46", value: 656, native: 691, nativeCurrency: "EUR", source: "coingecko" },
+    { id: "epic", name: "EPIC Cash", className: "Crypto", quantity: "128.60340395", value: 2199, native: 2315, nativeCurrency: "EUR", source: "coinpaprika" },
+    { id: "rolex", name: "Rolex", className: "Manual", quantity: "", value: 1400000, native: 1400000, nativeCurrency: "CHF", source: "valuation" },
+  ];
+  return offsets.flatMap((offset, index) =>
+    base.map((item) => row(item.id, item.name, item.className, item.quantity, Math.round(item.value * factors[index]), Math.round(item.native * factors[index]), item.nativeCurrency, item.source, offset)),
+  );
 }

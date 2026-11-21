@@ -273,6 +273,12 @@ struct Store {
     fx: crate::finance_fx::FxBook,
     #[serde(default)]
     prices: crate::finance_prices::PriceBook,
+    #[serde(default)]
+    history: Vec<crate::finance_history::ValuePoint>,
+    #[serde(default)]
+    history_seeded: Vec<String>,
+    #[serde(default)]
+    provider_pins: Vec<crate::finance_history::ProviderPin>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -297,6 +303,12 @@ pub struct Bundle {
     pub fx: crate::finance_fx::FxBook,
     #[serde(default)]
     pub prices: crate::finance_prices::PriceBook,
+    #[serde(default)]
+    history: Vec<crate::finance_history::ValuePoint>,
+    #[serde(default)]
+    history_seeded: Vec<String>,
+    #[serde(default)]
+    provider_pins: Vec<crate::finance_history::ProviderPin>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -373,6 +385,8 @@ pub struct Snapshot {
     pub categories: Vec<Category>,
     pub fx: FxStatus,
     pub prices: crate::finance_prices::PriceBook,
+    #[serde(default)]
+    pub history: Vec<crate::finance_history::ValuePoint>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -627,6 +641,9 @@ impl Finance {
             categories: store.categories.clone(),
             fx: store.fx.clone(),
             prices: store.prices.clone(),
+            history: store.history.clone(),
+            history_seeded: store.history_seeded.clone(),
+            provider_pins: store.provider_pins.clone(),
         }
     }
 
@@ -639,6 +656,9 @@ impl Finance {
         store.categories = bundle.categories;
         store.fx = bundle.fx;
         store.prices = bundle.prices;
+        store.history = bundle.history;
+        store.history_seeded = bundle.history_seeded;
+        store.provider_pins = bundle.provider_pins;
         self.commit(app, store).map(|_| ())
     }
 
@@ -1107,10 +1127,15 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, or charts. overview is net worth, this month's expenses, income, cash flow, and card debt. activity is transactions. accounts includes banks, cash, cards, and loans. holdings is investments, crypto, metals, and manual assets. plan is what is coming. charts scrolls the overview charts. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview is net worth, this month (income, expenses, card payments, result, cash flow), and the next 30 days. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is allocation, category, debts, trend, holdings, or portfolio. action is hide, show, only, or reset, and name is a holding or a class such as crypto. Do not invent a rate.",
             json!({
                 "type": "object",
-                "properties": { "view": { "type": "string" } },
+                "properties": {
+                    "view": { "type": "string" },
+                    "chart": { "type": "string", "description": "allocation, category, debts, trend, holdings, or portfolio" },
+                    "action": { "type": "string", "description": "hide, show, only, or reset" },
+                    "name": { "type": "string", "description": "Holding name or class such as Quanloop or crypto" }
+                },
                 "required": ["view"]
             })
         ),
@@ -1172,11 +1197,21 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
     }
     if name == "open_finance" {
         let view = screen_view(args["view"].as_str().unwrap_or("overview"));
-        touch_view(app, view);
+        let chart = args["chart"].as_str().unwrap_or("").trim().to_string();
+        let action = args["action"].as_str().unwrap_or("").trim().to_string();
+        let chart_name = args["name"].as_str().unwrap_or("").trim().to_string();
+        touch_chart(app, view, &chart, &action, &chart_name);
         let store = finance.lock().clone();
         let today = Local::now().date_naive();
+        let raw_view = fold(args["view"].as_str().unwrap_or(""));
         let ask = Ask {
-            view: if view == "holdings" { "investments".into() } else { view.into() },
+            view: if raw_view == "portfolio" {
+                "portfolio".into()
+            } else if view == "holdings" {
+                "investments".into()
+            } else {
+                view.into()
+            },
             month: String::new(),
             kind: String::new(),
             account: String::new(),
@@ -1186,7 +1221,11 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
             amount: String::new(),
             date: String::new(),
         };
-        let detail = speak(&store, &ask, today);
+        let mut detail = speak(&store, &ask, today);
+        if !action.is_empty() {
+            detail.push(' ');
+            detail.push_str(&speak_chart(&action, &chart, &chart_name));
+        }
         return Ok(Some(json!({ "ok": true, "view": view, "detail": detail, "defaultCurrency": effective_default(&store, &currency_locale(app, &store)) })));
     }
     if name == "list_finance" {
@@ -3943,7 +3982,15 @@ fn link_holdings(store: &mut Store) -> bool {
             }
         }
     }
+    let resolved: Vec<(String, crate::finance_prices::AssetRef)> = store.accounts.iter().filter_map(|account| holding_of(account).map(|asset| (account.id.clone(), asset))).collect();
+    for (id, asset) in resolved {
+        remember_pin(store, &id, &asset);
+    }
     dirty
+}
+
+fn is_holding_account(account: &Account) -> bool {
+    !matches!(account.kind.as_str(), "bank" | "cash" | "credit_card" | "loan" | "other_debt")
 }
 
 fn holding_of(account: &Account) -> Option<crate::finance_prices::AssetRef> {
@@ -3954,10 +4001,43 @@ fn holding_of(account: &Account) -> Option<crate::finance_prices::AssetRef> {
     Some(asset)
 }
 
+fn holding_resolved(store: &Store, account: &Account) -> Option<crate::finance_prices::AssetRef> {
+    let mut asset = holding_of(account)?;
+    if let Some(pin) = store.provider_pins.iter().find(|pin| pin.account_id == account.id) {
+        if !pin.coingecko_id.is_empty() {
+            asset.coingecko_id = pin.coingecko_id.clone();
+        }
+        if !pin.paprika_id.is_empty() {
+            asset.paprika_id = pin.paprika_id.clone();
+        }
+    }
+    Some(asset)
+}
+
+fn remember_pin(store: &mut Store, account_id: &str, asset: &crate::finance_prices::AssetRef) {
+    if asset.coingecko_id.is_empty() && asset.paprika_id.is_empty() {
+        return;
+    }
+    if let Some(pin) = store.provider_pins.iter_mut().find(|pin| pin.account_id == account_id) {
+        if pin.coingecko_id.is_empty() {
+            pin.coingecko_id = asset.coingecko_id.clone();
+        }
+        if pin.paprika_id.is_empty() {
+            pin.paprika_id = asset.paprika_id.clone();
+        }
+    } else {
+        store.provider_pins.push(crate::finance_history::ProviderPin {
+            account_id: account_id.to_string(),
+            coingecko_id: asset.coingecko_id.clone(),
+            paprika_id: asset.paprika_id.clone(),
+        });
+    }
+}
+
 fn held_assets(store: &Store) -> Vec<crate::finance_prices::AssetRef> {
     let mut out = Vec::new();
     for account in &store.accounts {
-        if let Some(asset) = holding_of(account) {
+        if let Some(asset) = holding_resolved(store, account) {
             if !out.iter().any(|row: &crate::finance_prices::AssetRef| row.symbol == asset.symbol && row.kind == asset.kind) {
                 out.push(asset);
             }
@@ -4108,7 +4188,109 @@ fn price_store(app: &AppHandle, store: &mut Store, force: bool, allow_ai: bool) 
     if store.fx.per_eur != before {
         changed = true;
     }
+    if capture_history(store, Local::now().date_naive(), now_ms) {
+        changed = true;
+    }
     changed
+}
+
+fn capture_history(store: &mut Store, today: NaiveDate, now_ms: i64) -> bool {
+    let before = store.history.len();
+    let display = effective_default(store, &store.locale_hint);
+    let date = iso(today);
+    let accounts = store.accounts.clone();
+    for account in &accounts {
+        if !is_holding_account(account) {
+            continue;
+        }
+        for valuation in &account.valuations {
+            if valuation.as_of.len() != 10 {
+                continue;
+            }
+            if store.history.iter().any(|row| row.account_id == account.id && row.date == valuation.as_of) {
+                continue;
+            }
+            if let Some((minor, currency)) = history_value(store, valuation.amount_minor, &valuation.currency, &display, now_ms) {
+                crate::finance_history::upsert_point(&mut store.history, history_point(account, &valuation.as_of, minor, &currency, valuation.amount_minor, &valuation.currency, "valuation"));
+            }
+        }
+        if let Some(note) = market_note(store, account, now_ms, &display) {
+            if !note.estimated {
+                if let Some(worth) = note.worth_minor {
+                    let native_minor = if note.price_currency.eq_ignore_ascii_case(&display) { worth } else { worth };
+                    crate::finance_history::upsert_point(&mut store.history, history_point(account, &date, worth, &note.worth_currency, native_minor, &note.price_currency, &note.source));
+                }
+            }
+            continue;
+        }
+        if let Some(balance) = account.balance_minor {
+            if balance != 0 && !account.currency.is_empty() {
+                if let Some((minor, currency)) = history_value(store, balance, &account.currency, &display, now_ms) {
+                    crate::finance_history::upsert_point(&mut store.history, history_point(account, &date, minor, &currency, balance, &account.currency, "stated"));
+                }
+            }
+        }
+    }
+    seed_backfill(store, today, now_ms, &display);
+    store.history.len() != before
+}
+
+/// One CoinGecko market_chart pass per holding. Past points keep the quantity from the day they were written.
+fn seed_backfill(store: &mut Store, today: NaiveDate, now_ms: i64, display: &str) {
+    let today_iso = iso(today);
+    let accounts = store.accounts.clone();
+    for account in accounts {
+        if store.history_seeded.iter().any(|id| id == &account.id) {
+            continue;
+        }
+        let Some(asset) = holding_resolved(store, &account) else {
+            store.history_seeded.push(account.id.clone());
+            continue;
+        };
+        if asset.kind != "crypto" || asset.coingecko_id.is_empty() || account.units.trim().is_empty() {
+            store.history_seeded.push(account.id.clone());
+            continue;
+        }
+        let url = format!("https://api.coingecko.com/api/v3/coins/{}/market_chart?vs_currency=eur&days=365", asset.coingecko_id);
+        if let Ok(body) = crate::finance_prices::blocking_get(&url) {
+            for (date, price) in crate::finance_history::parse_market_chart(&body) {
+                if date >= today_iso || store.history.iter().any(|row| row.account_id == account.id && row.date == date) {
+                    continue;
+                }
+                let Some(major) = crate::finance_prices::quantity_times(&account.units, price) else { continue };
+                let Some(eur_minor) = crate::finance_prices::major_to_minor(major, 2) else { continue };
+                if let Some((minor, currency)) = history_value(store, eur_minor, "EUR", display, now_ms) {
+                    crate::finance_history::upsert_point(
+                        &mut store.history,
+                        history_point(&account, &date, minor, &currency, eur_minor, "EUR", "coingecko history"),
+                    );
+                }
+            }
+        }
+        store.history_seeded.push(account.id.clone());
+    }
+}
+
+fn history_value(store: &Store, amount: i64, currency: &str, display: &str, now_ms: i64) -> Option<(i64, String)> {
+    if display.is_empty() || currency.eq_ignore_ascii_case(display) {
+        return Some((amount, currency.to_string()));
+    }
+    crate::finance_fx::convert(amount, currency, display, &store.fx, now_ms).map(|row| (row.amount_minor, row.currency))
+}
+
+fn history_point(account: &Account, date: &str, value: i64, currency: &str, native: i64, native_currency: &str, source: &str) -> crate::finance_history::ValuePoint {
+    crate::finance_history::ValuePoint {
+        account_id: account.id.clone(),
+        date: date.to_string(),
+        quantity: account.units.clone(),
+        value_minor: value,
+        currency: currency.to_string(),
+        native_minor: native,
+        native_currency: native_currency.to_string(),
+        source: source.to_string(),
+        name: account.name.clone(),
+        class_name: account.investment_type.clone(),
+    }
 }
 
 fn ai_spot(app: &AppHandle, asset: &crate::finance_prices::AssetRef) -> Result<(f64, String), String> {
@@ -4196,6 +4378,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
         categories: store.categories.clone(),
         fx: fx_status(store, today),
         prices: store.prices.clone(),
+        history: store.history.clone(),
     }
 }
 
@@ -4412,9 +4595,12 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
             .collect::<Vec<_>>();
         return speak_upcoming(&rows);
     }
+    if view == "portfolio" {
+        return speak_portfolio(store, today);
+    }
     if view == "accounts" || view == "investments" {
-        let kind = if view == "investments" && kind.is_empty() { "investment".into() } else { kind };
-        return speak_accounts(store, &kind, &ask.account);
+        let scope = if view == "investments" { "hold" } else { "spend" };
+        return speak_accounts(store, &kind, &ask.account, scope);
     }
     if matches!(view.as_str(), "activity" | "transactions" | "search") {
         return match filtered_transactions(store, ask) {
@@ -4434,7 +4620,7 @@ fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
     let mut detail = speak_totals(store, &totals, &month, &display);
     if !account_id.is_empty() || !kind.is_empty() {
         detail.push(' ');
-        detail.push_str(&speak_accounts(store, &kind, &ask.account));
+        detail.push_str(&speak_accounts(store, &kind, &ask.account, "any"));
     }
     if !detail.contains("needs a rate") {
         detail.push(' ');
@@ -4533,11 +4719,40 @@ fn spoken_amount(parts: &[(i64, String)], display: &str, book: &crate::finance_f
     }
 }
 
-fn speak_accounts(store: &Store, kind: &str, account: &str) -> String {
+fn speak_chart(action: &str, chart: &str, name: &str) -> String {
+    let chart = if chart.is_empty() { "holdings" } else { chart };
+    match fold(action).as_str() {
+        "reset" | "all" => spoken("The {chart} chart shows every item again.", &[("chart", chart)]),
+        "only" => spoken("Only {name} is shown on the {chart} chart.", &[("name", name), ("chart", chart)]),
+        "show" => spoken("{name} is shown on the {chart} chart.", &[("name", name), ("chart", chart)]),
+        _ => spoken("{name} is hidden on the {chart} chart.", &[("name", name), ("chart", chart)]),
+    }
+}
+
+fn speak_portfolio(store: &Store, today: NaiveDate) -> String {
+    let from = iso(today - chrono::Duration::days(30));
+    match crate::finance_history::portfolio_change(&store.history, &from, &iso(today)) {
+        Some((delta, end, currency)) => {
+            let amount = format_minor(delta, &currency);
+            let start = end.saturating_sub(delta);
+            let percent = if start == 0 { 0 } else { ((delta as f64) * 100.0 / (start.unsigned_abs() as f64)).round() as i64 };
+            let percent = percent.to_string();
+            spoken("Portfolio value changed by {amount}, {percent} percent, since {date}.", &[("amount", &amount), ("percent", &percent), ("date", &from)])
+        }
+        None => spoken("No portfolio history is saved yet.", &[]),
+    }
+}
+
+fn speak_accounts(store: &Store, kind: &str, account: &str, scope: &str) -> String {
     let indexes: Vec<usize> = store
         .accounts
         .iter()
         .enumerate()
+        .filter(|(_, row)| match scope {
+            "spend" => !is_holding_account(row),
+            "hold" => is_holding_account(row),
+            _ => true,
+        })
         .filter(|(_, row)| kind.is_empty() || row.kind == kind)
         .filter(|(_, row)| account.trim().is_empty() || compact_name(&row.name).contains(&compact_name(account)) || compact_name(account).contains(&compact_name(&row.name)))
         .map(|(index, _)| index)
@@ -5160,8 +5375,12 @@ fn touch(app: &AppHandle) {
 }
 
 fn touch_view(app: &AppHandle, view: &str) {
+    touch_chart(app, view, "", "", "");
+}
+
+fn touch_chart(app: &AppHandle, view: &str, chart: &str, action: &str, name: &str) {
     if let Some(hub) = app.try_state::<std::sync::Arc<crate::diagnostics::Hub>>() {
-        hub.emit("voice://finance", json!({ "view": view }));
+        hub.emit("voice://finance", json!({ "view": view, "chart": chart, "action": action, "name": name }));
     }
 }
 
@@ -5174,7 +5393,7 @@ fn named_screen(view: &str) -> Option<&'static str> {
         "overview" | "home" | "summary" => Some("overview"),
         "activity" | "transactions" | "expenses" | "income" => Some("activity"),
         "accounts" | "cards" | "debts" => Some("accounts"),
-        "holdings" | "investments" => Some("holdings"),
+        "holdings" | "investments" | "portfolio" => Some("holdings"),
         "plan" | "coming" | "upcoming" | "schedules" => Some("plan"),
         "charts" => Some("overview"),
         _ => None,

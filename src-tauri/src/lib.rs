@@ -14,6 +14,7 @@ mod error;
 mod files;
 mod finance;
 mod finance_fx;
+mod finance_history;
 mod finance_prices;
 mod finance_pdf;
 mod finance_schedule;
