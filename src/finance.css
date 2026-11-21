@@ -165,14 +165,14 @@
   background: transparent;
   color: var(--fin-muted);
   font-family: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", sans-serif;
-  font-size: 0.68rem;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   line-height: 1.15;
   text-align: center;
   text-transform: uppercase;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 .finance .fin-tab[aria-selected="true"] {
@@ -242,6 +242,7 @@
   width: 100%;
   max-width: 100%;
   gap: 0;
+  align-items: flex-start;
 }
 
 .finance .fin-carousel > .fin-panel {
@@ -301,4 +302,81 @@
   background: var(--fin-panel-2);
   color: var(--fin-ink);
   border-color: var(--fin-line);
+}
+
+.finance .fin-card {
+  padding: 16px;
+}
+
+.finance .fin-muted {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.finance .fin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.finance .fin-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.finance .fin-seg button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--fin-line);
+  background: transparent;
+  color: var(--fin-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.finance .fin-seg button[aria-pressed="true"] {
+  background: var(--fin-gold);
+  border-color: var(--fin-gold);
+  color: var(--on-gold);
+}
+
+.finance .fin-textbtn {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--fin-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.finance .fin-menu {
+  position: absolute;
+  right: 0;
+  z-index: 5;
+  min-width: 11rem;
+  background: var(--fin-panel);
+  border: 1px solid var(--fin-line);
+  padding: 4px;
+}
+
+.finance .fin-menu-item {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
 }

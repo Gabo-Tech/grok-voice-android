@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import phononStrings from "./phonon-i18n.json";
 import setupStrings from "./setup-i18n.json";
+import { financeCopy } from "./financeCopy";
 
 export type LocaleId = "en" | "es" | "de" | "pt" | "ca-ES-valencia";
 
@@ -4985,12 +4986,14 @@ export function catalogStats(): { locale: string; count: number }[] {
 }
 
 export function catalogHas(english: string): boolean {
-  return (Object.keys(catalogs) as Array<keyof typeof catalogs>).every((locale) => Object.prototype.hasOwnProperty.call(catalogs[locale], english));
+  return (Object.keys(catalogs) as Array<keyof typeof catalogs>).every(
+    (locale) => Object.prototype.hasOwnProperty.call(catalogs[locale], english) || Object.prototype.hasOwnProperty.call(financeCopy[locale], english),
+  );
 }
 
 export function translate(english: string): string {
   if (current === "en") return english;
-  return catalogs[current][english] ?? english;
+  return catalogs[current][english] ?? financeCopy[current][english] ?? english;
 }
 
 /** Fill `{name}` holes after translating `english`. */

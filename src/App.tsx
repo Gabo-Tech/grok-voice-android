@@ -154,6 +154,19 @@ export default function App() {
     return () => unlisten?.();
   }, [inApp]);
 
+  useEffect(() => {
+    if (!inApp) return;
+    let unlisten: (() => void) | undefined;
+    void listen<{ view?: string; chart?: string; action?: string; name?: string }>("voice://finance", (event) => {
+      show("finance");
+      setTab("finance");
+      window.dispatchEvent(new CustomEvent("grok-finance-voice", { detail: event.payload || {} }));
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [inApp]);
+
   if (bootError) {
     return (
       <main className="safe-area grid h-full place-items-center p-6 text-center">

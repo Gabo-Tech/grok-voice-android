@@ -71,6 +71,22 @@ export function majorString(minor: number | null | undefined, currency: string):
   return exp > 2 ? text.replace(/(\.\d{2,}?)0+$/, "$1") : text;
 }
 
+/** Short axis label. The currency code stays in the chart title, not on every tick. */
+export function compactMoney(minor: number, currency: string): string {
+  const exp = minorExponent(currency);
+  const value = minor / 10 ** exp;
+  const sign = value < 0 ? "−" : "";
+  const abs = Math.abs(value);
+  if (abs >= 10000) return `${sign}${Math.round(abs / 1000)}k`;
+  if (abs >= 1000) {
+    const shown = abs / 1000;
+    return `${sign}${shown >= 10 ? Math.round(shown) : shown.toFixed(1).replace(/\.0$/, "")}k`;
+  }
+  if (abs >= 100) return `${sign}${Math.round(abs)}`;
+  if (abs >= 1) return `${sign}${abs.toFixed(0)}`;
+  return `${sign}${abs.toFixed(2)}`;
+}
+
 export function formatMoney(minor: number | null | undefined, currency: string): string {
   if (minor == null || !currency) return "";
   const exp = minorExponent(currency);

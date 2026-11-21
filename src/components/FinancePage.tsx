@@ -7,15 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
+import { MoneyFlowPanel } from "@/components/MoneyFlowChart";
 import { HoldingsChart } from "@/components/HoldingsChart";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
-import { formatQuantity, positionOf } from "@/lib/financeLedger";
+import { formatQuantity, isHoldingAccount, originalHolding, positionOf } from "@/lib/financeLedger";
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
 import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
-import { bookFromStatus, cardDisplayMinor, cardDueDate, cardPosture, debtPayoff, nextDue, plannedHits, utilization } from "@/lib/financeMath";
-import { FinanceDashboard, plannedYearBars, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
+import { bookFromStatus, cardDisplayMinor, cardDueDate, cardPosture, debtPayoff, headlineOf, nextDue, plannedHits, utilization } from "@/lib/financeMath";
+import { FinanceDashboard, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
 import { FINANCE_TABS, readFinanceTab, type FinanceTab } from "@/lib/financeTabs";
 import { ProgramSheet } from "@/components/ProgramSheet";
 import { CASH_WALLET, PayWith } from "@/components/PayWith";
@@ -103,7 +104,6 @@ export function FinancePage({
       }),
     [finance.snapshot.transactions, bounds, accountFilter, categoryFilter, currencyFilter, directionFilter, classFilter, groupFilter, accounts],
   );
-  const recent = finance.snapshot.transactions.slice(0, 5);
   const today = todayIso();
   const planned = useMemo(() => {
     return plannedHits(finance.snapshot.rules, finance.snapshot.transactions, today).filter((hit) => {
@@ -128,17 +128,6 @@ export function FinancePage({
       }),
     [accounts, accountFilter, currencyFilter, groupFilter],
   );
-  const chartRules = useMemo(
-    () =>
-      finance.snapshot.rules.filter((rule) => {
-        if (accountFilter !== "all" && rule.accountId !== accountFilter) return false;
-        if (categoryFilter !== "all" && rule.category !== categoryFilter) return false;
-        if (currencyFilter !== "all" && rule.currency !== currencyFilter) return false;
-        return true;
-      }),
-    [finance.snapshot.rules, accountFilter, categoryFilter, currencyFilter],
-  );
-  const bars = useMemo(() => plannedYearBars(chartRules, finance.snapshot.transactions, today), [chartRules, finance.snapshot.transactions, today]);
   const currencies = useMemo(() => [...new Set(accounts.map((account) => account.currency).filter(Boolean))], [accounts]);
   const categories = useMemo(() => {
     const names = new Set(finance.snapshot.categories.map((category) => category.name));
@@ -179,6 +168,24 @@ export function FinancePage({
       })
       .catch(() => setExportNote(t("Could not write the PDF.")));
   };
+
+  useEffect(() => {
+    const onVoice = (event: Event) => {
+      const detail = (event as CustomEvent<{ view?: string }>).detail || {};
+      if (!detail.view) return;
+      const next = readFinanceTab(detail.view);
+      chooseTab(next === "overview" && detail.view === "charts" ? "overview" : next);
+    };
+    window.addEventListener("grok-finance-voice", onVoice);
+    return () => window.removeEventListener("grok-finance-voice", onVoice);
+  }, []);
+
+  useEffect(() => {
+    const shot = new URLSearchParams(window.location.search).get("shot");
+    if (!shot) return;
+    const node = document.querySelector(`[data-shot="${shot}"]`);
+    node?.scrollIntoView({ block: "start" });
+  }, [tab]);
 
   useEffect(() => {
     if (!active || !finance.inApp) return;
@@ -237,7 +244,7 @@ export function FinancePage({
   };
   const openAccount = (account: FinanceAccount) => {
     setEditingAccount(account);
-    setSheet(account.kind === "investment" ? "investment" : "account");
+    setSheet(isHoldingAccount(account) ? "investment" : "account");
   };
   const openTransaction = (tx: FinanceTransaction) => {
     setEditingTx(tx);
@@ -307,22 +314,29 @@ export function FinancePage({
               finance={finance}
               empty={empty}
               accounts={accounts}
-              recent={recent}
               onBank={openBank}
               onCard={openCard}
               onIncome={openIncome}
               onBill={openBill}
-              onFocus={(focus) => chooseTab("accounts", focus)}
+              onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))}
               onOpenExpenses={() => chooseTab("activity")}
               onOpenIncome={() => chooseTab("activity")}
-              onTransaction={openTransaction}
             />
+            <div className="mt-4" data-shot="flow">
+              <MoneyFlowPanel
+                transactions={finance.snapshot.transactions}
+                accounts={accounts}
+                categories={finance.snapshot.categories}
+                display={finance.snapshot.defaultCurrency}
+                fx={finance.snapshot.fx}
+                onPaintCategory={(name, color) => finance.editCategory({ action: "color", name, color })}
+              />
+            </div>
             <button type="button" className="fin-chip mt-4 w-full" onClick={exportSummary}>{t("Export PDF")}</button>
-            <div className="mt-6" data-finance-charts>
+            <div className="mt-6" data-finance-charts data-shot="donut">
               <FinanceCarousel
                 accounts={chartAccounts}
                 transactions={finance.snapshot.transactions}
-                planned={bars}
                 display={finance.snapshot.defaultCurrency}
                 fx={finance.snapshot.fx}
                 prices={finance.snapshot.prices}
@@ -341,7 +355,7 @@ export function FinancePage({
               place="activity"
               onProgram={openBill}
               onIncome={openIncome}
-              onFocus={(focus) => chooseTab("accounts", focus)}
+              onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))}
             >
               {ledger("any")}
             </FinanceDashboard>
@@ -380,7 +394,6 @@ export function FinancePage({
                 setAccountPreset("loan");
                 setSheet("account");
               }}
-              onAddInvestment={openInvestment}
               display={finance.snapshot.defaultCurrency}
               fx={finance.snapshot.fx}
               quotes={finance.snapshot.prices?.quotes || []}
@@ -390,7 +403,7 @@ export function FinancePage({
         {tab === "holdings" ? (
           <div role="tabpanel" id="finance-panel-holdings" aria-labelledby="finance-tab-holdings" data-finance-tabpanel="holdings">
             <AccountList
-              rows={accounts.filter((account) => account.kind === "investment" || account.kind === "other" || account.units)}
+              rows={accounts.filter((account) => isHoldingAccount(account))}
               transactions={finance.snapshot.transactions}
               rules={finance.snapshot.rules}
               onPaid={finance.markPaid}
@@ -399,6 +412,8 @@ export function FinancePage({
               action={t("Add investment")}
               onAdd={openInvestment}
               onOpen={openAccount}
+              onRefreshPrice={(account) => finance.refreshHolding(account.id)}
+              priceNote={finance.snapshot.prices?.lastError || ""}
               display={finance.snapshot.defaultCurrency}
               fx={finance.snapshot.fx}
               quotes={finance.snapshot.prices?.quotes || []}
@@ -409,6 +424,7 @@ export function FinancePage({
                 display={finance.snapshot.defaultCurrency}
                 fx={finance.snapshot.fx}
                 prices={finance.snapshot.prices}
+                history={finance.snapshot.history || []}
                 onRecolor={(account, color) => finance.saveAccount({ id: account.id, name: account.name, kind: account.kind, color })}
               />
             </div>
@@ -416,7 +432,7 @@ export function FinancePage({
         ) : null}
         {tab === "plan" ? (
           <div role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan">
-            <FinanceDashboard finance={finance} accounts={accounts} place="plan" onProgram={openBill} onIncome={openIncome} onPayout={openBill} onFocus={(focus) => chooseTab("accounts", focus)} />
+            <FinanceDashboard finance={finance} accounts={accounts} place="plan" onProgram={openBill} onIncome={openIncome} onPayout={openBill} onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))} />
           </div>
         ) : null}
         {exportNote ? <p className="fin-muted mt-3 text-sm leading-5">{exportNote}</p> : null}
@@ -476,7 +492,6 @@ function Overview({
   finance,
   empty,
   accounts,
-  recent,
   onBank,
   onCard,
   onIncome,
@@ -484,12 +499,10 @@ function Overview({
   onFocus,
   onOpenExpenses,
   onOpenIncome,
-  onTransaction,
 }: {
   finance: FinanceState;
   empty: boolean;
   accounts: FinanceAccount[];
-  recent: FinanceTransaction[];
   onBank: () => void;
   onCard: () => void;
   onIncome: () => void;
@@ -497,7 +510,6 @@ function Overview({
   onFocus: (focus: WorthFocus) => void;
   onOpenExpenses: () => void;
   onOpenIncome: () => void;
-  onTransaction: (tx: FinanceTransaction) => void;
 }) {
   const t = useT();
   return (
@@ -524,13 +536,7 @@ function Overview({
           <StartCard title={t("Add a bill")} body={t("Rent, a subscription, or anything with a date.")} onClick={onBill} />
         </div>
       ) : null}
-      <p className="fin-muted text-sm leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
-      {recent.length > 0 ? (
-        <section>
-          <h2 className="fin-kicker mb-2">{t("Recent")}</h2>
-          <TxRows rows={recent} accounts={accounts} onOpen={onTransaction} />
-        </section>
-      ) : null}
+      <p className="fin-muted text-[13px] leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
     </div>
   );
 }
@@ -769,13 +775,9 @@ function Activity({
   );
 }
 
-function unitName(unit: string | undefined, t: (text: string) => string): string {
-  if (unit === "troy_oz") return t("Troy ounce");
-  if (unit === "gram") return t("Gram");
-  if (unit === "kilogram") return t("Kilogram");
-  if (unit === "share") return t("One share");
-  if (unit === "coin") return t("Coin");
-  return unit || "";
+function shownMinor(amount: number, currency: string, display: string, fx: Parameters<typeof bookFromStatus>[0]): number {
+  const head = headlineOf([{ amountMinor: amount, currency }], display, bookFromStatus(fx), Date.now());
+  return head.state === "ready" ? head.amountMinor : amount;
 }
 
 function priceAgo(ms: number): string {
@@ -798,6 +800,8 @@ function AccountList({
   onAdd,
   onOpen,
   onPay,
+  onRefreshPrice,
+  priceNote = "",
   display = "",
   fx,
   quotes = [],
@@ -812,12 +816,14 @@ function AccountList({
   onAdd: () => void;
   onOpen: (account: FinanceAccount) => void;
   onPay?: (account: FinanceAccount) => void;
+  onRefreshPrice?: (account: FinanceAccount) => void;
+  priceNote?: string;
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
 }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} display={display} fx={fx} quotes={quotes} />;
+  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} priceNote={priceNote} display={display} fx={fx} quotes={quotes} />;
 }
 
 function AccountRows({
@@ -827,6 +833,8 @@ function AccountRows({
   rules,
   onPaid,
   onPay,
+  onRefreshPrice,
+  priceNote = "",
   display = "",
   fx,
   quotes = [],
@@ -837,6 +845,8 @@ function AccountRows({
   rules: FinanceState["snapshot"]["rules"];
   onPaid: (id: string) => void;
   onPay?: (account: FinanceAccount) => void;
+  onRefreshPrice?: (account: FinanceAccount) => void;
+  priceNote?: string;
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
@@ -848,10 +858,21 @@ function AccountRows({
         const posture = cardPosture(account.kind === "credit_card" ? account.shownBalanceMinor : null);
         const displayMinor = account.kind === "credit_card" ? cardDisplayMinor(account.shownBalanceMinor) : account.shownBalanceMinor;
         const position = positionOf(account, display, bookFromStatus(fx), quotes, Date.now());
-        const quantity = account.units ? formatQuantity(account.units) : position.quantity;
-        const money = position.unpriced
-          ? fill("No price for {name}", { name: account.name })
-          : formatMoney(position.amountMinor, position.currency);
+        const original = originalHolding(account, position, display);
+        const quantity = original.quantity || (account.units ? formatQuantity(account.units) : "");
+        const holding = isHoldingAccount(account);
+        const money = holding
+          ? position.unpriced
+            ? fill("No price for {name}", { name: account.name })
+            : formatMoney(position.amountMinor, position.currency)
+          : displayMinor == null
+            ? t("Not set")
+            : formatMoney(shownMinor(displayMinor, account.currency, display, fx), (display || account.currency).toUpperCase());
+        const nativeLine = holding
+          ? [quantity, original.nativeMinor != null ? formatMoney(original.nativeMinor, original.nativeCurrency) : ""].filter(Boolean).join(" · ")
+          : display && account.currency && account.currency.toUpperCase() !== display.toUpperCase() && displayMinor != null
+            ? formatMoney(displayMinor, account.currency)
+            : "";
         const owed = isDebt(account.kind);
         const card = account.kind === "credit_card";
         const payoff = debtPayoff(account, transactions);
@@ -871,13 +892,13 @@ function AccountRows({
                   {owed && posture !== "credit" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 ? ` · ${t("Remaining")}` : ""}
                   {account.kind === "investment" && account.investmentType ? ` · ${t(typeLabel(account.investmentType))}` : ""}
                   {account.kind === "investment" && account.shownBalanceMinor != null ? ` · ${t("Worth")}` : ""}
-                  {quantity ? ` · ${quantity}${account.measureUnit ? ` ${unitName(account.measureUnit, t)}` : ""}` : ""}
                   {account.calendarEventId ? ` · ${t("On Calendar")}` : ""}
                 </p>
               </div>
-              <p className={cn("shrink-0 text-right text-xl leading-6 font-medium tabular-nums", (account.marketWorthMinor ?? displayMinor) == null && "text-base font-normal text-muted-foreground")}>
-                {account.marketWorthMinor != null && account.marketWorthCurrency ? formatMoney(account.marketWorthMinor, account.marketWorthCurrency) : money}
-              </p>
+              <span className="shrink-0 text-right">
+                <span className={cn("block text-xl leading-6 font-medium tabular-nums", (account.marketWorthMinor ?? displayMinor) == null && position.unpriced && "text-base font-normal text-muted-foreground")}>{money}</span>
+                {nativeLine ? <span className="fin-muted block text-[13px] leading-4">{nativeLine}</span> : null}
+              </span>
             </RowButton>
             {account.marketPrice != null ? (
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
@@ -886,6 +907,10 @@ function AccountRows({
                 {account.marketStale ? ` · ${t("Rates are stale")}` : ""}
                 {account.marketFetchedMs ? ` · ${fill("Updated {ago}", { ago: priceAgo(account.marketFetchedMs) })}` : ""}
               </p>
+            ) : null}
+            {position.unpriced && priceNote ? <p className="mt-1 text-sm leading-5 text-muted-foreground">{t(priceNote)}</p> : null}
+            {onRefreshPrice ? (
+              <button type="button" className="fin-chip mt-3 min-h-12 w-full" onClick={() => onRefreshPrice(account)}>{t("Refresh price now")}</button>
             ) : null}
             {owed && payoff && payoff.paid > 0 ? (
               <div className="mt-2">
@@ -1512,7 +1537,6 @@ function AccountsBoard({
   onAddCash,
   onAddDebt,
   onAddLoan,
-  onAddInvestment,
   onPay,
   display = "",
   fx,
@@ -1531,20 +1555,17 @@ function AccountsBoard({
   onAddCash: () => void;
   onAddDebt: () => void;
   onAddLoan: () => void;
-  onAddInvestment: () => void;
   onPay: (account: FinanceAccount) => void;
 }) {
   const t = useT();
-  const bank = accounts.filter((account) => account.kind === "bank" || account.kind === "other");
+  const bank = accounts.filter((account) => account.kind === "bank");
   const cash = accounts.filter((account) => account.kind === "cash");
-  const invested = accounts.filter((account) => account.kind === "investment");
   const cards = accounts.filter((account) => account.kind === "credit_card");
   const loans = accounts.filter((account) => account.kind === "loan" || account.kind === "other_debt");
-  const show = (section: "accounts" | "cash" | "invested" | "debt") => {
-    if (focus === "all") return true;
-    if (focus === "owned") return section !== "debt";
+  const show = (section: "accounts" | "cash" | "debt") => {
+    if (focus === "all" || focus === "owned") return section !== "debt" || focus === "all";
     if (focus === "cash") return section === "cash";
-    if (focus === "invested") return section === "invested";
+    if (focus === "invested") return false;
     return section === "debt";
   };
   const block = (title: string, rows: FinanceAccount[], emptyTitle: string, emptyBody: string, action: string, onAdd: () => void, pay = false) => (
@@ -1556,13 +1577,10 @@ function AccountsBoard({
   return (
     <div className="fin-stack w-full min-w-0 space-y-6">
       {show("accounts")
-        ? block(t("Accounts"), bank, t("No accounts yet"), t("Add cash, a bank, a card, or a loan. A nickname is enough."), t("Add account"), onAddAccount)
+        ? block(t("Accounts"), bank, t("No accounts yet"), t("Banks, cash, cards, and loans. Investments are in Holdings."), t("Add account"), onAddAccount)
         : null}
-      {show("cash")
-        ? block(t("Cash & savings"), cash, t("No accounts yet"), t("Add cash, a bank, a card, or a loan. A nickname is enough."), t("Add account"), onAddCash)
-        : null}
-      {show("invested")
-        ? block(t("Investments"), invested, t("No investments yet"), t("Say “I invest 200 euros into VT every month”, or tap +."), t("Add investment"), onAddInvestment)
+      {show("cash") && (cash.length > 0 || focus === "cash")
+        ? block(t("Cash & savings"), cash, t("No accounts yet"), t("Banks, cash, cards, and loans. Investments are in Holdings."), t("Add account"), onAddCash)
         : null}
       {show("debt")
         ? block(t("Credit cards"), cards, t("No credit card is saved."), t("A card you pay with. Charges increase what you owe."), t("Add a card"), onAddDebt, true)
@@ -1591,20 +1609,74 @@ function ColorField({ color, onChange }: { color: string; onChange: (color: stri
 function CategorySheet({ open, finance, onClose }: { open: boolean; finance: FinanceState; onClose: () => void }) {
   const t = useT();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const names = finance.snapshot.categories.map((category) => category.name);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState("expense");
+  const [mergeInto, setMergeInto] = useState<Record<string, string>>({});
+  const rows = [...finance.snapshot.categories].sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+  const kinds = ["income", "expense", "savings", "investment", "debt"] as const;
   return (
     <Sheet open={open} title={t("Edit categories")} onClose={onClose} className="finance">
       <div className="space-y-3">
-        {names.length === 0 && <p className="fin-muted text-sm">{t("A category is saved the first time you use it.")}</p>}
-        {names.map((name) => (
-          <div key={name} className="flex gap-2">
-            <Input value={drafts[name] ?? name} onChange={(event) => setDrafts((current) => ({ ...current, [name]: event.target.value }))} />
-            <Button type="button" onClick={() => finance.renameCategory(name, drafts[name] ?? name)}>{t("Rename")}</Button>
+        <div className="flex flex-wrap gap-2">
+          <Input aria-label={t("Name")} value={name} onChange={(event) => setName(event.target.value)} placeholder={t("Name")} />
+          <select aria-label={t("Kind")} className="h-11 border border-[var(--fin-line)] bg-transparent px-2 text-[15px]" value={kind} onChange={(event) => setKind(event.target.value)}>
+            {kinds.map((item) => (
+              <option key={item} value={item}>{t(categoryKindLabel(item))}</option>
+            ))}
+          </select>
+          <Button type="button" onClick={() => { if (!name.trim()) return; finance.editCategory({ action: "create", name: name.trim(), kind, order: rows.length }); setName(""); }}>{t("Add")}</Button>
+        </div>
+        <Button type="button" variant="ghost" onClick={() => {
+          for (const suggestion of ["Salary", "Freelance", "Housing", "Food", "Transport", "Subscriptions", "Health", "Savings", "Investing"]) {
+            const itemKind = suggestion === "Salary" || suggestion === "Freelance" ? "income" : suggestion === "Savings" ? "savings" : suggestion === "Investing" ? "investment" : "expense";
+            finance.editCategory({ action: "create", name: suggestion, kind: itemKind });
+          }
+        }}>{t("Add suggested categories")}</Button>
+        {rows.length === 0 && <p className="fin-muted text-[13px] leading-4">{t("A category is saved the first time you use it.")}</p>}
+        {rows.map((category, index) => (
+          <div key={category.name} className="border border-[var(--fin-line)] p-2">
+            <div className="flex gap-2">
+              <span className="fin-swatch mt-2 shrink-0" style={{ background: category.color || "#6E8B74" }} />
+              <Input value={drafts[category.name] ?? category.name} onChange={(event) => setDrafts((current) => ({ ...current, [category.name]: event.target.value }))} />
+              <Button type="button" onClick={() => finance.editCategory({ action: "rename", name: category.name, to: drafts[category.name] ?? category.name })}>{t("Rename")}</Button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {PALETTE.map((swatch) => (
+                <button key={swatch} type="button" className="fin-icon" aria-label={swatch} onClick={() => finance.editCategory({ action: "color", name: category.name, color: swatch })}>
+                  <span className="fin-swatch" style={{ background: swatch }} />
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {kinds.map((item) => (
+                <button key={item} type="button" className="fin-chip" aria-pressed={(category.kind || "expense") === item} onClick={() => finance.editCategory({ action: "kind", name: category.name, kind: item })}>{t(categoryKindLabel(item))}</button>
+              ))}
+              <button type="button" className="fin-chip" onClick={() => finance.editCategory({ action: "order", name: category.name, order: Math.max(0, index - 1) })}>{t("Up")}</button>
+              <button type="button" className="fin-chip" onClick={() => finance.editCategory({ action: "order", name: category.name, order: index + 1 })}>{t("Down")}</button>
+              <button type="button" className="fin-chip" onClick={() => finance.editCategory({ action: "delete", name: category.name })}>{t("Delete")}</button>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <select aria-label={t("Merge")} className="h-11 min-w-0 flex-1 border border-[var(--fin-line)] bg-transparent px-2 text-[15px]" value={mergeInto[category.name] || ""} onChange={(event) => setMergeInto((current) => ({ ...current, [category.name]: event.target.value }))}>
+                <option value="">{t("Merge")}</option>
+                {rows.filter((row) => row.name !== category.name).map((row) => (
+                  <option key={row.name} value={row.name}>{row.name}</option>
+                ))}
+              </select>
+              <Button type="button" onClick={() => { if (mergeInto[category.name]) finance.editCategory({ action: "merge", name: category.name, to: mergeInto[category.name] }); }}>{t("Merge")}</Button>
+            </div>
           </div>
         ))}
       </div>
     </Sheet>
   );
+}
+
+function categoryKindLabel(kind: string): string {
+  if (kind === "income") return "Income";
+  if (kind === "savings") return "Savings";
+  if (kind === "investment") return "Investing";
+  if (kind === "debt") return "Debt payments";
+  return "Expenses";
 }
 
 function PayCardSheet({

@@ -155,6 +155,17 @@ export function useFinance() {
     [inApp, run],
   );
 
+  const editCategory = useCallback(
+    (draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number }) => {
+      if (!inApp) {
+        setSnapshot((current) => applyCategoryEdit(current, draft));
+        return;
+      }
+      void run(() => api.editFinanceCategory(draft));
+    },
+    [inApp, run],
+  );
+
   const renameCategory = useCallback(
     (from: string, to: string) => {
       if (!inApp) {
@@ -199,6 +210,14 @@ export function useFinance() {
         return;
       }
       void run(() => api.financeScheduleAction(id, action, date));
+    },
+    [inApp, run],
+  );
+
+  const refreshHolding = useCallback(
+    (id: string) => {
+      if (!inApp) return;
+      void run(() => api.refreshHoldingPrice(id));
     },
     [inApp, run],
   );
@@ -276,9 +295,11 @@ export function useFinance() {
     removeRule,
     setDefaultCurrency,
     renameCategory,
+    editCategory,
     markPaid,
     scheduleAction,
     refreshRates,
+    refreshHolding,
     setManualRate,
     setPriceProvider,
     exportPdf,
@@ -287,6 +308,47 @@ export function useFinance() {
 }
 
 export type FinanceState = ReturnType<typeof useFinance>;
+
+function applyCategoryEdit(
+  current: FinanceSnapshot,
+  draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number },
+): FinanceSnapshot {
+  const fold = (value: string) => value.trim().toLowerCase();
+  let categories = current.categories.map((row) => ({ ...row }));
+  let transactions = current.transactions.map((row) => ({ ...row }));
+  let rules = current.rules.map((row) => ({ ...row }));
+  const retag = (from: string, to: string) => {
+    transactions = transactions.map((row) => (fold(row.category) === fold(from) ? { ...row, category: to } : row));
+    rules = rules.map((row) => (fold(row.category) === fold(from) ? { ...row, category: to } : row));
+  };
+  if (draft.action === "create" && draft.name.trim()) {
+    if (!categories.some((row) => fold(row.name) === fold(draft.name))) {
+      categories.push({ name: draft.name.trim(), color: draft.color || "#6E8B74", kind: draft.kind || "expense", icon: draft.icon || "", order: draft.order ?? categories.length });
+    }
+  } else if (draft.action === "rename" && draft.to?.trim()) {
+    categories = categories.map((row) => (fold(row.name) === fold(draft.name) ? { ...row, name: draft.to!.trim() } : row));
+    retag(draft.name, draft.to.trim());
+  } else if (draft.action === "merge" && draft.to?.trim()) {
+    retag(draft.name, draft.to.trim());
+    categories = categories.filter((row) => fold(row.name) !== fold(draft.name));
+    if (!categories.some((row) => fold(row.name) === fold(draft.to || ""))) {
+      categories.push({ name: draft.to.trim(), color: "#6E8B74", kind: draft.kind || "expense", icon: "", order: categories.length });
+    }
+  } else if (draft.action === "delete") {
+    retag(draft.name, "Uncategorized");
+    if (!categories.some((row) => fold(row.name) === "uncategorized")) {
+      categories.push({ name: "Uncategorized", color: "#8C6A3F", kind: "expense", icon: "wallet", order: categories.length });
+    }
+    categories = categories.filter((row) => fold(row.name) !== fold(draft.name));
+  } else {
+    categories = categories.map((row) =>
+      fold(row.name) === fold(draft.name)
+        ? { ...row, color: draft.color || row.color, kind: draft.kind || row.kind, icon: draft.icon ?? row.icon, order: draft.order ?? row.order }
+        : row,
+    );
+  }
+  return { ...current, categories, transactions, rules };
+}
 
 function nextId(prefix: string): string {
   previewId += 1;

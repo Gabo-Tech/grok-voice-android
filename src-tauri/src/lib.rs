@@ -14,6 +14,7 @@ mod error;
 mod files;
 mod finance;
 mod finance_fx;
+mod finance_history;
 mod finance_prices;
 mod finance_pdf;
 mod finance_schedule;
@@ -227,9 +228,11 @@ pub fn run() {
             commands::delete_finance_rule,
             commands::set_finance_default_currency,
             commands::rename_finance_category,
+            commands::edit_finance_category,
             commands::mark_finance_paid,
             commands::export_finance_pdf,
             commands::refresh_finance_rates,
+            commands::refresh_holding_price,
             commands::set_finance_manual_rate,
             commands::set_finance_manual_price,
             commands::set_finance_price_provider,

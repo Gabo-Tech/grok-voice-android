@@ -206,10 +206,17 @@ function parseQty(text: string): string {
   return match ? match[1].replace(",", ".") : "";
 }
 
+function aliasKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[_/-]+/g, " ").replace(/\s+/g, " ");
+}
+
 function aliasOf(account: HoldingShape): { symbol: string; kind: string } | null {
-  const keys = [account.ticker, account.currency, account.name, account.notes].map((value) => (value || "").trim().toLowerCase());
+  const keys = [account.name, account.ticker, account.currency, account.notes].map((value) => aliasKey(value || ""));
   for (const key of keys) {
+    if (!key) continue;
     if (ALIAS[key]) return ALIAS[key];
+    const compact = key.replace(/ /g, "");
+    if (ALIAS[compact]) return ALIAS[compact];
   }
   if (looksCrypto(account.currency || "")) return { symbol: (account.currency || "").toUpperCase(), kind: "crypto" };
   return null;
@@ -241,7 +248,7 @@ export function positionOf(account: HoldingShape, display: string, book: RateBoo
   const quantity = quantityOf(account);
   const kind = alias?.kind || (account.investmentType === "stock" || account.investmentType === "fund" ? "stock" : account.investmentType || "");
   const unit = measureOf(account, kind);
-  const symbol = (account.ticker || alias?.symbol || "").toUpperCase();
+  const symbol = (alias?.symbol || account.ticker || "").toUpperCase();
   const quote = quotes.find((row) => row.symbol.toUpperCase() === symbol && row.price > 0);
   const manual = Boolean(account.priceOverride) || account.investmentType === "collectible" || account.investmentType === "property" || account.investmentType === "custom";
 
@@ -419,7 +426,8 @@ export function netWorthParts(
       unpriced.push(account.currency.toUpperCase());
       continue;
     }
-    const signed = isDebt(account.kind) ? -Math.abs(converted.amountMinor) : converted.amountMinor;
+    // A positive card or loan balance is owed, so it lowers net worth. A negative balance is a credit and raises it.
+    const signed = isDebt(account.kind) ? -converted.amountMinor : converted.amountMinor;
     parts.push({ amountMinor: signed, currency: display });
   }
   return { parts, unpriced: [...new Set(unpriced)].sort() };
@@ -556,6 +564,222 @@ export function assetClassOf(kind: string, investmentType: string, symbolKind: s
   if (investmentType === "stock" || investmentType === "fund" || symbolKind === "stock") return "Stocks";
   if (investmentType === "collectible" || investmentType === "property" || investmentType === "stake") return "Manual";
   return "Other";
+}
+
+/** Banks, cash, cards, and loans stay on Accounts. Everything else is a holding. */
+export function isHoldingAccount(account: { kind: string }): boolean {
+  return account.kind !== "bank" && account.kind !== "cash" && account.kind !== "credit_card" && account.kind !== "loan" && account.kind !== "other_debt";
+}
+
+export interface CashTx {
+  currency: string;
+  direction: string;
+  amountMinor: number;
+  date: string;
+  accountKind?: string;
+  fromKind?: string;
+}
+
+export interface CashLine {
+  currency: string;
+  income: number;
+  /** Every purchase, including a charge on a card. A card payment is not in this figure. */
+  expenses: number;
+  /** Purchases paid from cash or a bank. Card charges are left out so the later payment is not a second outflow. */
+  cashExpenses: number;
+  cardPayments: number;
+  debtPayments: number;
+  /** Income minus expenses. Payments do not change it. */
+  result: number;
+  /** Income minus cash expenses, card payments, and other debt payments. */
+  cashFlow: number;
+}
+
+/**
+ * A card purchase is an expense when it is charged. It counts once.
+ * Paying that card from a bank or wallet is cash leaving. It lowers the cash
+ * balance and the amount owed. It is not a second expense.
+ *
+ * Result = income − expenses.
+ * Cash flow = income − expenses paid from cash or a bank − card payments − other debt payments.
+ * A transfer between your own accounts is ignored.
+ */
+export function monthCash(rows: CashTx[], start = "", end = ""): CashLine[] {
+  const by = new Map<string, CashLine>();
+  const ensure = (currency: string) => {
+    const row = by.get(currency) ?? {
+      currency,
+      income: 0,
+      expenses: 0,
+      cashExpenses: 0,
+      cardPayments: 0,
+      debtPayments: 0,
+      result: 0,
+      cashFlow: 0,
+    };
+    by.set(currency, row);
+    return row;
+  };
+  for (const tx of rows) {
+    const currency = tx.currency.trim().toUpperCase();
+    if (!currency) continue;
+    if (start && tx.date < start) continue;
+    if (end && tx.date > end) continue;
+    if (tx.direction === "transfer") continue;
+    const row = ensure(currency);
+    if (tx.direction === "income") row.income += tx.amountMinor;
+    else if (tx.direction === "expense") {
+      row.expenses += tx.amountMinor;
+      if (tx.accountKind !== "credit_card") row.cashExpenses += tx.amountMinor;
+    } else if (tx.direction === "payment") {
+      if (tx.accountKind === "credit_card") row.cardPayments += tx.amountMinor;
+      else row.debtPayments += tx.amountMinor;
+    }
+  }
+  for (const row of by.values()) {
+    row.result = row.income - row.expenses;
+    row.cashFlow = row.income - row.cashExpenses - row.cardPayments - row.debtPayments;
+  }
+  return [...by.values()]
+    .filter((row) => row.income || row.expenses || row.cardPayments || row.debtPayments)
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+export interface WorthBucket {
+  id: "money" | "debt" | "investment" | "credit";
+  amountMinor: number;
+  natives: { amountMinor: number; currency: string }[];
+  unpriced: string[];
+}
+
+/** Assets in view, minus the full amount owed. Hiding a debt slice must not add it back. */
+export function netOfVisible(buckets: WorthBucket[], hidden: Iterable<string> = []): { assets: number; owed: number; net: number } {
+  const hide = new Set(hidden);
+  let assets = 0;
+  let owed = 0;
+  for (const bucket of buckets) {
+    if (bucket.id === "debt") {
+      owed += Math.max(0, bucket.amountMinor);
+      continue;
+    }
+    if (hide.has(bucket.id)) continue;
+    assets += Math.max(0, bucket.amountMinor);
+  }
+  return { assets, owed, net: assets - owed };
+}
+
+/** Owed divided by assets. Above 1 means debts are larger than what is owned. Zero when nothing is owed. */
+export function debtRatio(assets: number, owed: number): number {
+  if (owed <= 0) return 0;
+  if (assets <= 0) return 1;
+  return owed / assets;
+}
+
+/** Same net as net worth: cash and banks, priced holdings, and card credit, minus debts. Currencies fold into `display`. */
+export function worthBuckets(
+  accounts: Array<HoldingShape & { id?: string; kind: string }>,
+  display: string,
+  book: RateBook | null,
+  quotes: Quote[],
+  nowMs: number,
+): { buckets: WorthBucket[]; assets: number; owed: number; net: number; currency: string } {
+  const target = display.trim().toUpperCase();
+  const buckets: Record<WorthBucket["id"], WorthBucket> = {
+    money: { id: "money", amountMinor: 0, natives: [], unpriced: [] },
+    debt: { id: "debt", amountMinor: 0, natives: [], unpriced: [] },
+    investment: { id: "investment", amountMinor: 0, natives: [], unpriced: [] },
+    credit: { id: "credit", amountMinor: 0, natives: [], unpriced: [] },
+  };
+  const addNative = (bucket: WorthBucket, amountMinor: number, currency: string) => {
+    const code = currency.toUpperCase();
+    if (!code || code === target || amountMinor === 0) return;
+    const found = bucket.natives.find((row) => row.currency === code);
+    if (found) found.amountMinor += amountMinor;
+    else bucket.natives.push({ amountMinor, currency: code });
+  };
+  for (const account of accounts) {
+    if (isDebt(account.kind)) {
+      if (account.shownBalanceMinor == null || !account.currency) {
+        buckets.debt.unpriced.push(account.name);
+        continue;
+      }
+      const converted = convertMinor(account.shownBalanceMinor, account.currency, target, book, nowMs);
+      if (!converted) buckets.debt.unpriced.push(account.currency.toUpperCase());
+      else if (converted.amountMinor < 0) {
+        buckets.credit.amountMinor += -converted.amountMinor;
+        addNative(buckets.credit, -account.shownBalanceMinor, account.currency);
+      } else if (converted.amountMinor > 0) {
+        buckets.debt.amountMinor += converted.amountMinor;
+        addNative(buckets.debt, account.shownBalanceMinor, account.currency);
+      }
+      continue;
+    }
+    if (isHoldingAccount(account)) {
+      const position = positionOf(account, target, book, quotes, nowMs);
+      if (position.unpriced || position.amountMinor == null) {
+        buckets.investment.unpriced.push(position.reason || account.name);
+        continue;
+      }
+      buckets.investment.amountMinor += position.amountMinor;
+      const original = originalHolding(account, position, target);
+      if (original.nativeMinor != null && original.nativeCurrency && original.nativeCurrency !== target) {
+        addNative(buckets.investment, original.nativeMinor, original.nativeCurrency);
+      }
+      continue;
+    }
+    if (account.shownBalanceMinor == null || !account.currency) continue;
+    const converted = convertMinor(account.shownBalanceMinor, account.currency, target, book, nowMs);
+    if (!converted) buckets.money.unpriced.push(account.currency.toUpperCase());
+    else {
+      buckets.money.amountMinor += converted.amountMinor;
+      addNative(buckets.money, account.shownBalanceMinor, account.currency);
+    }
+  }
+  const folded = netOfVisible([buckets.money, buckets.debt, buckets.investment, buckets.credit]);
+  return {
+    buckets: [buckets.money, buckets.debt, buckets.investment, buckets.credit],
+    assets: folded.assets,
+    owed: folded.owed,
+    net: folded.net,
+    currency: target,
+  };
+}
+
+export interface HoldingOriginal {
+  quantity: string;
+  nativeMinor: number | null;
+  nativeCurrency: string;
+}
+
+/** Quantity plus the value in the price currency, when that currency is not the main one. */
+export function originalHolding(account: HoldingShape, position: Position, display: string): HoldingOriginal {
+  const target = display.trim().toUpperCase();
+  const qty = position.quantity;
+  const symbol = position.symbol;
+  let quantity = "";
+  if (qty) {
+    if (position.unit === "troy_oz") quantity = `${qty} oz`;
+    else if (position.unit === "gram") quantity = `${qty} g`;
+    else if (position.unit === "kilogram") quantity = `${qty} kg`;
+    else if (symbol) quantity = `${qty} ${symbol}`;
+    else quantity = qty;
+  }
+  let nativeMinor = position.nativeMinor;
+  let nativeCurrency = (position.nativeCurrency || "").toUpperCase();
+  const priceCurrency = (account.marketPriceCurrency || "").toUpperCase();
+  if (account.marketPrice != null && priceCurrency && qty && (!nativeCurrency || nativeCurrency === target)) {
+    const major = Number(qty) * account.marketPrice;
+    if (Number.isFinite(major) && major > 0) {
+      const exp = priceCurrency === "JPY" ? 0 : 2;
+      nativeMinor = Math.round(major * 10 ** exp);
+      nativeCurrency = priceCurrency;
+    }
+  }
+  if (nativeCurrency === target) {
+    nativeMinor = null;
+    nativeCurrency = "";
+  }
+  return { quantity, nativeMinor, nativeCurrency };
 }
 
 /** Point-in-time rows already expressed per currency, then folded into the main currency. */

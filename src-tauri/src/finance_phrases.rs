@@ -166,6 +166,17 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("No live price was found for {symbol}. You can set a price in Settings.", "No hay un precio en vivo para {symbol}. Puedes poner un precio en Ajustes."),
     ("The price has to be a number above zero.", "El precio tiene que ser un número mayor que cero."),
     ("Say the symbol and a currency, such as 150 EUR for XMR.", "Di el símbolo y una moneda, como 150 EUR por XMR."),
+    ("The {chart} chart shows every item again.", "El gráfico {chart} vuelve a mostrar todo."),
+    ("Only {name} is shown on the {chart} chart.", "Solo se muestra {name} en el gráfico {chart}."),
+    ("{name} is hidden on the {chart} chart.", "{name} está oculto en el gráfico {chart}."),
+    ("{name} is shown on the {chart} chart.", "{name} se muestra en el gráfico {chart}."),
+    ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "La cartera cambió {amount}, un {percent} por ciento, desde {date}."),
+    ("No portfolio history is saved yet.", "Aún no hay historial de la cartera."),
+    ("Net worth is {amount}.", "El patrimonio neto es {amount}."),
+    ("Debts of {amount} are subtracted.", "Las deudas de {amount} se restan."),
+    ("Net worth needs a rate for {codes}.", "El patrimonio neto necesita un tipo para {codes}."),
+    ("Showing the money flow.", "Mostrando el flujo del dinero."),
+    ("No holding matches {name}.", "Ninguna posición coincide con {name}."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -336,6 +347,17 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("No live price was found for {symbol}. You can set a price in Settings.", "Für {symbol} gibt es keinen Live-Preis. Du kannst in den Einstellungen einen Preis setzen."),
     ("The price has to be a number above zero.", "Der Preis muss eine Zahl über null sein."),
     ("Say the symbol and a currency, such as 150 EUR for XMR.", "Nenn das Kürzel und eine Währung, zum Beispiel 150 EUR für XMR."),
+    ("The {chart} chart shows every item again.", "Die Grafik {chart} zeigt wieder alles."),
+    ("Only {name} is shown on the {chart} chart.", "Nur {name} ist in der Grafik {chart} zu sehen."),
+    ("{name} is hidden on the {chart} chart.", "{name} ist in der Grafik {chart} ausgeblendet."),
+    ("{name} is shown on the {chart} chart.", "{name} ist in der Grafik {chart} zu sehen."),
+    ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "Der Portfoliowert hat sich seit {date} um {amount} geändert, {percent} Prozent."),
+    ("No portfolio history is saved yet.", "Noch keine Portfolio-Historie gespeichert."),
+    ("Net worth is {amount}.", "Das Vermögen ist {amount}."),
+    ("Debts of {amount} are subtracted.", "Schulden von {amount} werden abgezogen."),
+    ("Net worth needs a rate for {codes}.", "Das Vermögen braucht einen Kurs für {codes}."),
+    ("Showing the money flow.", "Der Geldfluss wird angezeigt."),
+    ("No holding matches {name}.", "Kein Bestand passt zu {name}."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -506,6 +528,17 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("No live price was found for {symbol}. You can set a price in Settings.", "Não há um preço ao vivo para {symbol}. Podes definir um preço em Ajustes."),
     ("The price has to be a number above zero.", "O preço tem de ser um número acima de zero."),
     ("Say the symbol and a currency, such as 150 EUR for XMR.", "Diz o símbolo e uma moeda, como 150 EUR por XMR."),
+    ("The {chart} chart shows every item again.", "O gráfico {chart} mostra tudo de novo."),
+    ("Only {name} is shown on the {chart} chart.", "Só {name} aparece no gráfico {chart}."),
+    ("{name} is hidden on the {chart} chart.", "{name} está oculto no gráfico {chart}."),
+    ("{name} is shown on the {chart} chart.", "{name} aparece no gráfico {chart}."),
+    ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "A carteira mudou {amount}, {percent} por cento, desde {date}."),
+    ("No portfolio history is saved yet.", "Ainda não há histórico da carteira."),
+    ("Net worth is {amount}.", "O patrimônio líquido é {amount}."),
+    ("Debts of {amount} are subtracted.", "Dívidas de {amount} são subtraídas."),
+    ("Net worth needs a rate for {codes}.", "O patrimônio líquido precisa de uma taxa para {codes}."),
+    ("Showing the money flow.", "Mostrando o fluxo do dinheiro."),
+    ("No holding matches {name}.", "Nenhuma posição corresponde a {name}."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -676,4 +709,15 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("No live price was found for {symbol}. You can set a price in Settings.", "No hi ha un preu en viu per a {symbol}. Pots posar un preu en Configuració."),
     ("The price has to be a number above zero.", "El preu ha de ser un número major que zero."),
     ("Say the symbol and a currency, such as 150 EUR for XMR.", "Digues el símbol i una moneda, com 150 EUR per XMR."),
+    ("The {chart} chart shows every item again.", "El gràfic {chart} torna a mostrar-ho tot."),
+    ("Only {name} is shown on the {chart} chart.", "Només es mostra {name} en el gràfic {chart}."),
+    ("{name} is hidden on the {chart} chart.", "{name} està ocult en el gràfic {chart}."),
+    ("{name} is shown on the {chart} chart.", "{name} es mostra en el gràfic {chart}."),
+    ("Portfolio value changed by {amount}, {percent} percent, since {date}.", "La cartera ha canviat {amount}, un {percent} per cent, des de {date}."),
+    ("No portfolio history is saved yet.", "Encara no hi ha historial de la cartera."),
+    ("Net worth is {amount}.", "El patrimoni net és {amount}."),
+    ("Debts of {amount} are subtracted.", "Els deutes de {amount} es resten."),
+    ("Net worth needs a rate for {codes}.", "El patrimoni net necessita un tipus per a {codes}."),
+    ("Showing the money flow.", "Mostrant el flux dels diners."),
+    ("No holding matches {name}.", "Cap posició coincideix amb {name}."),
 ];
