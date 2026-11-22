@@ -16,6 +16,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
   const [rate, setRate] = useState("");
   const [overrideLive, setOverrideLive] = useState(false);
   const [note, setNote] = useState("");
+  const [priceNote, setPriceNote] = useState("");
   const book = bookFromStatus(finance.snapshot.fx);
   const nowMs = Date.now();
   const stale = book ? bookIsStale(book, nowMs) : false;
@@ -33,7 +34,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
             key={code}
             type="button"
             aria-pressed={current === code}
-            className={cn("stamp min-h-12 min-w-16", current === code && "stamp-on")}
+            className={cn("stamp min-w-16", current === code && "stamp-on")}
             onClick={() => finance.setDefaultCurrency(code)}
           >
             {code}
@@ -154,7 +155,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
                 key={id}
                 type="button"
                 aria-pressed={!off}
-                className={cn("stamp min-h-12", !off && "stamp-on")}
+                className={cn("stamp", !off && "stamp-on")}
                 onClick={() => finance.setPriceProvider(id, off)}
               >
                 {id}
@@ -162,9 +163,18 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
             );
           })}
         </div>
-        <Button type="button" className="mt-3" disabled={finance.busy} onClick={() => finance.refreshRates(true)}>
+        <Button
+          type="button"
+          className="mt-3"
+          disabled={finance.busy}
+          onClick={() => {
+            setPriceNote("");
+            void finance.refreshPrices().then(setPriceNote);
+          }}
+        >
           {t("Refresh prices")}
         </Button>
+        {priceNote ? <p className="mt-3 text-sm leading-5">{priceNote}</p> : null}
         {manual.map((row) => (
           <div key={`${row.base}-${row.quote}`} className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
             <p>

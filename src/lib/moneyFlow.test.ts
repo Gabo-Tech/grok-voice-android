@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow, flowConserved, layoutSankey } from "./moneyFlow.ts";
+import { buildMoneyFlow, flowConserved, layoutSankey, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
 import type { RateBook } from "./financeMath.ts";
@@ -235,9 +235,56 @@ const described = buildMoneyFlow(
 assert.equal(described.state, "ready");
 if (described.state === "ready") {
   assert.equal(described.nodes.some((node) => node.label === "vacuum cleaner"), false);
-  assert.ok(described.nodes.some((node) => node.label === "Uncategorized"));
   assert.ok(described.nodes.some((node) => node.label === "Housing"));
+  assert.equal(described.nodes.find((node) => node.label === "Housing" && node.role === "sink")?.amountMinor, 17_900 + 12_000);
   assert.ok(flowConserved(described));
 }
+
+const describedEmpty = buildMoneyFlow(
+  [
+    { amountMinor: 35_800, currency: "CHF", direction: "expense", category: "vacuum cleaner", notes: "vacuum cleaner", date: "2026-11-03", accountName: "Swisscard", accountKind: "credit_card" },
+    { amountMinor: 12_792, currency: "CHF", direction: "expense", category: "air purifier", date: "2026-11-04", accountName: "Swisscard", accountKind: "credit_card" },
+    { amountMinor: 1_690, currency: "CHF", direction: "expense", category: "", notes: "mystery", date: "2026-11-05", accountName: "Cash", accountKind: "cash" },
+    { amountMinor: 2_090, currency: "CHF", direction: "expense", category: "Tips", date: "2026-11-06", accountName: "Cash", accountKind: "cash" },
+  ],
+  { display: "CHF", book, nowMs: now, start: "2026-11-01", end: "2026-11-30", threshold: 0.03 },
+);
+assert.equal(describedEmpty.state, "ready");
+if (describedEmpty.state === "ready") {
+  assert.equal(describedEmpty.nodes.some((node) => node.label === "vacuum cleaner" || node.label === "air purifier"), false);
+  assert.ok(describedEmpty.nodes.some((node) => node.label === "Housing"));
+  assert.equal(describedEmpty.nodes.filter((node) => node.label === "Uncategorized" || node.label === "Other").length <= 1, true);
+  assert.equal(describedEmpty.nodes.some((node) => node.kind === "drawn" || node.label === "From savings"), false);
+  const swiss = describedEmpty.nodes.find((node) => node.label === "Swisscard" && node.role === "source");
+  const cash = describedEmpty.nodes.find((node) => node.label === "Cash" && node.role === "source");
+  assert.ok(swiss && cash);
+  assert.equal(swiss.amountMinor, 35_800 + 12_792);
+  assert.equal(cash.amountMinor, 1_690 + 2_090);
+  assert.ok(flowConserved(describedEmpty));
+}
+
+const bySource = buildMoneyFlow(
+  [
+    { amountMinor: 35_800, currency: "CHF", direction: "expense", category: "Housing", date: "2026-11-03", accountName: "Swisscard", accountKind: "credit_card" },
+    { amountMinor: 12_792, currency: "CHF", direction: "expense", category: "Food", date: "2026-11-04", accountName: "ZKB", accountKind: "bank" },
+  ],
+  { display: "CHF", book, nowMs: now, start: "2026-11-01", end: "2026-11-30", group: "source" },
+);
+assert.equal(bySource.state, "ready");
+if (bySource.state === "ready") {
+  assert.equal(bySource.nodes.some((node) => node.label === "Housing" || node.label === "Food"), false);
+  assert.ok(bySource.nodes.some((node) => node.label === "Swisscard"));
+  assert.ok(bySource.nodes.some((node) => node.label === "ZKB"));
+}
+
+const frame = sankeyFrame(320, [1, 1, 4]);
+assert.ok(frame.plot <= 320 * 0.62 + 1);
+assert.equal(frame.top + frame.bottom + frame.plot, 320);
+assert.ok(Math.abs(frame.top - frame.bottom) <= 1);
+assert.equal(frame.nodeWidth, 12);
+assert.ok(frame.nodeGap >= 8);
+const lifted = sankeyValue(10, 10_000, frame.floorShare);
+assert.ok(lifted > 10);
+assert.equal(sankeyValue(9_000, 10_000, frame.floorShare), 9_000);
 
 console.log("money flow ok");

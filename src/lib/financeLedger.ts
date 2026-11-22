@@ -263,20 +263,21 @@ export function positionOf(account: HoldingShape, display: string, book: RateBoo
 
   if (account.marketWorthMinor != null && account.marketWorthCurrency) {
     const converted = convertMinor(account.marketWorthMinor, account.marketWorthCurrency, target, book, nowMs);
+    const native = account.marketWorthCurrency.toUpperCase();
     return {
       quantity,
       unit,
       symbol,
-      amountMinor: converted ? converted.amountMinor : null,
-      currency: target,
+      amountMinor: converted ? converted.amountMinor : account.marketWorthMinor,
+      currency: converted ? target : native,
       nativeMinor: account.marketWorthMinor,
-      nativeCurrency: account.marketWorthCurrency,
+      nativeCurrency: native,
       source: account.marketSource || (account.marketEstimated ? "estimate" : "cached"),
       fetchedMs: account.marketFetchedMs || 0,
       stale: Boolean(account.marketStale || converted?.stale),
       estimated: Boolean(account.marketEstimated),
-      unpriced: !converted,
-      reason: converted ? "" : symbol || account.name,
+      unpriced: false,
+      reason: converted ? "" : native,
       priceText: account.marketPrice != null ? `${account.marketPrice} ${account.marketPriceCurrency || ""}`.trim() : "",
     };
   }
@@ -290,20 +291,21 @@ export function positionOf(account: HoldingShape, display: string, book: RateBoo
       const minor = Math.round(major * 10 ** exp);
       const converted = convertMinor(minor, quote.currency, target, book, nowMs);
       const stale = quote.fetchedMs > 0 && nowMs - quote.fetchedMs > 24 * 60 * 60 * 1000;
+      const native = quote.currency.toUpperCase();
       return {
         quantity,
         unit,
         symbol,
-        amountMinor: converted ? converted.amountMinor : null,
-        currency: target,
+        amountMinor: converted ? converted.amountMinor : minor,
+        currency: converted ? target : native,
         nativeMinor: minor,
-        nativeCurrency: quote.currency.toUpperCase(),
+        nativeCurrency: native,
         source: quote.source,
         fetchedMs: quote.fetchedMs,
         stale: stale || Boolean(converted?.stale),
         estimated: Boolean(quote.estimated),
-        unpriced: !converted,
-        reason: converted ? "" : quote.currency.toUpperCase(),
+        unpriced: false,
+        reason: converted ? "" : native,
         priceText: `${each} ${quote.currency}`,
       };
     }

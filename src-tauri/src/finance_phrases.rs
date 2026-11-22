@@ -206,6 +206,9 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, siguiente {date}."),
     ("Updated {name}. Repeats {cadence}.", "Actualizado {name}. Se repite {cadence}."),
     ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "La frecuencia es diaria, semanal, mensual, anual, o cada N días, semanas, meses o años."),
+    ("Updated {count} prices.", "Precios actualizados: {count}."),
+    ("Updated {count}. {reason}", "Actualizados: {count}. {reason}"),
+    ("No holdings to price.", "No hay posiciones a las que poner precio."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -416,6 +419,9 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, nächster {date}."),
     ("Updated {name}. Repeats {cadence}.", "{name} aktualisiert. Wiederholt sich {cadence}."),
     ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "Der Rhythmus ist täglich, wöchentlich, monatlich, jährlich oder alle N Tage, Wochen, Monate oder Jahre."),
+    ("Updated {count} prices.", "{count} Preise aktualisiert."),
+    ("Updated {count}. {reason}", "Aktualisiert: {count}. {reason}"),
+    ("No holdings to price.", "Keine Bestände zum Bepreisen."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -626,6 +632,9 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, próximo {date}."),
     ("Updated {name}. Repeats {cadence}.", "Atualizado {name}. Repete-se {cadence}."),
     ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "A frequência é diária, semanal, mensal, anual, ou a cada N dias, semanas, meses ou anos."),
+    ("Updated {count} prices.", "Preços atualizados: {count}."),
+    ("Updated {count}. {reason}", "Atualizados: {count}. {reason}"),
+    ("No holdings to price.", "Não há posições para cotar."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -836,4 +845,7 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, següent {date}."),
     ("Updated {name}. Repeats {cadence}.", "Actualitzat {name}. Es repeteix {cadence}."),
     ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "La freqüència és diària, setmanal, mensual, anual, o cada N dies, setmanes, mesos o anys."),
+    ("Updated {count} prices.", "Preus actualitzats: {count}."),
+    ("Updated {count}. {reason}", "Actualitzats: {count}. {reason}"),
+    ("No holdings to price.", "No hi ha posicions per posar preu."),
 ];

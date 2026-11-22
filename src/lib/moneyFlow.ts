@@ -8,9 +8,13 @@ export interface FlowTx {
   direction: string;
   category: string;
   subcategory?: string;
+  /** Free-text description. It never becomes a sankey node. */
+  notes?: string;
   date: string;
   accountKind?: string;
   fromKind?: string;
+  /** Account the money left. Used when there is no income, and in by-source grouping. */
+  accountName?: string;
 }
 
 export interface FlowLabels {
@@ -23,6 +27,10 @@ export interface FlowLabels {
   debt: string;
   savings: string;
   investments: string;
+  card: string;
+  cash: string;
+  bank: string;
+  spending: string;
 }
 
 export interface FlowOriginal {
@@ -51,10 +59,12 @@ export interface FlowLink {
   amountMinor: number;
 }
 
+export type FlowGroup = "category" | "source";
+
 export type MoneyFlow =
   | { state: "empty" }
   | { state: "needs-rate"; missing: string[] }
-  | { state: "ready"; currency: string; incomeMinor: number; nodes: FlowNode[]; links: FlowLink[] };
+  | { state: "ready"; currency: string; incomeMinor: number; nodes: FlowNode[]; links: FlowLink[]; uncategorizedMinor: number };
 
 const DEFAULT_LABELS: FlowLabels = {
   income: "Income",
@@ -66,6 +76,10 @@ const DEFAULT_LABELS: FlowLabels = {
   debt: "Debt payments",
   savings: "Savings",
   investments: "Investing",
+  card: "Card",
+  cash: "Cash",
+  bank: "Bank",
+  spending: "Spending",
 };
 
 function fold(value: string): string {
@@ -117,6 +131,8 @@ export function buildMoneyFlow(
     expandedOther?: boolean;
     nodeColors?: Record<string, string>;
     labels?: Partial<FlowLabels>;
+    /** Category groups by category and subcategory. Source groups the outflows by account. */
+    group?: FlowGroup;
   },
 ): MoneyFlow {
   const display = opts.display.trim().toUpperCase();
@@ -126,6 +142,8 @@ export function buildMoneyFlow(
   const missing = new Set<string>();
   const sources = new Map<string, Bucket>();
   const sinks = new Map<string, Bucket>();
+  const funds = new Map<string, Bucket>();
+  const group = opts.group === "source" ? "source" : "category";
 
   const paint = (map: Map<string, Bucket>, id: string, label: string, kind: string, order: number) => {
     const found = map.get(id);
@@ -155,16 +173,27 @@ export function buildMoneyFlow(
       continue;
     }
     const placed = placeCategory(tx, categories, labels);
+    const fundName = fundLabel(tx, labels);
     if (kind === "income") {
       const bucket = paint(sources, `in:${fold(placed.source)}`, placed.source, "income", saved?.order ?? 100);
       remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
       continue;
     }
-    const label = kind === "debt" && !tx.category.trim() && !tx.subcategory?.trim() ? labels.debt : kind === "savings" && !tx.category.trim() ? labels.savings : kind === "investment" && !tx.category.trim() ? labels.investments : placed.parent;
+    const fund = paint(funds, `in:fund:${fold(fundName)}`, fundName, "fund", funds.size);
+    remember(fund, converted.amountMinor, tx.amountMinor, tx.currency, display);
+    const label = group === "source"
+      ? fundName
+      : kind === "debt" && !tx.category.trim() && !tx.subcategory?.trim()
+        ? labels.debt
+        : kind === "savings" && !tx.category.trim()
+          ? labels.savings
+          : kind === "investment" && !tx.category.trim()
+            ? labels.investments
+            : placed.parent;
     const id = `out:${kind}:${fold(label)}`;
     const bucket = paint(sinks, id, label, kind, saved?.order ?? 100);
     remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
-    if (placed.child) {
+    if (group !== "source" && placed.child) {
       const child = paintChild(bucket, placed.child);
       remember(child, converted.amountMinor, tx.amountMinor, tx.currency, display);
     }
@@ -175,7 +204,12 @@ export function buildMoneyFlow(
 
   const incomeMinor = [...sources.values()].reduce((sum, row) => sum + row.amount, 0);
   let sinkTotal = [...sinks.values()].reduce((sum, row) => sum + row.amount, 0);
-  if (sinkTotal > incomeMinor) {
+  if (incomeMinor === 0 && sinkTotal > 0) {
+    // No income was recorded. The money left the accounts that paid, not a single savings plug.
+    for (const row of funds.values()) {
+      if (row.amount > 0) sources.set(row.id, row);
+    }
+  } else if (sinkTotal > incomeMinor) {
     const drawn = paint(sources, "in:drawn", labels.drawn, "drawn", -1);
     remember(drawn, sinkTotal - incomeMinor, 0, display, display);
   } else if (incomeMinor > sinkTotal) {
@@ -202,6 +236,19 @@ export function buildMoneyFlow(
       for (const row of sinkList) sinks.set(row.id, row);
       (other as Bucket & { members?: Bucket[] }).amount = other.amount;
       Object.assign(other, { members: small });
+    }
+  }
+  let uncategorizedMinor = [...sinks.values()].filter((row) => fold(row.label) === fold(labels.uncategorized)).reduce((sum, row) => sum + row.amount, 0);
+  const otherBucket = sinks.get("out:other");
+  if (otherBucket && uncategorizedMinor > 0 && uncategorizedMinor / (pool || 1) < 0.08) {
+    const unc = [...sinks.values()].find((row) => fold(row.label) === fold(labels.uncategorized));
+    if (unc) {
+      otherBucket.amount += unc.amount;
+      for (const [code, amount] of unc.originals) otherBucket.originals.set(code, (otherBucket.originals.get(code) || 0) + amount);
+      const members = (otherBucket as Bucket & { members?: Bucket[] }).members || [];
+      members.push(unc);
+      Object.assign(otherBucket, { members });
+      sinks.delete(unc.id);
     }
   }
 
@@ -235,17 +282,8 @@ export function buildMoneyFlow(
   const childRows = (bucket: Bucket) => {
     const kids = [...bucket.children.values()].filter((row) => row.amount > 0);
     const covered = kids.reduce((sum, row) => sum + row.amount, 0);
-    if (kids.length > 0 && covered < bucket.amount) {
-      kids.push({
-        id: `sub:${bucket.id}:${fold(labels.uncategorized)}`,
-        label: labels.uncategorized,
-        kind: "child",
-        amount: bucket.amount - covered,
-        originals: new Map(),
-        order: kids.length,
-        children: new Map(),
-      });
-    }
+    // A partial split would invent an Uncategorized slice beside the real subcategory.
+    if (kids.length === 0 || covered !== bucket.amount) return [];
     return kids.map((row) => ({ id: row.id, label: row.label, amountMinor: row.amount, originals: originalsOf(row) }));
   };
 
@@ -285,26 +323,92 @@ export function buildMoneyFlow(
     ...sinkNodes.map((row) => ({ source: "pool", target: row.id, amountMinor: row.amount })),
     ...categoryNodes.flatMap((node) => node.children.map((child) => ({ source: node.id, target: child.id, amountMinor: child.amountMinor }))),
   ];
-  return { state: "ready", currency: display, incomeMinor, nodes, links };
+  return { state: "ready", currency: display, incomeMinor, nodes, links, uncategorizedMinor };
 }
 
+const SUGGESTED = new Set([
+  "salary",
+  "freelance",
+  "dividends",
+  "interest",
+  "gifts",
+  "refunds",
+  "other income",
+  "housing",
+  "food",
+  "groceries",
+  "transport",
+  "subscriptions",
+  "health",
+  "savings",
+  "investing",
+  "debt payments",
+  "uncategorized",
+]);
+
+const HINTS: Array<{ re: RegExp; name: string }> = [
+  { re: /vacuum|cleaner|purifier|\bair\b|rent|alquiler|miete|lloguer|renda|housing|habitatge|vivienda/, name: "Housing" },
+  { re: /groc|supermerc|mercad/, name: "Groceries" },
+  { re: /food|comida|essen|restaurant|coffee|cafe|café/, name: "Food" },
+  { re: /uber|taxi|transport|transit|\bbus\b/, name: "Transport" },
+  { re: /salary|sueldo|gehalt|nomina|nòmina/, name: "Salary" },
+];
+
+/** A product phrase such as "vacuum cleaner" is a description, not a category. A one-word category such as Coffee stays. */
+function looksDescribed(name: string): boolean {
+  const folded = fold(name);
+  if (!folded || SUGGESTED.has(folded)) return false;
+  const words = folded.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return true;
+  return /^(vacuum|cleaner|purifier)$/.test(folded);
+}
+
+function hintedName(text: string): string {
+  const folded = fold(text);
+  if (!folded) return "";
+  return HINTS.find((row) => row.re.test(folded))?.name || "";
+}
+
+function fundLabel(tx: FlowTx, labels: FlowLabels): string {
+  const named = (tx.accountName || "").trim();
+  if (named) return named;
+  if (tx.accountKind === "credit_card") return labels.card;
+  if (tx.accountKind === "cash") return labels.cash;
+  if (tx.accountKind === "bank") return labels.bank;
+  if (tx.accountKind === "investment") return labels.investments;
+  return labels.spending;
+}
+
+/**
+ * By-category nodes are catalog categories and their subcategories.
+ * A description stored in the category field is mapped onto a real category, or Uncategorized.
+ */
 function placeCategory(tx: FlowTx, categories: CategoryRecord[], labels: FlowLabels): { source: string; parent: string; child: string } {
   const named = tx.category.trim();
   const sub = (tx.subcategory || "").trim();
+  const notes = (tx.notes || "").trim();
   const record = named ? categoryOf(categories, named) : undefined;
-  const catalogued = categories.some((row) => row.name.trim());
-  if (catalogued && named && !record) {
-    const source = tx.direction === "income" ? labels.uncategorized : labels.uncategorized;
-    return { source, parent: labels.uncategorized, child: "" };
-  }
-  let parent = named || labels.uncategorized;
-  let child = sub;
+  let parent = "";
+  let child = "";
   if (record?.parent) {
     const owner = categoryOf(categories, record.parent);
     parent = owner?.name || record.parent;
-    if (!child) child = record.name;
+    child = record.name;
+  } else if (record && !record.parent && !looksDescribed(record.name)) {
+    parent = record.name;
+  } else if (looksDescribed(named) || (!named && (looksDescribed(sub) || looksDescribed(notes)))) {
+    const hint = hintedName(`${named} ${sub} ${notes}`);
+    parent = hint ? categoryOf(categories, hint)?.name || hint : labels.uncategorized;
+  } else if (named && !looksDescribed(named)) {
+    parent = record?.name || named;
+  } else {
+    parent = labels.uncategorized;
   }
   if (!parent.trim()) parent = labels.uncategorized;
+  if (!child && sub && !looksDescribed(sub)) {
+    const subRecord = categoryOf(categories, sub);
+    if (!subRecord?.parent || fold(subRecord.parent) === fold(parent)) child = subRecord?.name || sub;
+  }
   if (child && fold(child) === fold(parent)) child = "";
   const source = child && !record?.parent && fold(named) === fold(parent) ? child : parent;
   return { source: kindIncomeLabel(tx, source, labels), parent, child };
@@ -328,6 +432,33 @@ function sinkKind(tx: FlowTx, categoryKind: string): "income" | "expense" | "sav
   if (categoryKind === "savings") return "savings";
   if (categoryKind === "investment") return "investment";
   return "expense";
+}
+
+/**
+ * Plot box for an ECharts sankey. The diagram is capped and centered so one flow
+ * does not become a slab the full height of the chart. `floor` is the value share
+ * that should still paint about 2px.
+ */
+export function sankeyFrame(chartHeight: number, columnCounts: number[]): { top: number; bottom: number; plot: number; nodeWidth: number; nodeGap: number; floorShare: number } {
+  const height = Math.max(160, chartHeight);
+  const nodeWidth = 12;
+  const nodeGap = 14;
+  const cap = Math.round(height * 0.62);
+  const plot = Math.max(120, Math.min(cap, height - 36));
+  const spare = Math.max(0, height - plot);
+  const top = Math.round(spare / 2);
+  const bottom = height - plot - top;
+  const busiest = Math.max(1, ...columnCounts, 1);
+  const usable = Math.max(2, plot - Math.max(0, busiest - 1) * nodeGap);
+  const floorShare = 2 / usable;
+  return { top, bottom, plot, nodeWidth, nodeGap, floorShare };
+}
+
+/** Keep a tiny flow visible without letting it dominate the column. */
+export function sankeyValue(amount: number, total: number, floorShare: number): number {
+  if (amount <= 0 || total <= 0) return 0;
+  const floor = total * floorShare;
+  return amount < floor ? floor : amount;
 }
 
 /** Inflow equals outflow on every node that both receives and sends. Sources only send. Terminal nodes only receive. */

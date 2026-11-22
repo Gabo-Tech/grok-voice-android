@@ -93,6 +93,7 @@
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:screenOrientation="fullUser"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustNothing"
             android:label="@string/main_activity_title"

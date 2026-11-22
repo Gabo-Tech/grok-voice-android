@@ -160,10 +160,25 @@ export function FinancePage({
     document.getElementById(`finance-tab-${next}`)?.scrollIntoView({ inline: "nearest", block: "nearest" });
   };
   const swipeRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const dragOrigin = useRef<{ x: number; y: number; locked: "x" | "y" | null } | null>(null);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [pageHeight, setPageHeight] = useState(0);
+  const [priceNote, setPriceNote] = useState("");
   const tabIndex = Math.max(0, FINANCE_TABS.indexOf(tab));
+  useEffect(() => {
+    const current = pageRefs.current[tabIndex];
+    if (!current) return;
+    const measure = () => {
+      const neighbor = dragX < -8 ? pageRefs.current[tabIndex + 1] : dragX > 8 ? pageRefs.current[tabIndex - 1] : null;
+      setPageHeight(Math.max(current.offsetHeight, neighbor?.offsetHeight || 0));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(current);
+    return () => observer.disconnect();
+  }, [tabIndex, dragX, finance.snapshot, finance.busy]);
   const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const exportSummary = () => {
     const account = accounts.find((row) => row.id === accountFilter);
@@ -355,6 +370,7 @@ export function FinancePage({
         <div
           ref={swipeRef}
           className="fin-swipe"
+          style={pageHeight > 0 ? { height: pageHeight } : undefined}
           onPointerDown={(event) => {
             if (event.clientX < 24 || event.clientX > window.innerWidth - 24) return;
             if (swipeBlocked(event.target)) return;
@@ -406,21 +422,15 @@ export function FinancePage({
               transition: dragging || reducedMotion ? "none" : "transform 180ms var(--ease, ease)",
             }}
           >
-          <div role="tabpanel" id="finance-panel-overview" aria-labelledby="finance-tab-overview" data-finance-tabpanel="overview" className="fin-swipe-page" inert={tab === "overview" ? undefined : true}>
+          <div ref={(node) => { pageRefs.current[0] = node; }} role="tabpanel" id="finance-panel-overview" aria-labelledby="finance-tab-overview" data-finance-tabpanel="overview" className="fin-swipe-page" inert={tab === "overview" ? undefined : true}>
             <FinanceOverview
               finance={finance}
               accounts={accounts}
               onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))}
               onOpenActivity={() => chooseTab("activity")}
+              priceNote={priceNote}
               onRefreshPrices={() => {
-                const book = bookFromStatus(finance.snapshot.fx);
-                const quotes = finance.snapshot.prices?.quotes || [];
-                const display = (finance.snapshot.defaultCurrency || "").toUpperCase();
-                for (const account of accounts) {
-                  if (!isHoldingAccount(account)) continue;
-                  const position = positionOf(account, display, book, quotes, Date.now());
-                  if (position.unpriced) finance.refreshHolding(account.id);
-                }
+                void finance.refreshPrices().then(setPriceNote);
               }}
             />
             {empty ? (
@@ -464,7 +474,7 @@ export function FinancePage({
               />
             </div>
           </div>
-          <div role="tabpanel" id="finance-panel-activity" aria-labelledby="finance-tab-activity" data-finance-tabpanel="activity" className="fin-swipe-page" inert={tab === "activity" ? undefined : true}>
+          <div ref={(node) => { pageRefs.current[1] = node; }} role="tabpanel" id="finance-panel-activity" aria-labelledby="finance-tab-activity" data-finance-tabpanel="activity" className="fin-swipe-page" inert={tab === "activity" ? undefined : true}>
             <FinanceDashboard
               finance={finance}
               accounts={accounts}
@@ -476,7 +486,7 @@ export function FinancePage({
               {ledger("any")}
             </FinanceDashboard>
           </div>
-          <div role="tabpanel" id="finance-panel-accounts" aria-labelledby="finance-tab-accounts" data-finance-tabpanel="accounts" className="fin-swipe-page" inert={tab === "accounts" ? undefined : true}>
+          <div ref={(node) => { pageRefs.current[2] = node; }} role="tabpanel" id="finance-panel-accounts" aria-labelledby="finance-tab-accounts" data-finance-tabpanel="accounts" className="fin-swipe-page" inert={tab === "accounts" ? undefined : true}>
             <AccountsBoard
               accounts={accounts}
               focus={groupFocus}
@@ -513,7 +523,7 @@ export function FinancePage({
               quotes={finance.snapshot.prices?.quotes || []}
             />
           </div>
-          <div role="tabpanel" id="finance-panel-holdings" aria-labelledby="finance-tab-holdings" data-finance-tabpanel="holdings" className="fin-swipe-page" inert={tab === "holdings" ? undefined : true}>
+          <div ref={(node) => { pageRefs.current[3] = node; }} role="tabpanel" id="finance-panel-holdings" aria-labelledby="finance-tab-holdings" data-finance-tabpanel="holdings" className="fin-swipe-page" inert={tab === "holdings" ? undefined : true}>
             <AccountList
               rows={accounts.filter((account) => isHoldingAccount(account))}
               transactions={finance.snapshot.transactions}
@@ -543,7 +553,7 @@ export function FinancePage({
               />
             </div>
           </div>
-          <div role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan" className="fin-swipe-page" inert={tab === "plan" ? undefined : true}>
+          <div ref={(node) => { pageRefs.current[4] = node; }} role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan" className="fin-swipe-page" inert={tab === "plan" ? undefined : true}>
             <FinanceDashboard finance={finance} accounts={accounts} place="plan" onProgram={openBill} onIncome={openIncome} onPayout={openBill} onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))} />
           </div>
           </div>

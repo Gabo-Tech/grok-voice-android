@@ -171,7 +171,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
               </button>
             </div>
             {preview ? (
-              <div className="min-h-[40vh] py-1">
+              <div className="notes-body py-1">
                 <NoteMarkdown text={text || t("Nothing written yet.")} />
               </div>
             ) : (
@@ -179,7 +179,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder={t("- milk\n- **bread**")}
-                className="min-h-[40vh] border-0 px-0 font-mono focus-visible:border-transparent"
+                className="notes-body border-0 px-0 font-mono focus-visible:border-transparent"
               />
             )}
           </div>

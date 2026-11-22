@@ -563,29 +563,90 @@ h1,
 }
 
 .stamp {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--touch);
+  box-sizing: border-box;
+  min-height: 22px;
+  height: auto;
+  overflow: visible;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
   color: var(--text-primary);
-  padding: 0 0.15rem;
-  font-size: 0.875rem;
+  padding: 2px 8px;
+  font-size: var(--text-min);
   font-weight: 500;
   letter-spacing: 0.01em;
+  line-height: 18px;
   text-transform: none;
   text-decoration: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 0.28em;
+  text-underline-offset: 0.18em;
+  vertical-align: baseline;
+}
+
+.stamp::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 50%;
+  height: var(--touch);
+  transform: translateY(-50%);
 }
 
 .stamp-on {
   background: var(--text-primary);
   color: var(--surface-0);
-  padding: 0 0.9rem;
+  padding: 1px 8px;
   text-decoration: none;
+}
+
+.flow-full {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  padding-top: max(48px, env(safe-area-inset-top));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  padding-left: max(12px, env(safe-area-inset-left));
+}
+
+.flow-full-stage {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.flow-full-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  z-index: 2;
+  min-height: 44px;
+  padding-top: 8px;
+}
+
+.flow-zoom {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--text-primary);
+  color: var(--surface-0);
+  font-size: 20px;
+  line-height: 1;
 }
 
 .mag-panel {
@@ -793,5 +854,112 @@ html.keyboard-open .sheet-panel {
   .sheet-scrim {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+.notes-body {
+  min-height: 40vh;
+}
+
+/* Short landscape phones: the bottom bar and the status cutout must not eat the page. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .app-safe,
+  .app-safe.app-safe-bar {
+    padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+  }
+
+  .finance .text-5xl {
+    font-size: 2rem;
+    line-height: 1;
+  }
+
+  .app-stage {
+    padding-top: 8px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  .finance .fin-tabs {
+    position: static;
+  }
+
+  .app-stage > header,
+  .app-stage header {
+    padding-bottom: 4px;
+  }
+
+  .masthead-rule {
+    margin-top: 4px;
+  }
+
+  .finance .fin-tab {
+    min-height: 44px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .masthead {
+    font-size: 1.45rem;
+  }
+
+  .bottom-nav button {
+    min-height: 44px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  .notes-body {
+    min-height: 8rem;
+  }
+
+  .sheet-root {
+    align-items: center;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .sheet-panel {
+    width: min(100% - 24px, 640px);
+    max-height: calc(100dvh - 12px);
+    border-radius: var(--radius-soft);
+  }
+}
+
+/* Tablets, foldables, and large landscape: a side rail instead of a bar over the content. */
+@media (min-width: 900px) {
+  .app-safe {
+    flex-direction: row;
+    align-items: stretch;
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: 0;
+  }
+
+  .app-stage {
+    min-width: 0;
+    flex: 1;
+    max-width: 960px;
+  }
+
+  .bottom-nav {
+    position: relative;
+    order: -1;
+    width: 112px;
+    height: auto;
+    align-self: stretch;
+    border-top: 0;
+    border-right: var(--border-width) solid var(--line-soft);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .bottom-nav ul {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .sheet-panel {
+    width: min(100% - 48px, 640px);
   }
 }

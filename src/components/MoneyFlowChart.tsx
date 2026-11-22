@@ -9,8 +9,9 @@ import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
-import { buildMoneyFlow, type MoneyFlow } from "@/lib/moneyFlow";
+import { buildMoneyFlow, sankeyFrame, sankeyValue, type MoneyFlow } from "@/lib/moneyFlow";
 import { formatMoney } from "@/lib/money";
+import { pushOverlay } from "@/lib/history";
 import { fill, useT } from "@/lib/i18n";
 
 use([SankeyChart, CanvasRenderer, TooltipComponent]);
@@ -97,6 +98,7 @@ export function MoneyFlowPanel({
   const book = useMemo(() => bookFromStatus(fx), [fx]);
   const nowMs = useMemo(() => Date.now(), [transactions, fx, display]);
   const kinds = useMemo(() => new Map(accounts.map((account) => [account.id, account.kind])), [accounts]);
+  const names = useMemo(() => new Map(accounts.map((account) => [account.id, account.name])), [accounts]);
   const flow = useMemo(
     () =>
       buildMoneyFlow(
@@ -106,9 +108,11 @@ export function MoneyFlowPanel({
           direction: tx.direction,
           category: tx.category,
           subcategory: tx.subcategory,
+          notes: tx.notes,
           date: tx.date,
           accountKind: kinds.get(tx.accountId) || "",
           fromKind: kinds.get(tx.fromAccountId) || "",
+          accountName: names.get(tx.accountId) || "",
         })),
         {
           categories,
@@ -118,6 +122,7 @@ export function MoneyFlowPanel({
           start: bounds.start,
           end: bounds.end,
           expandedOther: openOther,
+          group: options.mode === "source" ? "source" : "category",
           nodeColors: { ...Object.fromEntries(categories.map((row) => [row.name, row.color])), ...colors },
           labels: {
             income: t("Income"),
@@ -129,10 +134,14 @@ export function MoneyFlowPanel({
             debt: t("Debt payments"),
             savings: t("Savings"),
             investments: t("Investing"),
+            card: t("Card"),
+            cash: t("Cash"),
+            bank: t("Bank"),
+            spending: t("Spending"),
           },
         },
       ),
-    [transactions, kinds, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, t],
+    [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, options.mode, t],
   );
 
   useEffect(() => {
@@ -160,7 +169,7 @@ export function MoneyFlowPanel({
 
   const ready = flow.state === "ready" ? flow : null;
   const view = useMemo(() => (ready ? drilled(ready, drill) : null), [ready, drill]);
-  const uncategorized = ready?.nodes.some((node) => node.kind === "expense" && node.label === t("Uncategorized")) || false;
+  const uncategorized = (ready?.uncategorizedMinor || 0) > 0;
 
   const chart = (
     <FlowChart
@@ -175,7 +184,7 @@ export function MoneyFlowPanel({
   );
 
   const controls = (
-    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1" data-swipe-ignore="">
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1" data-swipe-ignore="">
       <button type="button" className="fin-chip" aria-pressed={options.labels} onClick={() => setOptions((current) => ({ ...current, labels: !current.labels }))}>
         {t("Labels")}
       </button>
@@ -215,7 +224,7 @@ export function MoneyFlowPanel({
         </button>
       ) : null}
       <div className="mt-3 overflow-x-auto" data-swipe-ignore="">
-        {flow.state === "empty" ? <p className="text-[15px] leading-5">{t("No income or expenses in this period.")}</p> : chart}
+        {flow.state === "empty" ? <p className="text-[15px] leading-5">{t("No income or expenses in this period.")}</p> : full ? null : chart}
       </div>
       {uncategorized && onReassign ? (
         <button type="button" className="fin-chip mt-2" onClick={onReassign}>
@@ -333,7 +342,12 @@ function FlowChart({
     const muted = token("--text-tertiary", "#8a8175");
     const total = flow.nodes.find((node) => node.id === "pool")?.amountMinor || flow.incomeMinor || 1;
     const width = Math.max(280, host.current?.clientWidth || window.innerWidth - 32);
-    instance.resize({ width, height: tall ? Math.max(280, window.innerHeight - 120) : 320 });
+    const height = tall ? Math.max(280, window.innerHeight - 148) : 320;
+    instance.resize({ width, height });
+    const depths = flow.nodes.map((node) => (node.role === "source" ? 0 : node.role === "pool" ? 1 : node.role === "child" ? 3 : 2));
+    const counts = [0, 1, 2, 3].map((depth) => depths.filter((row) => row === depth).length).filter((count) => count > 0);
+    const frame = sankeyFrame(height, counts);
+    const rightmost = Math.max(...depths, 0);
     const safe = new Map(flow.nodes.map((node, index) => [node.id, `n${index}`]));
     const bySafe = new Map(flow.nodes.map((node, index) => [`n${index}`, node]));
     safeToReal.current = new Map(flow.nodes.map((node, index) => [`n${index}`, node.id]));
@@ -366,18 +380,21 @@ function FlowChart({
             orient: "horizontal",
             nodeAlign: "left",
             draggable: false,
-            nodeWidth: 14,
-            nodeGap: 14,
-            left: 8,
-            right: labelsOn ? 88 : 12,
-            top: 8,
-            bottom: 8,
+            nodeWidth: frame.nodeWidth,
+            nodeGap: frame.nodeGap,
+            left: labelsOn ? 12 : 8,
+            right: 16,
+            top: frame.top,
+            bottom: frame.bottom,
             emphasis: { focus: "adjacency" },
-            lineStyle: { color: mode === "source" ? "source" : mode === "mono" ? brand : "gradient", curveness: 0.5, opacity: 0.45 },
+            lineStyle: { color: mode === "source" ? "source" : mode === "mono" ? brand : "gradient", curveness: 0.55, opacity: 0.55 },
             label: {
               show: labelsOn,
               color: ink,
               fontSize: 13,
+              overflow: "truncate",
+              width: Math.max(72, Math.round(width * 0.34)),
+              lineHeight: 16,
               formatter: (raw: unknown) => {
                 const params = raw as { name?: string };
                 const node = byId.get(params.name || "");
@@ -387,13 +404,22 @@ function FlowChart({
                 return `${node.label}\n${formatMoney(node.amountMinor, currency)} · ${share}%`;
               },
             },
-            data: flow.nodes.map((node) => ({
-              name: safe.get(node.id),
-              depth: node.role === "source" ? 0 : node.role === "pool" ? 1 : node.role === "child" ? 3 : 2,
-              value: Math.max(1, node.amountMinor),
-              itemStyle: { color: mode === "mono" ? brand : node.color.startsWith("var(") ? (node.role === "pool" ? brand : muted) : node.color },
-            })),
-            links: flow.links.map((link) => ({ source: safe.get(link.source), target: safe.get(link.target), value: Math.max(1, link.amountMinor) })),
+            data: flow.nodes.map((node) => {
+              const depth = node.role === "source" ? 0 : node.role === "pool" ? 1 : node.role === "child" ? 3 : 2;
+              const atRight = depth === rightmost;
+              return {
+                name: safe.get(node.id),
+                depth,
+                value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
+                label: {
+                  position: atRight ? "left" : "right",
+                  align: atRight ? "right" : "left",
+                  distance: 6,
+                },
+                itemStyle: { color: mode === "mono" ? brand : node.color.startsWith("var(") ? (node.role === "pool" ? brand : muted) : node.color, borderWidth: 0 },
+              };
+            }),
+            links: flow.links.map((link) => ({ source: safe.get(link.source), target: safe.get(link.target), value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)) })),
           },
         ],
       },
@@ -402,7 +428,7 @@ function FlowChart({
     } catch (error) {
       if (host.current) host.current.dataset.chartError = error instanceof Error ? error.message : "chart";
     }
-  }, [flow, currency, labelsOn, valuesOn, mode]);
+  }, [flow, currency, labelsOn, valuesOn, mode, tall]);
 
   useEffect(() => {
     chart.current?.resize();
@@ -462,85 +488,161 @@ function FullFlow({
   children: ReactNode;
 }) {
   const t = useT();
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const last = useRef({ distance: 0, x: 0, y: 0, tap: 0 });
+  const stage = useRef<HTMLDivElement>(null);
+  const view = useRef({ scale, pan, onScale, onPan });
+  view.current = { scale, pan, onScale, onPan };
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => pushOverlay(() => closeRef.current()), []);
 
   useEffect(() => {
-    const orientation = screen.orientation as ScreenOrientation & { lock?: (next: string) => Promise<void> };
-    orientation.lock?.("landscape").catch(() => undefined);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    const node = stage.current;
+    if (!node) return;
+    const points = new Map<number, { x: number; y: number }>();
+    let distance = 0;
+    let originX = 0;
+    let originY = 0;
+    let moved = false;
+    let lastTap = 0;
+
+    const zoomBy = (factor: number) => {
+      const next = Math.min(4, Math.max(1, view.current.scale * factor));
+      view.current.onScale(next);
+      if (next === 1) view.current.onPan({ x: 0, y: 0 });
+    };
+    const place = (id: number, x: number, y: number) => points.set(id, { x, y });
+    const pinch = () => {
+      if (points.size !== 2) return 0;
+      const [a, b] = [...points.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      place(event.pointerId, event.clientX, event.clientY);
+      originX = event.clientX;
+      originY = event.clientY;
+      moved = false;
+      node.setPointerCapture?.(event.pointerId);
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === "touch" || !points.has(event.pointerId)) return;
+      event.preventDefault();
+      place(event.pointerId, event.clientX, event.clientY);
+      const dx = event.clientX - originX;
+      const dy = event.clientY - originY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+      view.current.onPan({ x: view.current.pan.x + dx, y: view.current.pan.y + dy });
+      originX = event.clientX;
+      originY = event.clientY;
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      points.delete(event.pointerId);
+      if (!moved) {
+        const now = Date.now();
+        if (now - lastTap < 300) zoomBy(view.current.scale < 1.6 ? 2.2 / view.current.scale : 1 / view.current.scale);
+        lastTap = now;
+      }
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      for (const touch of Array.from(event.changedTouches)) place(touch.identifier, touch.clientX, touch.clientY);
+      originX = event.touches[0]?.clientX || 0;
+      originY = event.touches[0]?.clientY || 0;
+      moved = false;
+      distance = pinch();
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      event.preventDefault();
+      for (const touch of Array.from(event.changedTouches)) place(touch.identifier, touch.clientX, touch.clientY);
+      const nextDistance = pinch();
+      if (event.touches.length >= 2 && distance > 0 && nextDistance > 0) {
+        zoomBy(nextDistance / distance);
+        distance = nextDistance;
+        moved = true;
+        return;
+      }
+      const touch = event.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - originX;
+      const dy = touch.clientY - originY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+      view.current.onPan({ x: view.current.pan.x + dx, y: view.current.pan.y + dy });
+      originX = touch.clientX;
+      originY = touch.clientY;
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      for (const touch of Array.from(event.changedTouches)) points.delete(touch.identifier);
+      distance = pinch();
+      if (points.size === 0 && !moved) {
+        const now = Date.now();
+        if (now - lastTap < 300) zoomBy(view.current.scale < 1.6 ? 2.2 / view.current.scale : 1 / view.current.scale);
+        lastTap = now;
+      }
+    };
+
+    node.addEventListener("pointerdown", onPointerDown);
+    node.addEventListener("pointermove", onPointerMove);
+    node.addEventListener("pointerup", onPointerUp);
+    node.addEventListener("pointercancel", onPointerUp);
+    node.addEventListener("touchstart", onTouchStart, { passive: true });
+    node.addEventListener("touchmove", onTouchMove, { passive: false });
+    node.addEventListener("touchend", onTouchEnd);
+    node.addEventListener("touchcancel", onTouchEnd);
     return () => {
-      orientation.unlock?.();
+      node.removeEventListener("pointerdown", onPointerDown);
+      node.removeEventListener("pointermove", onPointerMove);
+      node.removeEventListener("pointerup", onPointerUp);
+      node.removeEventListener("pointercancel", onPointerUp);
+      node.removeEventListener("touchstart", onTouchStart);
+      node.removeEventListener("touchmove", onTouchMove);
+      node.removeEventListener("touchend", onTouchEnd);
+      node.removeEventListener("touchcancel", onTouchEnd);
     };
   }, []);
 
   const zoom = (next: number) => onScale(Math.min(4, Math.max(1, next)));
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--surface-0)]" data-swipe-ignore="" role="dialog" aria-label={title}>
-      <div className="flex min-h-11 items-center justify-between gap-3 px-3">
-        <button type="button" className="fin-chip" onClick={onClose}>
-          {t("Close")}
-        </button>
-        <div className="flex gap-2">
-          <button type="button" className="fin-primary h-11 w-11" onClick={() => zoom(scale / 1.25)} aria-label={t("Zoom out")}>
-            −
-          </button>
-          <button type="button" className="fin-primary h-11 w-11" onClick={() => zoom(scale * 1.25)} aria-label={t("Zoom in")}>
-            +
-          </button>
-          <button
-            type="button"
-            className="fin-chip"
-            onClick={() => {
-              onScale(1);
-              onPan({ x: 0, y: 0 });
-            }}
-          >
-            {t("Reset")}
-          </button>
-        </div>
-      </div>
-      <div
-        className="min-h-0 flex-1 overflow-hidden"
-        onPointerDown={(event) => {
-          pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-          last.current.x = event.clientX;
-          last.current.y = event.clientY;
-          if (pointers.current.size === 2) {
-            const [a, b] = [...pointers.current.values()];
-            last.current.distance = Math.hypot(a.x - b.x, a.y - b.y);
-          }
-        }}
-        onPointerMove={(event) => {
-          if (!pointers.current.has(event.pointerId)) return;
-          pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-          if (pointers.current.size === 2 && last.current.distance > 0) {
-            const [a, b] = [...pointers.current.values()];
-            const distance = Math.hypot(a.x - b.x, a.y - b.y);
-            zoom(scale * (distance / last.current.distance));
-            last.current.distance = distance;
-            return;
-          }
-          if (pointers.current.size === 1) {
-            onPan({ x: pan.x + event.clientX - last.current.x, y: pan.y + event.clientY - last.current.y });
-            last.current.x = event.clientX;
-            last.current.y = event.clientY;
-          }
-        }}
-        onPointerUp={(event) => {
-          pointers.current.delete(event.pointerId);
-          const now = Date.now();
-          if (now - last.current.tap < 280) {
-            onScale(1);
-            onPan({ x: 0, y: 0 });
-          }
-          last.current.tap = now;
-        }}
-        onPointerCancel={() => pointers.current.clear()}
-      >
+    <div className="flow-full" data-swipe-ignore="" role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={stage} className="flow-full-stage">
         <div className="h-full w-full" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`, transformOrigin: "center center" }}>
           {children}
         </div>
+      </div>
+      <div className="flow-full-bar">
+        <button type="button" className="fin-chip" onClick={onClose}>
+          {t("Close")}
+        </button>
+          <button type="button" className="flow-zoom" onClick={() => zoom(scale / 1.25)} aria-label={t("Zoom out")}>
+            −
+          </button>
+          <button type="button" className="flow-zoom" onClick={() => zoom(scale * 1.25)} aria-label={t("Zoom in")}>
+            +
+          </button>
+        <button
+          type="button"
+          className="fin-chip"
+          onClick={() => {
+            onScale(1);
+            onPan({ x: 0, y: 0 });
+          }}
+        >
+          {t("Reset")}
+        </button>
       </div>
     </div>
   );
