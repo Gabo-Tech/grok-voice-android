@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow, buildSankeyOption, describeFlow, flowAmountLabel, flowConserved, layoutSankey, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
+import { buildMoneyFlow, buildSankeyOption, describeFlow, flowAmountLabel, flowConserved, labelsInside, labelsOverlap, layoutSankey, placeFlowLabels, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
 import type { RateBook } from "./financeMath.ts";
@@ -332,19 +332,22 @@ if (unlinked.state === "ready") {
 const phone = sankeyFrame(390, [2, 1, 1, 6], true);
 assert.equal(phone.nodeWidth, 10);
 assert.ok(phone.nodeGap >= 12);
+assert.ok(phone.plot >= 360);
 assert.ok(phone.linkOpacity >= 0.35 && phone.linkOpacity <= 0.5);
 assert.equal(phone.layoutIterations, 0);
-assert.ok(phone.left + phone.right + phone.nodeWidth * 3 < phone.width);
+assert.ok(phone.width - phone.left - phone.right >= 100);
 assert.equal(phone.width, 390);
 const tablet = sankeyFrame(800, [2, 1, 1, 6], true);
 assert.equal(tablet.nodeWidth, 14);
-const one = sankeyFrame(390, [1, 1, 1], true);
+const narrow = sankeyFrame(360, [1, 1, 1, 4], true);
+assert.ok(narrow.width - narrow.left - narrow.right >= 80, `plot ${narrow.width - narrow.left - narrow.right}`);
 const many = sankeyFrame(390, [1, 1, 8], true);
-assert.ok(one.height < 220);
-assert.ok(many.height > one.height);
-assert.equal(flowAmountLabel(52370, "CHF", 1), "CHF 523.70 (100%)");
-assert.equal(flowAmountLabel(52370, "eur", 0.5), "EUR 523.70 (50%)");
-assert.ok(!flowAmountLabel(52370, "CHF", 1).includes("Total income"));
+assert.ok(many.plot >= 8 * 44);
+assert.equal(flowAmountLabel(600000, "CHF", 1, true), "CHF 6k · 100%");
+assert.equal(flowAmountLabel(140000, "CHF", 0.562, true), "CHF 1.4k · 56%");
+assert.equal(flowAmountLabel(600000, "CHF", 1, false), "CHF 6,000.00 · 100%");
+assert.equal(flowAmountLabel(140000, "eur", 0.56, false), "EUR 1,400.00 · 56%");
+assert.ok(!flowAmountLabel(52370, "CHF", 1, false).includes("…"));
 
 if (describedEmpty.state === "ready") {
   const built = buildSankeyOption({
@@ -366,11 +369,28 @@ if (describedEmpty.state === "ready") {
   assert.equal(series.nodeWidth, 10);
   assert.ok(Number(series.nodeGap) >= 12);
   assert.equal((series.lineStyle as { opacity: number }).opacity, built.frame.linkOpacity);
-  const labels = (series.data as Array<{ label: { formatter: string } }>).map((row) => row.label.formatter);
-  assert.ok(labels.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("(100%)")));
-  assert.ok(labels.every((line) => !line.includes("Total incomeCHF")));
+  const labels = (series.data as Array<{ label: { formatter: string; show: boolean } }>).map((row) => row.label.formatter);
+  assert.ok(labels.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("·")));
+  assert.ok(labels.every((line) => !line.includes("…")));
   assert.ok(labels.every((line) => !line.includes("Total income")));
 }
+
+const sampleBoxes = placeFlowLabels(
+  [
+    { id: "salary", role: "source", kind: "income", text: "Salary\nCHF 6k · 100%", rect: { x: 112, y: 64, w: 10, h: 360 } },
+    { id: "pool", role: "pool", kind: "pool", text: "Total income\nCHF 6k · 100%", rect: { x: 160, y: 64, w: 10, h: 360 } },
+    { id: "spend", role: "hub", kind: "spending", text: "Total spending\nCHF 2.5k · 42%", rect: { x: 220, y: 64, w: 10, h: 200 } },
+    { id: "save", role: "hub", kind: "savings", text: "Savings\nCHF 3.5k · 58%", rect: { x: 220, y: 288, w: 10, h: 136 } },
+    { id: "housing", role: "sink", kind: "expense", text: "Housing\nCHF 1.4k · 56%", rect: { x: 280, y: 64, w: 10, h: 160 } },
+    { id: "food", role: "sink", kind: "expense", text: "Food\nCHF 620 · 25%", rect: { x: 280, y: 248, w: 10, h: 70 } },
+    { id: "transport", role: "sink", kind: "expense", text: "Transport\nCHF 280 · 11%", rect: { x: 280, y: 342, w: 10, h: 36 } },
+    { id: "subs", role: "sink", kind: "expense", text: "Subscriptions\nCHF 190 · 8%", rect: { x: 280, y: 402, w: 10, h: 22 } },
+  ],
+  { width: 390, height: 460 },
+  124,
+);
+assert.equal(labelsOverlap(sampleBoxes), false, JSON.stringify(sampleBoxes));
+assert.equal(labelsInside(sampleBoxes, { width: 390, height: 460 }), true);
 
 const lifted = sankeyValue(10, 10_000, phone.floorShare);
 assert.ok(lifted > 10);

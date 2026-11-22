@@ -5,6 +5,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
   es: {
     Debt: "Deuda",
     "Left to spend": "Por gastar",
+    More: "Más",
+    "Edit line": "Editar la línea",
     "Plan {month}": "Planificar {month}",
     "in {n} d": "en {n} d",
     "Updated just now": "Actualizado ahora mismo",
@@ -191,6 +193,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
   de: {
     Debt: "Schulden",
     "Left to spend": "Noch auszugeben",
+    More: "Mehr",
+    "Edit line": "Zeile bearbeiten",
     "Plan {month}": "{month} planen",
     "in {n} d": "in {n} T",
     "Updated just now": "Gerade aktualisiert",
@@ -377,6 +381,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
   pt: {
     Debt: "Dívida",
     "Left to spend": "Por gastar",
+    More: "Mais",
+    "Edit line": "Editar a linha",
     "Plan {month}": "Planear {month}",
     "in {n} d": "em {n} d",
     "Updated just now": "Atualizado agora mesmo",
@@ -563,6 +569,8 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
   "ca-ES-valencia": {
     Debt: "Deute",
     "Left to spend": "Per gastar",
+    More: "Més",
+    "Edit line": "Editar la línia",
     "Plan {month}": "Planificar {month}",
     "in {n} d": "en {n} d",
     "Updated just now": "Actualitzat ara mateix",

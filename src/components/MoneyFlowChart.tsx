@@ -9,7 +9,7 @@ import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
-import { buildMoneyFlow, buildSankeyOption, flowDepth, type MoneyFlow } from "@/lib/moneyFlow";
+import { buildMoneyFlow, buildSankeyOption, type MoneyFlow } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
 import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
@@ -413,6 +413,7 @@ function FlowChart({
   drillRef.current = onDrill;
   const safeToReal = useRef(new Map<string, string>());
   const [box, setBox] = useState(0);
+  const [drawn, setDrawn] = useState(460);
 
   useEffect(() => {
     const node = host.current;
@@ -442,18 +443,6 @@ function FlowChart({
     };
   }, []);
 
-  const present = flow && flow.state === "ready"
-    ? {
-        pool: flow.nodes.some((node) => node.role === "pool"),
-        hub: flow.nodes.some((node) => node.role === "hub"),
-        sink: flow.nodes.some((node) => node.role === "sink" || node.role === "child"),
-      }
-    : { pool: false, hub: false, sink: false };
-  const depthOf = (role: "source" | "pool" | "hub" | "sink" | "child") => flowDepth(role, present);
-  const busiest = flow && flow.state === "ready" ? Math.max(1, ...[0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node.role) === depth).length)) : 1;
-  const plot = Math.min(560, Math.max(88, busiest * 44));
-  const height = tall ? Math.max(plot + 60, Math.min(window.innerHeight - 160, plot + 80)) : plot + 60;
-
   useEffect(() => {
     const instance = chart.current;
     if (!instance || !flow || flow.state !== "ready" || box < 280) return;
@@ -479,7 +468,8 @@ function FlowChart({
       mono,
     });
     const frame = built.frame;
-    const chartHeight = tall ? Math.max(frame.height, Math.min(window.innerHeight - 148, frame.height + 40)) : frame.height;
+    const chartHeight = frame.height;
+    setDrawn(chartHeight);
     if (host.current) host.current.style.height = `${chartHeight}px`;
     instance.resize({ width: frame.width, height: chartHeight });
     safeToReal.current = new Map(flow.nodes.map((node, index) => [`n${index}`, node.id]));
@@ -507,9 +497,133 @@ function FlowChart({
     } catch (error) {
       if (host.current) host.current.dataset.chartError = error instanceof Error ? error.message : "chart";
     }
+    let publishing = false;
+    const publish = () => {
+      if (publishing) return;
+      publishing = true;
+      nudgeLabels(instance, frame.width, frame.height);
+      const report = readLabelAudit(instance, frame.width, frame.height);
+      publishing = false;
+      const node = host.current;
+      if (node) {
+        node.dataset.labelAudit = report.ok ? "ok" : "fail";
+        node.dataset.labelIssues = report.issues.slice(0, 6).join(" | ");
+      }
+      (window as Window & { __sankeyAudit?: unknown }).__sankeyAudit = report;
+    };
+    instance.off("finished");
+    instance.on("finished", publish);
   }, [flow, currency, labelsOn, valuesOn, mono, tall, box]);
 
-  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height }} />;
+  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: drawn }} />;
+}
+
+interface AuditEl {
+  ignore?: boolean;
+  type?: string;
+  style?: { text?: string; x?: number; y?: number };
+  x?: number;
+  y?: number;
+  dirty?: () => void;
+  transform?: number[];
+  getBoundingRect?: () => { width: number; height: number; clone: () => { x: number; y: number; width: number; height: number; applyTransform: (m: number[]) => void } };
+  getComputedTransform?: () => number[] | null;
+}
+
+function labelElements(instance: ECharts): Array<{ el: AuditEl; x: number; y: number; w: number; h: number; text: string }> {
+  const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] } };
+  const out: Array<{ el: AuditEl; x: number; y: number; w: number; h: number; text: string }> = [];
+  for (const el of zr.storage.getDisplayList?.(true) || []) {
+    const text = el.style?.text || "";
+    if (!text.trim() || !el.getBoundingRect) continue;
+    const rect = el.getBoundingRect().clone();
+    const matrix = el.getComputedTransform?.() || el.transform;
+    if (matrix) rect.applyTransform(matrix);
+    if (rect.width < 2 || rect.height < 2) continue;
+    out.push({ el, x: rect.x, y: rect.y, w: rect.width, h: rect.height, text: text.replace(/\n/g, " ") });
+  }
+  return out;
+}
+
+function boxesHit(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
+  return a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y < b.y + b.h - 1 && a.y + a.h > b.y + 1;
+}
+
+function nudgeLabels(instance: ECharts, width: number, height: number) {
+  const items = labelElements(instance);
+  const move = (item: (typeof items)[number], dx: number, dy: number) => {
+    item.el.x = (item.el.x || 0) + dx;
+    item.el.y = (item.el.y || 0) + dy;
+    item.x += dx;
+    item.y += dy;
+    item.el.dirty?.();
+  };
+  for (let pass = 0; pass < 16; pass += 1) {
+    let moved = false;
+    for (let i = 0; i < items.length; i += 1) {
+      for (let j = i + 1; j < items.length; j += 1) {
+        if (!boxesHit(items[i], items[j])) continue;
+        const lower = items[i].y <= items[j].y ? items[j] : items[i];
+        const upper = lower === items[i] ? items[j] : items[i];
+        move(lower, 0, upper.y + upper.h - lower.y + 6);
+        moved = true;
+      }
+      const item = items[i];
+      if (item.y + item.h > height - 2) {
+        move(item, 0, height - 2 - (item.y + item.h));
+        moved = true;
+      }
+      if (item.y < 2) {
+        move(item, 0, 2 - item.y);
+        moved = true;
+      }
+      if (item.x < 2) {
+        move(item, 2 - item.x, 0);
+        moved = true;
+      }
+      if (item.x + item.w > width - 2) {
+        move(item, width - 2 - (item.x + item.w), 0);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  instance.getZr().refresh();
+}
+
+function readLabelAudit(instance: ECharts, width: number, height: number): { ok: boolean; issues: string[]; count: number; boxes: Array<{ t: string; x: number; y: number; w: number; h: number }> } {
+  const boxes: Array<{ x: number; y: number; w: number; h: number; text: string }> = [];
+  const kinds = new Map<string, number>();
+  const zr = instance.getZr() as unknown as { storage: { traverse: (fn: (el: AuditEl) => void) => void; getDisplayList?: (all?: boolean) => AuditEl[] } };
+  const visit = (el: AuditEl) => {
+    const key = `${el.type || "?"}:${el.style?.text ? "t" : "-"}`;
+    kinds.set(key, (kinds.get(key) || 0) + 1);
+    const text = el.style?.text || "";
+    if (!text.trim()) return;
+    const rect = el.getBoundingRect?.().clone();
+    if (!rect) return;
+    const matrix = el.getComputedTransform?.() || el.transform;
+    if (matrix) rect.applyTransform(matrix);
+    if (rect.width < 2 || rect.height < 2) return;
+    boxes.push({ x: rect.x, y: rect.y, w: rect.width, h: rect.height, text: text.replace(/\n/g, " ") });
+  };
+  for (const el of zr.storage.getDisplayList?.(true) || []) visit(el);
+  const issues: string[] = [];
+  const hit = (a: (typeof boxes)[number], b: (typeof boxes)[number]) => a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y < b.y + b.h - 1 && a.y + a.h > b.y + 1;
+  for (let i = 0; i < boxes.length; i += 1) {
+    const box = boxes[i];
+    if (box.x < -1 || box.y < -1 || box.x + box.w > width + 1 || box.y + box.h > height + 1) issues.push(`outside ${box.text}`);
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      if (hit(box, boxes[j])) issues.push(`overlap ${box.text} / ${boxes[j].text}`);
+    }
+  }
+  if (!boxes.length) issues.push([...kinds.entries()].map(([key, count]) => `${key}:${count}`).join(",") || "no elements");
+  return {
+    ok: issues.length === 0 && boxes.length > 0,
+    issues,
+    count: boxes.length,
+    boxes: boxes.map((box) => ({ t: box.text, x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.w), h: Math.round(box.h) })),
+  };
 }
 
 function CategoryColors({
