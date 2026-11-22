@@ -302,6 +302,7 @@ export function FinanceOverview({
           onFollow={() => setFlowOwn(null)}
           onPaintCategory={(name, color) => finance.editCategory({ action: "color", name, color })}
           onReassign={onOpenActivity}
+          budgets={finance.snapshot.budgets || []}
         />
       </div>
     ),

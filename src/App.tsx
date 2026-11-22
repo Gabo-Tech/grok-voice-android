@@ -7,6 +7,7 @@ import { UpdateBanner } from "@/components/UpdateBanner";
 import { BottomNav, useThumbBar, type AppTab } from "@/components/BottomNav";
 import { CalendarPage } from "@/components/CalendarPage";
 import { FinancePage } from "@/components/FinancePage";
+import { FlowShot } from "@/components/FlowShot";
 import { MorePage, type Section } from "@/components/MorePage";
 import { NotesPage } from "@/components/NotesPage";
 import { Onboarding } from "@/components/Onboarding";
@@ -166,6 +167,10 @@ export default function App() {
     });
     return () => unlisten?.();
   }, [inApp]);
+
+  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("flowshot")) {
+    return <FlowShot />;
+  }
 
   if (bootError) {
     return (

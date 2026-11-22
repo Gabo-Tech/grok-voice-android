@@ -95,6 +95,8 @@
     <string name="alarm_channel_desc">Sichtbar, während ein gewählter Weckton läuft. Der Ton selbst spielt getrennt.</string>
     <string name="inbox_announce">%1$s über %2$s. %3$s</string>
     <string name="inbox_announce_hidden">%1$s über %2$s hat eine Nachricht geschickt.</string>
+    <string name="budget_channel_name">Budget</string>
+    <string name="budget_channel_desc">Ein Hinweis, wenn ein Plan 80 % oder 100 % erreicht.</string>
     <string name="inbox_call_announce">%1$s ruft an.</string>
 </resources>
 

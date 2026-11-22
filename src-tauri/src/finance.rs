@@ -294,6 +294,8 @@ struct Store {
     /// Bumped when cached provider ids from an older build should be dropped.
     #[serde(default)]
     price_cache_version: u32,
+    #[serde(default)]
+    budgets: Vec<Budget>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -321,6 +323,67 @@ pub struct NodeColor {
     pub color: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetLine {
+    #[serde(default)]
+    pub id: String,
+    /// `income`, `expense`, `savings`, or `investment`.
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub subcategory: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub amount_minor: i64,
+    #[serde(default)]
+    pub currency: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Budget {
+    #[serde(default)]
+    pub id: String,
+    /// `YYYY-MM`, or empty for the recurring template.
+    #[serde(default)]
+    pub period: String,
+    #[serde(default)]
+    pub currency: String,
+    #[serde(default)]
+    pub lines: Vec<BudgetLine>,
+    #[serde(default = "default_copy")]
+    pub copy_forward: bool,
+    #[serde(default)]
+    pub notify: bool,
+    #[serde(default)]
+    pub warned: Vec<String>,
+    #[serde(default)]
+    pub updated_ms: i64,
+}
+
+fn default_copy() -> bool {
+    true
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            period: String::new(),
+            currency: String::new(),
+            lines: Vec::new(),
+            copy_forward: true,
+            notify: false,
+            warned: Vec::new(),
+            updated_ms: 0,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Bundle {
@@ -346,6 +409,8 @@ pub struct Bundle {
     /// Bumped when cached provider ids from an older build should be dropped.
     #[serde(default)]
     price_cache_version: u32,
+    #[serde(default)]
+    pub budgets: Vec<Budget>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -432,6 +497,8 @@ pub struct Snapshot {
     pub prices: crate::finance_prices::PriceBook,
     #[serde(default)]
     pub history: Vec<crate::finance_history::ValuePoint>,
+    #[serde(default)]
+    pub budgets: Vec<Budget>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -699,6 +766,7 @@ impl Finance {
             history_seeded: store.history_seeded.clone(),
             provider_pins: store.provider_pins.clone(),
             price_cache_version: store.price_cache_version,
+            budgets: store.budgets.clone(),
         }
     }
 
@@ -716,6 +784,7 @@ impl Finance {
         store.history_seeded = bundle.history_seeded;
         store.provider_pins = bundle.provider_pins;
         store.price_cache_version = bundle.price_cache_version;
+        store.budgets = bundle.budgets;
         self.commit(app, store).map(|_| ())
     }
 
@@ -739,6 +808,13 @@ impl Finance {
         let mut store = self.lock().clone();
         let clock = clock_for(app, &store);
         apply_rule_form(&mut store, &draft, &clock)?;
+        self.commit(app, store)
+    }
+
+    pub fn save_budget(&self, app: &AppHandle, args: &Value) -> Result<Snapshot, String> {
+        let mut store = self.lock().clone();
+        let clock = clock_for(app, &store);
+        let _ = apply_budget(&mut store, args, &clock)?;
         self.commit(app, store)
     }
 
@@ -1186,7 +1262,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "delete_finance",
-            "Delete one finance account, transaction, or recurring rule after a clear yes. Call first with confirmed false, say what will be removed, then call with confirmed true. kind is account, transaction, or rule. id comes from list_finance. Deleting an account says how many transactions it has. If that count is not zero, offer to move them. Pass moveTo with the destination name to move them before the account is removed. Do not say there are none unless the count is zero.",
+            "Delete one finance account, transaction, recurring rule, or budget after a clear yes. Call first with confirmed false, say what will be removed, then call with confirmed true. kind is account, transaction, rule, budget, or budget_line. id comes from list_finance. period is this or YYYY-MM for a budget. name or category selects a budget line. Deleting an account says how many transactions it has. If that count is not zero, offer to move them. Pass moveTo with the destination name to move them before the account is removed. Do not say there are none unless the count is zero.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1235,20 +1311,42 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color, or fullscreen. mode category groups by category and subcategory, mode source groups by the account that paid, and mode mono is one color. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, or fullscreen. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming, including the budget. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color, fullscreen, planned, or describe. mode category groups income and expenses by type, mode entry gives each transaction its own node, and mode mono is one color. describe speaks income, spending, savings, and the largest categories. planned draws the saved budget. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, fullscreen, planned, or describe. Do not invent a rate.",
             json!({
                 "type": "object",
                 "properties": {
                     "view": { "type": "string" },
                     "chart": { "type": "string", "description": "allocation, category, debts, trend, holdings, or portfolio" },
                     "action": { "type": "string", "description": "hide, show, only, reset, labels, values, color, or fullscreen" },
-                    "mode": { "type": "string", "description": "For chart flow color: category, source, or mono" },
+                    "mode": { "type": "string", "description": "For chart flow: category, entry, or mono" },
                     "name": { "type": "string", "description": "Holding name, class such as crypto, or a dashboard section" },
                     "period": { "type": "string", "description": "this, last, 3m, 6m, ytd, 1y, all, or custom" },
                     "start": { "type": "string", "description": "Custom range start, YYYY-MM-DD" },
                     "end": { "type": "string", "description": "Custom range end, YYYY-MM-DD" }
                 },
                 "required": ["view"]
+            })
+        ),
+        fn_tool(
+            "save_budget",
+            "Create or change the monthly budget on this phone. action is create, set, read, or delete. period is this, next, YYYY-MM, or template. role is income, expense, savings, or investment. category is the type, such as Salary or Restaurants. subcategory is optional. label is an optional expected entry, such as Salary 1 Nov, so two paydays stay two lines under Salary. amount is the planned figure. currency is what they named, or the Finance default. Do not assume USD. copyForward true copies this month onto later months that have no budget. notify true warns at 80 percent and 100 percent of an expense limit. question left with category answers how much is left. question over answers whether spending is over the plan. read with no category speaks income, spending, savings, and investments. delete asks first with confirmed false, then removes only after confirmed true. Do not invent an amount.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string" },
+                    "period": { "type": "string" },
+                    "role": { "type": "string" },
+                    "category": { "type": "string" },
+                    "subcategory": { "type": "string" },
+                    "label": { "type": "string" },
+                    "amount": { "type": "string" },
+                    "currency": { "type": "string" },
+                    "copyForward": { "type": "boolean" },
+                    "notify": { "type": "boolean" },
+                    "question": { "type": "string" },
+                    "confirmed": { "type": "boolean" },
+                    "id": { "type": "string" }
+                }
             })
         ),
         fn_tool(
@@ -1283,7 +1381,7 @@ pub fn voice_money_hint() -> &'static str {
 pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     if !matches!(
         name,
-        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf" | "open_finance"
+        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf" | "open_finance" | "save_budget"
     ) {
         return Ok(None);
     }
@@ -1299,7 +1397,7 @@ pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Valu
 fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
     if !matches!(
         name,
-        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf" | "open_finance"
+        "log_money" | "save_recurring" | "save_schedule" | "save_account" | "list_finance" | "delete_finance" | "move_transactions" | "mark_paid" | "export_finance_pdf" | "open_finance" | "save_budget"
     ) {
         return Ok(None);
     }
@@ -1338,6 +1436,10 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
             date: String::new(),
         };
         let mut detail = speak(&store, &ask, today);
+        if chart == "flow" || action == "describe" {
+            detail.push(' ');
+            detail.push_str(&speak_flow(&store, today));
+        }
         if !action.is_empty() {
             detail.push(' ');
             detail.push_str(&speak_chart(&action, &chart, &chart_name));
@@ -1383,6 +1485,12 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
             return Ok(Some(json!({ "ok": true, "detail": detail })));
         }
         let ask = ask_from(args);
+        if matches!(ask.view.as_str(), "budget" | "plan") && (ask.query.to_ascii_lowercase().contains("budget") || ask.query.to_ascii_lowercase().contains("left") || ask.query.to_ascii_lowercase().contains("over") || args["category"].as_str().unwrap_or("").trim().len() > 0) {
+            let period = budget_period(args["month"].as_str().unwrap_or("this"), today);
+            let clock = clock_for(app, &store);
+            let detail = speak_budget(&store, &period, args["category"].as_str().unwrap_or(&ask.query), &ask.query, &clock);
+            return Ok(Some(json!({ "ok": true, "detail": detail, "defaultCurrency": store.default_currency })));
+        }
         let mut detail = speak(&store, &ask, today);
         if force {
             let count = store.prices.last_updated.to_string();
@@ -1420,6 +1528,13 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
             })).collect::<Vec<_>>(),
             "transactions": transaction_views(&store, &ask),
         })));
+    }
+    if name == "save_budget" {
+        let mut store = finance.lock().clone();
+        let clock = clock_for(app, &store);
+        let detail = apply_budget(&mut store, args, &clock)?;
+        finance.commit(app, store)?;
+        return Ok(Some(json!({ "ok": true, "detail": detail })));
     }
     if name == "delete_finance" {
         if !args["confirmed"].as_bool().unwrap_or(false) {
@@ -3766,6 +3881,408 @@ fn remove_account(store: &mut Store, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn budget_period(raw: &str, today: NaiveDate) -> String {
+    let folded = fold(raw);
+    if folded.is_empty() || matches!(folded.as_str(), "this" | "month" | "current") {
+        return format!("{:04}-{:02}", today.year(), today.month());
+    }
+    if matches!(folded.as_str(), "template" | "recurring" | "repeat") {
+        return String::new();
+    }
+    if folded == "next" {
+        let (year, month) = if today.month() == 12 { (today.year() + 1, 1) } else { (today.year(), today.month() + 1) };
+        return format!("{year:04}-{month:02}");
+    }
+    if raw.len() >= 7 && raw.as_bytes().get(4) == Some(&b'-') {
+        return raw[..7].to_string();
+    }
+    format!("{:04}-{:02}", today.year(), today.month())
+}
+
+fn budget_role(raw: &str) -> String {
+    match fold(raw).as_str() {
+        "income" | "salary" | "in" => "income".into(),
+        "savings" | "save" | "saving" => "savings".into(),
+        "investment" | "invest" | "investing" => "investment".into(),
+        "expense" | "limit" | "spending" | "spend" => "expense".into(),
+        _ => "expense".into(),
+    }
+}
+
+fn line_name(line: &BudgetLine) -> String {
+    let label = line.label.trim();
+    if !label.is_empty() {
+        return label.to_string();
+    }
+    let sub = line.subcategory.trim();
+    if !sub.is_empty() {
+        return sub.to_string();
+    }
+    let category = line.category.trim();
+    if !category.is_empty() {
+        return category.to_string();
+    }
+    line.role.clone()
+}
+
+fn ensure_budget<'a>(store: &'a mut Store, period: &str, currency: &str, clock: &Clock) -> &'a mut Budget {
+    if let Some(index) = store.budgets.iter().position(|row| row.period == period) {
+        return &mut store.budgets[index];
+    }
+    let inherited = if period.is_empty() {
+        None
+    } else {
+        store
+            .budgets
+            .iter()
+            .find(|row| row.period.is_empty())
+            .or_else(|| {
+                store
+                    .budgets
+                    .iter()
+                    .filter(|row| !row.period.is_empty() && row.period.as_str() < period && row.copy_forward)
+                    .max_by(|a, b| a.period.cmp(&b.period))
+            })
+            .cloned()
+    };
+    let mut budget = inherited.unwrap_or_default();
+    budget.id = alloc(store, "bud");
+    budget.period = period.to_string();
+    budget.currency = if budget.currency.is_empty() { currency.to_string() } else { budget.currency };
+    budget.warned.clear();
+    budget.updated_ms = clock.ms;
+    store.budgets.push(budget);
+    let last = store.budgets.len() - 1;
+    &mut store.budgets[last]
+}
+
+fn upsert_line(store: &mut Store, budget_index: usize, line: &Value, clock: &Clock) -> Result<String, String> {
+    let role = budget_role(line["role"].as_str().unwrap_or("expense"));
+    let category = line["category"].as_str().unwrap_or("").trim().to_string();
+    let subcategory = line["subcategory"].as_str().unwrap_or("").trim().to_string();
+    let label = line["label"].as_str().unwrap_or("").trim().to_string();
+    let id = line["id"].as_str().unwrap_or("").trim().to_string();
+    let currency_arg = line["currency"].as_str().unwrap_or("");
+    let amount_text = amount_text(line.get("amount"));
+    let (amount_minor, currency) = if !amount_text.is_empty() {
+        resolve_money(&amount_text, currency_arg, &clock.default_currency)?
+    } else if let Some(minor) = line["amountMinor"].as_i64().filter(|value| *value > 0) {
+        let currency = if currency_arg.trim().is_empty() { clock.default_currency.clone() } else { canonical_currency(currency_arg)? };
+        (minor, currency)
+    } else {
+        return Err("Say the amount.".into());
+    };
+    let index = store.budgets.get(budget_index).ok_or("No budget for that month.")?.lines.iter().position(|row| {
+        (!id.is_empty() && row.id == id)
+            || (id.is_empty() && fold(&row.role) == fold(&role) && fold(&row.category) == fold(&category) && fold(&row.subcategory) == fold(&subcategory) && fold(&row.label) == fold(&label))
+    });
+    let fresh_id = if index.is_none() { alloc(store, "bln") } else { String::new() };
+    let name = if !label.is_empty() {
+        label.clone()
+    } else if !subcategory.is_empty() {
+        subcategory.clone()
+    } else if !category.is_empty() {
+        category.clone()
+    } else {
+        role.clone()
+    };
+    let budget = store.budgets.get_mut(budget_index).ok_or("No budget for that month.")?;
+    if let Some(index) = index {
+        let row = &mut budget.lines[index];
+        row.role = role;
+        row.category = category;
+        row.subcategory = subcategory;
+        row.label = label;
+        row.amount_minor = amount_minor;
+        row.currency = currency.clone();
+    } else {
+        budget.lines.push(BudgetLine { id: fresh_id, role, category, subcategory, label, amount_minor, currency: currency.clone() });
+    }
+    if let Some(budget) = store.budgets.get_mut(budget_index) {
+        budget.updated_ms = clock.ms;
+    }
+    Ok(spoken("Set {name} to {amount}.", &[("name", &name), ("amount", &format_minor(amount_minor, &currency))]))
+}
+
+fn apply_budget(store: &mut Store, args: &Value, clock: &Clock) -> Result<String, String> {
+    let action = fold(args["action"].as_str().unwrap_or("set"));
+    let period = budget_period(args["period"].as_str().unwrap_or("this"), clock.today);
+    let month = if period.is_empty() { spoken("the template", &[]) } else { period.clone() };
+    if action == "read" || action == "status" {
+        return Ok(speak_budget(store, &period, args["category"].as_str().unwrap_or(""), args["question"].as_str().unwrap_or(""), clock));
+    }
+    if action == "delete" || args["remove"].as_bool().unwrap_or(false) {
+        if !args["confirmed"].as_bool().unwrap_or(false) && action == "delete" {
+            let name = args["category"].as_str().unwrap_or("").trim();
+            return if name.is_empty() {
+                Ok(spoken("Delete the budget for {month}? Say yes and I will remove it.", &[("month", &month)]))
+            } else {
+                Ok(spoken("Delete the {name} line? Say yes and I will remove it.", &[("name", name)]))
+            };
+        }
+        return delete_budget(store, &period, args);
+    }
+    let currency = if args["currency"].as_str().unwrap_or("").trim().is_empty() {
+        effective_default(store, &current_locale())
+    } else {
+        canonical_currency(args["currency"].as_str().unwrap_or(""))?
+    };
+    if store.budgets.iter().all(|row| row.period != period) {
+        let _ = ensure_budget(store, &period, &currency, clock);
+    }
+    let index = store.budgets.iter().position(|row| row.period == period).ok_or("No budget for that month.")?;
+    if let Some(copy) = args.get("copyForward").and_then(|value| value.as_bool()) {
+        store.budgets[index].copy_forward = copy;
+    }
+    if let Some(notify) = args.get("notify").and_then(|value| value.as_bool()) {
+        store.budgets[index].notify = notify;
+    }
+    if let Some(warned) = args.get("warned").and_then(|value| value.as_array()) {
+        store.budgets[index].warned = warned.iter().filter_map(|row| row.as_str().map(str::to_string)).collect();
+    }
+    if args["replaceLines"].as_bool().unwrap_or(false) {
+        let mut lines = Vec::new();
+        for row in args["lines"].as_array().cloned().unwrap_or_default() {
+            let text = amount_text(row.get("amount"));
+            let (amount_minor, line_currency) = if !text.is_empty() {
+                resolve_money(&text, row["currency"].as_str().unwrap_or(""), &currency)?
+            } else if let Some(minor) = row["amountMinor"].as_i64().filter(|value| *value > 0) {
+                (minor, if row["currency"].as_str().unwrap_or("").trim().is_empty() { currency.clone() } else { canonical_currency(row["currency"].as_str().unwrap_or(""))? })
+            } else {
+                continue;
+            };
+            lines.push(BudgetLine {
+                id: {
+                    let existing = row["id"].as_str().unwrap_or("").trim().to_string();
+                    if existing.is_empty() { alloc(store, "bln") } else { existing }
+                },
+                role: budget_role(row["role"].as_str().unwrap_or("expense")),
+                category: row["category"].as_str().unwrap_or("").trim().to_string(),
+                subcategory: row["subcategory"].as_str().unwrap_or("").trim().to_string(),
+                label: row["label"].as_str().unwrap_or("").trim().to_string(),
+                amount_minor,
+                currency: line_currency,
+            });
+        }
+        if let Some(budget) = store.budgets.iter_mut().find(|row| row.period == period) {
+            budget.lines = lines;
+            budget.updated_ms = clock.ms;
+            if !currency.is_empty() && budget.currency.is_empty() {
+                budget.currency = currency;
+            }
+        }
+        return Ok(spoken("Saved the budget for {month}.", &[("month", &month)]));
+    }
+    if args.get("line").is_some() || !args["category"].as_str().unwrap_or("").trim().is_empty() || !amount_text(args.get("amount")).is_empty() {
+        let line = if args.get("line").is_some() { args["line"].clone() } else { args.clone() };
+        let detail = upsert_line(store, index, &line, clock)?;
+        return Ok(detail);
+    }
+    Ok(spoken("Saved the budget for {month}.", &[("month", &month)]))
+}
+
+fn delete_budget(store: &mut Store, period: &str, args: &Value) -> Result<String, String> {
+    let name = args["category"].as_str().unwrap_or(args["name"].as_str().unwrap_or("")).trim().to_string();
+    let id = args["id"].as_str().unwrap_or("").trim().to_string();
+    let month = if period.is_empty() { spoken("the template", &[]) } else { period.to_string() };
+    let Some(index) = store.budgets.iter().position(|row| row.period == period || (!id.is_empty() && row.id == id)) else {
+        return Err("No budget for that month.".into());
+    };
+    if name.is_empty() && args["lineId"].as_str().unwrap_or("").trim().is_empty() {
+        store.budgets.remove(index);
+        return Ok(spoken("Deleted the budget for {month}.", &[("month", &month)]));
+    }
+    let line_id = args["lineId"].as_str().unwrap_or("").trim().to_string();
+    let budget = &mut store.budgets[index];
+    let before = budget.lines.len();
+    budget.lines.retain(|line| {
+        if !line_id.is_empty() && line.id == line_id {
+            return false;
+        }
+        if !id.is_empty() && line.id == id && !name.is_empty() {
+            return false;
+        }
+        !(fold(&line_name(line)) == fold(&name) || fold(&line.category) == fold(&name))
+    });
+    if budget.lines.len() == before {
+        return Err("No budget line with that name.".into());
+    }
+    Ok(spoken("Deleted the {name} line.", &[("name", &name)]))
+}
+
+fn flow_role(direction: &str, kind: &str, account_kind: &str) -> &'static str {
+    if direction == "income" {
+        return "income";
+    }
+    if direction == "payment" {
+        return "expense";
+    }
+    if direction == "transfer" {
+        if account_kind == "investment" || kind == "investment" {
+            return "investment";
+        }
+        return "ignore";
+    }
+    if direction != "expense" {
+        return "ignore";
+    }
+    if kind == "savings" {
+        return "ignore";
+    }
+    if kind == "investment" {
+        return "investment";
+    }
+    "expense"
+}
+
+fn category_kind_of(store: &Store, name: &str) -> String {
+    store.categories.iter().find(|row| fold(&row.name) == fold(name)).map(|row| row.kind.clone()).unwrap_or_default()
+}
+
+fn converted_sum(store: &Store, month: &str, role: &str, category: &str, now_ms: i64, display: &str) -> Result<i64, String> {
+    let mut total = 0i64;
+    let mut missing = Vec::new();
+    for tx in &store.transactions {
+        if !month.is_empty() && !tx.date.starts_with(month) {
+            continue;
+        }
+        let kind = category_kind_of(store, &tx.category);
+        let account_kind = store.accounts.iter().find(|row| row.id == tx.account_id).map(|row| row.kind.as_str()).unwrap_or("");
+        if flow_role(&tx.direction, &kind, account_kind) != role {
+            continue;
+        }
+        if !category.is_empty() && fold(&tx.category) != fold(category) && fold(&tx.subcategory) != fold(category) && fold(&tx.notes) != fold(category) {
+            continue;
+        }
+        match crate::finance_fx::convert(tx.amount_minor, &tx.currency, display, &store.fx, now_ms) {
+            Some(row) => total = total.saturating_add(row.amount_minor),
+            None => missing.push(tx.currency.to_uppercase()),
+        }
+    }
+    if !missing.is_empty() && total == 0 {
+        missing.sort();
+        missing.dedup();
+        return Err(spoken("This period needs a rate for {codes}.", &[("codes", &missing.join(", "))]));
+    }
+    Ok(total)
+}
+
+fn speak_budget(store: &Store, period: &str, category: &str, question: &str, clock: &Clock) -> String {
+    let display = effective_default(store, &current_locale());
+    let month = if period.is_empty() { spoken("the template", &[]) } else { period.to_string() };
+    let Some(budget) = store.budgets.iter().find(|row| row.period == period).or_else(|| store.budgets.iter().find(|row| row.period.is_empty())) else {
+        return spoken("No budget is saved for {month}.", &[("month", &month)]);
+    };
+    let now_ms = clock.ms.max(1);
+    let asked = fold(&format!("{category} {question}"));
+    if !category.trim().is_empty() {
+        let line = budget.lines.iter().find(|line| fold(&line_name(line)) == fold(category) || fold(&line.category) == fold(category));
+        let Some(line) = line else {
+            return spoken("No budget is saved for {month}.", &[("month", &month)]);
+        };
+        let planned = crate::finance_fx::convert(line.amount_minor, &line.currency, &display, &store.fx, now_ms).map(|row| row.amount_minor).unwrap_or(line.amount_minor);
+        let actual = converted_sum(store, period, &budget_role(&line.role), &line.category, now_ms, &display).unwrap_or(0);
+        let left = planned.saturating_sub(actual);
+        if actual > planned {
+            return spoken("{name} is over by {amount}.", &[("name", &line_name(line)), ("amount", &format_minor(actual - planned, &display))]);
+        }
+        return spoken("{name} has {left} left of {planned}.", &[("name", &line_name(line)), ("left", &format_minor(left, &display)), ("planned", &format_minor(planned, &display))]);
+    }
+    let income = converted_sum(store, period, "income", "", now_ms, &display).unwrap_or(0);
+    let spending = converted_sum(store, period, "expense", "", now_ms, &display).unwrap_or(0);
+    let investments = converted_sum(store, period, "investment", "", now_ms, &display).unwrap_or(0);
+    let savings = income.saturating_sub(spending).saturating_sub(investments);
+    let planned_spend: i64 = budget
+        .lines
+        .iter()
+        .filter(|line| budget_role(&line.role) == "expense")
+        .filter_map(|line| crate::finance_fx::convert(line.amount_minor, &line.currency, &display, &store.fx, now_ms).map(|row| row.amount_minor))
+        .sum();
+    let posture = if asked.contains("over") || asked.contains("sobre") || asked.contains("über") || asked.contains("sobre") {
+        if planned_spend > 0 && spending > planned_spend {
+            spoken("You are over the spending plan.", &[])
+        } else {
+            spoken("Spending is within the plan.", &[])
+        }
+    } else {
+        String::new()
+    };
+    let summary = spoken(
+        "Budget for {month}. Income {income}. Spending {spending}. Savings {savings}. Investments {investments}.",
+        &[
+            ("month", &month),
+            ("income", &format_minor(income, &display)),
+            ("spending", &format_minor(spending, &display)),
+            ("savings", &format_minor(savings, &display)),
+            ("investments", &format_minor(investments, &display)),
+        ],
+    );
+    if posture.is_empty() { summary } else { format!("{posture} {summary}") }
+}
+
+fn speak_flow(store: &Store, today: NaiveDate) -> String {
+    let month = format!("{:04}-{:02}", today.year(), today.month());
+    let display = effective_default(store, &current_locale());
+    let now_ms = Local::now().timestamp_millis();
+    let income = match converted_sum(store, &month, "income", "", now_ms, &display) {
+        Ok(value) => value,
+        Err(message) => return message,
+    };
+    let spending = converted_sum(store, &month, "expense", "", now_ms, &display).unwrap_or(0);
+    let investments = converted_sum(store, &month, "investment", "", now_ms, &display).unwrap_or(0);
+    if income == 0 && spending == 0 && investments == 0 {
+        return spoken("Nothing recorded in this period.", &[]);
+    }
+    let mut tops: Vec<(String, i64)> = Vec::new();
+    for tx in &store.transactions {
+        if !tx.date.starts_with(&month) {
+            continue;
+        }
+        let kind = category_kind_of(store, &tx.category);
+        let account_kind = store.accounts.iter().find(|row| row.id == tx.account_id).map(|row| row.kind.as_str()).unwrap_or("");
+        if flow_role(&tx.direction, &kind, account_kind) != "expense" {
+            continue;
+        }
+        let name = if tx.category.trim().is_empty() { spoken("Uncategorized", &[]) } else { tx.category.clone() };
+        let Some(converted) = crate::finance_fx::convert(tx.amount_minor, &tx.currency, &display, &store.fx, now_ms) else { continue };
+        if let Some(row) = tops.iter_mut().find(|row| fold(&row.0) == fold(&name)) {
+            row.1 = row.1.saturating_add(converted.amount_minor);
+        } else {
+            tops.push((name, converted.amount_minor));
+        }
+    }
+    tops.sort_by(|a, b| b.1.cmp(&a.1));
+    tops.truncate(3);
+    let categories = tops.iter().map(|(name, amount)| format!("{name} {}", format_minor(*amount, &display))).collect::<Vec<_>>().join(", ");
+    if income == 0 {
+        let spending_text = format_minor(spending, &display);
+        return if categories.is_empty() {
+            spoken("No income this month. Spending {spending}.", &[("spending", &spending_text)])
+        } else {
+            format!(
+                "{} {}",
+                spoken("No income this month. Spending {spending}.", &[("spending", &spending_text)]),
+                spoken("Largest categories: {categories}.", &[("categories", &categories)])
+            )
+        };
+    }
+    let savings = income as i64 - spending - investments;
+    let saved = if savings < 0 {
+        spoken("Shortfall {amount}.", &[("amount", &format_minor(-savings, &display))])
+    } else {
+        spoken("Savings {amount}.", &[("amount", &format_minor(savings, &display))])
+    };
+    let head = spoken(
+        "Income {income}. Spending {spending}.",
+        &[("income", &format_minor(income, &display)), ("spending", &format_minor(spending, &display))],
+    );
+    if categories.is_empty() {
+        format!("{head} {saved}")
+    } else {
+        format!("{head} {saved} {}", spoken("Largest categories: {categories}.", &[("categories", &categories)]))
+    }
+}
+
 fn apply_delete(store: &mut Store, args: &Value) -> Result<String, String> {
     let kind = fold(args["kind"].as_str().unwrap_or(""));
     let id = args["id"].as_str().unwrap_or("").trim().to_string();
@@ -3815,7 +4332,18 @@ fn apply_delete(store: &mut Store, args: &Value) -> Result<String, String> {
             }
             Ok(spoken("Deleted that recurring item and its Calendar date.", &[]))
         }
-        _ => Err("Kind is account, transaction, or rule.".into()),
+        "budget" | "budget_line" => {
+            let period = budget_period(args["period"].as_str().unwrap_or(args["month"].as_str().unwrap_or("this")), Local::now().date_naive());
+            let mut owned = args.clone();
+            if kind == "budget_line" && owned["category"].as_str().unwrap_or("").trim().is_empty() {
+                owned["category"] = args["name"].clone();
+            }
+            if kind == "budget" && owned["category"].as_str().unwrap_or("").trim().is_empty() {
+                owned["name"] = Value::String(String::new());
+            }
+            delete_budget(store, &period, &owned)
+        }
+        _ => Err("Kind is account, transaction, rule, or budget.".into()),
     }
 }
 
@@ -3846,7 +4374,17 @@ fn describe_delete(store: &Store, args: &Value) -> Result<String, String> {
                 store.rules.iter().find(|rule| fold(&rule.name) == fold(name)).map(|rule| rule.name.clone()).ok_or("Which recurring item?")?
             }
         }
-        _ => return Err("Kind is account, transaction, or rule.".into()),
+        "budget" | "budget_line" => {
+            let period = budget_period(args["period"].as_str().unwrap_or("this"), Local::now().date_naive());
+            let month = if period.is_empty() { spoken("the template", &[]) } else { period };
+            let name = args["name"].as_str().unwrap_or(args["category"].as_str().unwrap_or("")).trim();
+            return if kind == "budget_line" || !name.is_empty() {
+                Ok(spoken("Delete the {name} line? Say yes and I will remove it.", &[("name", name)]))
+            } else {
+                Ok(spoken("Delete the budget for {month}? Say yes and I will remove it.", &[("month", &month)]))
+            };
+        }
+        _ => return Err("Kind is account, transaction, rule, or budget.".into()),
     };
     Ok(spoken("Delete {label}? Say yes and I will remove it.", &[("label", &label)]))
 }
@@ -4963,6 +5501,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
         fx: fx_status(store, today),
         prices: store.prices.clone(),
         history: store.history.clone(),
+        budgets: store.budgets.clone(),
     }
 }
 
@@ -6153,7 +6692,7 @@ fn named_screen(view: &str) -> Option<&'static str> {
         "activity" | "transactions" | "expenses" | "income" => Some("activity"),
         "accounts" | "cards" | "debts" => Some("accounts"),
         "holdings" | "investments" | "portfolio" => Some("holdings"),
-        "plan" | "coming" | "upcoming" | "schedules" => Some("plan"),
+        "plan" | "coming" | "upcoming" | "schedules" | "budget" => Some("plan"),
         "charts" => Some("overview"),
         _ => None,
     }
@@ -9566,4 +10105,45 @@ mod tests {
         assert!(detail.contains("EPIC"), "{detail}");
         assert!(detail.contains("epic-cash") || detail.to_ascii_lowercase().contains("coingecko"), "{detail}");
     }
+
+    #[test]
+    fn budget_lines_round_trip_and_say_what_is_left() {
+        let mut store = Store::default();
+        store.default_currency = "EUR".into();
+        let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 21).unwrap());
+        let saved = apply_budget(
+            &mut store,
+            &json!({"action": "set", "period": "2026-11", "role": "expense", "category": "Restaurants", "amount": "200", "currency": "EUR"}),
+            &clock,
+        )
+        .unwrap();
+        assert!(saved.contains("Restaurants"), "{saved}");
+        apply_budget(&mut store, &json!({"action": "set", "period": "2026-11", "role": "income", "category": "Salary", "label": "Salary 1 Nov", "amount": "2000", "currency": "EUR"}), &clock).unwrap();
+        apply_budget(&mut store, &json!({"action": "set", "period": "2026-11", "role": "income", "category": "Salary", "label": "Salary 15 Nov", "amount": "2000", "currency": "EUR"}), &clock).unwrap();
+        assert_eq!(store.budgets.len(), 1);
+        assert_eq!(store.budgets[0].lines.len(), 3);
+        let mut row = tx("expense", 18_000, "", "", "2026-11-04", 1);
+        row.category = "Restaurants".into();
+        store.transactions.push(row);
+        let left = speak_budget(&store, "2026-11", "Restaurants", "left", &clock);
+        assert!(left.contains("20"), "{left}");
+        let preview = apply_budget(&mut store, &json!({"action": "delete", "period": "2026-11", "category": "Restaurants", "confirmed": false}), &clock).unwrap();
+        assert!(preview.to_ascii_lowercase().contains("yes") || preview.contains("sí"), "{preview}");
+        assert_eq!(store.budgets[0].lines.len(), 3);
+        apply_budget(&mut store, &json!({"action": "delete", "period": "2026-11", "category": "Restaurants", "confirmed": true}), &clock).unwrap();
+        assert!(!store.budgets[0].lines.iter().any(|line| line.category == "Restaurants"));
+        let copied = resolve_copy(&store, "2026-12");
+        assert!(copied.is_some());
+    }
+}
+
+fn resolve_copy(store: &Store, month: &str) -> Option<Budget> {
+    store.budgets.iter().find(|row| row.period == month).cloned().or_else(|| {
+        store
+            .budgets
+            .iter()
+            .filter(|row| row.copy_forward && !row.period.is_empty() && row.period.as_str() < month)
+            .max_by(|a, b| a.period.cmp(&b.period))
+            .cloned()
+    })
 }

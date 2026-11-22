@@ -110,6 +110,32 @@ html[data-appearance="ink"] {
     --scheme: dark;
 }
 
+html[data-appearance="stone"],
+html[data-appearance="ivory"],
+html[data-appearance="sand"] {
+    --flow-in: #14663a;
+    --flow-in-1: #14663a;
+    --flow-in-2: #0f5c34;
+    --flow-in-3: #0e5530;
+    --flow-in-4: #1a7340;
+    --flow-in-5: #125a36;
+    --flow-in-6: #0c4a2c;
+    --flow-in-7: #187044;
+    --flow-in-8: #104e32;
+    --flow-out: #8e332d;
+    --flow-out-1: #8e332d;
+    --flow-out-2: #7a2e2a;
+    --flow-out-3: #6b2824;
+    --flow-out-4: #94362f;
+    --flow-out-5: #642420;
+    --flow-out-6: #822f2a;
+    --flow-out-7: #5c201c;
+    --flow-out-8: #a33b34;
+    --flow-save: #1e4f8a;
+    --flow-invest: #6a420c;
+    --flow-short: #8e332d;
+}
+
 html[data-appearance="stone"] {
     --surface-0: #f4f2ee;
     --surface-1: #fbfaf7;
@@ -243,6 +269,28 @@ html {
     --gold-deep: var(--brand-deep);
     --sage: var(--positive);
     --rose: var(--negative);
+    /* Sankey families. Dark themes use the lighter ramp. Light themes override below. */
+    --flow-in: #3caa68;
+    --flow-in-1: #3caa68;
+    --flow-in-2: #8fcea4;
+    --flow-in-3: #2f9a58;
+    --flow-in-4: #b7e0c6;
+    --flow-in-5: #67c48a;
+    --flow-in-6: #1f8f52;
+    --flow-in-7: #d4f0df;
+    --flow-in-8: #4cbf78;
+    --flow-out: #e07a74;
+    --flow-out-1: #e07a74;
+    --flow-out-2: #f0b2ae;
+    --flow-out-3: #d4564e;
+    --flow-out-4: #f6d0cc;
+    --flow-out-5: #c4453c;
+    --flow-out-6: #e88880;
+    --flow-out-7: #f3c4bf;
+    --flow-out-8: #b83e36;
+    --flow-save: #6aa8e0;
+    --flow-invest: #e0b15a;
+    --flow-short: #e07a74;
     --frame: var(--border-width);
     --frame-color: var(--line);
     --rule: var(--line-soft);
@@ -632,6 +680,30 @@ h1,
   z-index: 2;
   min-height: 44px;
   padding-top: 8px;
+}
+
+.budget-line {
+  display: grid;
+  gap: 4px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.budget-bar {
+  height: 2px;
+  background: var(--line-soft);
+}
+
+.budget-bar > span {
+  display: block;
+  height: 2px;
+  background: var(--positive);
+  max-width: 100%;
+}
+
+.budget-bar[data-warn="true"] > span,
+.budget-bar[data-over="true"] > span {
+  background: var(--negative);
 }
 
 .flow-zoom {

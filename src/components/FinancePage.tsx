@@ -17,6 +17,7 @@ import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBound
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
 import { bookFromStatus, cardDisplayMinor, cardDueDate, cardPosture, debtPayoff, headlineOf, nextDue, plannedHits, utilization } from "@/lib/financeMath";
 import { FinanceDashboard, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
+import { BudgetSection } from "@/components/BudgetSection";
 import { FinanceOverview } from "@/components/FinanceOverview";
 import { FINANCE_TABS, readFinanceTab, type FinanceTab } from "@/lib/financeTabs";
 import { ProgramSheet } from "@/components/ProgramSheet";
@@ -202,7 +203,8 @@ export function FinancePage({
     const onVoice = (event: Event) => {
       const detail = (event as CustomEvent<{ view?: string }>).detail || {};
       if (!detail.view) return;
-      const next = readFinanceTab(detail.view);
+      const asked = detail.view === "budget" ? "plan" : detail.view;
+      const next = readFinanceTab(asked);
       chooseTab(next === "overview" && detail.view === "charts" ? "overview" : next);
     };
     window.addEventListener("grok-finance-voice", onVoice);
@@ -554,6 +556,7 @@ export function FinancePage({
             </div>
           </div>
           <div ref={(node) => { pageRefs.current[4] = node; }} role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan" className="fin-swipe-page" inert={tab === "plan" ? undefined : true}>
+            <BudgetSection finance={finance} />
             <FinanceDashboard finance={finance} accounts={accounts} place="plan" onProgram={openBill} onIncome={openIncome} onPayout={openBill} onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))} />
           </div>
           </div>

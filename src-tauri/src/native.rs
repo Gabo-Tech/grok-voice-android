@@ -578,6 +578,18 @@ mod imp {
             Ok(())
         }
 
+        pub fn notify_budget(&self, title: &str, body: &str) -> Result<()> {
+            #[derive(Serialize)]
+            struct Args<'a> {
+                title: &'a str,
+                body: &'a str,
+            }
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>("notifyBudget", Args { title, body })
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(())
+        }
+
         pub fn notify_update(&self, locale: &str, version: &str, url: &str) -> Result<()> {
             #[derive(Serialize)]
             struct Args<'a> {
@@ -881,6 +893,10 @@ mod imp {
         }
 
         pub fn speak_fallback(&self, _text: &str) -> Result<()> {
+            Ok(())
+        }
+
+        pub fn notify_budget(&self, _title: &str, _body: &str) -> Result<()> {
             Ok(())
         }
 

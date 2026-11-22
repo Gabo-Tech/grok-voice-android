@@ -701,6 +701,19 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   @InvokeArg
+  class BudgetNoticeArgs {
+    var title: String = ""
+    var body: String = ""
+  }
+
+  @Command
+  fun notifyBudget(invoke: Invoke) {
+    val args = invoke.parseArgs(BudgetNoticeArgs::class.java)
+    BudgetNotice.show(activity.applicationContext, args.title, args.body)
+    invoke.resolve()
+  }
+
+  @InvokeArg
   class GgufDestArgs {
     var dest: String = ""
   }
