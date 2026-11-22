@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
-import { MoneyFlowPanel } from "@/components/MoneyFlowChart";
 import { HoldingsChart } from "@/components/HoldingsChart";
 import { PriceSources } from "@/components/PriceSources";
 import type { FinanceState } from "@/hooks/useFinance";
@@ -18,6 +17,7 @@ import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBound
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
 import { bookFromStatus, cardDisplayMinor, cardDueDate, cardPosture, debtPayoff, headlineOf, nextDue, plannedHits, utilization } from "@/lib/financeMath";
 import { FinanceDashboard, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
+import { FinanceOverview } from "@/components/FinanceOverview";
 import { FINANCE_TABS, readFinanceTab, type FinanceTab } from "@/lib/financeTabs";
 import { ProgramSheet } from "@/components/ProgramSheet";
 import { CASH_WALLET, PayWith } from "@/components/PayWith";
@@ -52,6 +52,11 @@ function tabLabel(tab: FinanceTab): string {
   if (tab === "accounts") return "Accounts";
   if (tab === "holdings") return "Holdings";
   return "Plan";
+}
+
+function swipeBlocked(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest("[data-swipe-ignore], input, textarea, select, [role='slider'], [role='dialog']"));
 }
 
 export function FinancePage({
@@ -152,7 +157,14 @@ export function FinancePage({
     }
     if (next === "activity") setDirectionFilter("all");
     if (next === "accounts") setGroupFocus(focus ?? "all");
+    document.getElementById(`finance-tab-${next}`)?.scrollIntoView({ inline: "nearest", block: "nearest" });
   };
+  const swipeRef = useRef<HTMLDivElement>(null);
+  const dragOrigin = useRef<{ x: number; y: number; locked: "x" | "y" | null } | null>(null);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const tabIndex = Math.max(0, FINANCE_TABS.indexOf(tab));
+  const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const exportSummary = () => {
     const account = accounts.find((row) => row.id === accountFilter);
     void finance
@@ -325,20 +337,74 @@ export function FinancePage({
               {t(tabLabel(id))}
             </button>
           ))}
+          <span
+            className="fin-tab-indicator"
+            style={{
+              transform: `translateX(${(tabIndex - dragX / (swipeRef.current?.clientWidth || 1)) * 100}%)`,
+              transition: dragging || reducedMotion ? "none" : "transform 180ms var(--ease, ease)",
+            }}
+          />
         </div>
-        {tab === "overview" ? (
-          <div role="tabpanel" id="finance-panel-overview" aria-labelledby="finance-tab-overview" data-finance-tabpanel="overview">
-            <Overview
+        <div
+          ref={swipeRef}
+          className="fin-swipe"
+          onPointerDown={(event) => {
+            if (event.clientX < 24 || event.clientX > window.innerWidth - 24) return;
+            if (swipeBlocked(event.target)) return;
+            dragOrigin.current = { x: event.clientX, y: event.clientY, locked: null };
+          }}
+          onPointerMove={(event) => {
+            const origin = dragOrigin.current;
+            if (!origin) return;
+            const dx = event.clientX - origin.x;
+            const dy = event.clientY - origin.y;
+            if (!origin.locked) {
+              if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+              origin.locked = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+              if (origin.locked === "y") {
+                dragOrigin.current = null;
+                return;
+              }
+              setDragging(true);
+            }
+            const width = swipeRef.current?.clientWidth || 1;
+            const atStart = tabIndex === 0 && dx > 0;
+            const atEnd = tabIndex === FINANCE_TABS.length - 1 && dx < 0;
+            setDragX(atStart || atEnd ? dx * 0.15 : Math.max(-width, Math.min(width, dx)));
+          }}
+          onPointerUp={() => {
+            const origin = dragOrigin.current;
+            dragOrigin.current = null;
+            if (!origin || origin.locked !== "x") {
+              setDragging(false);
+              setDragX(0);
+              return;
+            }
+            const width = swipeRef.current?.clientWidth || 1;
+            if (dragX <= -width * 0.22 && tabIndex < FINANCE_TABS.length - 1) chooseTab(FINANCE_TABS[tabIndex + 1]);
+            else if (dragX >= width * 0.22 && tabIndex > 0) chooseTab(FINANCE_TABS[tabIndex - 1]);
+            setDragging(false);
+            setDragX(0);
+          }}
+          onPointerCancel={() => {
+            dragOrigin.current = null;
+            setDragging(false);
+            setDragX(0);
+          }}
+        >
+          <div
+            className="fin-swipe-track"
+            style={{
+              transform: `translate3d(calc(${-tabIndex * 100}% + ${dragX}px), 0, 0)`,
+              transition: dragging || reducedMotion ? "none" : "transform 180ms var(--ease, ease)",
+            }}
+          >
+          <div role="tabpanel" id="finance-panel-overview" aria-labelledby="finance-tab-overview" data-finance-tabpanel="overview" className="fin-swipe-page" inert={tab === "overview" ? undefined : true}>
+            <FinanceOverview
               finance={finance}
-              empty={empty}
               accounts={accounts}
-              onBank={openBank}
-              onCard={openCard}
-              onIncome={openIncome}
-              onBill={openBill}
               onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))}
-              onOpenExpenses={() => chooseTab("activity")}
-              onOpenIncome={() => chooseTab("activity")}
+              onOpenActivity={() => chooseTab("activity")}
               onRefreshPrices={() => {
                 const book = bookFromStatus(finance.snapshot.fx);
                 const quotes = finance.snapshot.prices?.quotes || [];
@@ -350,6 +416,14 @@ export function FinancePage({
                 }
               }}
             />
+            {empty ? (
+              <div className="fin-stack mt-4 w-full min-w-0 space-y-3">
+                <StartCard title={t("Add a bank")} body={t("A bank or wallet you spend from.")} onClick={openBank} />
+                <StartCard title={t("Add a card")} body={t("A card or loan. Payments reduce what you owe.")} onClick={openCard} />
+                <StartCard title={t("Add income")} body={t("Money coming in.")} onClick={openIncome} />
+                <StartCard title={t("Add a bill")} body={t("Rent, a subscription, or anything with a date.")} onClick={openBill} />
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-col gap-2">
               <button
                 type="button"
@@ -368,21 +442,12 @@ export function FinancePage({
                 <button type="button" className="fin-chip" onClick={openBill}>{t("Program a bill")}</button>
               </div>
             </div>
-            <div className="mt-4" data-shot="flow">
-              <MoneyFlowPanel
-                transactions={finance.snapshot.transactions}
-                accounts={accounts}
-                categories={finance.snapshot.categories}
-                display={finance.snapshot.defaultCurrency}
-                fx={finance.snapshot.fx}
-                onPaintCategory={(name, color) => finance.editCategory({ action: "color", name, color })}
-              />
-            </div>
             <button type="button" className="fin-chip mt-4 w-full" onClick={exportSummary}>{t("Export PDF")}</button>
             <div className="mt-6" data-finance-charts data-shot="donut">
               <FinanceCarousel
                 accounts={chartAccounts}
                 transactions={finance.snapshot.transactions}
+                rules={finance.snapshot.rules}
                 display={finance.snapshot.defaultCurrency}
                 fx={finance.snapshot.fx}
                 prices={finance.snapshot.prices}
@@ -392,9 +457,7 @@ export function FinancePage({
               />
             </div>
           </div>
-        ) : null}
-        {tab === "activity" ? (
-          <div role="tabpanel" id="finance-panel-activity" aria-labelledby="finance-tab-activity" data-finance-tabpanel="activity">
+          <div role="tabpanel" id="finance-panel-activity" aria-labelledby="finance-tab-activity" data-finance-tabpanel="activity" className="fin-swipe-page" inert={tab === "activity" ? undefined : true}>
             <FinanceDashboard
               finance={finance}
               accounts={accounts}
@@ -406,9 +469,7 @@ export function FinancePage({
               {ledger("any")}
             </FinanceDashboard>
           </div>
-        ) : null}
-        {tab === "accounts" ? (
-          <div role="tabpanel" id="finance-panel-accounts" aria-labelledby="finance-tab-accounts" data-finance-tabpanel="accounts">
+          <div role="tabpanel" id="finance-panel-accounts" aria-labelledby="finance-tab-accounts" data-finance-tabpanel="accounts" className="fin-swipe-page" inert={tab === "accounts" ? undefined : true}>
             <AccountsBoard
               accounts={accounts}
               focus={groupFocus}
@@ -445,9 +506,7 @@ export function FinancePage({
               quotes={finance.snapshot.prices?.quotes || []}
             />
           </div>
-        ) : null}
-        {tab === "holdings" ? (
-          <div role="tabpanel" id="finance-panel-holdings" aria-labelledby="finance-tab-holdings" data-finance-tabpanel="holdings">
+          <div role="tabpanel" id="finance-panel-holdings" aria-labelledby="finance-tab-holdings" data-finance-tabpanel="holdings" className="fin-swipe-page" inert={tab === "holdings" ? undefined : true}>
             <AccountList
               rows={accounts.filter((account) => isHoldingAccount(account))}
               transactions={finance.snapshot.transactions}
@@ -477,12 +536,11 @@ export function FinancePage({
               />
             </div>
           </div>
-        ) : null}
-        {tab === "plan" ? (
-          <div role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan">
+          <div role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan" className="fin-swipe-page" inert={tab === "plan" ? undefined : true}>
             <FinanceDashboard finance={finance} accounts={accounts} place="plan" onProgram={openBill} onIncome={openIncome} onPayout={openBill} onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))} />
           </div>
-        ) : null}
+          </div>
+        </div>
         {exportNote ? <p className="fin-muted mt-3 text-sm leading-5">{exportNote}</p> : null}
       </PageChrome>
       {tab === "activity" || tab === "plan" ? (
@@ -524,62 +582,6 @@ export function FinancePage({
       />
       <PayCardSheet open={sheet === "pay"} finance={finance} card={paying} onClose={() => setSheet(null)} />
       <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} />
-    </div>
-  );
-}
-
-function Overview({
-  finance,
-  empty,
-  accounts,
-  onBank,
-  onCard,
-  onIncome,
-  onBill,
-  onFocus,
-  onOpenExpenses,
-  onOpenIncome,
-  onRefreshPrices,
-}: {
-  finance: FinanceState;
-  empty: boolean;
-  accounts: FinanceAccount[];
-  onBank: () => void;
-  onCard: () => void;
-  onIncome: () => void;
-  onBill: () => void;
-  onFocus: (focus: WorthFocus) => void;
-  onOpenExpenses: () => void;
-  onOpenIncome: () => void;
-  onRefreshPrices: () => void;
-}) {
-  const t = useT();
-  return (
-    <div className="fin-stack w-full min-w-0 space-y-3">
-      <FinanceDashboard
-        finance={finance}
-        accounts={accounts}
-        place="overview"
-        onProgram={onBill}
-        onIncome={onIncome}
-        onFocus={onFocus}
-        onOpenExpenses={onOpenExpenses}
-        onOpenIncome={onOpenIncome}
-        onRefreshPrices={onRefreshPrices}
-      />
-      {empty ? (
-        <div className="fin-stack w-full min-w-0 space-y-3">
-          <div className="mag-panel w-full">
-            <p className="masthead text-xl">{t("No money saved yet")}</p>
-            <p className="mt-2 text-base leading-6 text-muted-foreground">{t("Start with one. A nickname is enough. No bank login.")}</p>
-          </div>
-          <StartCard title={t("Add a bank")} body={t("A bank or wallet you spend from.")} onClick={onBank} />
-          <StartCard title={t("Add a card")} body={t("A card or loan. Payments reduce what you owe.")} onClick={onCard} />
-          <StartCard title={t("Add income")} body={t("Money coming in.")} onClick={onIncome} />
-          <StartCard title={t("Add a bill")} body={t("Rent, a subscription, or anything with a date.")} onClick={onBill} />
-        </div>
-      ) : null}
-      <p className="fin-muted text-[13px] leading-5">{t("Balances are what you last said. Nothing here connects to a bank.")}</p>
     </div>
   );
 }

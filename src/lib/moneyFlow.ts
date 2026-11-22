@@ -292,6 +292,11 @@ function placeCategory(tx: FlowTx, categories: CategoryRecord[], labels: FlowLab
   const named = tx.category.trim();
   const sub = (tx.subcategory || "").trim();
   const record = named ? categoryOf(categories, named) : undefined;
+  const catalogued = categories.some((row) => row.name.trim());
+  if (catalogued && named && !record) {
+    const source = tx.direction === "income" ? labels.uncategorized : labels.uncategorized;
+    return { source, parent: labels.uncategorized, child: "" };
+  }
   let parent = named || labels.uncategorized;
   let child = sub;
   if (record?.parent) {

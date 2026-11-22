@@ -212,4 +212,32 @@ const custom = boundsOf({ preset: "custom", start: "2026-01-05", end: "2026-02-0
 assert.equal(custom.start, "2026-01-05");
 assert.equal(custom.end, "2026-02-02");
 
+const described = buildMoneyFlow(
+  [
+    { amountMinor: 17_900, currency: "CHF", direction: "expense", category: "vacuum cleaner", date: "2026-11-03", accountKind: "credit_card" },
+    { amountMinor: 12_000, currency: "CHF", direction: "expense", category: "Housing", subcategory: "Rent", date: "2026-11-04", accountKind: "bank" },
+  ],
+  {
+    display: "CHF",
+    book,
+    nowMs: now,
+    start: "2026-11-01",
+    end: "2026-11-30",
+    threshold: 0,
+    categories: [
+      { name: "Housing", parent: "", color: "" },
+      { name: "Rent", parent: "Housing", color: "" },
+      { name: "Uncategorized", parent: "", color: "" },
+    ],
+    labels: { uncategorized: "Uncategorized", total: "Total", drawn: "From savings", income: "Income", surplus: "Surplus", other: "Other", debt: "Debt payments", savings: "Savings", investments: "Investing" },
+  },
+);
+assert.equal(described.state, "ready");
+if (described.state === "ready") {
+  assert.equal(described.nodes.some((node) => node.label === "vacuum cleaner"), false);
+  assert.ok(described.nodes.some((node) => node.label === "Uncategorized"));
+  assert.ok(described.nodes.some((node) => node.label === "Housing"));
+  assert.ok(flowConserved(described));
+}
+
 console.log("money flow ok");

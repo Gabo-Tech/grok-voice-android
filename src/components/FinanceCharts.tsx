@@ -1,9 +1,12 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
-import type { FinanceAccount, FinanceFx, FinancePrices, FinanceTransaction } from "@/lib/api";
+import type { FinanceAccount, FinanceFx, FinancePrices, FinanceRule, FinanceTransaction } from "@/lib/api";
+import { todayIso } from "@/components/FinanceDashboard";
 import { ChartCard, Donut, Legend, LineChart, monthName, useChartVisibility, type LegendRow } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { inBounds, monthsIn } from "@/lib/chartPeriod";
+import { selectDebt } from "@/lib/financeDebt";
 import { debtRatio, netOfVisible, worthBuckets } from "@/lib/financeLedger";
+import { plannedHits } from "@/lib/financeMath";
 import { bookFromStatus, headlineOf, type MoneyPart, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
 import { displayColor, isDebt } from "@/lib/financeView";
@@ -24,6 +27,7 @@ export interface ChartPick {
 export function FinanceCarousel({
   accounts,
   transactions,
+  rules = [],
   display = "",
   fx,
   prices,
@@ -33,6 +37,7 @@ export function FinanceCarousel({
 }: {
   accounts: FinanceAccount[];
   transactions: FinanceTransaction[];
+  rules?: FinanceRule[];
   display?: string;
   fx?: FinanceFx | null;
   prices?: FinancePrices | null;
@@ -52,6 +57,32 @@ export function FinanceCarousel({
   const code = display.trim().toUpperCase();
   const quotes = prices?.quotes || [];
   const buckets = useMemo(() => worthBuckets(accounts, code, book, quotes, nowMs), [accounts, code, book, quotes, nowMs]);
+  const today = todayIso();
+  const debt = useMemo(() => {
+    const hits = plannedHits(rules, transactions, today);
+    return selectDebt(
+      accounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        kind: account.kind,
+        currency: account.currency,
+        shownBalanceMinor: account.shownBalanceMinor,
+      })),
+      hits.map((hit) => ({
+        id: `${hit.scheduleId}-${hit.date}`,
+        name: hit.name,
+        amountMinor: hit.amountMinor,
+        currency: hit.currency,
+        date: hit.date,
+        direction: hit.direction,
+        accountId: hit.accountId,
+      })),
+      code,
+      book,
+      nowMs,
+      today,
+    );
+  }, [accounts, rules, transactions, code, book, nowMs, today]);
   const ringRows = useMemo(() => {
     const labels = { money: t("Money"), debt: t("Debts"), investment: t("Investments"), credit: t("Card credit") };
     const colors = { money: "var(--brand)", debt: "var(--negative)", investment: "var(--text-tertiary)", credit: "var(--text-tertiary)" };
@@ -68,7 +99,6 @@ export function FinanceCarousel({
         note: bucket.unpriced.length ? fill("No price for {name}", { name: bucket.unpriced.join(", ") }) : "",
       }));
   }, [buckets, code, t]);
-  const debtBucket = buckets.buckets.find((bucket) => bucket.id === "debt");
   const categoryRows = useMemo(
     () => categoryLegend(transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end),
     [transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end],
@@ -98,10 +128,10 @@ export function FinanceCarousel({
                 rows={ringRows}
                 hidden={ringVis.hidden}
                 caption={t("Net worth")}
-                center={formatMoney(netOfVisible(buckets.buckets, ringVis.hidden).net, code)}
-                debtRatio={debtRatio(netOfVisible(buckets.buckets, ringVis.hidden).assets, debtBucket?.amountMinor || 0)}
+                center={formatMoney(netOfVisible(buckets.buckets, ringVis.hidden).assets - debt.amountMinor, code)}
+                debtRatio={debtRatio(netOfVisible(buckets.buckets, ringVis.hidden).assets, debt.amountMinor)}
               />
-              <DebtAgainstAssets owed={debtBucket?.amountMinor || 0} assets={netOfVisible(buckets.buckets, ringVis.hidden).assets} currency={code} original={debtBucket?.natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ") || ""} />
+              <DebtAgainstAssets owed={debt.amountMinor} assets={netOfVisible(buckets.buckets, ringVis.hidden).assets} currency={code} original={debt.natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ") || ""} />
               <Legend rows={ringRows} hidden={ringVis.hidden} currency={code} onToggle={ringVis.toggle} onShowAll={ringVis.showAll} anyHidden={ringVis.anyHidden} />
             </ChartCard>
           ),
@@ -166,6 +196,7 @@ export function FinanceCarousel({
       <p className="fin-kicker mb-2">{t("Charts")}</p>
       <div
         ref={scroller}
+        data-swipe-ignore=""
         className="fin-carousel flex w-full min-w-0 max-w-full snap-x snap-mandatory items-start overflow-x-auto"
         onScroll={(event) => {
           const node = event.currentTarget;

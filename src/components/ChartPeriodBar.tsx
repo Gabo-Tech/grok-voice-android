@@ -47,7 +47,7 @@ export function ChartPeriodBar({
 }) {
   const t = useT();
   return (
-    <div className="mt-2">
+    <div className="mt-2" data-swipe-ignore="">
       <div className="flex flex-wrap gap-1" role="group" aria-label={t("Period")}>
         {PRESETS.map((item) => (
           <button key={item.id} type="button" className="fin-chip" aria-pressed={period.preset === item.id} onClick={() => onChange(item.id === "custom" ? { ...period, preset: "custom" } : emptyPeriod(item.id))}>

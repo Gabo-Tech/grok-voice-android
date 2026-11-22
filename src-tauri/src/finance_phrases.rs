@@ -1,4 +1,11 @@
 const ES_FINANCE: &[(&str, &str)] = &[
+    ("You owe {amount}.", "Debes {amount}."),
+    ("Spent {amount} this month.", "Gastado {amount} este mes."),
+    ("Nothing is owed.", "No debes nada."),
+    (" Cards {amount}.", " Tarjetas {amount}."),
+    (" Loans {amount}.", " Préstamos {amount}."),
+    (" Owed to people {amount}.", " A personas {amount}."),
+    (" Overdue bills {amount}.", " Facturas vencidas {amount}."),
     ("Filed under {name}.", "Archivado en {name}."),
     ("Create the category {name} to use it.", "Crea la categoría {name} para usarla."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "Programado {label} de {amount} el {date}. Sigue previsto hasta que lo marques."),
@@ -193,6 +200,13 @@ const ES_FINANCE: &[(&str, &str)] = &[
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
+    ("You owe {amount}.", "Du schuldest {amount}."),
+    ("Spent {amount} this month.", "Diesen Monat {amount} ausgegeben."),
+    ("Nothing is owed.", "Es ist nichts geschuldet."),
+    (" Cards {amount}.", " Karten {amount}."),
+    (" Loans {amount}.", " Kredite {amount}."),
+    (" Owed to people {amount}.", " Personen {amount}."),
+    (" Overdue bills {amount}.", " Überfällige Rechnungen {amount}."),
     ("Filed under {name}.", "Abgelegt unter {name}."),
     ("Create the category {name} to use it.", "Lege die Kategorie {name} an, um sie zu nutzen."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "{label} über {amount} am {date} ist eingeplant. Es bleibt geplant, bis du es markierst."),
@@ -387,6 +401,13 @@ const DE_FINANCE: &[(&str, &str)] = &[
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
+    ("You owe {amount}.", "Deves {amount}."),
+    ("Spent {amount} this month.", "Gasto {amount} este mês."),
+    ("Nothing is owed.", "Não há dívida."),
+    (" Cards {amount}.", " Cartões {amount}."),
+    (" Loans {amount}.", " Empréstimos {amount}."),
+    (" Owed to people {amount}.", " A pessoas {amount}."),
+    (" Overdue bills {amount}.", " Contas em atraso {amount}."),
     ("Filed under {name}.", "Arquivado em {name}."),
     ("Create the category {name} to use it.", "Cria a categoria {name} para a usar."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "Programado {label} de {amount} em {date}. Continua previsto até você marcar."),
@@ -581,6 +602,13 @@ const PT_FINANCE: &[(&str, &str)] = &[
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
+    ("You owe {amount}.", "Deus {amount}."),
+    ("Spent {amount} this month.", "Gastat {amount} este mes."),
+    ("Nothing is owed.", "No deus res."),
+    (" Cards {amount}.", " Targetes {amount}."),
+    (" Loans {amount}.", " Préstecs {amount}."),
+    (" Owed to people {amount}.", " A persones {amount}."),
+    (" Overdue bills {amount}.", " Factures vençudes {amount}."),
     ("Filed under {name}.", "Arxivat en {name}."),
     ("Create the category {name} to use it.", "Crea la categoria {name} per a usar-la."),
     ("Programmed {label} of {amount} on {date}. It stays planned until you mark it.", "Programat {label} de {amount} el {date}. Continua previst fins que el marques."),

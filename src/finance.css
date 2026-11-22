@@ -102,12 +102,43 @@
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
   background: var(--surface-0, var(--fin-canvas));
   border-bottom: 1px solid var(--line-soft, var(--fin-line));
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: 5;
+  box-shadow: 0 12px 0 0 var(--surface-0, var(--fin-canvas));
+}
+
+.finance .fin-tab-indicator {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 20%;
+  height: 2px;
+  background: var(--brand, var(--fin-gold));
+  pointer-events: none;
+}
+
+.finance .fin-swipe {
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  touch-action: pan-y;
+}
+
+.finance .fin-swipe-track {
+  display: flex;
+  width: 100%;
+}
+
+.finance .fin-swipe-page {
+  flex: 0 0 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .finance [data-shot] {
@@ -185,7 +216,7 @@
 
 .finance .fin-tab[aria-selected="true"] {
   color: var(--text-primary, var(--fin-ink));
-  border-bottom-color: var(--brand, var(--fin-gold));
+  border-bottom-color: transparent;
 }
 
 .finance .fin-chip {

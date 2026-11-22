@@ -39,6 +39,8 @@ export function financeSample(display = "CHF"): FinanceSnapshot {
     account({ id: "zkb", name: "ZKB", kind: "bank", currency: "CHF", balanceMinor: 573, shownBalanceMinor: 573, color: "#C4B5A0" }),
     account({ id: "swiss", name: "Swisscard", kind: "credit_card", currency: "CHF", balanceMinor: 62785, shownBalanceMinor: 62785, lastFour: "8810", color: "#3E6B73", creditLimitMinor: 500000, dueDay: 25 }),
     account({ id: "zkb-card", name: "ZKB Credit", kind: "credit_card", currency: "CHF", balanceMinor: 143526, shownBalanceMinor: 143526, lastFour: "2291", color: "#7A6A58", creditLimitMinor: 800000 }),
+    account({ id: "loan", name: "Car loan", kind: "loan", currency: "CHF", balanceMinor: 840000, shownBalanceMinor: 840000, color: "#A56B66" }),
+    account({ id: "ana", name: "Ana", kind: "other_debt", currency: "CHF", balanceMinor: 15000, shownBalanceMinor: 15000, color: "#8C6A3F" }),
     account({ id: "epic", name: "EPIC Cash", kind: "other", currency: "CHF", notes: "128.60340395", investmentType: "custom", color: "#5C6B58", shownBalanceMinor: null, balanceMinor: null }),
     account({ id: "quanloop", name: "Quanloop", kind: "investment", currency: "EUR", investmentType: "custom", balanceMinor: 462153, shownBalanceMinor: 462153, color: "#6E8B74" }),
     account({ id: "silver", name: "Silver", kind: "other", currency: "CHF", units: "5", measureUnit: "ounces", investmentType: "custom", notes: "5 ounces", color: "#B8A48A", shownBalanceMinor: null, balanceMinor: null }),
