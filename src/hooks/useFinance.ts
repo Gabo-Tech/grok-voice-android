@@ -156,7 +156,7 @@ export function useFinance() {
   );
 
   const editCategory = useCallback(
-    (draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number }) => {
+    (draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number; parent?: string }) => {
       if (!inApp) {
         setSnapshot((current) => applyCategoryEdit(current, draft));
         return;
@@ -311,7 +311,7 @@ export type FinanceState = ReturnType<typeof useFinance>;
 
 function applyCategoryEdit(
   current: FinanceSnapshot,
-  draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number },
+  draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number; parent?: string },
 ): FinanceSnapshot {
   const fold = (value: string) => value.trim().toLowerCase();
   let categories = current.categories.map((row) => ({ ...row }));
@@ -323,7 +323,7 @@ function applyCategoryEdit(
   };
   if (draft.action === "create" && draft.name.trim()) {
     if (!categories.some((row) => fold(row.name) === fold(draft.name))) {
-      categories.push({ name: draft.name.trim(), color: draft.color || "#6E8B74", kind: draft.kind || "expense", icon: draft.icon || "", order: draft.order ?? categories.length });
+      categories.push({ name: draft.name.trim(), color: draft.color || "#6E8B74", kind: draft.kind || "expense", icon: draft.icon || "", order: draft.order ?? categories.length, parent: draft.parent || "" });
     }
   } else if (draft.action === "rename" && draft.to?.trim()) {
     categories = categories.map((row) => (fold(row.name) === fold(draft.name) ? { ...row, name: draft.to!.trim() } : row));

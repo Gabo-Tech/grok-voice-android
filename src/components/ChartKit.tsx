@@ -157,9 +157,9 @@ export function Legend({
                 <button type="button" className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left" aria-pressed={!off} onClick={() => onToggle(row.id)}>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] leading-5">{row.label}</span>
+                    {row.original ? <span className="fin-muted block text-[13px] leading-4">{row.original}</span> : null}
                     {row.unpriced ? <span className="fin-muted block text-[13px] leading-4">{t("No price")}</span> : null}
-                    {!row.unpriced && row.original ? <span className="fin-muted block text-[13px] leading-4">{row.original}</span> : null}
-                    {row.note ? <span className="fin-muted block text-[13px] leading-4">{row.note}</span> : null}
+                    {row.note && !row.unpriced ? <span className="fin-muted block text-[13px] leading-4">{row.note}</span> : null}
                   </span>
                   <span className="shrink-0 text-right">
                     {row.unpriced || row.amountMinor == null ? null : (
@@ -219,7 +219,7 @@ export function Donut({
   const ratio = debtRatio != null && debtRatio > 0 ? Math.min(debtRatio, 1) : 0;
   const label = caption ? `${caption} ${center}` : center;
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[280px]">
+    <div className="relative mx-auto aspect-square w-full max-w-[220px]">
       <svg viewBox="0 0 200 200" className="block h-full w-full" role="img" aria-label={label}>
         {ratio > 0 ? (
           <>
@@ -265,7 +265,7 @@ export function LineChart({
   const max = Math.max(...values, 0);
   const min = Math.min(...values, 0);
   const span = max - min || 1;
-  const left = 44;
+  const left = 8;
   const right = 8;
   const top = 12;
   const bottom = 8;
@@ -282,15 +282,16 @@ export function LineChart({
   const ticks = [max, min + span / 2, min].filter((value, index, all) => all.findIndex((item) => Math.abs(item - value) < span * 0.05) === index);
   const labelStep = Math.max(1, Math.ceil(dates.length / 4));
   return (
-    <div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="block h-auto w-full" role="img" aria-label={t("Portfolio value")}>
+    <div className="mt-2">
+    <div className="flex items-stretch gap-2">
+      <div className="flex w-11 shrink-0 flex-col justify-between py-1 text-right text-[13px] leading-4 tabular-nums">
         {ticks.map((tick) => (
-          <g key={tick}>
-            <line x1={left} x2={width - right} y1={yOf(tick)} y2={yOf(tick)} stroke="currentColor" strokeOpacity="0.18" />
-            <text x={left - 4} y={yOf(tick) + 4} textAnchor="end" fill="currentColor" fontSize="13">
-              {compactMoney(Math.round(tick), currency)}
-            </text>
-          </g>
+          <span key={tick}>{compactMoney(Math.round(tick), currency)}</span>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="block h-auto min-w-0 flex-1" role="img" aria-label={t("Portfolio value")}>
+        {ticks.map((tick) => (
+          <line key={tick} x1={left} x2={width - right} y1={yOf(tick)} y2={yOf(tick)} stroke="currentColor" strokeOpacity="0.18" />
         ))}
         {series.map((row) => {
           const ordered = [...row.points].sort((a, b) => a.date.localeCompare(b.date));
@@ -299,22 +300,23 @@ export function LineChart({
           return <path key={row.id} d={d} fill="none" stroke={row.color} strokeWidth="2.5" />;
         })}
       </svg>
-      <div className="relative h-11">
-        {dates.map((date, index) =>
-          index % labelStep === 0 || index === dates.length - 1 ? (
-            <button
-              key={date}
-              type="button"
-              className="absolute min-h-11 -translate-x-1/2 px-1 text-[13px]"
-              style={{ left: `${(xOf(date) / width) * 100}%` }}
-              onClick={() => onPick?.(date)}
-            >
-              {monthName(date, locale)}
-              {partial && date.startsWith(partial) ? " ·" : ""}
-            </button>
-          ) : null,
-        )}
-      </div>
+    </div>
+    <div className="relative ml-12 h-11">
+      {dates.map((date, index) =>
+        index % labelStep === 0 || index === dates.length - 1 ? (
+          <button
+            key={date}
+            type="button"
+            className="absolute min-h-11 -translate-x-1/2 px-1 text-[13px]"
+            style={{ left: `${(xOf(date) / width) * 100}%` }}
+            onClick={() => onPick?.(date)}
+          >
+            {monthName(date, locale)}
+            {partial && date.startsWith(partial) ? " ·" : ""}
+          </button>
+        ) : null,
+      )}
+    </div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   comingCashRows,
   headlineOf,
   monthBounds,
+  nativeParts,
   netWorth,
   worthAccount,
   netWorthChange,
@@ -21,8 +22,8 @@ import {
   type MoneyPart,
   type RateBook,
 } from "@/lib/financeMath";
-import { flowParts as flowPartsOf, monthActivity, monthCash, netWorthParts, type CashTx } from "@/lib/financeLedger";
-import { formatMoney } from "@/lib/money";
+import { flowParts as flowPartsOf, monthActivity, monthCash, netWorthParts, worthBuckets, type CashTx } from "@/lib/financeLedger";
+import { formatMoney, moneyParts } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
 import { financePanels, type FinancePlace } from "@/lib/financeTabs";
 import { cn } from "@/lib/utils";
@@ -125,6 +126,7 @@ export function FinanceDashboard({
   onFocus,
   onOpenExpenses,
   onOpenIncome,
+  onRefreshPrices,
   children,
 }: {
   finance: FinanceState;
@@ -136,6 +138,7 @@ export function FinanceDashboard({
   onFocus: (focus: WorthFocus) => void;
   onOpenExpenses?: () => void;
   onOpenIncome?: () => void;
+  onRefreshPrices?: () => void;
   children?: ReactNode;
 }) {
   const t = useT();
@@ -149,6 +152,7 @@ export function FinanceDashboard({
     [accounts],
   );
   const net = useMemo(() => netWorthParts(accounts, display, book, quotes, nowMs), [accounts, display, book, quotes, nowMs]);
+  const buckets = useMemo(() => worthBuckets(accounts, display, book, quotes, nowMs), [accounts, display, book, quotes, nowMs]);
   const bounds = monthBounds(today);
   const flow = useMemo(() => cashFlow(finance.snapshot.transactions, bounds.start, bounds.end), [finance.snapshot.transactions, bounds.start, bounds.end]);
   const previous = useMemo(
@@ -236,35 +240,31 @@ export function FinanceDashboard({
   const openPayout = onPayout ?? onIncome;
 
   return (
-    <div className="fin-stack w-full min-w-0 space-y-6" data-finance-place={place}>
+    <div className="fin-stack w-full min-w-0 space-y-2" data-finance-place={place}>
       {panels.includes("net-worth") ? (
-        <section className="fin-panel" data-finance-panel="net-worth">
+        <section className="fin-panel fin-tight" data-finance-panel="net-worth">
           <h2 className="fin-kicker">{t("Net worth")}</h2>
-          <p className="fin-muted mt-2 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
+          <p className="fin-muted mt-1 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
           {worthParts.length === 0 ? (
-            <p className="mt-4 text-base">{t("No balances stated yet")}</p>
+            <p className="mt-3 text-base">{t("No balances stated yet")}</p>
           ) : (
             <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
           )}
-          {net.unpriced.length > 0 ? <p className="fin-muted mt-2 text-sm leading-5">{fill("No price for {name}", { name: net.unpriced.join(", ") })}</p> : null}
-          <div className="mt-4 grid w-full min-w-0 grid-cols-2 gap-2">
-            <FocusChip label={t("You own")} onClick={() => onFocus("owned")} />
-            <FocusChip label={t("You owe")} onClick={() => onFocus("debt")} />
-            <FocusChip label={t("Invested")} onClick={() => onFocus("invested")} />
-            <FocusChip label={t("Cash & savings")} onClick={() => onFocus("cash")} />
-          </div>
-          {cardDebtParts.length > 0 ? (
-            <div className="mt-3">
-              <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Card debt")}</p>
-              <CombinedHeadline parts={cardDebtParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-2xl" tone="out" />
-            </div>
+          {net.unpriced.length > 0 ? (
+            <button type="button" className="fin-chip mt-2" onClick={onRefreshPrices}>
+              {fill("No price for {name}", { name: net.unpriced.join(", ") })}
+              {" · "}
+              {t("Refresh price now")}
+            </button>
           ) : null}
+          <WorthRows buckets={buckets.buckets} display={display} onFocus={onFocus} />
+          {cardDebtParts.length > 0 ? <CardDebt parts={cardDebtParts} display={display} book={book} nowMs={nowMs} /> : null}
         </section>
       ) : null}
 
       {panels.includes("month") ? (
         <div data-finance-panel="month">
-          <MonthSection txs={txs} accounts={accounts} display={display} book={book} nowMs={nowMs} busy={finance.busy} bounds={bounds} />
+          <MonthSection txs={txs} accounts={accounts} display={display} book={book} nowMs={nowMs} bounds={bounds} />
         </div>
       ) : null}
 
@@ -622,7 +622,6 @@ function MonthSection({
   display,
   book,
   nowMs,
-  busy,
   bounds,
 }: {
   txs: FinanceTransaction[];
@@ -630,7 +629,6 @@ function MonthSection({
   display: string;
   book: RateBook | null;
   nowMs: number;
-  busy: boolean;
   bounds: { start: string; end: string };
 }) {
   const t = useT();
@@ -655,65 +653,111 @@ function MonthSection({
   const flow = parts((line) => line.cashFlow);
   if (lines.length === 0) {
     return (
-      <section className="fin-panel fin-card">
+      <section className="fin-panel fin-tight">
         <h2 className="fin-kicker">{t("This month")}</h2>
         <p className="mt-3 text-[15px] leading-5">{t("Nothing recorded this month")}</p>
       </section>
     );
   }
   return (
-    <section className="fin-panel fin-card">
+    <section className="fin-panel fin-tight" data-finance-panel="month">
       <h2 className="fin-kicker">{t("This month")}</h2>
-      <p className="fin-muted mt-2 text-[13px] leading-5">{t("Income minus expenses. A charge on a card counts once.")}</p>
-      <Line label={t("Income")} parts={income} display={display} book={book} nowMs={nowMs} busy={busy} />
-      <Line label={t("Expenses")} parts={expenses} display={display} book={book} nowMs={nowMs} busy={busy} />
-      {cards.length > 0 ? <Line label={t("Card payments")} hint={t("Cash paid to a card. Not a second expense.")} parts={cards} display={display} book={book} nowMs={nowMs} busy={busy} /> : null}
-      {debts.length > 0 ? <Line label={t("Debt payments")} hint={t("Cash paid toward a loan. Not a second expense.")} parts={debts} display={display} book={book} nowMs={nowMs} busy={busy} /> : null}
-      <div className="mt-3 border-t border-border pt-3">
-        <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Result")}</p>
-        <CombinedHeadline parts={result} display={display} book={book} nowMs={nowMs} busy={busy} size="text-4xl" tone="auto" />
-      </div>
-      <div className="mt-2">
-        <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Cash flow")}</p>
-        <p className="fin-muted text-[13px] leading-5">{t("Money that left cash or a bank. A card charge counts when the card is paid.")}</p>
-        <CombinedHeadline parts={flow} display={display} book={book} nowMs={nowMs} busy={busy} size="text-2xl" tone="auto" />
-      </div>
+      <p className="fin-muted mt-1 text-[13px] leading-5">{t("Income minus expenses. A charge on a card counts once.")}</p>
+      <MoneyRow label={t("Income")} parts={income} display={display} book={book} nowMs={nowMs} />
+      <MoneyRow label={t("Expenses")} parts={expenses} display={display} book={book} nowMs={nowMs} />
+      {cards.length > 0 ? <MoneyRow label={t("Card payments")} parts={cards} display={display} book={book} nowMs={nowMs} /> : null}
+      {debts.length > 0 ? <MoneyRow label={t("Debt payments")} parts={debts} display={display} book={book} nowMs={nowMs} /> : null}
+      <MoneyRow label={t("Result")} parts={result} display={display} book={book} nowMs={nowMs} emphasize />
+      <MoneyRow label={t("Cash flow")} parts={flow} display={display} book={book} nowMs={nowMs} />
     </section>
   );
 }
 
-function Line({
+function MoneyRow({
   label,
-  hint,
   parts,
   display,
   book,
   nowMs,
-  busy,
+  emphasize,
 }: {
   label: string;
-  hint?: string;
   parts: MoneyPart[];
   display: string;
   book: RateBook | null;
   nowMs: number;
-  busy: boolean;
+  emphasize?: boolean;
 }) {
-  if (parts.length === 0) return null;
+  const head = headlineOf(parts, display, book, nowMs);
+  const text = head.state === "ready" ? signedMoney(head.amountMinor, head.currency) : head.state === "needs-rate" ? head.missing.join(", ") : "—";
+  const tone = head.state === "ready" && emphasize ? (head.amountMinor < 0 ? "fin-out" : head.amountMinor > 0 ? "fin-in" : "") : "";
   return (
-    <div className="mt-3">
-      <p className="text-[13px] font-extrabold tracking-wide uppercase">{label}</p>
-      {hint ? <p className="fin-muted text-[13px] leading-4">{hint}</p> : null}
-      <CombinedHeadline parts={parts} display={display} book={book} nowMs={nowMs} busy={busy} size="text-2xl" />
+    <div className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--line-soft)]">
+      <span className="text-[15px]">{label}</span>
+      <span className={cn("fin-num text-[15px]", tone)}>{text}</span>
     </div>
   );
 }
 
-function FocusChip({ label, onClick }: { label: string; onClick: () => void }) {
+function signedMoney(minor: number, currency: string): string {
+  const parts = moneyParts(minor, currency);
+  return `${parts.unit} ${parts.figure}`.trim();
+}
+
+function WorthRows({
+  buckets,
+  display,
+  onFocus,
+}: {
+  buckets: ReturnType<typeof worthBuckets>["buckets"];
+  display: string;
+  onFocus: (focus: WorthFocus) => void;
+}) {
+  const t = useT();
+  const money = buckets.find((row) => row.id === "money")?.amountMinor || 0;
+  const owed = buckets.find((row) => row.id === "debt")?.amountMinor || 0;
+  const invested = buckets.find((row) => row.id === "investment")?.amountMinor || 0;
+  const credit = buckets.find((row) => row.id === "credit")?.amountMinor || 0;
+  const rows: Array<{ focus: WorthFocus; label: string; amount: number }> = [
+    { focus: "owned", label: t("You own"), amount: money + invested + credit },
+    { focus: "debt", label: t("You owe"), amount: owed },
+    { focus: "invested", label: t("Invested"), amount: invested },
+    { focus: "cash", label: t("Cash & savings"), amount: money },
+  ];
   return (
-    <button type="button" className="fin-chip w-full" onClick={onClick}>
-      {label}
-    </button>
+    <div className="mt-4">
+      {rows.map((row) => (
+        <button key={row.focus} type="button" className="flex min-h-11 w-full items-center justify-between gap-3 border-t border-[var(--line-soft)] text-left" onClick={() => onFocus(row.focus)}>
+          <span className="text-[15px]">{row.label}</span>
+          <span className="fin-num text-[15px]">{formatMoney(row.amount, display)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CardDebt({
+  parts,
+  display,
+  book,
+  nowMs,
+}: {
+  parts: MoneyPart[];
+  display: string;
+  book: RateBook | null;
+  nowMs: number;
+}) {
+  const t = useT();
+  const head = headlineOf(parts, display, book, nowMs);
+  const natives = nativeParts(parts).filter((row) => row.currency !== display);
+  return (
+    <div className="mt-4 border-t border-[var(--line-soft)] pt-3">
+      <div className="flex min-h-11 items-center justify-between gap-3">
+        <span className="text-[15px]">{t("Card debt")}</span>
+        <span className="fin-num fin-out text-[15px]">{head.state === "ready" ? signedMoney(head.amountMinor, head.currency) : "—"}</span>
+      </div>
+      {natives.length > 0 ? <p className="fin-muted text-[13px] leading-5">{natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ")}</p> : null}
+    </div>
   );
 }
 

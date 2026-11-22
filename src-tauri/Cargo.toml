@@ -23,7 +23,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking", "gzip"] }
 cpal = "0.16"
 rustpotter = "3"
 # candle-core 0.2 (via rustpotter) needs half's rand 0.8 integration.

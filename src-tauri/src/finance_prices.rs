@@ -347,13 +347,13 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
     if provider_enabled(book, "coingecko") {
         let ids: Vec<&str> = cryptos.iter().filter_map(|asset| (!asset.coingecko_id.is_empty()).then_some(asset.coingecko_id.as_str())).collect();
         if !ids.is_empty() {
-            let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur", ids.join(","));
+            let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur,usd", ids.join(","));
             match get_logged(get, &url, "crypto") {
-                Ok(body) => match parse_coingecko_ids(&body) {
+                Ok(body) => match parse_coingecko_priced(&body) {
                     Ok(rows) => {
                         for asset in &cryptos {
-                            if let Some(price) = rows.iter().find(|(id, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price)| *price) {
-                                put_api(book, asset, price, "EUR", "coingecko", now_ms);
+                            if let Some((price, currency)) = rows.iter().find(|(id, _, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price, currency)| (*price, currency.as_str())) {
+                                put_api(book, asset, price, currency, "coingecko", now_ms);
                             }
                         }
                     }
@@ -368,11 +368,11 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             }
             // The batch can fail or omit one id. Ask for that id on its own before searching.
             if !asset.coingecko_id.is_empty() {
-                let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur", enc(&asset.coingecko_id));
+                let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur,usd", enc(&asset.coingecko_id));
                 if let Ok(body) = get_logged(get, &url, &asset.symbol) {
-                    if let Ok(rows) = parse_coingecko_ids(&body) {
-                        if let Some(price) = rows.into_iter().find(|(id, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price)| price) {
-                            put_api(book, asset, price, "EUR", "coingecko", now_ms);
+                    if let Ok(rows) = parse_coingecko_priced(&body) {
+                        if let Some((price, currency)) = rows.into_iter().find(|(id, _, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price, currency)| (price, currency)) {
+                            put_api(book, asset, price, &currency, "coingecko", now_ms);
                             continue;
                         }
                     }
@@ -384,11 +384,11 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             // symbols= is last. It can answer a different coin that shares the ticker.
             if asset.coingecko_id.is_empty() {
                 let query = asset.symbol.to_ascii_lowercase();
-                let url = format!("https://api.coingecko.com/api/v3/simple/price?symbols={query}&vs_currencies=eur");
+                let url = format!("https://api.coingecko.com/api/v3/simple/price?symbols={query}&vs_currencies=eur,usd");
                 if let Ok(body) = get_logged(get, &url, &asset.symbol) {
-                    if let Ok(rows) = parse_coingecko_symbols(&body) {
-                        if let Some(price) = rows.into_iter().find(|(sym, _)| sym.eq_ignore_ascii_case(&asset.symbol)).map(|(_, price)| price) {
-                            put_api(book, asset, price, "EUR", "coingecko", now_ms);
+                    if let Ok(rows) = parse_coingecko_priced(&body) {
+                        if let Some((price, currency)) = rows.into_iter().find(|(sym, _, _)| sym.eq_ignore_ascii_case(&asset.symbol)).map(|(_, price, currency)| (price, currency)) {
+                            put_api(book, asset, price, &currency, "coingecko", now_ms);
                         }
                     }
                 }
@@ -437,11 +437,11 @@ fn gecko_by_search(book: &mut PriceBook, asset: &AssetRef, now_ms: i64, get: &dy
         let search = format!("https://api.coingecko.com/api/v3/search?query={}", enc(&query));
         let Ok(body) = get_logged(get, &search, &asset.symbol) else { continue };
         let Some(id) = coingecko_search_id(&body, &asset.symbol, &asset.label) else { continue };
-        let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur", enc(&id));
+        let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur,usd", enc(&id));
         if let Ok(body) = get_logged(get, &url, &asset.symbol) {
-            if let Ok(rows) = parse_coingecko_ids(&body) {
-                if let Some(price) = rows.into_iter().find(|(row, _)| row.eq_ignore_ascii_case(&id)).map(|(_, price)| price) {
-                    put_api(book, asset, price, "EUR", "coingecko", now_ms);
+            if let Ok(rows) = parse_coingecko_priced(&body) {
+                if let Some((price, currency)) = rows.into_iter().find(|(row, _, _)| row.eq_ignore_ascii_case(&id)).map(|(_, price, currency)| (price, currency)) {
+                    put_api(book, asset, price, &currency, "coingecko", now_ms);
                     return true;
                 }
             }
@@ -454,11 +454,14 @@ fn paprika_price(book: &mut PriceBook, asset: &AssetRef, id: &str, now_ms: i64, 
     if id.is_empty() {
         return false;
     }
-    let url = format!("https://api.coinpaprika.com/v1/tickers/{id}?quotes=EUR");
-    let Ok(body) = get_logged(get, &url, &asset.symbol) else { return false };
-    let Some(price) = parse_paprika_eur(&body) else { return false };
-    put_api(book, asset, price, "EUR", "coinpaprika", now_ms);
-    true
+    for quote in ["EUR", "USD"] {
+        let url = format!("https://api.coinpaprika.com/v1/tickers/{id}?quotes={quote}");
+        let Ok(body) = get_logged(get, &url, &asset.symbol) else { continue };
+        let Some(price) = parse_paprika_quote(&body, quote) else { continue };
+        put_api(book, asset, price, quote, "coinpaprika", now_ms);
+        return true;
+    }
+    false
 }
 
 fn search_queries(asset: &AssetRef) -> Vec<String> {
@@ -604,6 +607,26 @@ pub fn parse_ai_price(text: &str) -> Result<(f64, String), String> {
     Ok((price, currency))
 }
 
+/// EUR when the provider has it, otherwise USD. Either is a real quote.
+pub fn parse_coingecko_priced(body: &str) -> Result<Vec<(String, f64, String)>, String> {
+    let value: serde_json::Value = serde_json::from_str(body).map_err(|_| "The price source did not answer.".to_string())?;
+    let Some(map) = value.as_object() else {
+        return Err("The price source did not answer.".into());
+    };
+    let mut rows = Vec::new();
+    for (id, row) in map {
+        let priced = row.get("eur").and_then(json_rate).filter(|price| price.is_finite() && *price > 0.0).map(|price| (price, "EUR"))
+            .or_else(|| row.get("usd").and_then(json_rate).filter(|price| price.is_finite() && *price > 0.0).map(|price| (price, "USD")));
+        if let Some((price, currency)) = priced {
+            rows.push((id.clone(), price, currency.to_string()));
+        }
+    }
+    if rows.is_empty() {
+        return Err("The price source did not answer.".into());
+    }
+    Ok(rows)
+}
+
 pub fn parse_coingecko_ids(body: &str) -> Result<Vec<(String, f64)>, String> {
     let value: serde_json::Value = serde_json::from_str(body).map_err(|_| "The price source did not answer.".to_string())?;
     let Some(map) = value.as_object() else {
@@ -685,8 +708,12 @@ fn best_coin(coins: &[serde_json::Value], symbol: &str, name: &str) -> Option<St
 }
 
 pub fn parse_paprika_eur(body: &str) -> Option<f64> {
+    parse_paprika_quote(body, "EUR")
+}
+
+pub fn parse_paprika_quote(body: &str, quote: &str) -> Option<f64> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    json_rate(value.get("quotes")?.get("EUR")?.get("price")?)
+    json_rate(value.get("quotes")?.get(quote)?.get("price")?)
 }
 
 pub fn parse_kraken_last(body: &str) -> Option<f64> {
