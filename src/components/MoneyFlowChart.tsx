@@ -210,6 +210,7 @@ export function MoneyFlowPanel({
       mono={options.mono}
       tall={full}
       portraitLayout={options.portraitLayout}
+      spendingLabel={t("Spending")}
       onDrill={(id) => setDrill(id)}
     />
   );
@@ -411,6 +412,7 @@ function FlowChart({
   mono,
   tall,
   portraitLayout,
+  spendingLabel,
   onDrill,
 }: {
   flow: MoneyFlow | null;
@@ -420,6 +422,7 @@ function FlowChart({
   mono: boolean;
   tall: boolean;
   portraitLayout: "vertical" | "horizontal";
+  spendingLabel: string;
   onDrill: (id: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -495,14 +498,15 @@ function FlowChart({
       line,
       mono,
       portraitLayout,
+      spendingLabel,
     });
     const frame = built.frame;
     const chartHeight = frame.height;
     setDrawn(chartHeight);
     if (host.current) host.current.style.height = `${chartHeight}px`;
     instance.resize({ width: frame.width, height: chartHeight });
-    safeToReal.current = new Map(flow.nodes.map((node, index) => [`n${index}`, node.id]));
-    const byId = new Map(flow.nodes.map((node, index) => [`n${index}`, node]));
+    safeToReal.current = new Map(built.ids.map((id, index) => [`n${index}`, id]));
+    const byId = new Map(built.ids.map((id, index) => [`n${index}`, flow.nodes.find((node) => node.id === id) as FlowNode | undefined]));
     const option = built.option;
     option.tooltip = {
       trigger: "item",
@@ -535,17 +539,17 @@ function FlowChart({
       if (frame.vertical) {
         if (!marked.__flowSpread) {
           marked.__flowSpread = true;
-          spreadVertical(instance, frame, flow.nodes, flow.links);
+          spreadVertical(instance, frame, built.nodes, built.links);
         }
       } else if (frame.reference) {
         if (!marked.__flowSpread) {
           marked.__flowSpread = true;
-          spreadReference(instance, frame, flow.nodes, flow.links);
+          spreadReference(instance, frame, built.nodes, built.links);
         }
       } else if (frame.portrait) {
         if (!marked.__flowSpread) {
           marked.__flowSpread = true;
-          spreadPortrait(instance, frame, flow.nodes, flow.links);
+          spreadPortrait(instance, frame, built.nodes, built.links);
         }
       } else {
         nudgeLabels(instance, frame.width, frame.height);
@@ -562,7 +566,7 @@ function FlowChart({
     };
     instance.off("finished");
     instance.on("finished", publish);
-  }, [flow, currency, labelsOn, valuesOn, mono, tall, box, portraitLayout]);
+  }, [flow, currency, labelsOn, valuesOn, mono, tall, box, portraitLayout, spendingLabel]);
 
   return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: drawn }} />;
 }
@@ -570,10 +574,13 @@ function FlowChart({
 interface AuditEl {
   ignore?: boolean;
   type?: string;
-  style?: { text?: string; x?: number; y?: number; fill?: string; fontWeight?: number; fontStyle?: string };
+  style?: { text?: string; x?: number; y?: number; fill?: string; fontSize?: number; fontWeight?: number; fontStyle?: string };
   x?: number;
   y?: number;
   parent?: AuditEl;
+  rotation?: number;
+  originX?: number;
+  originY?: number;
   shape?: { x?: number; y?: number; width?: number; height?: number; x1?: number; y1?: number; x2?: number; y2?: number; cpx1?: number; cpy1?: number; cpx2?: number; cpy2?: number; extent?: number };
   setShape?: (shape: AuditEl["shape"]) => void;
   dirty?: () => void;
@@ -638,14 +645,15 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
         const rank = (node: FlowNode) => (node.role === "pool" ? 0 : node.kind === "spending" ? 1 : 2);
         return rank(a.node) - rank(b.node);
       }
-      return a.node.role === "source" ? a.node.amountMinor - b.node.amountMinor : b.node.amountMinor - a.node.amountMinor;
+      if (a.node.italic !== b.node.italic) return a.node.italic ? 1 : -1;
+      return b.node.amountMinor - a.node.amountMinor;
     });
       if (edge) {
       const count = Math.max(1, ordered.length);
       const slot = plotH / count;
       const maxAmt = Math.max(1, ...ordered.map((item) => item.node.amountMinor));
       ordered.forEach((item, index) => {
-        const cap = count === 1 ? plotH * 0.3 : slot * 0.55;
+        const cap = count === 1 ? Math.min(48, plotH * 0.28) : Math.max(8, slot - 16);
         const h = Math.max(2, Math.min(cap, (item.node.amountMinor / maxAmt) * cap));
         const y = count === 1 ? (plotH - h) / 2 : index * slot + Math.max(0, (slot - h) / 2);
         item.el.setShape?.({ y, height: h });
@@ -654,17 +662,12 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
       });
       return;
     }
-    const total = ordered.reduce((sum, item) => sum + item.node.amountMinor, 0) || 1;
-    const bars = ordered.map((item) => Math.max(3, Math.min(plotH * 0.26, (item.node.amountMinor / total) * plotH * 0.4)));
-    const gap = 44;
-    const used = bars.reduce((sum, h) => sum + h, 0) + gap * Math.max(0, bars.length - 1);
-    let y = Math.max(4, (plotH - used) / 2);
-    ordered.forEach((item, index) => {
-      const h = bars[index];
+    const h = Math.max(8, Math.min(48, plotH * 0.2));
+    const y = Math.max(36, (plotH - h) / 2);
+    ordered.forEach((item) => {
       item.el.setShape?.({ y, height: h });
       item.el.dirty?.();
       placed.set(item.index, { localY: y, h });
-      y += h + gap;
     });
   });
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
@@ -697,7 +700,9 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     });
     curve.dirty?.();
   });
-  const texts = list.flatMap((el) => {
+  zr.refresh();
+  const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
+  const texts = (zr.storage.getDisplayList?.(true) || []).flatMap((el) => {
     const label = (el.style?.text || "").trim();
     const box = label ? measure(el) : null;
     return box ? [{ el, text: label.replace(/\n/g, " "), ...box }] : [];
@@ -732,38 +737,28 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     if (!box || !lines.length) continue;
     const globalX = (item.el.parent?.x || 0) + (item.el.shape?.x || 0);
     const globalY = item.originY + box.localY;
-    const nodeW = item.old.w;
+    const nodeW = item.el.shape?.width || item.old.w;
     const blockH = lines.length * frame.lineHeight;
     const role = item.node.role;
-    const middle = role !== "source" && role !== "sink" && role !== "child";
-    const cursor = middle ? globalY - 8 - blockH : globalY + box.h / 2 - blockH / 2;
-    const anchorTop = middle ? globalY - 8 - blockH : globalY + box.h / 2 - blockH / 2;
-    lines.forEach((line, index) => {
+    const middle = role === "pool";
+    let cursor = middle ? globalY - 6 - blockH : globalY + box.h / 2 - blockH / 2;
+    cursor = Math.max(2, cursor);
+    for (const line of lines) {
       const now = measure(line.el);
-      const w = now?.w || line.w;
-      const anchorX = middle ? globalX + nodeW / 2 - w / 2 : role === "source" ? globalX - 8 - w : globalX + nodeW + 8;
-      const x = Math.max(2, Math.min(anchorX, frame.width - w - 2));
-      line.el.x = (line.el.x || 0) + (x - anchorX);
-      line.el.y = (line.el.y || 0) + (cursor - anchorTop);
-      line.y = cursor + index * frame.lineHeight;
+      if (!now) continue;
+      const amount = line.text.includes("·");
+      const fill = amount ? muted : String(item.el.style?.fill || muted);
+      line.el.style = { ...line.el.style, fill, fontSize: amount ? 12 : 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
-    });
-  }
-  zr.refresh();
-  const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
-  const fresh = zr.storage.getDisplayList?.(true) || [];
-  const seenName = new Set<number>();
-  for (const el of fresh) {
-    const text = (el.style?.text || "").trim();
-    if (!text) continue;
-    const owner = ownerOf(el);
-    if (!owner) continue;
-    const amount = text.includes("(");
-    const fill = amount ? muted : String(owner.el.style?.fill || muted);
-    el.style = { ...el.style, fill, fontWeight: amount ? 400 : 600, fontStyle: owner.node.italic || !seenName.has(owner.index) && owner.node.italic ? "italic" : owner.node.italic ? "italic" : "normal" };
-    if (!amount) seenName.add(owner.index);
-    if (owner.node.italic) el.style = { ...el.style, fontStyle: "italic", fontWeight: amount ? 400 : 600, fill };
-    el.dirty?.();
+      const painted = measure(line.el) || now;
+      let x = middle ? globalX + nodeW / 2 - painted.w / 2 : role === "source" ? globalX - 6 - painted.w : globalX + nodeW + 6;
+      if (middle) x = Math.min(x, frame.width - frame.right - painted.w - 4);
+      if (x < 2) x = 2;
+      line.el.x = (line.el.x || 0) + (x - painted.x);
+      line.el.y = (line.el.y || 0) + (cursor - painted.y);
+      line.el.dirty?.();
+      cursor += frame.lineHeight;
+    }
   }
   zr.refresh();
 }
@@ -775,11 +770,6 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   const rects = list.filter((el) => el.type === "rect" && el.shape && (el.shape.height || 0) >= 2 && (el.shape.height || 0) <= 12);
   const curves = list.filter((el) => el.shape && el.shape.x1 != null && el.shape.y1 != null);
   if (rects.length !== nodes.length) return;
-  const texts = list.flatMap((el) => {
-    const label = (el.style?.text || "").trim();
-    const box = label ? measure(el) : null;
-    return box ? [{ el, text: label.replace(/\n/g, " "), ...box }] : [];
-  });
   const paired = rects.map((el, index) => ({
     el,
     index,
@@ -797,29 +787,27 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   for (const row of rows) row.sort((a, b) => a.old.x - b.old.x);
   const plotW = Math.max(40, frame.width - frame.left - frame.right);
   const budget = Math.round(plotW * frame.columnFill);
-  const bands: Array<{ where: "top" | "middle" | "bottom"; items: typeof paired }> = [];
-  rows.forEach((row, rowIndex) => {
-    const where = rowIndex === 0 ? "top" : rowIndex === rows.length - 1 ? "bottom" : "middle";
-    if (where === "middle" && row.length > 1) {
-      for (const item of row) bands.push({ where, items: [item] });
-    } else bands.push({ where, items: row });
-  });
-  const step = frame.plot / Math.max(1, bands.length);
+  const rank = (node: FlowNode) => (node.italic ? 1 : 0);
+  const bands: Array<{ where: "top" | "middle" | "bottom"; items: typeof paired }> = rows.map((row, rowIndex) => ({
+    where: (rowIndex === 0 ? "top" : rowIndex === rows.length - 1 ? "bottom" : "middle") as "top" | "middle" | "bottom",
+    items: [...row].sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor),
+  }));
+  const barH = 4;
+  const ys = [6, Math.round(frame.plot * 0.48), Math.max(barH + 8, frame.plot - barH - 2)];
   const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; row: "top" | "middle" | "bottom"; indexInRow: number; rowCount: number }>();
   bands.forEach((band, bandIndex) => {
-    const localY = Math.round(bandIndex * step);
-    const mode = band.where === "middle" ? "right" : band.items.length === 1 ? "center" : "slots";
-    const boxes = spreadLevel(band.items.map((item) => item.old.w), plotW, budget, mode);
+    const localY = ys[Math.min(bandIndex, ys.length - 1)];
+    const boxes = spreadLevel(band.items.map((item) => item.node.amountMinor), plotW, Math.min(budget, band.items.length === 1 ? 72 : plotW * 0.42), band.items.length === 1 ? "center" : "slots");
     band.items.forEach((item, index) => {
       const next = boxes[index];
       if (!next) return;
-      item.el.setShape?.({ x: next.x, y: localY, width: next.w });
+      item.el.setShape?.({ x: next.x, y: localY, width: next.w, height: barH });
       item.el.dirty?.();
       placed.set(item.index, {
         x: item.originX + next.x,
         y: item.originY + localY,
         w: next.w,
-        h: item.old.h,
+        h: barH,
         localX: next.x,
         localY,
         row: band.where,
@@ -854,11 +842,17 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
       cpx2: x2,
       cpy1: y1 + (y2 - y1) * 0.45,
       cpy2: y2 - (y2 - y1) * 0.45,
-      extent: Math.max(2, (shape.extent || 1) * (src.w / Math.max(1, oldSrc.old.w))),
+      extent: Math.max(2, src.w * (link.amountMinor / Math.max(1, oldSrc.node.amountMinor))),
     });
     curve.dirty?.();
   });
-  const groups = new Map<number, typeof texts>();
+  zr.refresh();
+  const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
+  const liveTexts = (zr.storage.getDisplayList?.(true) || []).flatMap((el) => {
+    const label = (el.style?.text || "").trim();
+    const box = label ? measure(el) : null;
+    return box ? [{ el, text: label.replace(/\n/g, " "), ...box }] : [];
+  });
   const ownerIndex = (el: AuditEl) => {
     const seen = new Set<AuditEl>();
     let current: AuditEl | undefined = el;
@@ -875,78 +869,34 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     }
     return -1;
   };
-  for (const text of texts) {
+  const groups = new Map<number, typeof liveTexts>();
+  for (const text of liveTexts) {
     const index = ownerIndex(text.el);
     if (index < 0) continue;
     const group = groups.get(index) || [];
     group.push(text);
     groups.set(index, group);
   }
-  const members = new Map<number, Array<{ el: AuditEl; x: number; y: number; w: number; h: number }>>();
   for (const item of paired) {
     const box = placed.get(item.index);
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
+    const blockH = lines.length * frame.lineHeight;
+    const above = box.row !== "bottom";
+    const stagger = box.row === "bottom" && box.rowCount > 4 && box.indexInRow % 2 === 1 ? blockH + 6 : 0;
+    let cursor = above ? box.y - 6 - blockH : box.y + box.h + 6 + stagger;
+    cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
     for (const line of lines) {
       const now = measure(line.el);
       if (!now) continue;
-      line.w = now.w;
-      line.h = now.h;
-    }
-    const blockH = lines.length * frame.lineHeight;
-    const tier = box.row === "bottom" && box.rowCount > 2 && box.indexInRow % 2 === 1 ? 1 : 0;
-    let cursor = box.y + box.h / 2 - blockH / 2;
-    if (box.row === "top") cursor = box.y - 8 - blockH;
-    else if (box.row === "bottom") cursor = box.y + box.h + 8 + tier * (blockH + 8);
-    else if (box.rowCount > 1 && box.indexInRow > 0) cursor = box.y + box.h + 8;
-    cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
-    const anchorTop = box.row === "top" ? box.y - 8 - blockH : box.row === "bottom" ? box.y + box.h + 8 : box.y + box.h / 2 - blockH / 2;
-    const deltaY = cursor - anchorTop;
-    const placedLines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> = [];
-    for (const line of lines) {
-      const anchorX = box.row === "middle" ? box.x - 8 - line.w : box.x + box.w / 2 - line.w / 2;
-      let x = box.row === "middle" && box.rowCount > 1 && box.indexInRow === 0 ? box.x + box.w + 8 : anchorX;
-      x = Math.max(2, Math.min(x, frame.width - line.w - 2));
-      line.el.x = (line.el.x || 0) + (x - anchorX);
-      line.el.y = (line.el.y || 0) + deltaY;
+      const x = Math.max(2, Math.min(box.x + box.w / 2 - now.w / 2, frame.width - now.w - 2));
+      line.el.x = (line.el.x || 0) + (x - now.x);
+      line.el.y = (line.el.y || 0) + (cursor - now.y);
+      const amount = line.text.includes("·");
+      line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: amount ? 12 : 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
-      placedLines.push({ el: line.el, x, y: cursor, w: line.w, h: line.h });
       cursor += frame.lineHeight;
     }
-    members.set(item.index, placedLines);
-  }
-  const blockOf = (index: number) => {
-    const lines = members.get(index) || [];
-    if (!lines.length) return null;
-    const x = Math.min(...lines.map((line) => line.x));
-    const y = Math.min(...lines.map((line) => line.y));
-    return { x, y, w: Math.max(...lines.map((line) => line.x + line.w)) - x, h: Math.max(...lines.map((line) => line.y + line.h)) - y };
-  };
-  const shift = (index: number, dy: number) => {
-    if (!dy) return;
-    for (const line of members.get(index) || []) {
-      line.el.y = (line.el.y || 0) + dy;
-      line.y += dy;
-      line.el.dirty?.();
-    }
-  };
-  const order = [...members.keys()];
-  for (let pass = 0; pass < 8; pass += 1) {
-    let moved = false;
-    for (let i = 0; i < order.length; i += 1) {
-      for (let j = i + 1; j < order.length; j += 1) {
-        const a = blockOf(order[i]);
-        const b = blockOf(order[j]);
-        if (!a || !b || !boxesHit(a, b)) continue;
-        const lower = a.y >= b.y ? order[i] : order[j];
-        const upper = lower === order[i] ? b : a;
-        const lowerBox = blockOf(lower);
-        if (!lowerBox) continue;
-        shift(lower, upper.y + upper.h + 4 - lowerBox.y);
-        moved = true;
-      }
-    }
-    if (!moved) break;
   }
   zr.refresh();
 }
