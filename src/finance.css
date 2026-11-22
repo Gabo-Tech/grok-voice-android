@@ -130,6 +130,7 @@
 
 .finance .fin-swipe-track {
   display: flex;
+  align-items: flex-start;
   width: 100%;
 }
 
@@ -138,6 +139,8 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  height: auto;
+  align-self: flex-start;
   overflow-x: hidden;
 }
 
@@ -174,10 +177,10 @@
 .finance .fin-actions .fin-chip {
   flex: 1 1 0;
   min-width: 0;
-  min-height: 48px;
+  min-height: 0;
   white-space: normal;
-  line-height: 1.15;
-  padding: 0.35rem 0.45rem;
+  line-height: 1.25;
+  padding: 1px 4px;
 }
 
 .finance .fin-filter-list {
@@ -188,10 +191,12 @@
 
 .finance .fin-filter-list .fin-chip {
   width: 100%;
-  min-height: 48px;
+  min-height: 0;
+  justify-content: flex-start;
   white-space: normal;
   text-align: left;
-  line-height: 1.2;
+  line-height: 1.25;
+  padding: 8px 4px;
 }
 
 .finance .fin-tab {
@@ -220,25 +225,44 @@
 }
 
 .finance .fin-chip {
-  min-height: 44px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 0;
+  height: auto;
   border: 0;
   border-radius: var(--radius, 2px);
   background: transparent;
   color: var(--text-secondary, var(--fin-ink));
-  padding: 0 0.35rem;
+  padding: 1px 2px;
   font-family: inherit;
   font-size: var(--text-min, 13px);
   font-weight: 500;
   letter-spacing: 0.01em;
+  line-height: 1.25;
   text-transform: none;
   text-decoration: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 0.28em;
+  text-underline-offset: 0.18em;
+  vertical-align: baseline;
+}
+
+.finance .fin-chip::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 50%;
+  height: 44px;
+  transform: translateY(-50%);
 }
 
 .finance .fin-chip[aria-pressed="true"] {
   background: var(--text-primary, var(--fin-ink));
   color: var(--surface-0, var(--canvas));
+  padding: 1px 8px;
   text-decoration: none;
 }
 

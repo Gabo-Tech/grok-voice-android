@@ -84,6 +84,13 @@ assert.equal(zano.stale, true);
 assert.equal(zano.unpriced, false);
 
 const epic = positionOf({ name: "EPIC Cash", kind: "other", currency: "CHF", notes: "128.60340395", investmentType: "custom" }, "CHF", book, quotes, now);
+const epicCash = positionOf({ name: "EPIC Cash", kind: "cash", currency: "CHF", ticker: "EPIC", units: "128.60340395", investmentType: "" }, "CHF", null, quotes, now);
+assert.equal(epicCash.symbol, "EPIC");
+assert.equal(epicCash.unpriced, false);
+assert.equal(epicCash.currency, "EUR");
+const epicCrypto = positionOf({ name: "Epic Cash", kind: "crypto", currency: "CHF", notes: "2", investmentType: "crypto" }, "CHF", null, quotes, now);
+assert.equal(epicCrypto.symbol, "EPIC");
+assert.equal(epicCrypto.unpriced, false);
 assert.equal(epic.quantity, "128.60340395");
 assert.equal(epic.symbol, "EPIC");
 assert.equal(epic.unpriced, false);

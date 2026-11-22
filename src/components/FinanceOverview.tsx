@@ -83,12 +83,14 @@ export function FinanceOverview({
   onFocus,
   onRefreshPrices,
   onOpenActivity,
+  priceNote = "",
 }: {
   finance: FinanceState;
   accounts: FinanceAccount[];
   onFocus: (focus: "owned" | "debt" | "invested" | "cash") => void;
   onRefreshPrices: () => void;
   onOpenActivity: () => void;
+  priceNote?: string;
 }) {
   const t = useT();
   const [layout, setLayout] = useState<Layout>(readLayout);
@@ -260,7 +262,10 @@ export function FinanceOverview({
           </div>
         ))}
         {accounts.some((account) => isHoldingAccount(account) && positionOf(account, display, book, quotes, nowMs).unpriced) ? (
-          <button type="button" className="fin-chip mt-1" onClick={onRefreshPrices}>{t("Refresh price now")}</button>
+          <>
+            <button type="button" className="fin-chip mt-1" onClick={onRefreshPrices}>{t("Refresh price now")}</button>
+            {priceNote ? <p className="fin-muted mt-1 text-[13px] leading-5">{priceNote}</p> : null}
+          </>
         ) : null}
       </section>
     ),

@@ -492,6 +492,8 @@ export interface FinancePrices {
   manual: { symbol: string; price: number; currency: string; asOf?: string; overrideLive?: boolean }[];
   disabled: string[];
   lastError?: string;
+  lastUpdated?: number;
+  lastFailed?: number;
   attempts?: PriceAttempt[];
 }
 

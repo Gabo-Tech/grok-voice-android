@@ -1235,7 +1235,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color (mode category, source, or mono), or fullscreen. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, or fullscreen. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color, or fullscreen. mode category groups by category and subcategory, mode source groups by the account that paid, and mode mono is one color. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, or fullscreen. Do not invent a rate.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1383,7 +1383,19 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
             return Ok(Some(json!({ "ok": true, "detail": detail })));
         }
         let ask = ask_from(args);
-        let detail = speak(&store, &ask, today);
+        let mut detail = speak(&store, &ask, today);
+        if force {
+            let count = store.prices.last_updated.to_string();
+            let sentence = if store.prices.last_failed > 0 {
+                spoken("Updated {count}. {reason}", &[("count", &count), ("reason", &store.prices.last_error)])
+            } else if store.prices.last_error == "No holdings to price." {
+                spoken("No holdings to price.", &[])
+            } else {
+                spoken("Updated {count} prices.", &[("count", &count)])
+            };
+            detail.push(' ');
+            detail.push_str(&sentence);
+        }
         if let Some(view) = named_screen(&ask.view) {
             touch_view(app, view);
         }
@@ -4351,7 +4363,7 @@ fn holding_resolved(store: &Store, account: &Account) -> Option<crate::finance_p
     Some(asset)
 }
 
-const PRICE_CACHE_VERSION: u32 = 4;
+const PRICE_CACHE_VERSION: u32 = 5;
 
 /// Drop quotes that cannot be a price. A version change clears misses so the next pass tries again.
 /// Pins are read and corrected first. They are not wiped, including a pin for a holding that has no price yet.
@@ -4425,6 +4437,8 @@ fn market_note(store: &Store, account: &Account, now_ms: i64, display: &str) -> 
     let asset = holding_resolved(store, account)?;
     let qty = if !account.units.trim().is_empty() {
         account.units.clone()
+    } else if let Some(parsed) = crate::finance_prices::first_quantity(&format!("{} {} {}", account.units, account.notes, account.name)) {
+        parsed
     } else {
         return Some(MarketNote {
             worth_minor: None,
@@ -4604,7 +4618,8 @@ fn fetch_holding_prices(
     if assets.is_empty() || !crate::finance_prices::needs_refresh(&store.prices, &assets, now_ms, force) {
         return changed;
     }
-    let next = crate::finance_prices::refresh_book(&store.prices, &assets, now_ms, force, get, ai);
+    let prefer = store.default_currency.clone();
+    let next = crate::finance_prices::refresh_book(&store.prices, &assets, now_ms, force, get, ai, &prefer);
     if next != store.prices {
         store.prices = next;
         changed = true;
@@ -9327,15 +9342,16 @@ mod tests {
         assert!(seen.iter().any(|url| url.contains("ids=epic-cash")), "a same-day miss still requests epic-cash: {seen:?}");
         assert!(seen.iter().all(|url| !url.contains("ids=monero") && !url.contains("XXMR")), "a fresh XMR quote stays on the daily gate");
         let quote = store.prices.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
-        assert_eq!(quote.price, 0.769);
+        assert!((quote.price - 0.709).abs() < 0.0001, "the main currency is preferred when the provider has it");
+        assert_eq!(quote.currency, "CHF");
         assert_eq!(quote.source, "coingecko");
         assert!(!quote.estimated);
         assert_eq!(store.prices.quotes.iter().find(|row| row.symbol == "XMR").unwrap().price, 320.0);
         let epic = store.accounts.iter().find(|account| account.name == "EPIC Cash").unwrap().clone();
         let note = market_note(&store, &epic, now, "CHF").unwrap();
         assert!(note.worth_minor.unwrap_or(0) > 0);
-        assert_eq!(note.price_currency, "EUR");
-        assert!((note.price.unwrap_or(0.0) - 0.769).abs() < 0.0001);
+        assert_eq!(note.price_currency, "CHF");
+        assert!((note.price.unwrap_or(0.0) - 0.709).abs() < 0.0001);
         let mut cased = empty_account("c".into());
         cased.name = "Epic Cash".into();
         cased.kind = "custom".into();

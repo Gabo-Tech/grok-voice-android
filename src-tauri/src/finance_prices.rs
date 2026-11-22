@@ -106,6 +106,12 @@ pub struct PriceBook {
     /// Short English sentence when the last pass left a symbol unpriced. Empty after a full success.
     #[serde(default)]
     pub last_error: String,
+    /// Symbols that received a quote on the last pass.
+    #[serde(default)]
+    pub last_updated: u32,
+    /// Symbols the last pass still could not price.
+    #[serde(default)]
+    pub last_failed: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
@@ -279,6 +285,7 @@ pub fn refresh_book(
     force: bool,
     get: &dyn Fn(&str) -> Result<String, String>,
     ai: Option<&dyn Fn(&AssetRef) -> Result<(f64, String), String>>,
+    prefer: &str,
 ) -> PriceBook {
     let mut next = previous.clone();
     let pending: Vec<&AssetRef> = assets
@@ -292,12 +299,17 @@ pub fn refresh_book(
         })
         .collect();
     if pending.is_empty() {
+        next.last_updated = 0;
+        next.last_failed = 0;
+        if assets.is_empty() {
+            next.last_error = "No holdings to price.".into();
+        }
         return next;
     }
     let pending_symbols: Vec<String> = pending.iter().map(|asset| asset.symbol.clone()).collect();
     next.attempts.retain(|row| !pending_symbols.iter().any(|symbol| symbol.eq_ignore_ascii_case(&row.symbol)));
     let mut open: Vec<&AssetRef> = pending.clone();
-    fill_crypto(&mut next, &open, now_ms, get);
+    fill_crypto(&mut next, &open, now_ms, get, prefer);
     open.retain(|asset| asset.kind == "crypto" && find_quote(&next, &asset.symbol).map(|quote| quote.estimated || quote_stale(quote.fetched_ms, now_ms) && force).unwrap_or(true) && !(find_quote(&next, &asset.symbol).is_some_and(|quote| !quote.estimated && quote.fetched_ms == now_ms)));
     // Recompute the still-missing set from what this pass stored.
     open = pending.iter().copied().filter(|asset| !fresh_api(&next, asset, now_ms)).collect();
@@ -347,14 +359,29 @@ pub fn refresh_book(
             note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "skipped", "No estimate was asked.");
         }
     }
-    let mut failed = false;
+    let mut failed = 0u32;
+    let mut updated = 0u32;
+    let mut reasons = Vec::new();
     for asset in &pending {
-        if find_quote(&next, &asset.symbol).is_some() {
+        let fresh = find_quote(&next, &asset.symbol).is_some_and(|quote| quote.fetched_ms == now_ms);
+        if fresh {
+            updated += 1;
             next.misses.retain(|row| !row.symbol.eq_ignore_ascii_case(&asset.symbol));
             continue;
         }
-        failed = true;
-        let reason = "Could not refresh the price.".to_string();
+        if find_quote(&next, &asset.symbol).is_some() && !force {
+            next.misses.retain(|row| !row.symbol.eq_ignore_ascii_case(&asset.symbol));
+            continue;
+        }
+        failed += 1;
+        let reason = next
+            .attempts
+            .iter()
+            .rev()
+            .find(|row| row.symbol.eq_ignore_ascii_case(&asset.symbol) && row.status != "ok" && row.status != "skipped")
+            .map(|row| format!("{}: {}", row.source, row.detail))
+            .unwrap_or_else(|| "Could not refresh the price.".into());
+        reasons.push(format!("{} ({reason})", asset.symbol));
         if let Some(row) = next.misses.iter_mut().find(|row| row.symbol.eq_ignore_ascii_case(&asset.symbol)) {
             row.fetched_ms = now_ms;
             row.reason = reason;
@@ -363,9 +390,12 @@ pub fn refresh_book(
         }
         log::warn!("no live price for {}", asset.symbol);
     }
-    if failed {
-        next.last_error = "Could not refresh the price.".into();
-    } else if !pending.is_empty() {
+    next.last_updated = updated;
+    next.last_failed = failed;
+    if failed > 0 {
+        let joined = reasons.join("; ");
+        next.last_error = if joined.chars().count() > 280 { format!("{}…", joined.chars().take(279).collect::<String>()) } else { joined };
+    } else {
         next.last_error.clear();
     }
     next
@@ -375,7 +405,7 @@ fn fresh_api(book: &PriceBook, asset: &AssetRef, now_ms: i64) -> bool {
     find_quote(book, &asset.symbol).is_some_and(|quote| !quote.estimated && quote.fetched_ms == now_ms)
 }
 
-fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>) {
+fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>, prefer: &str) {
     let cryptos: Vec<&&AssetRef> = assets.iter().filter(|asset| asset.kind == "crypto").collect();
     if cryptos.is_empty() {
         return;
@@ -383,9 +413,9 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
     if provider_enabled(book, "coingecko") {
         let ids: Vec<&str> = cryptos.iter().filter_map(|asset| (!asset.coingecko_id.is_empty()).then_some(asset.coingecko_id.as_str())).collect();
         if !ids.is_empty() {
-            let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur,usd", ids.join(","));
+            let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies={}", ids.join(","), vs_currencies(prefer));
             match get_logged(get, &url, "crypto") {
-                Ok(body) => match parse_coingecko_priced(&body) {
+                Ok(body) => match parse_coingecko_priced_prefer(&body, prefer) {
                     Ok(rows) => {
                         for asset in &cryptos {
                             if let Some((price, currency)) = rows.iter().find(|(id, _, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price, currency)| (*price, currency.as_str())) {
@@ -418,9 +448,9 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             }
             // The batch can fail or omit one id. Ask for that id on its own before searching.
             if !asset.coingecko_id.is_empty() {
-                let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur,usd", enc(&asset.coingecko_id));
+                let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies={}", enc(&asset.coingecko_id), vs_currencies(prefer));
                 match get_logged(get, &url, &asset.symbol) {
-                    Ok(body) => match parse_coingecko_priced(&body) {
+                    Ok(body) => match parse_coingecko_priced_prefer(&body, prefer) {
                         Ok(rows) => {
                             if let Some((price, currency)) = rows.into_iter().find(|(id, _, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price, currency)| (price, currency)) {
                                 put_api(book, asset, price, &currency, "coingecko", now_ms);
@@ -436,16 +466,16 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             } else {
                 note_attempt(book, &asset.symbol, "coingecko", "", "skipped", "No id is saved.");
             }
-            if gecko_by_search(book, asset, now_ms, get) {
+            if gecko_by_search(book, asset, now_ms, get, prefer) {
                 continue;
             }
             // symbols= is last. It can answer a different coin that shares the ticker.
             // EPIC still tries it after a failed id, because CoinGecko lists Epic Cash under that ticker.
             if asset.coingecko_id.is_empty() || asset.symbol.eq_ignore_ascii_case("EPIC") {
                 let query = asset.symbol.to_ascii_lowercase();
-                let url = format!("https://api.coingecko.com/api/v3/simple/price?symbols={query}&vs_currencies=eur,usd");
+                let url = format!("https://api.coingecko.com/api/v3/simple/price?symbols={query}&vs_currencies={}", vs_currencies(prefer));
                 match get_logged(get, &url, &asset.symbol) {
-                    Ok(body) => match parse_coingecko_priced(&body) {
+                    Ok(body) => match parse_coingecko_priced_prefer(&body, prefer) {
                         Ok(rows) => {
                             if let Some((price, currency)) = rows.into_iter().find(|(sym, _, _)| sym.eq_ignore_ascii_case(&asset.symbol)).map(|(_, price, currency)| (price, currency)) {
                                 put_api(book, asset, price, &currency, "coingecko", now_ms);
@@ -471,7 +501,7 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
                 continue;
             }
             if !asset.paprika_id.is_empty() {
-                if paprika_price(book, asset, &asset.paprika_id, now_ms, get) {
+                if paprika_price(book, asset, &asset.paprika_id, now_ms, get, prefer) {
                     continue;
                 }
             } else {
@@ -488,7 +518,7 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
                     note_attempt(book, &asset.symbol, "coinpaprika", &query, "miss", "No price in the response");
                     continue;
                 };
-                if paprika_price(book, asset, &id, now_ms, get) {
+                if paprika_price(book, asset, &id, now_ms, get, prefer) {
                     found = true;
                     break;
                 }
@@ -533,14 +563,14 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
 
 /// CoinGecko's search for the full typed name "EPIC Cash" returns no coins.
 /// The ticker query lists Epic Private Internet Cash as `epic-cash`. Try the name, then the ticker.
-fn gecko_by_search(book: &mut PriceBook, asset: &AssetRef, now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>) -> bool {
+fn gecko_by_search(book: &mut PriceBook, asset: &AssetRef, now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>, prefer: &str) -> bool {
     for query in search_queries(asset) {
         let search = format!("https://api.coingecko.com/api/v3/search?query={}", enc(&query));
         let Ok(body) = get_logged(get, &search, &asset.symbol) else { continue };
         let Some(id) = coingecko_search_id(&body, &asset.symbol, &asset.label) else { continue };
-        let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur,usd", enc(&id));
+        let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies={}", enc(&id), vs_currencies(prefer));
         if let Ok(body) = get_logged(get, &url, &asset.symbol) {
-            if let Ok(rows) = parse_coingecko_priced(&body) {
+            if let Ok(rows) = parse_coingecko_priced_prefer(&body, prefer) {
                 if let Some((price, currency)) = rows.into_iter().find(|(row, _, _)| row.eq_ignore_ascii_case(&id)).map(|(_, price, currency)| (price, currency)) {
                     put_api(book, asset, price, &currency, "coingecko", now_ms);
                     note_attempt(book, &asset.symbol, "coingecko", &id, "ok", "Price received");
@@ -553,12 +583,19 @@ fn gecko_by_search(book: &mut PriceBook, asset: &AssetRef, now_ms: i64, get: &dy
     false
 }
 
-fn paprika_price(book: &mut PriceBook, asset: &AssetRef, id: &str, now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>) -> bool {
+fn paprika_price(book: &mut PriceBook, asset: &AssetRef, id: &str, now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>, prefer: &str) -> bool {
     if id.is_empty() {
         return false;
     }
-    for quote in ["EUR", "USD"] {
+    let mut quotes = vec!["EUR".to_string(), "USD".to_string()];
+    let prefer = prefer.trim().to_ascii_uppercase();
+    if prefer.len() == 3 && prefer.chars().all(|ch| ch.is_ascii_alphabetic()) {
+        quotes.retain(|code| code != &prefer);
+        quotes.insert(0, prefer);
+    }
+    for quote in quotes {
         let url = format!("https://api.coinpaprika.com/v1/tickers/{id}?quotes={quote}");
+        let quote = quote.as_str();
         let Ok(body) = get_logged(get, &url, &asset.symbol) else {
             note_attempt(book, &asset.symbol, "coinpaprika", id, "error", "Could not refresh the price.");
             continue;
@@ -727,24 +764,61 @@ pub fn parse_ai_price(text: &str) -> Result<(f64, String), String> {
     Ok((price, currency))
 }
 
-/// EUR when the provider has it, otherwise USD. Either is a real quote.
+/// EUR when the provider has it, otherwise USD, then the caller's currency. Either is a real quote.
 pub fn parse_coingecko_priced(body: &str) -> Result<Vec<(String, f64, String)>, String> {
+    parse_coingecko_priced_prefer(body, "")
+}
+
+pub fn parse_coingecko_priced_prefer(body: &str, prefer: &str) -> Result<Vec<(String, f64, String)>, String> {
     let value: serde_json::Value = serde_json::from_str(body).map_err(|_| "The price source did not answer.".to_string())?;
     let Some(map) = value.as_object() else {
         return Err("The price source did not answer.".into());
     };
     let mut rows = Vec::new();
     for (id, row) in map {
-        let priced = row.get("eur").and_then(json_rate).filter(|price| price.is_finite() && *price > 0.0).map(|price| (price, "EUR"))
-            .or_else(|| row.get("usd").and_then(json_rate).filter(|price| price.is_finite() && *price > 0.0).map(|price| (price, "USD")));
-        if let Some((price, currency)) = priced {
-            rows.push((id.clone(), price, currency.to_string()));
+        if let Some((price, currency)) = pick_vs(row, prefer) {
+            rows.push((id.clone(), price, currency));
         }
     }
     if rows.is_empty() {
         return Err("The price source did not answer.".into());
     }
     Ok(rows)
+}
+
+fn vs_currencies(prefer: &str) -> String {
+    let mut codes = vec!["eur".to_string(), "usd".to_string(), "chf".to_string(), "gbp".to_string()];
+    let prefer = prefer.trim().to_ascii_lowercase();
+    if prefer.len() == 3 && prefer.chars().all(|ch| ch.is_ascii_alphabetic()) && !codes.iter().any(|code| code == &prefer) {
+        codes.insert(0, prefer);
+    } else if prefer.len() == 3 {
+        codes.retain(|code| code != &prefer);
+        codes.insert(0, prefer);
+    }
+    codes.into_iter().take(4).collect::<Vec<_>>().join(",")
+}
+
+fn pick_vs(row: &serde_json::Value, prefer: &str) -> Option<(f64, String)> {
+    let prefer = prefer.trim().to_ascii_lowercase();
+    let mut order = vec!["eur".to_string(), "usd".to_string(), "chf".to_string(), "gbp".to_string()];
+    if prefer.len() == 3 {
+        order.retain(|code| code != &prefer);
+        order.insert(0, prefer);
+    }
+    for code in &order {
+        if let Some(price) = row.get(code).and_then(json_rate).filter(|price| price.is_finite() && *price > 0.0) {
+            return Some((price, code.to_ascii_uppercase()));
+        }
+    }
+    let object = row.as_object()?;
+    for (key, value) in object {
+        if key.len() == 3 && key.chars().all(|ch| ch.is_ascii_alphabetic()) {
+            if let Some(price) = json_rate(value).filter(|price| price.is_finite() && *price > 0.0) {
+                return Some((price, key.to_ascii_uppercase()));
+            }
+        }
+    }
+    None
 }
 
 pub fn parse_coingecko_ids(body: &str) -> Result<Vec<(String, f64)>, String> {
@@ -1151,20 +1225,34 @@ fn fold(value: &str) -> String {
 
 pub fn blocking_get(url: &str) -> Result<String, String> {
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(20))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        // HTTP/2 through rustls fails on some Android builds. HTTP/1.1 reaches the same hosts.
+        .http1_only()
         .redirect(crate::http::rates_redirect())
         .build()
-        .map_err(|_| "Could not refresh prices.".to_string())?;
-    client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, "GrokVoice")
-        .header(reqwest::header::ACCEPT, "application/json, text/csv, */*")
-        .send()
-        .map_err(|_| "Could not refresh prices.".to_string())?
-        .error_for_status()
-        .map_err(|_| "Could not refresh prices.".to_string())?
-        .text()
-        .map_err(|_| "Could not refresh prices.".to_string())
+        .map_err(|err| format!("Could not refresh prices. {err}"))?;
+    let host = host_of(url);
+    let mut last = String::new();
+    for _ in 0..2 {
+        match client
+            .get(url)
+            .header(reqwest::header::USER_AGENT, concat!("GrokVoice/", env!("CARGO_PKG_VERSION")))
+            .header(reqwest::header::ACCEPT, "application/json, text/csv, */*")
+            .send()
+        {
+            Ok(response) => {
+                let status = response.status();
+                if !status.is_success() {
+                    last = format!("HTTP {status} from {host}");
+                    continue;
+                }
+                return response.text().map_err(|err| format!("Could not read {host}: {err}"));
+            }
+            Err(err) => last = format!("Could not reach {host}: {err}"),
+        }
+    }
+    Err(if last.is_empty() { "Could not refresh prices.".into() } else { last })
 }
 
 fn enc(value: &str) -> String {
@@ -1264,7 +1352,7 @@ mod tests {
                 return Ok(r#"{"etf":{"ticker":"SPY","last_close":{"close":"700.5","currency":"USD","date":"2026-11-19"}}}"#.into());
             }
             Err("unused".into())
-        }, None);
+        }, None, "");
         let seen = calls.lock().unwrap().clone();
         assert!(seen.iter().any(|url| url.contains("coingecko")), "coingecko is first");
         assert!(seen.iter().any(|url| url.contains("coinpaprika")));
@@ -1280,13 +1368,13 @@ mod tests {
     #[test]
     fn a_total_miss_does_not_invent_a_price_and_ai_cannot_replace_an_api_quote() {
         let previous = book_with(Spot { symbol: "XMR".into(), kind: "crypto".into(), price: 150.0, currency: "EUR".into(), source: "coingecko".into(), fetched_ms: 1_000, estimated: false });
-        let kept = refresh_book(&previous, &[xmr()], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok((1.0, "USD".into()))));
+        let kept = refresh_book(&previous, &[xmr()], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok((1.0, "USD".into()))), "");
         let quote = kept.quotes.iter().find(|row| row.symbol == "XMR").unwrap();
         assert_eq!(quote.price, 150.0);
         assert!(!quote.estimated);
         assert_ne!(quote.price, 1.0);
         let epic = alias("EPIC").unwrap();
-        let estimated = refresh_book(&PriceBook::default(), &[epic], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok((0.9, "eur".into()))));
+        let estimated = refresh_book(&PriceBook::default(), &[epic], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok((0.9, "eur".into()))), "");
         let epic_quote = estimated.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
         assert!(epic_quote.estimated);
         assert_eq!(epic_quote.source, "ai");
@@ -1421,7 +1509,7 @@ mod tests {
                 return Ok(r#"{"epic-cash":{"eur":0.769,"chf":0.709}}"#.into());
             }
             Err("unused".into())
-        }, None);
+        }, None, "");
         let seen = calls.lock().unwrap().clone();
         assert!(seen.iter().any(|url| url.contains("query=EPIC%20Cash")), "the typed name is tried");
         assert!(seen.iter().any(|url| url.contains("query=EPIC") && !url.contains("EPIC%20")), "an empty name search tries the ticker");
@@ -1443,7 +1531,7 @@ mod tests {
         let estimated = refresh_book(&missed, &[epic.clone()], now, false, &|_url| Err("down".into()), Some(&|_asset| {
             asked.set(true);
             Ok((0.77, "EUR".into()))
-        }));
+        }), "");
         assert!(asked.get(), "an unpriced holding asks the configured AI provider");
         let quote = estimated.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
         assert!(quote.estimated);
@@ -1460,7 +1548,7 @@ mod tests {
         assert_ne!(live_estimate.unit_price, 1.5);
         let mut bare = PriceBook::default();
         upsert_manual(&mut bare, "EPIC", 1.5, "EUR", "", false).unwrap();
-        let fallback = refresh_book(&bare, &[epic.clone()], now, false, &|_url| Err("down".into()), Some(&|_asset| Err("no estimate".into())));
+        let fallback = refresh_book(&bare, &[epic.clone()], now, false, &|_url| Err("down".into()), Some(&|_asset| Err("no estimate".into())), "");
         let manual = price_for(&fallback, &epic, now).unwrap();
         assert_eq!(manual.source, "manual");
         assert_eq!(manual.unit_price, 1.5);
@@ -1469,8 +1557,71 @@ mod tests {
         let kept = refresh_book(&estimated, &[epic], now, false, &|_url| Err("down".into()), Some(&|_asset| {
             again.set(true);
             Ok((9.0, "EUR".into()))
-        }));
+        }), "");
         assert!(!again.get(), "a fresh AI estimate is not requested again the same day");
         assert_eq!(kept.quotes.iter().find(|row| row.symbol == "EPIC").unwrap().price, 0.77);
+    }
+
+    #[test]
+    fn live_epic_bodies_price_cash_crypto_and_other_shapes() {
+        let gecko = r#"{"epic-cash":{"eur":0.786935,"usd":0.863111,"chf":0.725395}}"#;
+        let symbols = r#"{"EPIC":{"eur":0.787549,"usd":0.863784,"chf":0.725961}}"#;
+        let paprika = r#"{"id":"epic-epic-cash","quotes":{"CHF":{"price":0.7259933329388898}}}"#;
+        let rows = parse_coingecko_priced_prefer(gecko, "CHF").unwrap();
+        assert_eq!(rows[0].0, "epic-cash");
+        assert!((rows[0].1 - 0.725395).abs() < 0.000001);
+        assert_eq!(rows[0].2, "CHF");
+        let symbol_rows = parse_coingecko_priced_prefer(symbols, "EUR").unwrap();
+        assert!(symbol_rows[0].0.eq_ignore_ascii_case("EPIC"));
+        assert!(parse_paprika_quote(paprika, "CHF").unwrap() > 0.7);
+        let shapes = [
+            ("EPIC Cash", "EPIC", "CHF", "cash"),
+            ("Epic Cash", "EPIC", "CHF", "crypto"),
+            ("EPIC", "EPIC", "CHF", "other"),
+        ];
+        for (name, ticker, currency, kind) in shapes {
+            let asset = resolve_holding(name, ticker, currency, kind, "128.60340395").unwrap();
+            assert_eq!(asset.symbol, "EPIC", "{name} {kind}");
+            assert_eq!(asset.coingecko_id, "epic-cash");
+            assert_eq!(asset.paprika_id, "epic-epic-cash");
+            let book = refresh_book(&PriceBook::default(), &[asset.clone()], 90_000, true, &|url| {
+                if url.contains("ids=epic-cash") {
+                    return Ok(gecko.into());
+                }
+                if url.contains("symbols=epic") {
+                    return Ok(symbols.into());
+                }
+                if url.contains("epic-epic-cash") {
+                    return Ok(paprika.into());
+                }
+                Err("unused".into())
+            }, None, "CHF");
+            let quote = book.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
+            assert!((quote.price - 0.725395).abs() < 0.000001, "{kind} price {}", quote.price);
+            assert_eq!(quote.currency, "CHF");
+            assert_eq!(quote.source, "coingecko");
+            assert!(book.last_updated >= 1, "{kind}");
+            assert_eq!(book.last_failed, 0);
+            assert!(book.last_error.is_empty(), "{}", book.last_error);
+        }
+    }
+
+    #[test]
+    #[ignore = "hits the public CoinGecko and CoinPaprika APIs"]
+    fn live_epic_cash_prices() {
+        let gecko = blocking_get("https://api.coingecko.com/api/v3/simple/price?ids=epic-cash&vs_currencies=eur,usd,chf").expect("coingecko");
+        println!("coingecko {gecko}");
+        let rows = parse_coingecko_priced_prefer(&gecko, "CHF").expect("parse coingecko");
+        assert!(rows.iter().any(|(id, price, currency)| id == "epic-cash" && *currency == "CHF" && *price > 0.01));
+        let paprika = blocking_get("https://api.coinpaprika.com/v1/tickers/epic-epic-cash?quotes=EUR,CHF").expect("coinpaprika");
+        println!("coinpaprika {}", &paprika[..paprika.len().min(240)]);
+        let price = parse_paprika_quote(&paprika, "CHF").or_else(|| parse_paprika_quote(&paprika, "EUR")).expect("paprika price");
+        assert!(price > 0.01 && price < 100.0, "{price}");
+        let asset = resolve_holding("EPIC Cash", "EPIC", "CHF", "cash", "128.60340395").unwrap();
+        let book = refresh_book(&PriceBook::default(), &[asset], 90_000, true, &blocking_get, None, "CHF");
+        let quote = book.quotes.iter().find(|row| row.symbol == "EPIC").expect("stored");
+        println!("stored {} {} via {} updated {} failed {} {}", quote.price, quote.currency, quote.source, book.last_updated, book.last_failed, book.last_error);
+        assert!(quote.price > 0.01);
+        assert_eq!(book.last_failed, 0, "{}", book.last_error);
     }
 }

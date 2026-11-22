@@ -14,6 +14,7 @@ import {
   type FinanceTransactionDraft,
 } from "@/lib/api";
 import { financeSample } from "@/lib/financeSample";
+import { fill, useT } from "@/lib/i18n";
 import { emptyFinance, minorExponent, withShown } from "@/lib/money";
 
 function phoneLocale(): string {
@@ -31,6 +32,7 @@ let previewId = 1;
 
 export function useFinance() {
   const inApp = isTauri();
+  const t = useT();
   const [snapshot, setSnapshot] = useState<FinanceSnapshot>(() => (previewSample() ? financeSample(previewSample() || "CHF") : emptyFinance(phoneLocale())));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -239,11 +241,31 @@ export function useFinance() {
         setSnapshot(next);
         setError(null);
       })
-      .catch(() => {
-        /* Keep the last book. A failed fetch stays quiet; headlines can still say the book is stale. */
-      })
+      .catch((err) => setError(errorText(err)))
       .finally(() => setBusy(false));
   }, [inApp]);
+
+  const refreshPrices = useCallback(async () => {
+    if (!inApp) return t("Refresh prices");
+    setBusy(true);
+    try {
+      const next = await api.refreshFinanceRates(true);
+      setSnapshot(next);
+      setError(null);
+      const updated = next.prices?.lastUpdated ?? 0;
+      const failed = next.prices?.lastFailed ?? 0;
+      const reason = (next.prices?.lastError || "").trim();
+      if (failed > 0) return fill("Updated {count}. {reason}", { count: String(updated), reason: reason || t("Could not refresh the price.") });
+      if (!updated && reason) return reason;
+      return fill("Updated {count} prices.", { count: String(updated) });
+    } catch (err) {
+      const reason = errorText(err);
+      setError(reason);
+      return reason;
+    } finally {
+      setBusy(false);
+    }
+  }, [inApp, t]);
 
   const setManualRate = useCallback(
     (base: string, quote: string, rate: string, overrideLive = false) => {
@@ -307,6 +329,7 @@ export function useFinance() {
     markPaid,
     scheduleAction,
     refreshRates,
+    refreshPrices,
     refreshHolding,
     setHoldingProvider,
     setManualRate,
