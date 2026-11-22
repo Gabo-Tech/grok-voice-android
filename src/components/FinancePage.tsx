@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
+import { Minus, Plus, Repeat } from "lucide-react";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,7 @@ import { activeLocale, fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import "@/finance.css";
 
-type SheetKind = "transaction" | "account" | "investment" | "rule" | "pay";
+type SheetKind = "transaction" | "account" | "investment" | "rule" | "pay" | "add";
 
 const FINANCE_TAB_KEY = "grok-finance-tab";
 
@@ -75,6 +76,7 @@ export function FinancePage({
   const [tab, setTab] = useState<FinanceTab>(() => readFinanceTab(readStoredTab()));
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [priceAccount, setPriceAccount] = useState<FinanceAccount | null>(null);
+  const [priceFlash, setPriceFlash] = useState<Record<string, string>>({});
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
@@ -255,6 +257,8 @@ export function FinancePage({
       }
     } else if (tab === "overview") {
       setSheet("rule");
+    } else if (tab === "plan") {
+      setSheet("add");
     }
   };
   const openBank = () => {
@@ -536,7 +540,11 @@ export function FinancePage({
               action={t("Add investment")}
               onAdd={openInvestment}
               onOpen={openAccount}
-              onRefreshPrice={(account) => finance.refreshHolding(account.id)}
+              onRefreshPrice={(account) => {
+                void finance.refreshHolding(account.id).then((reason) => setPriceFlash((current) => ({ ...current, [account.id]: reason })));
+              }}
+              priceFlash={priceFlash}
+              attempts={finance.snapshot.prices?.attempts || []}
               onDiagnose={setPriceAccount}
               priceNote={finance.snapshot.prices?.lastError || ""}
               display={finance.snapshot.defaultCurrency}
@@ -556,14 +564,28 @@ export function FinancePage({
             </div>
           </div>
           <div ref={(node) => { pageRefs.current[4] = node; }} role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan" className="fin-swipe-page" inert={tab === "plan" ? undefined : true}>
-            <BudgetSection finance={finance} />
-            <FinanceDashboard finance={finance} accounts={accounts} place="plan" onProgram={openBill} onIncome={openIncome} onPayout={openBill} onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))} />
+            <div className="plan-board" data-shot="plan">
+              <BudgetSection finance={finance} />
+              <FinanceDashboard
+                finance={finance}
+                accounts={accounts}
+                place="plan"
+                onProgram={openBill}
+                onIncome={openIncome}
+                onPayout={openBill}
+                onOpenRule={(id) => {
+                  const rule = finance.snapshot.rules.find((row) => row.id === id);
+                  if (rule) openRule(rule);
+                }}
+                onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))}
+              />
+            </div>
           </div>
           </div>
         </div>
         {exportNote ? <p className="fin-muted mt-3 text-sm leading-5">{exportNote}</p> : null}
       </PageChrome>
-      {tab === "activity" || tab === "plan" ? (
+      {tab === "activity" ? (
         <div className="fin-actions">
           <button type="button" className="fin-chip" onClick={openAdd}>
             {t("Add expense")}
@@ -576,6 +598,22 @@ export function FinancePage({
           </button>
         </div>
       ) : null}
+      <Sheet open={sheet === "add"} title={t("Add")} onClose={() => setSheet(null)} className="finance">
+        <div className="flex flex-col">
+          <button type="button" className="flex min-h-11 items-center gap-3 text-left text-[16px]" onClick={() => { setTxPreset("expense"); setEditingTx(null); setSheet("transaction"); }}>
+            <Minus strokeWidth={1.5} size={18} aria-hidden="true" />
+            {t("Expense")}
+          </button>
+          <button type="button" className="flex min-h-11 items-center gap-3 text-left text-[16px]" onClick={() => { setTxPreset("income"); setEditingTx(null); setSheet("transaction"); }}>
+            <Plus strokeWidth={1.5} size={18} aria-hidden="true" />
+            {t("Income")}
+          </button>
+          <button type="button" className="flex min-h-11 items-center gap-3 text-left text-[16px]" onClick={() => { setEditingRule(null); setSheet("rule"); }}>
+            <Repeat strokeWidth={1.5} size={18} aria-hidden="true" />
+            {t("Recurring bill")}
+          </button>
+        </div>
+      </Sheet>
       <TransactionSheet
         open={sheet === "transaction"}
         finance={finance}
@@ -845,6 +883,17 @@ function shownMinor(amount: number, currency: string, display: string, fx: Param
   return head.state === "ready" ? head.amountMinor : amount;
 }
 
+function aiSource(attempts: { symbol: string; source: string; status: string; detail: string }[], symbol: string): string {
+  const row = [...attempts].reverse().find((item) => item.source === "ai" && item.status === "ok" && item.symbol.toUpperCase() === symbol.toUpperCase());
+  const detail = (row?.detail || "").trim();
+  try {
+    if (detail.startsWith("http")) return new URL(detail).host.replace(/^www\./, "");
+  } catch {
+    /* The detail stays as written. */
+  }
+  return detail && detail !== "AI estimate" ? detail : "web";
+}
+
 function priceAgo(ms: number): string {
   const minutes = Math.max(0, Math.round((Date.now() - ms) / 60000));
   if (minutes < 1) return fill("just now", {});
@@ -868,6 +917,8 @@ function AccountList({
   onRefreshPrice,
   onDiagnose,
   priceNote = "",
+  priceFlash = {},
+  attempts = [],
   display = "",
   fx,
   quotes = [],
@@ -885,12 +936,14 @@ function AccountList({
   onRefreshPrice?: (account: FinanceAccount) => void;
   onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
+  priceFlash?: Record<string, string>;
+  attempts?: NonNullable<FinanceState["snapshot"]["prices"]>["attempts"];
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
 }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} onDiagnose={onDiagnose} priceNote={priceNote} display={display} fx={fx} quotes={quotes} />;
+  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} onDiagnose={onDiagnose} priceNote={priceNote} priceFlash={priceFlash} attempts={attempts} display={display} fx={fx} quotes={quotes} />;
 }
 
 function AccountRows({
@@ -903,6 +956,8 @@ function AccountRows({
   onRefreshPrice,
   onDiagnose,
   priceNote = "",
+  priceFlash = {},
+  attempts = [],
   display = "",
   fx,
   quotes = [],
@@ -916,6 +971,8 @@ function AccountRows({
   onRefreshPrice?: (account: FinanceAccount) => void;
   onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
+  priceFlash?: Record<string, string>;
+  attempts?: NonNullable<FinanceState["snapshot"]["prices"]>["attempts"];
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
@@ -930,10 +987,13 @@ function AccountRows({
         const original = originalHolding(account, position, display);
         const quantity = original.quantity || (account.units ? formatQuantity(account.units) : "");
         const holding = isHoldingAccount(account);
+        const unitLine = account.marketPrice != null && account.marketPriceCurrency
+          ? formatMoney(Math.round(account.marketPrice * 10 ** (["JPY", "KRW", "VND", "CLP"].includes(account.marketPriceCurrency.toUpperCase()) ? 0 : 2)), account.marketPriceCurrency)
+          : "";
         const money = holding
-          ? position.unpriced
-            ? fill("No price for {name}", { name: account.name })
-            : formatMoney(position.amountMinor, position.currency)
+          ? !position.unpriced && position.amountMinor != null
+            ? formatMoney(position.amountMinor, position.currency)
+            : unitLine || fill("No price for {name}", { name: account.name })
           : displayMinor == null
             ? t("Not set")
             : formatMoney(shownMinor(displayMinor, account.currency, display, fx), (display || account.currency).toUpperCase());
@@ -970,19 +1030,22 @@ function AccountRows({
               </span>
             </RowButton>
             {account.marketPrice != null ? (
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                {account.marketPrice} {account.marketPriceCurrency}
-                {account.marketEstimated ? ` · ${t("AI estimate")}` : account.marketSource === "manual" ? ` · ${t("Your price")}` : account.marketSource ? ` · ${account.marketSource}` : ""}
-                {account.marketStale ? ` · ${t("Rates are stale")}` : ""}
-                {account.marketFetchedMs ? ` · ${fill("Updated {ago}", { ago: priceAgo(account.marketFetchedMs) })}` : ""}
+              <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+                {account.marketEstimated
+                  ? `${t("AI estimate")} · ${aiSource(attempts || [], account.marketSymbol || "")} · ${t("Updated just now")}`
+                  : account.marketSource === "manual"
+                    ? t("Your price")
+                    : account.marketSource || ""}
+                {!account.marketEstimated && account.marketStale ? ` · ${t("Rates are stale")}` : ""}
+                {!account.marketEstimated && account.marketFetchedMs ? ` · ${fill("Updated {ago}", { ago: priceAgo(account.marketFetchedMs) })}` : ""}
               </p>
             ) : null}
-            {holding && position.unpriced ? (
+            {holding && position.unpriced && !unitLine ? (
               <button type="button" className="fin-textbtn mt-1 underline" onClick={() => onDiagnose?.(account)}>
                 {t("No price")}
               </button>
             ) : null}
-            {position.unpriced && priceNote ? <p className="mt-1 text-sm leading-5 text-muted-foreground">{t(priceNote)}</p> : null}
+            {position.unpriced && (priceFlash[account.id] || priceNote) ? <p className="mt-1 text-[13px] leading-5 text-[var(--negative)]">{priceFlash[account.id] || priceNote}</p> : null}
             {onRefreshPrice ? (
               <button type="button" className="fin-chip mt-3 min-h-12 w-full" onClick={() => onRefreshPrice(account)}>{t("Refresh price now")}</button>
             ) : null}

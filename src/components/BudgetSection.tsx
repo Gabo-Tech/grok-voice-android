@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceBudget, FinanceBudgetLine } from "@/lib/api";
 import { overBudget, resolveBudget, shiftMonth, summarizeBudget, type BudgetRecord, type BudgetRole } from "@/lib/budget";
 import { bookFromStatus, plannedHits } from "@/lib/financeMath";
-import { flowPercent, formatMoney, minorExponent } from "@/lib/money";
-import { fill, useT } from "@/lib/i18n";
+import { formatMoney, minorExponent, moneyParts } from "@/lib/money";
+import { activeLocale, fill, useT } from "@/lib/i18n";
 import { todayIso } from "@/components/FinanceDashboard";
 
 const ROLES: BudgetRole[] = ["income", "expense", "savings", "investment"];
@@ -21,6 +22,40 @@ function asRecord(row: FinanceBudget): BudgetRecord {
     warned: row.warned || [],
     updatedMs: row.updatedMs || 0,
   };
+}
+
+function cnLeft(left: number): string {
+  return `fin-hero-num mt-1 ${left < 0 ? "text-[var(--negative)]" : ""}`;
+}
+
+function MonthSwitch({ month, label, onChange }: { month: string; label: string; onChange: (month: string) => void }) {
+  const t = useT();
+  const start = useRef<{ x: number; y: number } | null>(null);
+  return (
+    <div
+      className="plan-month"
+      data-swipe-ignore=""
+      onPointerDown={(event) => {
+        start.current = { x: event.clientX, y: event.clientY };
+      }}
+      onPointerUp={(event) => {
+        if (!start.current) return;
+        const dx = event.clientX - start.current.x;
+        const dy = event.clientY - start.current.y;
+        start.current = null;
+        if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+        onChange(shiftMonth(month, dx < 0 ? 1 : -1));
+      }}
+    >
+      <button type="button" className="plan-chevron" aria-label={t("Previous month")} onClick={() => onChange(shiftMonth(month, -1))}>
+        <ChevronLeft size={18} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+      <p className="min-w-0 flex-1 text-center text-[16px]">{label}</p>
+      <button type="button" className="plan-chevron" aria-label={t("Next month")} onClick={() => onChange(shiftMonth(month, 1))}>
+        <ChevronRight size={18} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </div>
+  );
 }
 
 function toMinor(text: string, currency: string): number {
@@ -127,66 +162,45 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
     setPendingDelete("");
   };
 
+  const locale = activeLocale() === "ca-ES-valencia" ? "ca-ES" : activeLocale();
+  const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString(locale, { month: "long", year: "numeric" });
+  const left = summary.spendingPlanned - summary.spendingActual;
+  const spentRatio = summary.spendingPlanned > 0 ? summary.spendingActual / summary.spendingPlanned : 0;
+  const leftParts = moneyParts(left, display);
+
   return (
     <section className="fin-panel" data-finance-panel="budget" data-shot="budget">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="fin-kicker">{t("Budget")}</h2>
-        <div className="flex items-center gap-2">
-          <button type="button" className="fin-chip" onClick={() => setMonth(shiftMonth(month, -1))} aria-label={t("Previous month")}>
-            {t("Previous month")}
-          </button>
-          <p className="text-[15px]">{month}</p>
-          <button type="button" className="fin-chip" onClick={() => setMonth(shiftMonth(month, 1))} aria-label={t("Next month")}>
-            {t("Next month")}
-          </button>
-        </div>
-      </div>
-      <p className="fin-muted mt-2 text-[13px] leading-5">{t("How this month is planned.")}</p>
+      <MonthSwitch month={month} label={monthLabel} onChange={setMonth} />
       {resolved.inherited ? <p className="mt-2 text-[13px] leading-5">{t("From the template")}</p> : null}
       {!resolved.budget ? (
-        <div className="mt-4">
-          <p className="text-[15px] leading-5">{t("No budget for this month.")}</p>
-          <button type="button" className="mt-3 min-h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => finance.saveBudget({ action: "create", period: month, currency: display, copyForward: true })}>
-            {t("Create budget")}
-          </button>
-        </div>
+        <button type="button" className="plan-empty mt-4 w-full text-left" onClick={() => finance.saveBudget({ action: "create", period: month, currency: display, copyForward: true })}>
+          <span className="plan-ghost" aria-hidden="true">
+            <i style={{ width: "72%" }} />
+            <i style={{ width: "48%" }} />
+            <i style={{ width: "30%" }} />
+          </span>
+          <span className="mt-3 inline-flex min-h-11 items-center bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]">{fill("Plan {month}", { month: monthLabel })}</span>
+        </button>
       ) : (
         <>
-          <dl className="mt-4 space-y-2 text-[15px] leading-5">
-            <div className="flex justify-between gap-3"><dt>{t("Expected income")}</dt><dd className="fin-num">{formatMoney(summary.incomeActual, display)} / {formatMoney(summary.incomePlanned, display)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>{t("Expense limit")}</dt><dd className="fin-num">{formatMoney(summary.spendingActual, display)} / {formatMoney(summary.spendingPlanned, display)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>{t("Planned savings")}</dt><dd className="fin-num">{formatMoney(summary.savingsActual, display)} / {formatMoney(summary.savingsPlanned, display)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>{t("Planned investments")}</dt><dd className="fin-num">{formatMoney(summary.investmentsActual, display)} / {formatMoney(summary.investmentsPlanned, display)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>{t("Projected net")}</dt><dd className="fin-num">{formatMoney(summary.projectedNet, display)}</dd></div>
-          </dl>
-          {overBudget(summary) ? <p className="mt-3 text-[15px] leading-5 text-[var(--negative)]">{t("You are over the spending plan.")}</p> : null}
-          {summary.warnings.map((row) => (
-            <p key={row.name} className="mt-2 text-[13px] leading-5 text-[var(--negative)]">
-              {row.over ? fill("{name} is over the plan by {amount}", { name: row.name, amount: formatMoney(row.amountMinor, display) }) : fill("{name} is at {percent}% of the plan", { name: row.name, percent: Math.round(row.ratio * 100) })}
-            </p>
-          ))}
-          <div className="mt-2">
+          <p className="fin-muted mt-4 text-[13px]">{t("Left to spend")}</p>
+          <p className={cnLeft(left)}>
+            <span className="fin-hero-unit">{leftParts.unit}</span>
+            {leftParts.figure}
+          </p>
+          <div className="budget-bar mt-3" data-over={overBudget(summary) ? "true" : "false"}>
+            <span style={{ width: `${Math.min(100, Math.round(spentRatio * 100))}%` }} />
+          </div>
+          <div className="mt-3">
             {summary.rows.map((row) => (
               <div key={row.id || row.name} className="budget-line">
                 <div className="flex items-baseline justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[15px]">{row.name}</p>
-                    <p className="fin-muted text-[13px]">{roleLabel(row.role)}</p>
-                  </div>
-                  <p className="fin-num text-[15px]">{formatMoney(row.actualMinor, display)}</p>
+                  <p className="min-w-0 truncate text-[15px]">{row.name}</p>
+                  <p className="fin-num shrink-0 text-[13px]">{formatMoney(row.actualMinor, display)} / {formatMoney(row.plannedMinor, display)}</p>
                 </div>
                 <div className="budget-bar" data-warn={row.warn ? "true" : "false"} data-over={row.over ? "true" : "false"}>
                   <span style={{ width: `${Math.min(100, Math.round((Number.isFinite(row.ratio) ? row.ratio : 1) * 100))}%` }} />
                 </div>
-                <p className="fin-muted text-[13px]">
-                  {t("Planned")} {formatMoney(row.plannedMinor, display)}
-                  {" · "}
-                  {t("Actual")} {formatMoney(row.actualMinor, display)}
-                  {" · "}
-                  {row.remainingMinor < 0 ? t("Overspent") : t("Left")} {formatMoney(Math.abs(row.remainingMinor), display)}
-                  {" · "}
-                  {flowPercent(Number.isFinite(row.ratio) ? row.ratio : 1)}
-                </p>
                 {pendingDelete === row.id ? (
                   <div className="flex items-center gap-3">
                     <p className="text-[13px]">{t("Delete this line?")}</p>

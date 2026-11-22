@@ -949,12 +949,15 @@ impl Finance {
     }
 
     /// Fetch one holding now. A fresh quote from earlier today does not block it.
+    /// A miss is saved, then returned as an error so the screen can say why.
     pub fn refresh_holding(&self, app: &AppHandle, name_or_id: &str) -> Result<Snapshot, String> {
         let mut store = self.lock().clone();
         let locale = currency_locale(app, &store);
         let _guard = push_locale(&locale);
-        refresh_named(&mut store, app, name_or_id)?;
-        self.commit(app, store)
+        let outcome = refresh_named(&mut store, app, name_or_id);
+        let snap = self.commit(app, store)?;
+        outcome?;
+        Ok(snap)
     }
 
     /// Unsettled finance occurrences inside [start, end). Reminders stay on their own alarms.
@@ -4868,6 +4871,16 @@ fn holding_of(account: &Account) -> Option<crate::finance_prices::AssetRef> {
 
 fn holding_resolved(store: &Store, account: &Account) -> Option<crate::finance_prices::AssetRef> {
     let mut asset = holding_of(account)?;
+    // The typed name wins over a pin saved by an older build, including a manual epic-chain id.
+    if let Some(named) = crate::finance_prices::resolve_holding(&account.name, "", "", "", "") {
+        if named.coingecko_id == "epic-cash" {
+            asset.symbol = named.symbol;
+            asset.kind = named.kind;
+            asset.coingecko_id = named.coingecko_id;
+            asset.paprika_id = named.paprika_id;
+            return Some(asset);
+        }
+    }
     if let Some(pin) = store.provider_pins.iter().find(|pin| pin.account_id == account.id && pin.manual) {
         if !pin.coingecko_id.is_empty() {
             asset.coingecko_id = pin.coingecko_id.clone();
@@ -4898,10 +4911,19 @@ fn holding_resolved(store: &Store, account: &Account) -> Option<crate::finance_p
             }
         }
     }
+    // A holding named EPIC Cash always prices epic-cash, even when an older pin stored epic-chain or a blank id.
+    if let Some(named) = crate::finance_prices::resolve_holding(&account.name, "", "", "", "") {
+        if named.coingecko_id == "epic-cash" {
+            asset.symbol = named.symbol;
+            asset.kind = named.kind;
+            asset.coingecko_id = named.coingecko_id;
+            asset.paprika_id = named.paprika_id;
+        }
+    }
     Some(asset)
 }
 
-const PRICE_CACHE_VERSION: u32 = 5;
+const PRICE_CACHE_VERSION: u32 = 6;
 
 /// Drop quotes that cannot be a price. A version change clears misses so the next pass tries again.
 /// Pins are read and corrected first. They are not wiped, including a pin for a holding that has no price yet.
@@ -4915,6 +4937,7 @@ fn invalidate_price_cache(store: &mut Store) -> bool {
     if store.price_cache_version != PRICE_CACHE_VERSION {
         store.prices.misses.clear();
         store.prices.attempts.clear();
+        store.prices.quotes.retain(|quote| !quote.symbol.eq_ignore_ascii_case("EPIC"));
         store.price_cache_version = PRICE_CACHE_VERSION;
         changed = true;
     }
@@ -4977,6 +5000,19 @@ fn market_note(store: &Store, account: &Account, now_ms: i64, display: &str) -> 
         account.units.clone()
     } else if let Some(parsed) = crate::finance_prices::first_quantity(&format!("{} {} {}", account.units, account.notes, account.name)) {
         parsed
+    } else if let Some(priced) = crate::finance_prices::price_for(&store.prices, &asset, now_ms) {
+        return Some(MarketNote {
+            worth_minor: None,
+            worth_currency: String::new(),
+            price: Some(priced.unit_price),
+            price_currency: priced.currency,
+            source: if priced.source == "manual" { "manual".into() } else { priced.provider },
+            fetched_ms: priced.fetched_ms,
+            stale: priced.stale,
+            estimated: priced.estimated,
+            unit: asset.holding_unit,
+            symbol: asset.symbol,
+        });
     } else {
         return Some(MarketNote {
             worth_minor: None,
@@ -5092,8 +5128,23 @@ fn worth_sentence(store: &Store, account: &Account, now_ms: i64, display: &str) 
             let amount = format_minor(note.worth_minor.unwrap_or(0), &note.worth_currency);
             spoken("Worth about {amount} at the current price from {source}.", &[("amount", &amount), ("source", &note.source)])
         }
-        _ => spoken("No live price was found for {symbol}. You can set a price in Settings.", &[("symbol", &asset.symbol)]),
+        _ => spoken("No live price was found for {symbol}.", &[("symbol", &asset.symbol)]),
     }
+}
+
+fn price_failure(store: &Store, symbol: &str) -> String {
+    let reason = store
+        .prices
+        .attempts
+        .iter()
+        .rev()
+        .find(|row| row.symbol.eq_ignore_ascii_case(symbol) && row.status != "ok" && row.status != "skipped")
+        .map(|row| format!("{}: {}", row.source, row.detail))
+        .filter(|row| !row.trim().is_empty())
+        .unwrap_or_else(|| {
+            if store.prices.last_error.trim().is_empty() { "Could not refresh the price.".into() } else { store.prices.last_error.clone() }
+        });
+    spoken("No live price was found for {symbol}. {reason}", &[("symbol", symbol), ("reason", &reason)])
 }
 
 fn price_store(app: &AppHandle, store: &mut Store, force: bool, allow_ai: bool) -> bool {
@@ -5142,7 +5193,7 @@ fn fetch_holding_prices(
     force: bool,
     only: Option<&str>,
     get: &dyn Fn(&str) -> Result<String, String>,
-    ai: Option<&dyn Fn(&crate::finance_prices::AssetRef) -> Result<(f64, String), String>>,
+    ai: Option<&dyn Fn(&crate::finance_prices::AssetRef) -> Result<crate::finance_prices::AiEstimate, String>>,
 ) -> bool {
     let mut changed = false;
     let mut assets = held_assets(store);
@@ -5175,12 +5226,12 @@ fn refresh_named(store: &mut Store, app: &AppHandle, name_or_id: &str) -> Result
     let _ = fetch_holding_prices(store, now_ms, true, Some(key), &crate::finance_prices::blocking_get, Some(&|asset| ai_spot(app, asset)));
     let account = store.accounts.iter().find(|account| account_matches(account, key)).cloned().ok_or_else(|| spoken("No holding matches {name}.", &[("name", key)]))?;
     let display = effective_default(store, &store.locale_hint);
-    let sentence = worth_sentence(store, &account, now_ms, &display);
-    if sentence.is_empty() {
-        Ok(spoken("No live price was found for {symbol}. You can set a price in Settings.", &[("symbol", &account.name)]))
-    } else {
-        Ok(sentence)
+    let note = market_note(store, &account, now_ms, &display);
+    if note.as_ref().and_then(|row| row.price).is_none() {
+        let symbol = note.map(|row| row.symbol).unwrap_or_else(|| account.name.clone());
+        return Err(price_failure(store, &symbol));
     }
+    Ok(worth_sentence(store, &account, now_ms, &display))
 }
 
 /// "refresh price of EPIC Cash" and the same request in es, de, pt, and ca.
@@ -5408,7 +5459,7 @@ fn history_point(account: &Account, date: &str, value: i64, currency: &str, nati
     }
 }
 
-fn ai_spot(app: &AppHandle, asset: &crate::finance_prices::AssetRef) -> Result<(f64, String), String> {
+fn ai_spot(app: &AppHandle, asset: &crate::finance_prices::AssetRef) -> Result<crate::finance_prices::AiEstimate, String> {
     let vault = app.state::<crate::vault::Vault>();
     let bridge = app.state::<crate::native::NativeBridge>();
     let accounts = vault.accounts(&bridge).map_err(|err| err.to_string())?;
@@ -5419,7 +5470,7 @@ fn ai_spot(app: &AppHandle, asset: &crate::finance_prices::AssetRef) -> Result<(
         ""
     };
     let prompt = format!(
-        "Current market price of one {} of {name} (ticker {}, {}).{hint} Reply with JSON only: {{\"price\": number, \"currency\": \"USD\"}}. price is a positive number. currency is USD or EUR.",
+        "Current market price of one {} of {name} (ticker {}, {}).{hint} Reply with JSON only: {{\"price_usd\": number, \"source_url\": \"https://...\", \"as_of\": \"YYYY-MM-DD\"}}. price_usd is a positive number in US dollars. source_url is the page you read.",
         asset.holding_unit, asset.symbol, asset.kind
     );
     for provider in ["xai", "openai"] {
@@ -9908,7 +9959,7 @@ mod tests {
         let asked = std::cell::Cell::new(false);
         let _ = fetch_holding_prices(&mut store, now, false, Some("EPIC Cash"), &|_url| Err("down".into()), Some(&|_asset| {
             asked.set(true);
-            Ok((0.7, "EUR".into()))
+            Ok(crate::finance_prices::AiEstimate::priced(0.7, "EUR"))
         }));
         assert!(asked.get(), "refresh of an unpriced holding asks the AI provider without waiting a day");
         let estimated = store.prices.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
@@ -9926,6 +9977,58 @@ mod tests {
         assert_eq!(note.source, "manual");
         assert!((note.price.unwrap_or(0.0) - 1.2).abs() < 0.0001);
         assert!(!note.estimated);
+    }
+
+    #[test]
+    fn old_epic_cash_worth_holding_drops_a_stale_pin_and_prices_epic_cash() {
+        let mut store = Store::default();
+        store.price_cache_version = PRICE_CACHE_VERSION;
+        store.default_currency = "CHF".into();
+        let mut epic = empty_account("old".into());
+        epic.name = "EPIC Cash".into();
+        epic.kind = "investment".into();
+        epic.investment_type = "crypto".into();
+        epic.currency = "CHF".into();
+        epic.units = "12".into();
+        store.accounts.push(epic);
+        store.provider_pins.push(crate::finance_history::ProviderPin {
+            account_id: "old".into(),
+            coingecko_id: "epic-chain".into(),
+            paprika_id: String::new(),
+            manual: true,
+        });
+        let calls = std::sync::Mutex::new(Vec::new());
+        let now = 1_700_000_000_000_i64;
+        let _ = fetch_holding_prices(&mut store, now, true, Some("old"), &|url| {
+            calls.lock().unwrap().push(url.to_string());
+            if url.contains("ids=epic-cash") {
+                return Ok(r#"{"epic-cash":{"chf":0.700072,"usd":0.832979}}"#.into());
+            }
+            Err("stale".into())
+        }, None);
+        let seen = calls.lock().unwrap().clone();
+        assert!(seen.iter().any(|url| url.contains("ids=epic-cash")), "stale pin must not hide epic-cash: {seen:?}");
+        assert!(seen.iter().all(|url| !url.contains("epic-chain")), "epic-chain is the wrong coin: {seen:?}");
+        let quote = store.prices.quotes.iter().find(|row| row.symbol == "EPIC").expect("quote");
+        assert!((quote.price - 0.700072).abs() < 0.000001);
+        assert_eq!(quote.currency, "CHF");
+        assert_eq!(quote.source, "coingecko");
+        let epic = store.accounts.iter().find(|account| account.id == "old").unwrap().clone();
+        let note = market_note(&store, &epic, now, "CHF").unwrap();
+        assert!(note.worth_minor.unwrap_or(0) > 0);
+        assert!((note.price.unwrap_or(0.0) - 0.700072).abs() < 0.000001);
+
+        store.prices.quotes.retain(|row| row.symbol != "EPIC");
+        let _ = fetch_holding_prices(&mut store, now + 1, true, Some("EPIC Cash"), &|url| {
+            if url.contains("tradeogre.com/api/v1/ticker/EPIC-USDT") {
+                return Ok(r#"{"success":true,"price":"0.81"}"#.into());
+            }
+            Err("down".into())
+        }, None);
+        let fallback = store.prices.quotes.iter().find(|row| row.symbol == "EPIC").expect("tradeogre");
+        assert_eq!(fallback.source, "tradeogre");
+        assert!((fallback.price - 0.81).abs() < 0.0001);
+        assert_eq!(fallback.currency, "USD");
     }
 
     #[test]
@@ -10084,7 +10187,7 @@ mod tests {
         let asked = std::cell::Cell::new(false);
         let _ = fetch_holding_prices(&mut store, now + 1, false, None, &|_url| Err("down".into()), Some(&|_asset| {
             asked.set(true);
-            Ok((0.77, "EUR".into()))
+            Ok(crate::finance_prices::AiEstimate::priced(0.77, "EUR"))
         }));
         assert!(asked.get(), "a custom-shaped EPIC holding asks for an AI estimate when every provider misses");
         let estimated = store.prices.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow, describeFlow, flowConserved, layoutSankey, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
+import { buildMoneyFlow, buildSankeyOption, describeFlow, flowAmountLabel, flowConserved, layoutSankey, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
 import type { RateBook } from "./financeMath.ts";
@@ -62,9 +62,11 @@ if (deficit.state === "ready") {
   const drawn = deficit.nodes.find((node) => node.kind === "drawn");
   assert.ok(drawn);
   assert.equal(drawn.amountMinor, 30000);
-  assert.equal(deficit.nodes.find((node) => node.id === "pool")?.amountMinor, 40000);
+  assert.equal(deficit.nodes.find((node) => node.id === "pool")?.amountMinor, 10000);
+  assert.equal(deficit.links.find((link) => link.source === "in:shortfall")?.target, "spend");
+  assert.equal(deficit.links.find((link) => link.source === "pool" && link.target === "spend")?.amountMinor, 10000);
+  assert.equal(deficit.links.some((link) => link.source === "in:shortfall" && link.target === "pool"), false);
   assert.equal(deficit.nodes.some((node) => node.kind === "surplus"), false);
-  assert.notEqual(deficit.nodes.find((node) => node.id === "pool")?.amountMinor, 10000 + 40000);
 }
 
 const surplus = buildMoneyFlow(
@@ -261,9 +263,12 @@ if (describedEmpty.state === "ready") {
   assert.equal(describedEmpty.nodes.filter((node) => node.label === "Uncategorized" || node.label === "Rest").length <= 2, true);
   assert.equal(describedEmpty.nodes.some((node) => node.role === "source" && (node.label === "Swisscard" || node.label === "Cash" || node.label === "Spending")), false);
   assert.equal(describedEmpty.noIncome, true);
+  assert.equal(describedEmpty.nodes.some((node) => node.id === "pool" || node.label === "Total income"), false);
   const gap = describedEmpty.nodes.find((node) => node.kind === "drawn");
   assert.ok(gap);
   assert.equal(gap.amountMinor, 35_800 + 12_792 + 1_690 + 2_090);
+  assert.ok(describedEmpty.links.some((link) => link.source === "in:shortfall" && link.target === "spend"));
+  assert.equal(describedEmpty.links.some((link) => link.target === "pool"), false);
   assert.ok(flowConserved(describedEmpty));
 }
 
@@ -318,18 +323,57 @@ if (unlinked.state === "ready") {
   assert.equal(unlinked.nodes.some((node) => node.role === "source" && node.label === "Spending"), false);
   assert.equal(unlinked.nodes.some((node) => node.role === "source" && node.label === "Swisscard"), false);
   assert.equal(unlinked.nodes.find((node) => node.kind === "drawn")?.label, "Shortfall / From savings");
+  assert.equal(unlinked.nodes.some((node) => node.id === "pool"), false);
   assert.ok(unlinked.nodes.some((node) => node.label === "Housing" && node.role === "sink"));
   assert.ok(unlinked.nodes.some((node) => node.kind === "debt"));
   assert.ok(flowConserved(unlinked));
 }
 
-const frame = sankeyFrame(320, [1, 1, 4]);
-assert.equal(frame.top + frame.bottom + frame.plot, 320);
-assert.ok(Math.abs(frame.top - frame.bottom) <= 1);
-assert.equal(frame.nodeWidth, 12);
-assert.ok(frame.nodeGap >= 8);
-const lifted = sankeyValue(10, 10_000, frame.floorShare);
+const phone = sankeyFrame(390, [2, 1, 1, 6], true);
+assert.equal(phone.nodeWidth, 10);
+assert.ok(phone.nodeGap >= 12);
+assert.ok(phone.linkOpacity >= 0.35 && phone.linkOpacity <= 0.5);
+assert.equal(phone.layoutIterations, 0);
+assert.ok(phone.left + phone.right + phone.nodeWidth * 3 < phone.width);
+assert.equal(phone.width, 390);
+const tablet = sankeyFrame(800, [2, 1, 1, 6], true);
+assert.equal(tablet.nodeWidth, 14);
+const one = sankeyFrame(390, [1, 1, 1], true);
+const many = sankeyFrame(390, [1, 1, 8], true);
+assert.ok(one.height < 220);
+assert.ok(many.height > one.height);
+assert.equal(flowAmountLabel(52370, "CHF", 1), "CHF 523.70 (100%)");
+assert.equal(flowAmountLabel(52370, "eur", 0.5), "EUR 523.70 (50%)");
+assert.ok(!flowAmountLabel(52370, "CHF", 1).includes("Total income"));
+
+if (describedEmpty.state === "ready") {
+  const built = buildSankeyOption({
+    nodes: describedEmpty.nodes,
+    links: describedEmpty.links,
+    currency: "CHF",
+    width: 390,
+    labels: true,
+    values: true,
+    colors: {},
+    ink: "rgb(240,235,228)",
+    muted: "rgb(168,160,150)",
+    brand: "rgb(196,176,154)",
+    paper: "rgb(23,24,27)",
+    line: "rgb(90,84,76)",
+    mono: false,
+  });
+  const series = (built.option.series as Array<Record<string, unknown>>)[0];
+  assert.equal(series.nodeWidth, 10);
+  assert.ok(Number(series.nodeGap) >= 12);
+  assert.equal((series.lineStyle as { opacity: number }).opacity, built.frame.linkOpacity);
+  const labels = (series.data as Array<{ label: { formatter: string } }>).map((row) => row.label.formatter);
+  assert.ok(labels.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("(100%)")));
+  assert.ok(labels.every((line) => !line.includes("Total incomeCHF")));
+  assert.ok(labels.every((line) => !line.includes("Total income")));
+}
+
+const lifted = sankeyValue(10, 10_000, phone.floorShare);
 assert.ok(lifted > 10);
-assert.equal(sankeyValue(9_000, 10_000, frame.floorShare), 9_000);
+assert.equal(sankeyValue(9_000, 10_000, phone.floorShare), 9_000);
 
 console.log("money flow ok");

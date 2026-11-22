@@ -174,6 +174,16 @@ export function ProgramSheet({
       footer={
         <div className="flex flex-wrap items-center gap-2">
           {editing ? (
+            <Button className="min-h-12" onClick={() => { finance.markPaid(editing.id, editing.nextDate); onClose(); }}>
+              {direction === "income" ? t("Mark received") : t("Mark paid")}
+            </Button>
+          ) : null}
+          {editing ? (
+            <Button variant="ghost" className="min-h-12" onClick={() => { finance.scheduleAction(editing.id, "skip", editing.nextDate); onClose(); }}>
+              {t("Skip")}
+            </Button>
+          ) : null}
+          {editing ? (
             <Button
               variant="ghost"
               className="min-h-12"

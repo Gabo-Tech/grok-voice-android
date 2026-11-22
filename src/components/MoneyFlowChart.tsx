@@ -9,9 +9,9 @@ import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
-import { buildMoneyFlow, sankeyFrame, sankeyValue, type MoneyFlow } from "@/lib/moneyFlow";
+import { buildMoneyFlow, buildSankeyOption, flowDepth, type MoneyFlow } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
-import { compactLabeled, flowPercent, formatMoney } from "@/lib/money";
+import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 
@@ -338,21 +338,6 @@ function inheritLines(budgets: BudgetRecord[], month: string) {
   return resolveBudget(budgets, month).budget?.lines || [];
 }
 
-function depthOf(node: { role: string }): number {
-  if (node.role === "source") return 0;
-  if (node.role === "pool") return 1;
-  if (node.role === "hub") return 2;
-  if (node.role === "child") return 4;
-  return 3;
-}
-
-function labelPlace(role: string, depth: number): { position: "left" | "right" | "top" | "bottom"; align: "left" | "right" | "center" } {
-  if (depth === 0) return { position: "left", align: "right" };
-  if (role === "pool") return { position: "top", align: "center" };
-  if (role === "hub") return { position: "top", align: "center" };
-  return { position: "right", align: "left" };
-}
-
 function usedColor(value: string, fallback: string): string {
   if (typeof document === "undefined") return fallback;
   const probe = document.createElement("span");
@@ -391,10 +376,6 @@ function luminance(channels: [number, number, number]): number {
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
 }
 
-function richText(label: string): string {
-  return label.replace(/[{}|]/g, " ");
-}
-
 function drilled(flow: MoneyFlow, id: string): MoneyFlow {
   if (flow.state !== "ready" || !id) return flow;
   const node = flow.nodes.find((row) => row.id === id);
@@ -431,145 +412,104 @@ function FlowChart({
   const drillRef = useRef(onDrill);
   drillRef.current = onDrill;
   const safeToReal = useRef(new Map<string, string>());
+  const [box, setBox] = useState(0);
 
   useEffect(() => {
     const node = host.current;
     if (!node) return;
-    const visible = Math.min(node.parentElement?.clientWidth || window.innerWidth, window.innerWidth - (tall ? 16 : 36));
-    const width = Math.max(280, visible);
-    node.style.width = `${width}px`;
-    node.style.maxWidth = "100%";
-    const instance = init(node, undefined, { renderer: "canvas", width, height: tall ? Math.max(280, window.innerHeight - 120) : 320 });
+    const instance = init(node, undefined, { renderer: "canvas" });
     chart.current = instance;
-    const onClick = (params: { dataType?: string; data?: { name?: string; id?: string } | null }) => {
-      const data = params.data;
-      const key = data && typeof data === "object" ? data.name || "" : "";
+    const onClick = (params: { dataType?: string; data?: { name?: string } | null }) => {
+      const key = params.data && typeof params.data === "object" ? params.data.name || "" : "";
       const name = safeToReal.current.get(key) || "";
       if (params.dataType === "node" && name) drillRef.current(name);
     };
     instance.on("click", onClick as never);
-    const resize = () => instance.resize();
-    window.addEventListener("resize", resize);
+    const measure = () => {
+      const parent = node.parentElement?.clientWidth || node.clientWidth || window.innerWidth;
+      setBox(Math.max(280, Math.floor(parent)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (node.parentElement) observer.observe(node.parentElement);
+    window.addEventListener("resize", measure);
     return () => {
-      window.removeEventListener("resize", resize);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
       instance.off("click", onClick);
       instance.dispose();
       chart.current = null;
     };
   }, []);
 
+  const present = flow && flow.state === "ready"
+    ? {
+        pool: flow.nodes.some((node) => node.role === "pool"),
+        hub: flow.nodes.some((node) => node.role === "hub"),
+        sink: flow.nodes.some((node) => node.role === "sink" || node.role === "child"),
+      }
+    : { pool: false, hub: false, sink: false };
+  const depthOf = (role: "source" | "pool" | "hub" | "sink" | "child") => flowDepth(role, present);
+  const busiest = flow && flow.state === "ready" ? Math.max(1, ...[0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node.role) === depth).length)) : 1;
+  const plot = Math.min(560, Math.max(88, busiest * 44));
+  const height = tall ? Math.max(plot + 60, Math.min(window.innerHeight - 160, plot + 80)) : plot + 60;
+
   useEffect(() => {
     const instance = chart.current;
-    if (!instance || !flow || flow.state !== "ready") return;
+    if (!instance || !flow || flow.state !== "ready" || box < 280) return;
     const ink = usedColor("var(--text-primary)", "rgb(58, 52, 44)");
     const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
     const brand = usedColor("var(--brand)", "rgb(125, 107, 88)");
     const paper = usedColor("var(--surface-0)", "rgb(23, 24, 27)");
-    const total = flow.nodes.find((node) => node.id === "pool")?.amountMinor || flow.incomeMinor || 1;
-    const gutter = labelsOn ? 156 : 16;
-    const visible = Math.max(280, host.current?.clientWidth || window.innerWidth - 32);
-    const width = Math.max(visible, gutter * 2 + 280);
-    const busiest = Math.max(1, ...[0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node) === depth).length));
-    const height = tall ? Math.max(320, window.innerHeight - 148) : Math.max(420, busiest * 36 + 72);
-    instance.resize({ width, height });
-    const counts = [0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node) === depth).length).filter((count) => count > 0);
-    const frame = sankeyFrame(height, counts);
-    const safe = new Map(flow.nodes.map((node, index) => [node.id, `n${index}`]));
-    const byId = new Map(flow.nodes.map((node, index) => [`n${index}`, node]));
+    const line = usedColor("var(--line)", "rgb(217, 210, 197)");
+    const colors = Object.fromEntries(flow.nodes.map((node) => [node.id, readable(mono ? brand : usedColor(node.color, brand), paper, ink)]));
+    const built = buildSankeyOption({
+      nodes: flow.nodes,
+      links: flow.links,
+      currency,
+      width: box,
+      labels: labelsOn,
+      values: valuesOn,
+      colors,
+      ink,
+      muted,
+      brand,
+      paper,
+      line,
+      mono,
+    });
+    const frame = built.frame;
+    const chartHeight = tall ? Math.max(frame.height, Math.min(window.innerHeight - 148, frame.height + 40)) : frame.height;
+    if (host.current) host.current.style.height = `${chartHeight}px`;
+    instance.resize({ width: frame.width, height: chartHeight });
     safeToReal.current = new Map(flow.nodes.map((node, index) => [`n${index}`, node.id]));
-    const paint = new Map(flow.nodes.map((node) => [node.id, readable(mono ? brand : usedColor(node.color, brand), paper, ink)]));
-    try {
-    instance.setOption(
-      {
-        backgroundColor: paper,
-        tooltip: {
-          trigger: "item",
-          backgroundColor: usedColor("var(--surface-1)", "rgb(244, 241, 234)"),
-          borderColor: usedColor("var(--line)", "rgb(217, 210, 197)"),
-          textStyle: { color: ink, fontSize: 13 },
-          formatter: (raw: unknown) => {
-            const params = raw as { dataType?: string; data?: { name?: string; source?: string; target?: string; raw?: number } };
-            const value = Number(params.data?.raw || 0);
-            if (params.dataType === "edge") {
-              const from = byId.get(params.data?.source || "");
-              const to = byId.get(params.data?.target || "");
-              return `${from?.label || ""} → ${to?.label || ""}<br/>${formatMoney(value, currency)}`;
-            }
-            const node = byId.get(params.data?.name || "");
-            return `${node?.label || ""}<br/>${formatMoney(value, currency)} · ${flowPercent(node?.share || 0)}`;
-          },
-        },
-        series: [
-          {
-            type: "sankey",
-            orient: "horizontal",
-            nodeAlign: "left",
-            draggable: false,
-            nodeWidth: frame.nodeWidth,
-            nodeGap: Math.max(frame.nodeGap, 28),
-            left: gutter,
-            right: gutter,
-            top: labelsOn ? 64 : 16,
-            bottom: labelsOn ? 48 : 16,
-            emphasis: { focus: "adjacency" },
-            lineStyle: { color: mono ? brand : "gradient", curveness: 0.5, opacity: mono ? 0.72 : 0.45 },
-            label: { show: labelsOn },
-            data: flow.nodes.map((node) => {
-              const depth = depthOf(node);
-              const place = node.kind === "savings" || node.kind === "investment"
-                ? { position: "bottom" as const, align: "center" as const }
-                : node.kind === "spending"
-                  ? { position: "right" as const, align: "left" as const }
-                  : labelPlace(node.role, depth);
-              const fillColor = mono ? brand : usedColor(node.color, brand);
-              const nameColor = paint.get(node.id) || ink;
-              const text = richText(node.label);
-              const meta = `${compactLabeled(node.amountMinor, currency)} (${flowPercent(node.share)})`;
-              return {
-                name: safe.get(node.id),
-                depth,
-                raw: node.amountMinor,
-                value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
-                label: {
-                  show: labelsOn,
-                  position: place.position,
-                  align: place.align,
-                  distance: 8,
-                  width: depth === 1 || depth === 2 ? 120 : 148,
-                  overflow: "break",
-                  fontSize: 13,
-                  lineHeight: 16,
-                  formatter: valuesOn ? `{name|${text}}\n{meta|${meta}}` : `{name|${text}}`,
-                  rich: {
-                    name: { color: nameColor, fontWeight: 650, fontSize: 13, fontStyle: node.italic ? "italic" : "normal", lineHeight: 16, align: place.align },
-                    meta: { color: muted, fontSize: 13, lineHeight: 16, align: place.align },
-                  },
-                },
-                itemStyle: { color: fillColor, borderWidth: 0 },
-              };
-            }),
-            links: flow.links.map((link) => ({
-              source: safe.get(link.source),
-              target: safe.get(link.target),
-              raw: link.amountMinor,
-              value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)),
-            })),
-          },
-        ],
+    const byId = new Map(flow.nodes.map((node, index) => [`n${index}`, node]));
+    const option = built.option;
+    option.tooltip = {
+      trigger: "item",
+      backgroundColor: usedColor("var(--surface-1)", "rgb(244, 241, 234)"),
+      borderColor: line,
+      textStyle: { color: ink, fontSize: 13 },
+      formatter: (raw: unknown) => {
+        const params = raw as { dataType?: string; data?: { name?: string; source?: string; target?: string; raw?: number } };
+        const value = Number(params.data?.raw || 0);
+        if (params.dataType === "edge") {
+          const from = byId.get(params.data?.source || "");
+          const to = byId.get(params.data?.target || "");
+          return `${from?.label || ""} → ${to?.label || ""}<br/>${formatMoney(value, currency)}`;
+        }
+        const node = byId.get(params.data?.name || "");
+        return `${node?.label || ""}<br/>${formatMoney(value, currency)} · ${flowPercent(node?.share || 0)}`;
       },
-      true,
-    );
+    };
+    try {
+      instance.setOption(option, true);
     } catch (error) {
       if (host.current) host.current.dataset.chartError = error instanceof Error ? error.message : "chart";
     }
-  }, [flow, currency, labelsOn, valuesOn, mono, tall]);
+  }, [flow, currency, labelsOn, valuesOn, mono, tall, box]);
 
-  useEffect(() => {
-    chart.current?.resize();
-  }, [tall, labelsOn]);
-
-  const busiest = flow && flow.state === "ready" ? Math.max(1, ...[0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node) === depth).length)) : 1;
-  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : Math.max(420, busiest * 36 + 72) }} />;
+  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height }} />;
 }
 
 function CategoryColors({
@@ -587,19 +527,25 @@ function CategoryColors({
   return (
     <div className="mt-3" data-swipe-ignore="">
       <p className="fin-muted text-[13px] leading-4">{t("Category colors")}</p>
-      <div className="mt-1 flex flex-wrap gap-2">
-        {rows.map((row) => (
-          <label key={row.name} className="flex min-h-11 items-center gap-2 text-[13px]">
-            <input
-              type="color"
-              aria-label={fill("{name} color", { name: row.name })}
-              value={/^#[0-9A-Fa-f]{6}$/.test(colors[row.name] || row.color) ? colors[row.name] || row.color : "#7d6b58"}
-              onChange={(event) => onChange(row.name, event.target.value)}
-              className="h-11 w-11 border-0 bg-transparent p-0"
-            />
-            {row.name}
-          </label>
-        ))}
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+        {rows.map((row) => {
+          const swatch = /^#[0-9A-Fa-f]{6}$/.test(colors[row.name] || row.color) ? colors[row.name] || row.color : "var(--brand)";
+          return (
+            <label key={row.name} className="flex min-h-11 max-w-full items-center gap-2 text-[13px] text-[var(--text-primary)]">
+              <span className="relative h-11 w-11 shrink-0">
+                <span aria-hidden="true" className="absolute inset-3" style={{ background: swatch }} />
+                <input
+                  type="color"
+                  aria-label={fill("{name} color", { name: row.name })}
+                  value={/^#[0-9A-Fa-f]{6}$/.test(swatch) ? swatch : "#7d6b58"}
+                  onChange={(event) => onChange(row.name, event.target.value)}
+                  className="absolute inset-0 h-11 w-11 cursor-pointer opacity-0"
+                />
+              </span>
+              <span className="min-w-0 truncate">{row.name}</span>
+            </label>
+          );
+        })}
       </div>
     </div>
   );
