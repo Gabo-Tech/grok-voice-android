@@ -332,7 +332,7 @@ export function FinanceOverview({
 
   return (
     <div className="fin-stack w-full min-w-0">
-      <div className="flex flex-wrap gap-x-3 gap-y-1" data-swipe-ignore="" role="group" aria-label={t("Period")}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-swipe-ignore="" role="group" aria-label={t("Period")}>
         {PRESETS.map((item) => (
           <button key={item.id} type="button" className="fin-chip" aria-pressed={layout.preset === item.id} onClick={() => setLayout((current) => ({ ...current, preset: item.id }))}>
             {t(item.label)}

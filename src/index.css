@@ -568,17 +568,18 @@ h1,
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  min-height: 0;
+  min-height: 22px;
   height: auto;
+  overflow: visible;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
   color: var(--text-primary);
-  padding: 1px 8px;
+  padding: 2px 8px;
   font-size: var(--text-min);
   font-weight: 500;
   letter-spacing: 0.01em;
-  line-height: 1.25;
+  line-height: 18px;
   text-transform: none;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -862,16 +863,39 @@ html.keyboard-open .sheet-panel {
 
 /* Short landscape phones: the bottom bar and the status cutout must not eat the page. */
 @media (orientation: landscape) and (max-height: 520px) {
-  .app-safe {
-    padding-bottom: calc(3.25rem + env(safe-area-inset-bottom));
+  .app-safe,
+  .app-safe.app-safe-bar {
+    padding-bottom: calc(8rem + env(safe-area-inset-bottom));
   }
 
-  .app-safe-bar {
-    padding-bottom: calc(7.25rem + env(safe-area-inset-bottom));
+  .finance .text-5xl {
+    font-size: 2rem;
+    line-height: 1;
   }
 
   .app-stage {
     padding-top: 8px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  .finance .fin-tabs {
+    position: static;
+  }
+
+  .app-stage > header,
+  .app-stage header {
+    padding-bottom: 4px;
+  }
+
+  .masthead-rule {
+    margin-top: 4px;
+  }
+
+  .finance .fin-tab {
+    min-height: 44px;
+    padding-top: 4px;
+    padding-bottom: 4px;
   }
 
   .masthead {

@@ -184,7 +184,7 @@ export function MoneyFlowPanel({
   );
 
   const controls = (
-    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1" data-swipe-ignore="">
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1" data-swipe-ignore="">
       <button type="button" className="fin-chip" aria-pressed={options.labels} onClick={() => setOptions((current) => ({ ...current, labels: !current.labels }))}>
         {t("Labels")}
       </button>

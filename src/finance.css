@@ -108,7 +108,6 @@
   position: sticky;
   top: 0;
   z-index: 5;
-  box-shadow: 0 12px 0 0 var(--surface-0, var(--fin-canvas));
 }
 
 .finance .fin-tab-indicator {
@@ -230,23 +229,24 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  min-height: 0;
   height: auto;
+  min-height: 22px;
+  overflow: visible;
   border: 0;
   border-radius: var(--radius, 2px);
   background: transparent;
   color: var(--text-secondary, var(--fin-ink));
-  padding: 1px 2px;
+  padding: 2px 8px;
   font-family: inherit;
   font-size: var(--text-min, 13px);
   font-weight: 500;
   letter-spacing: 0.01em;
-  line-height: 1.25;
+  line-height: 18px;
   text-transform: none;
   text-decoration: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 0.18em;
-  vertical-align: baseline;
+  text-underline-offset: 3px;
+  vertical-align: middle;
 }
 
 .finance .fin-chip::before {
@@ -262,7 +262,6 @@
 .finance .fin-chip[aria-pressed="true"] {
   background: var(--text-primary, var(--fin-ink));
   color: var(--surface-0, var(--canvas));
-  padding: 1px 8px;
   text-decoration: none;
 }
 
