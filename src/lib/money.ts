@@ -87,6 +87,28 @@ export function compactMoney(minor: number, currency: string): string {
   return `${sign}${abs.toFixed(2)}`;
 }
 
+/** Chart label: currency code, then a compact figure such as 3.82K or 13.8. */
+export function compactLabeled(minor: number, currency: string): string {
+  const code = currency.trim().toUpperCase();
+  const exp = minorExponent(code);
+  const value = minor / 10 ** exp;
+  const sign = value < 0 ? "−" : "";
+  const abs = Math.abs(value);
+  const body = abs >= 1000 ? `${trimCompact((abs / 1000).toFixed(abs / 1000 >= 100 ? 0 : 2))}K` : trimCompact(abs.toFixed(abs >= 10 ? 1 : 2));
+  return code ? `${sign}${code} ${body}` : `${sign}${body}`;
+}
+
+function trimCompact(text: string): string {
+  return text.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+}
+
+/** One decimal when the percent is not whole. */
+export function flowPercent(share: number): string {
+  if (!Number.isFinite(share)) return "0%";
+  const pct = Math.round(share * 1000) / 10;
+  return Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
+}
+
 /** Currency unit and the figure, so a hero can set the unit at half the figure size. A negative figure uses a real minus tight against the digits. */
 export function moneyParts(minor: number, currency: string): { unit: string; figure: string } {
   const exp = minorExponent(currency);
@@ -134,6 +156,7 @@ export function emptyFinance(locale = ""): FinanceSnapshot {
     period,
     defaultCurrency: defaultCurrency(locale),
     categories: [],
+    budgets: [],
   };
 }
 

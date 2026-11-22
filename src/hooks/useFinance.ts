@@ -107,6 +107,17 @@ export function useFinance() {
     [inApp, run],
   );
 
+  const saveBudget = useCallback(
+    (draft: Record<string, unknown>) => {
+      if (!inApp) {
+        setSnapshot((current) => previewBudget(current, draft));
+        return;
+      }
+      void run(() => api.saveFinanceBudget(draft));
+    },
+    [inApp, run],
+  );
+
   const removeAccount = useCallback(
     (id: string) => {
       if (!inApp) {
@@ -320,6 +331,7 @@ export function useFinance() {
     saveAccount,
     saveTransaction,
     saveRule,
+    saveBudget,
     removeAccount,
     removeTransaction,
     removeRule,
@@ -591,4 +603,42 @@ function previewRule(current: FinanceSnapshot, draft: FinanceRuleDraft): Finance
     };
   const rules = draft.id ? current.rules.map((row) => (row.id === draft.id ? rule : row)) : [...current.rules, rule];
   return { ...current, rules };
+}
+
+function previewBudget(current: FinanceSnapshot, draft: Record<string, unknown>): FinanceSnapshot {
+  const period = String(draft.period ?? current.period ?? "");
+  const budgets = (current.budgets || []).map((row) => ({ ...row, lines: row.lines.map((line) => ({ ...line })), warned: [...(row.warned || [])] }));
+  let budget = budgets.find((row) => row.period === period);
+  if (draft.remove === true && !draft.category && !draft.lineId) {
+    return { ...current, budgets: budgets.filter((row) => row.period !== period) };
+  }
+  if (!budget) {
+    budget = {
+      id: `bud-${budgets.length + 1}`,
+      period,
+      currency: String(draft.currency || current.defaultCurrency || "EUR"),
+      lines: [],
+      copyForward: draft.copyForward !== false,
+      notify: Boolean(draft.notify),
+      warned: [],
+      updatedMs: Date.now(),
+    };
+    budgets.push(budget);
+  }
+  if (typeof draft.copyForward === "boolean") budget.copyForward = draft.copyForward;
+  if (typeof draft.notify === "boolean") budget.notify = draft.notify;
+  if (Array.isArray(draft.warned)) budget.warned = draft.warned.map(String);
+  if (draft.replaceLines && Array.isArray(draft.lines)) {
+    budget.lines = (draft.lines as Array<Record<string, unknown>>).map((line, index) => ({
+      id: String(line.id || `bln-${Date.now()}-${index}`),
+      role: String(line.role || "expense"),
+      category: String(line.category || ""),
+      subcategory: String(line.subcategory || ""),
+      label: String(line.label || ""),
+      amountMinor: Number(line.amountMinor || 0),
+      currency: String(line.currency || budget?.currency || current.defaultCurrency),
+    }));
+  }
+  budget.updatedMs = Date.now();
+  return { ...current, budgets };
 }

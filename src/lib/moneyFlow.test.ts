@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow, flowConserved, layoutSankey, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
+import { buildMoneyFlow, describeFlow, flowConserved, layoutSankey, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
 import type { RateBook } from "./financeMath.ts";
@@ -44,10 +44,11 @@ assert.ok(expenseSum > 0);
 assert.equal(flow.nodes.some((node) => node.label === "Move"), false);
 assert.equal(flow.nodes.some((node) => node.label === "Coffee"), false);
 assert.equal(pool.amountMinor, flow.nodes.filter((node) => node.role === "source").reduce((sum, node) => sum + node.amountMinor, 0));
-assert.equal(pool.amountMinor, flow.nodes.filter((node) => node.role === "sink").reduce((sum, node) => sum + node.amountMinor, 0));
+assert.equal(pool.amountMinor, flow.nodes.filter((node) => node.role === "hub").reduce((sum, node) => sum + node.amountMinor, 0));
 const spent = expenseSum + debtSum + flow.nodes.filter((node) => node.kind === "other").reduce((sum, node) => sum + node.amountMinor, 0);
 assert.ok(spent <= pool.amountMinor);
-assert.equal(flow.nodes.some((node) => node.kind === "surplus" || node.kind === "drawn" || node.kind === "other"), true);
+assert.equal(flow.nodes.some((node) => node.kind === "savings"), true);
+assert.equal(flow.nodes.some((node) => node.role === "source" && node.label === "Spending"), false);
 
 const deficit = buildMoneyFlow(
   [
@@ -77,9 +78,10 @@ const surplus = buildMoneyFlow(
 assert.equal(surplus.state, "ready");
 if (surplus.state === "ready") {
   assert.equal(surplus.nodes.find((node) => node.label === "Uncategorized" && node.role === "source")?.amountMinor, 80000);
-  assert.equal(surplus.nodes.find((node) => node.kind === "investment")?.amountMinor, 5000);
-  assert.equal(surplus.nodes.find((node) => node.kind === "surplus")?.amountMinor, 65000);
+  assert.equal(surplus.nodes.find((node) => node.kind === "investment" && node.role === "hub")?.amountMinor, 5000);
+  assert.equal(surplus.nodes.find((node) => node.kind === "savings")?.amountMinor, 65000);
   assert.equal(surplus.nodes.filter((node) => node.kind === "expense").reduce((sum, node) => sum + node.amountMinor, 0), 10000);
+  assert.equal(surplus.nodes.some((node) => node.kind === "surplus"), false);
 }
 
 const tiny = buildMoneyFlow(
@@ -93,8 +95,10 @@ const tiny = buildMoneyFlow(
 );
 assert.equal(tiny.state, "ready");
 if (tiny.state === "ready") {
-  const other = tiny.nodes.find((node) => node.id === "out:other");
+  const other = tiny.nodes.find((node) => node.id === "out:rest");
   assert.ok(other);
+  assert.equal(other.italic, true);
+  assert.equal(other.label, "Rest");
   assert.equal(other.amountMinor, 1800);
   assert.equal(other.members.length, 2);
   assert.equal(tiny.nodes.some((node) => node.label === "Coffee"), false);
@@ -154,13 +158,14 @@ if (nested.state === "ready") {
   assert.equal(nested.nodes.some((node) => node.label === "Vacuum" && node.role === "child"), true);
   assert.equal(nested.nodes.some((node) => node.label === "Drawn from savings"), false);
   const drawn = nested.nodes.find((node) => node.kind === "drawn");
-  assert.equal(drawn?.label, "From savings");
+  assert.equal(drawn?.label, "Shortfall / From savings");
   assert.equal(drawn?.amountMinor, 20000);
   const amounts: Record<string, number> = {};
   for (const node of nested.nodes) amounts[node.id] = node.amountMinor;
   const columns = [
     nested.nodes.filter((node) => node.role === "source").map((node) => node.id),
     ["pool"],
+    nested.nodes.filter((node) => node.role === "hub").map((node) => node.id),
     nested.nodes.filter((node) => node.role === "sink").map((node) => node.id),
   ];
   const laid = layoutSankey(columns, amounts, nested.links, 320);
@@ -253,32 +258,72 @@ assert.equal(describedEmpty.state, "ready");
 if (describedEmpty.state === "ready") {
   assert.equal(describedEmpty.nodes.some((node) => node.label === "vacuum cleaner" || node.label === "air purifier"), false);
   assert.ok(describedEmpty.nodes.some((node) => node.label === "Housing"));
-  assert.equal(describedEmpty.nodes.filter((node) => node.label === "Uncategorized" || node.label === "Other").length <= 1, true);
-  assert.equal(describedEmpty.nodes.some((node) => node.kind === "drawn" || node.label === "From savings"), false);
-  const swiss = describedEmpty.nodes.find((node) => node.label === "Swisscard" && node.role === "source");
-  const cash = describedEmpty.nodes.find((node) => node.label === "Cash" && node.role === "source");
-  assert.ok(swiss && cash);
-  assert.equal(swiss.amountMinor, 35_800 + 12_792);
-  assert.equal(cash.amountMinor, 1_690 + 2_090);
+  assert.equal(describedEmpty.nodes.filter((node) => node.label === "Uncategorized" || node.label === "Rest").length <= 2, true);
+  assert.equal(describedEmpty.nodes.some((node) => node.role === "source" && (node.label === "Swisscard" || node.label === "Cash" || node.label === "Spending")), false);
+  assert.equal(describedEmpty.noIncome, true);
+  const gap = describedEmpty.nodes.find((node) => node.kind === "drawn");
+  assert.ok(gap);
+  assert.equal(gap.amountMinor, 35_800 + 12_792 + 1_690 + 2_090);
   assert.ok(flowConserved(describedEmpty));
 }
 
-const bySource = buildMoneyFlow(
+const byEntry = buildMoneyFlow(
   [
-    { amountMinor: 35_800, currency: "CHF", direction: "expense", category: "Housing", date: "2026-11-03", accountName: "Swisscard", accountKind: "credit_card" },
-    { amountMinor: 12_792, currency: "CHF", direction: "expense", category: "Food", date: "2026-11-04", accountName: "ZKB", accountKind: "bank" },
+    { amountMinor: 191_000, currency: "EUR", direction: "income", category: "Salary", date: "2026-11-01" },
+    { amountMinor: 191_000, currency: "EUR", direction: "income", category: "Salary", date: "2026-11-15" },
+    { amountMinor: 90_500, currency: "EUR", direction: "income", category: "Rent", date: "2026-11-03" },
+    { amountMinor: 1_700, currency: "EUR", direction: "income", category: "Dividends", date: "2026-11-08" },
+    { amountMinor: 15_900, currency: "EUR", direction: "expense", category: "Restaurant", date: "2026-11-04" },
+    { amountMinor: 800, currency: "EUR", direction: "expense", category: "Coffee", date: "2026-11-05" },
+    { amountMinor: 50_000, currency: "EUR", direction: "transfer", category: "Funds", date: "2026-11-06", accountKind: "investment" },
   ],
-  { display: "CHF", book, nowMs: now, start: "2026-11-01", end: "2026-11-30", group: "source" },
+  {
+    display: "CHF",
+    book,
+    nowMs: now,
+    start: "2026-11-01",
+    end: "2026-11-30",
+    group: "entry",
+    threshold: 0.03,
+    categories: [{ name: "Funds", color: "#4C78D8", kind: "investment" }],
+  },
 );
-assert.equal(bySource.state, "ready");
-if (bySource.state === "ready") {
-  assert.equal(bySource.nodes.some((node) => node.label === "Housing" || node.label === "Food"), false);
-  assert.ok(bySource.nodes.some((node) => node.label === "Swisscard"));
-  assert.ok(bySource.nodes.some((node) => node.label === "ZKB"));
+assert.equal(byEntry.state, "ready");
+if (byEntry.state === "ready") {
+  const salaries = byEntry.nodes.filter((node) => node.role === "source" && node.label.startsWith("Salary"));
+  assert.equal(salaries.length, 2);
+  assert.ok(salaries.some((node) => node.label.includes("1 Nov")));
+  assert.ok(salaries.some((node) => node.label.includes("15 Nov")));
+  assert.notEqual(salaries[0].amountMinor, 191_000);
+  assert.ok(byEntry.nodes.some((node) => node.label.startsWith("Rent") && node.role === "source"));
+  assert.ok(byEntry.nodes.some((node) => node.kind === "investment" && node.role === "hub"));
+  assert.ok(byEntry.nodes.some((node) => node.kind === "savings"));
+  assert.equal(byEntry.savingsMinor, byEntry.incomeMinor - byEntry.spendingMinor - byEntry.investmentMinor);
+  assert.equal(byEntry.nodes.some((node) => node.role === "source" && node.label === "Spending"), false);
+  assert.ok(flowConserved(byEntry));
+  assert.match(describeFlow(byEntry), /Income /);
+  assert.match(describeFlow(byEntry), /Spending /);
+}
+
+const unlinked = buildMoneyFlow(
+  [
+    { amountMinor: 26_186, currency: "CHF", direction: "payment", category: "", date: "2026-11-04", accountName: "" },
+    { amountMinor: 26_186, currency: "CHF", direction: "expense", category: "Housing", date: "2026-11-05", accountName: "Swisscard", accountKind: "credit_card" },
+  ],
+  { display: "CHF", book, nowMs: now, start: "2026-11-01", end: "2026-11-30" },
+);
+assert.equal(unlinked.state, "ready");
+if (unlinked.state === "ready") {
+  assert.equal(unlinked.noIncome, true);
+  assert.equal(unlinked.nodes.some((node) => node.role === "source" && node.label === "Spending"), false);
+  assert.equal(unlinked.nodes.some((node) => node.role === "source" && node.label === "Swisscard"), false);
+  assert.equal(unlinked.nodes.find((node) => node.kind === "drawn")?.label, "Shortfall / From savings");
+  assert.ok(unlinked.nodes.some((node) => node.label === "Housing" && node.role === "sink"));
+  assert.ok(unlinked.nodes.some((node) => node.kind === "debt"));
+  assert.ok(flowConserved(unlinked));
 }
 
 const frame = sankeyFrame(320, [1, 1, 4]);
-assert.ok(frame.plot <= 320 * 0.62 + 1);
 assert.equal(frame.top + frame.bottom + frame.plot, 320);
 assert.ok(Math.abs(frame.top - frame.bottom) <= 1);
 assert.equal(frame.nodeWidth, 12);

@@ -95,4 +95,6 @@
     <string name="inbox_announce">%1$s on %2$s. %3$s</string>
     <string name="inbox_announce_hidden">%1$s on %2$s sent a message.</string>
     <string name="inbox_call_announce">%1$s is calling.</string>
+    <string name="budget_channel_name">Budget</string>
+    <string name="budget_channel_desc">A warning when a plan reaches 80% or 100%.</string>
 </resources>

@@ -455,6 +455,27 @@ export interface FinanceUpcoming {
   leadDays: number;
 }
 
+export interface FinanceBudgetLine {
+  id: string;
+  role: string;
+  category: string;
+  subcategory: string;
+  label: string;
+  amountMinor: number;
+  currency: string;
+}
+
+export interface FinanceBudget {
+  id: string;
+  period: string;
+  currency: string;
+  lines: FinanceBudgetLine[];
+  copyForward: boolean;
+  notify: boolean;
+  warned: string[];
+  updatedMs: number;
+}
+
 export interface FinanceSnapshot {
   accounts: FinanceAccount[];
   transactions: FinanceTransaction[];
@@ -467,6 +488,7 @@ export interface FinanceSnapshot {
   fx?: FinanceFx;
   prices?: FinancePrices;
   history?: import("@/lib/portfolio").ValuePoint[];
+  budgets?: FinanceBudget[];
 }
 
 export interface FinancePriceQuote {
@@ -890,6 +912,8 @@ export const api = {
   saveFinanceTransaction: (transaction: FinanceTransactionDraft) =>
     invoke<FinanceSnapshot>("save_finance_transaction", { transaction }),
   saveFinanceRule: (rule: FinanceRuleDraft) => invoke<FinanceSnapshot>("save_finance_rule", { rule }),
+  saveFinanceBudget: (budget: Record<string, unknown>) => invoke<FinanceSnapshot>("save_finance_budget", { budget }),
+  notifyBudget: (title: string, body: string) => invoke<void>("notify_budget_warning", { title, body }),
   deleteFinanceAccount: (id: string) => invoke<FinanceSnapshot>("delete_finance_account", { id }),
   deleteFinanceTransaction: (id: string) => invoke<FinanceSnapshot>("delete_finance_transaction", { id }),
   deleteFinanceRule: (id: string) => invoke<FinanceSnapshot>("delete_finance_rule", { id }),

@@ -96,5 +96,7 @@
     <string name="inbox_announce">%1$s en %2$s. %3$s</string>
     <string name="inbox_announce_hidden">%1$s en %2$s ha enviat un missatge.</string>
     <string name="inbox_call_announce">%1$s truca.</string>
+    <string name="budget_channel_name">Pressupost</string>
+    <string name="budget_channel_desc">Un avís quan un pla arriba al 80% o al 100%.</string>
 </resources>
 

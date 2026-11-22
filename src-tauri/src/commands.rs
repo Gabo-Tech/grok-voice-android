@@ -1588,6 +1588,21 @@ pub fn save_finance_rule(
 }
 
 #[tauri::command]
+pub fn notify_budget_warning(app: AppHandle, title: String, body: String) -> Result<()> {
+    let Some(bridge) = app.try_state::<crate::native::NativeBridge>() else {
+        return Ok(());
+    };
+    bridge.notify_budget(&title, &body)
+}
+
+#[tauri::command]
+pub fn save_finance_budget(app: AppHandle, budget: serde_json::Value) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .save_budget(&app, &budget)
+        .map_err(msg)
+}
+
+#[tauri::command]
 pub fn delete_finance_account(app: AppHandle, id: String) -> Result<crate::finance::Snapshot> {
     app.state::<crate::finance::Finance>()
         .delete_account(&app, &id)

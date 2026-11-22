@@ -223,6 +223,8 @@ pub fn run() {
             commands::save_finance_account,
             commands::save_finance_transaction,
             commands::save_finance_rule,
+            commands::save_finance_budget,
+            commands::notify_budget_warning,
             commands::delete_finance_account,
             commands::delete_finance_transaction,
             commands::delete_finance_rule,

@@ -1,4 +1,5 @@
 import { convertMinor, type RateBook } from "./financeMath.ts";
+import { compactLabeled, flowPercent } from "./money.ts";
 import { inBounds } from "./chartPeriod.ts";
 import type { CategoryRecord } from "./financeCategories.ts";
 
@@ -8,17 +9,20 @@ export interface FlowTx {
   direction: string;
   category: string;
   subcategory?: string;
-  /** Free-text description. It never becomes a sankey node. */
+  /** Free-text description. It never becomes a sankey node on its own. */
   notes?: string;
   date: string;
   accountKind?: string;
   fromKind?: string;
-  /** Account the money left. Used when there is no income, and in by-source grouping. */
+  /** Kept for callers. Unlinked payments are not drawn as a source named Spending. */
   accountName?: string;
 }
 
 export interface FlowLabels {
   income: string;
+  totalIncome: string;
+  totalSpending: string;
+  shortfall: string;
   drawn: string;
   total: string;
   surplus: string;
@@ -41,12 +45,14 @@ export interface FlowOriginal {
 export interface FlowNode {
   id: string;
   label: string;
-  role: "source" | "pool" | "sink" | "child";
+  role: "source" | "pool" | "hub" | "sink" | "child";
   kind: string;
   amountMinor: number;
-  /** Share of income. Above 1 when spending was funded from savings. */
+  /** Share of the column this node belongs to. Income sources share the inflow. Expenses share spending. */
   share: number;
   color: string;
+  /** Rest, the grouped tail, is set in italic. */
+  italic?: boolean;
   originals: FlowOriginal[];
   members: Array<{ id: string; label: string; amountMinor: number; originals: FlowOriginal[] }>;
   /** Subcategories. Empty when this category has no split. */
@@ -59,28 +65,48 @@ export interface FlowLink {
   amountMinor: number;
 }
 
-export type FlowGroup = "category" | "source";
+export type FlowGroup = "category" | "entry";
 
 export type MoneyFlow =
   | { state: "empty" }
   | { state: "needs-rate"; missing: string[] }
-  | { state: "ready"; currency: string; incomeMinor: number; nodes: FlowNode[]; links: FlowLink[]; uncategorizedMinor: number };
+  | {
+      state: "ready";
+      currency: string;
+      incomeMinor: number;
+      spendingMinor: number;
+      investmentMinor: number;
+      /** Negative when spending and investments exceed income. */
+      savingsMinor: number;
+      noIncome: boolean;
+      nodes: FlowNode[];
+      links: FlowLink[];
+      uncategorizedMinor: number;
+    };
 
 const DEFAULT_LABELS: FlowLabels = {
   income: "Income",
+  totalIncome: "Total income",
+  totalSpending: "Total spending",
+  shortfall: "Shortfall / From savings",
   drawn: "From savings",
   total: "Total",
   surplus: "Surplus",
-  other: "Other",
+  other: "Rest",
   uncategorized: "Uncategorized",
   debt: "Debt payments",
   savings: "Savings",
-  investments: "Investing",
+  investments: "Investments",
   card: "Card",
   cash: "Cash",
   bank: "Bank",
   spending: "Spending",
 };
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const INCOME_COLORS = ["var(--flow-in-1)", "var(--flow-in-2)", "var(--flow-in-3)", "var(--flow-in-4)", "var(--flow-in-5)", "var(--flow-in-6)", "var(--flow-in-7)", "var(--flow-in-8)"];
+const SPEND_COLORS = ["var(--flow-out-1)", "var(--flow-out-2)", "var(--flow-out-3)", "var(--flow-out-4)", "var(--flow-out-5)", "var(--flow-out-6)", "var(--flow-out-7)", "var(--flow-out-8)"];
 
 function fold(value: string): string {
   return value.trim().toLowerCase();
@@ -98,6 +124,8 @@ interface Bucket {
   originals: Map<string, number>;
   order: number;
   children: Map<string, Bucket>;
+  members?: Bucket[];
+  italic?: boolean;
 }
 
 function remember(bucket: Bucket, converted: number, original: number, currency: string, display: string) {
@@ -113,9 +141,19 @@ function originalsOf(bucket: Bucket): FlowOriginal[] {
     .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
+function paint(map: Map<string, Bucket>, id: string, label: string, kind: string, order: number) {
+  const found = map.get(id);
+  if (found) return found;
+  const bucket: Bucket = { id, label, kind, amount: 0, originals: new Map(), order, children: new Map() };
+  map.set(id, bucket);
+  return bucket;
+}
+
 /**
- * Income sources flow into one income pool, then out to expenses, savings, investing, and debt payments.
- * A card charge is an expense. Paying that card is cash leaving, not a second expense.
+ * Income sources flow into Total income, then out to Total spending, Investments, and Savings.
+ * Savings is income minus spending minus investments. A negative result is a shortfall source
+ * on the left, labelled as money from savings. It is never a fake income source named Spending.
+ * A card charge is an expense. Paying that card is spending, not a second expense category named Spending.
  * Amounts are converted into `display`. A missing rate stops the chart instead of assuming 1:1.
  */
 export function buildMoneyFlow(
@@ -131,27 +169,24 @@ export function buildMoneyFlow(
     expandedOther?: boolean;
     nodeColors?: Record<string, string>;
     labels?: Partial<FlowLabels>;
-    /** Category groups by category and subcategory. Source groups the outflows by account. */
-    group?: FlowGroup;
+    /** Category groups by type. Entry gives each transaction its own node. */
+    group?: FlowGroup | "source";
+    /** Twelve short month names, January first. Entry labels use these. */
+    months?: string[];
   },
 ): MoneyFlow {
   const display = opts.display.trim().toUpperCase();
   const labels = { ...DEFAULT_LABELS, ...opts.labels };
   const categories = opts.categories || [];
   const threshold = opts.threshold ?? 0.03;
+  const months = opts.months && opts.months.length === 12 ? opts.months : MONTHS;
   const missing = new Set<string>();
   const sources = new Map<string, Bucket>();
-  const sinks = new Map<string, Bucket>();
-  const funds = new Map<string, Bucket>();
-  const group = opts.group === "source" ? "source" : "category";
+  const spends = new Map<string, Bucket>();
+  const invests = new Map<string, Bucket>();
+  const group: FlowGroup = opts.group === "entry" || opts.group === "source" ? "entry" : "category";
+  let seq = 0;
 
-  const paint = (map: Map<string, Bucket>, id: string, label: string, kind: string, order: number) => {
-    const found = map.get(id);
-    if (found) return found;
-    const bucket: Bucket = { id, label, kind, amount: 0, originals: new Map(), order, children: new Map() };
-    map.set(id, bucket);
-    return bucket;
-  };
   const paintChild = (parent: Bucket, label: string) => {
     const id = `sub:${parent.id}:${fold(label)}`;
     const found = parent.children.get(id);
@@ -166,164 +201,205 @@ export function buildMoneyFlow(
     if (!inBounds(tx.date, opts.start || "", opts.end || "")) continue;
     const saved = categoryOf(categories, tx.category);
     const kind = sinkKind(tx, saved?.kind || "");
-    if (kind === "ignore") continue;
+    if (kind === "ignore" || kind === "savings") continue;
     const converted = convertMinor(tx.amountMinor, tx.currency, display, opts.book, opts.nowMs);
     if (!converted) {
       missing.add(tx.currency.toUpperCase());
       continue;
     }
     const placed = placeCategory(tx, categories, labels);
-    const fundName = fundLabel(tx, labels);
     if (kind === "income") {
-      const bucket = paint(sources, `in:${fold(placed.source)}`, placed.source, "income", saved?.order ?? 100);
+      const name = group === "entry" ? entryLabel(placed.source, tx.date, months) : placed.source;
+      const id = group === "entry" ? `in:${fold(name)}:${tx.date}:${seq++}` : `in:${fold(placed.source)}`;
+      const bucket = paint(sources, id, name, "income", saved?.order ?? 100);
       remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
       continue;
     }
-    const fund = paint(funds, `in:fund:${fold(fundName)}`, fundName, "fund", funds.size);
-    remember(fund, converted.amountMinor, tx.amountMinor, tx.currency, display);
-    const label = group === "source"
-      ? fundName
+    const map = kind === "investment" ? invests : spends;
+    const fallback = kind === "debt" ? labels.debt : kind === "investment" ? labels.investments : placed.parent;
+    const named = group === "entry"
+      ? entryLabel(placed.parent || fallback, tx.date, months)
       : kind === "debt" && !tx.category.trim() && !tx.subcategory?.trim()
         ? labels.debt
-        : kind === "savings" && !tx.category.trim()
-          ? labels.savings
-          : kind === "investment" && !tx.category.trim()
-            ? labels.investments
-            : placed.parent;
-    const id = `out:${kind}:${fold(label)}`;
-    const bucket = paint(sinks, id, label, kind, saved?.order ?? 100);
+        : kind === "investment" && !tx.category.trim()
+          ? labels.investments
+          : placed.parent || fallback;
+    const id = group === "entry" ? `out:${kind}:${fold(named)}:${tx.date}:${seq++}` : `out:${kind}:${fold(named)}`;
+    const bucket = paint(map, id, named, kind, saved?.order ?? 100);
     remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
-    if (group !== "source" && placed.child) {
+    if (group !== "entry" && placed.child && kind !== "investment") {
       const child = paintChild(bucket, placed.child);
       remember(child, converted.amountMinor, tx.amountMinor, tx.currency, display);
     }
   }
 
+  if (missing.size > 0 && sources.size === 0 && spends.size === 0 && invests.size === 0) {
+    return { state: "needs-rate", missing: [...missing].sort() };
+  }
   if (missing.size > 0) return { state: "needs-rate", missing: [...missing].sort() };
-  if (sources.size === 0 && sinks.size === 0) return { state: "empty" };
 
-  const incomeMinor = [...sources.values()].reduce((sum, row) => sum + row.amount, 0);
-  let sinkTotal = [...sinks.values()].reduce((sum, row) => sum + row.amount, 0);
-  if (incomeMinor === 0 && sinkTotal > 0) {
-    // No income was recorded. The money left the accounts that paid, not a single savings plug.
-    for (const row of funds.values()) {
-      if (row.amount > 0) sources.set(row.id, row);
-    }
-  } else if (sinkTotal > incomeMinor) {
-    const drawn = paint(sources, "in:drawn", labels.drawn, "drawn", -1);
-    remember(drawn, sinkTotal - incomeMinor, 0, display, display);
-  } else if (incomeMinor > sinkTotal) {
-    const surplus = paint(sinks, "out:surplus", labels.surplus, "surplus", 10_000);
-    remember(surplus, incomeMinor - sinkTotal, 0, display, display);
-    sinkTotal = incomeMinor;
-  }
-  const pool = Math.max(incomeMinor, sinkTotal);
-  const shareBase = incomeMinor > 0 ? incomeMinor : pool || 1;
+  const incomeMinor = sumMap(sources);
+  const spendingMinor = sumMap(spends);
+  const investmentMinor = sumMap(invests);
+  if (incomeMinor === 0 && spendingMinor === 0 && investmentMinor === 0) return { state: "empty" };
 
-  let sinkList = [...sinks.values()].filter((row) => row.amount > 0);
-  if (!opts.expandedOther) {
-    const small = sinkList.filter((row) => row.kind !== "surplus" && row.amount / (pool || 1) < threshold);
-    const large = sinkList.filter((row) => !small.includes(row));
-    if (small.length > 0 && large.length > 0) {
-      const other: Bucket = { id: "out:other", label: labels.other, kind: "other", amount: 0, originals: new Map(), order: 9_000, children: new Map() };
-      for (const row of small) {
-        other.amount += row.amount;
-        for (const [code, amount] of row.originals) other.originals.set(code, (other.originals.get(code) || 0) + amount);
-      }
-      other.order = 9_000;
-      sinkList = [...large, other];
-      sinks.clear();
-      for (const row of sinkList) sinks.set(row.id, row);
-      (other as Bucket & { members?: Bucket[] }).amount = other.amount;
-      Object.assign(other, { members: small });
-    }
-  }
-  let uncategorizedMinor = [...sinks.values()].filter((row) => fold(row.label) === fold(labels.uncategorized)).reduce((sum, row) => sum + row.amount, 0);
-  const otherBucket = sinks.get("out:other");
-  if (otherBucket && uncategorizedMinor > 0 && uncategorizedMinor / (pool || 1) < 0.08) {
-    const unc = [...sinks.values()].find((row) => fold(row.label) === fold(labels.uncategorized));
-    if (unc) {
-      otherBucket.amount += unc.amount;
-      for (const [code, amount] of unc.originals) otherBucket.originals.set(code, (otherBucket.originals.get(code) || 0) + amount);
-      const members = (otherBucket as Bucket & { members?: Bucket[] }).members || [];
-      members.push(unc);
-      Object.assign(otherBucket, { members });
-      sinks.delete(unc.id);
-    }
+  const savingsMinor = incomeMinor - spendingMinor - investmentMinor;
+  const shortfall = savingsMinor < 0 ? -savingsMinor : 0;
+  const pool = incomeMinor + shortfall;
+  if (shortfall > 0) {
+    const drawn = paint(sources, "in:shortfall", labels.shortfall, "drawn", -1);
+    remember(drawn, shortfall, 0, display, display);
   }
 
-  const colorFor = (bucket: Bucket, accent: boolean) => {
+  const base = pool || 1;
+  let sourceList = groupRest([...sources.values()], base, threshold, Boolean(opts.expandedOther), "in:rest", labels.other, "income");
+  let spendList = groupRest([...spends.values()], spendingMinor || 1, threshold, Boolean(opts.expandedOther), "out:rest", labels.other, "expense");
+  const fanInvest = group === "entry" || invests.size > 1;
+  let investList = fanInvest ? groupRest([...invests.values()], investmentMinor || 1, threshold, Boolean(opts.expandedOther), "inv:rest", labels.other, "investment") : [];
+  spendList = foldUncategorized(spendList, labels, spendingMinor || 1);
+
+  const colorFor = (bucket: Bucket, family: "in" | "out" | "save" | "invest" | "pool" | "spend" | "short", index: number) => {
     const custom = opts.nodeColors?.[bucket.id] || opts.nodeColors?.[bucket.label];
     if (custom && (/^#[0-9A-Fa-f]{6}$/.test(custom) || custom.startsWith("var("))) return custom;
-    if (bucket.id === "pool" || accent) return "var(--brand)";
-    return "var(--text-tertiary)";
+    if (family === "pool") return "var(--flow-in)";
+    if (family === "spend") return "var(--flow-out)";
+    if (family === "save") return "var(--flow-save)";
+    if (family === "invest") return "var(--flow-invest)";
+    if (family === "short") return "var(--flow-short)";
+    const ramp = family === "in" ? INCOME_COLORS : SPEND_COLORS;
+    return ramp[index % ramp.length];
   };
 
-  const toNode = (bucket: Bucket, role: FlowNode["role"]): FlowNode => {
-    const members = ((bucket as Bucket & { members?: Bucket[] }).members || []).map((row) => ({
-      id: row.id,
-      label: row.label,
-      amountMinor: row.amount,
-      originals: originalsOf(row),
-    }));
-    return {
-      id: bucket.id,
-      label: bucket.label,
-      role,
-      kind: bucket.kind,
-      amountMinor: bucket.amount,
-      share: bucket.amount / shareBase,
-      color: colorFor(bucket, bucket.id === accentId),
-      originals: originalsOf(bucket),
-      members,
-      children: childRows(bucket),
-    };
-  };
+  const toNode = (bucket: Bucket, role: FlowNode["role"], shareBase: number, color: string): FlowNode => ({
+    id: bucket.id,
+    label: bucket.label,
+    role,
+    kind: bucket.kind,
+    amountMinor: bucket.amount,
+    share: shareBase > 0 ? bucket.amount / shareBase : 0,
+    color,
+    italic: Boolean(bucket.italic),
+    originals: originalsOf(bucket),
+    members: (bucket.members || []).map((row) => ({ id: row.id, label: row.label, amountMinor: row.amount, originals: originalsOf(row) })),
+    children: childRows(bucket),
+  });
   const childRows = (bucket: Bucket) => {
     const kids = [...bucket.children.values()].filter((row) => row.amount > 0);
     const covered = kids.reduce((sum, row) => sum + row.amount, 0);
-    // A partial split would invent an Uncategorized slice beside the real subcategory.
     if (kids.length === 0 || covered !== bucket.amount) return [];
     return kids.map((row) => ({ id: row.id, label: row.label, amountMinor: row.amount, originals: originalsOf(row) }));
   };
 
-  const sourceNodes = [...sources.values()].filter((row) => row.amount > 0).sort((a, b) => a.order - b.order || b.amount - a.amount);
-  const sinkNodes = [...sinks.values()].filter((row) => row.amount > 0).sort((a, b) => a.order - b.order || b.amount - a.amount);
-  const accentId = [...sourceNodes].filter((row) => row.kind !== "drawn").sort((a, b) => b.amount - a.amount)[0]?.id || "";
-  const poolNode: FlowNode = {
-    id: "pool",
-    label: labels.total,
-    role: "pool",
-    kind: "pool",
-    amountMinor: pool,
-    share: incomeMinor > 0 ? pool / incomeMinor : 1,
-    color: colorFor({ id: "pool", label: labels.total, kind: "pool", amount: pool, originals: new Map(), order: 0, children: new Map() }, true),
-    originals: [],
-    members: [],
-    children: [],
-  };
-  const categoryNodes = sinkNodes.map((row) => toNode(row, "sink"));
-  const childNodes: FlowNode[] = categoryNodes.flatMap((node) =>
-    node.children.map((child) => ({
+  sourceList = sourceList.filter((row) => row.amount > 0).sort((a, b) => a.amount - b.amount || a.label.localeCompare(b.label));
+  spendList = spendList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
+  investList = investList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
+
+  let inPaint = 0;
+  let outPaint = 0;
+  const sourceNodes = sourceList.map((row) => toNode(row, "source", pool, row.kind === "drawn" ? colorFor(row, "short", 0) : colorFor(row, "in", inPaint++)));
+  const spendNodes = spendList.map((row) => toNode(row, "sink", spendingMinor || 1, colorFor(row, "out", outPaint++)));
+  const investNodes = investList.map((row) => toNode(row, "sink", investmentMinor || 1, colorFor(row, "invest", 0)));
+  const poolNode = toNode(
+    { id: "pool", label: labels.totalIncome, kind: "pool", amount: pool, originals: new Map(), order: 0, children: new Map() },
+    "pool",
+    pool,
+    "var(--flow-in)",
+  );
+  const hubs: FlowNode[] = [];
+  if (spendingMinor > 0) {
+    hubs.push(toNode(
+      { id: "spend", label: labels.totalSpending, kind: "spending", amount: spendingMinor, originals: new Map(), order: 0, children: new Map() },
+      "hub",
+      pool,
+      "var(--flow-out)",
+    ));
+  }
+  if (investmentMinor > 0) {
+    hubs.push(toNode(
+      { id: "invest", label: labels.investments, kind: "investment", amount: investmentMinor, originals: new Map(), order: 1, children: new Map() },
+      "hub",
+      pool,
+      "var(--flow-invest)",
+    ));
+  }
+  if (savingsMinor > 0) {
+    hubs.push(toNode(
+      { id: "save", label: labels.savings, kind: "savings", amount: savingsMinor, originals: new Map(), order: 2, children: new Map() },
+      "hub",
+      pool,
+      "var(--flow-save)",
+    ));
+  }
+  const childNodes: FlowNode[] = spendNodes.flatMap((node) =>
+    node.children.map((child, index) => ({
       id: child.id,
       label: child.label,
       role: "child" as const,
       kind: "child",
       amountMinor: child.amountMinor,
-      share: child.amountMinor / shareBase,
-      color: "var(--text-tertiary)",
+      share: spendingMinor > 0 ? child.amountMinor / spendingMinor : 0,
+      color: SPEND_COLORS[(outPaint + index) % SPEND_COLORS.length],
       originals: child.originals,
       members: [],
       children: [],
     })),
   );
-  const nodes = [...sourceNodes.map((row) => toNode(row, "source")), poolNode, ...categoryNodes, ...childNodes];
+  const nodes = [...sourceNodes, poolNode, ...hubs, ...spendNodes, ...investNodes, ...childNodes];
   const links: FlowLink[] = [
-    ...sourceNodes.map((row) => ({ source: row.id, target: "pool", amountMinor: row.amount })),
-    ...sinkNodes.map((row) => ({ source: "pool", target: row.id, amountMinor: row.amount })),
-    ...categoryNodes.flatMap((node) => node.children.map((child) => ({ source: node.id, target: child.id, amountMinor: child.amountMinor }))),
+    ...sourceNodes.map((row) => ({ source: row.id, target: "pool", amountMinor: row.amountMinor })),
+    ...hubs.map((row) => ({ source: "pool", target: row.id, amountMinor: row.amountMinor })),
+    ...spendNodes.map((row) => ({ source: "spend", target: row.id, amountMinor: row.amountMinor })),
+    ...investNodes.map((row) => ({ source: "invest", target: row.id, amountMinor: row.amountMinor })),
+    ...spendNodes.flatMap((node) => node.children.map((child) => ({ source: node.id, target: child.id, amountMinor: child.amountMinor }))),
   ];
-  return { state: "ready", currency: display, incomeMinor, nodes, links, uncategorizedMinor };
+  const uncategorizedMinor = spendNodes.filter((row) => fold(row.label) === fold(labels.uncategorized)).reduce((sum, row) => sum + row.amountMinor, 0);
+  return {
+    state: "ready",
+    currency: display,
+    incomeMinor,
+    spendingMinor,
+    investmentMinor,
+    savingsMinor,
+    noIncome: incomeMinor === 0,
+    nodes,
+    links,
+    uncategorizedMinor,
+  };
+}
+
+function sumMap(map: Map<string, Bucket>): number {
+  return [...map.values()].reduce((sum, row) => sum + row.amount, 0);
+}
+
+function groupRest(rows: Bucket[], base: number, threshold: number, expanded: boolean, id: string, label: string, kind: string): Bucket[] {
+  const live = rows.filter((row) => row.amount > 0);
+  if (expanded) return live;
+  const small = live.filter((row) => row.kind !== "drawn" && row.amount / (base || 1) < threshold);
+  const large = live.filter((row) => !small.includes(row));
+  if (small.length === 0 || large.length === 0) return live;
+  const other: Bucket = { id, label, kind, amount: 0, originals: new Map(), order: 9_000, children: new Map(), members: small, italic: true };
+  for (const row of small) {
+    other.amount += row.amount;
+    for (const [code, amount] of row.originals) other.originals.set(code, (other.originals.get(code) || 0) + amount);
+  }
+  return [...large, other];
+}
+
+function foldUncategorized(rows: Bucket[], labels: FlowLabels, base: number): Bucket[] {
+  const other = rows.find((row) => row.id === "out:rest");
+  const unc = rows.find((row) => fold(row.label) === fold(labels.uncategorized));
+  if (!other || !unc || unc.amount / (base || 1) >= 0.08) return rows;
+  other.amount += unc.amount;
+  for (const [code, amount] of unc.originals) other.originals.set(code, (other.originals.get(code) || 0) + amount);
+  other.members = [...(other.members || []), unc];
+  return rows.filter((row) => row !== unc);
+}
+
+function entryLabel(name: string, date: string, months: string[]): string {
+  const day = Number(date.slice(8, 10));
+  const month = months[Number(date.slice(5, 7)) - 1] || "";
+  const when = Number.isFinite(day) && day > 0 ? `${day} ${month}`.trim() : month;
+  return [name.trim(), when].filter(Boolean).join(" ");
 }
 
 const SUGGESTED = new Set([
@@ -342,6 +418,7 @@ const SUGGESTED = new Set([
   "health",
   "savings",
   "investing",
+  "investments",
   "debt payments",
   "uncategorized",
 ]);
@@ -367,16 +444,6 @@ function hintedName(text: string): string {
   const folded = fold(text);
   if (!folded) return "";
   return HINTS.find((row) => row.re.test(folded))?.name || "";
-}
-
-function fundLabel(tx: FlowTx, labels: FlowLabels): string {
-  const named = (tx.accountName || "").trim();
-  if (named) return named;
-  if (tx.accountKind === "credit_card") return labels.card;
-  if (tx.accountKind === "cash") return labels.cash;
-  if (tx.accountKind === "bank") return labels.bank;
-  if (tx.accountKind === "investment") return labels.investments;
-  return labels.spending;
 }
 
 /**
@@ -435,16 +502,14 @@ function sinkKind(tx: FlowTx, categoryKind: string): "income" | "expense" | "sav
 }
 
 /**
- * Plot box for an ECharts sankey. The diagram is capped and centered so one flow
- * does not become a slab the full height of the chart. `floor` is the value share
- * that should still paint about 2px.
+ * Plot box for an ECharts sankey. Node width stays near 12px so a column reads as
+ * thin bars. `floor` is the value share that should still paint about 2px.
  */
 export function sankeyFrame(chartHeight: number, columnCounts: number[]): { top: number; bottom: number; plot: number; nodeWidth: number; nodeGap: number; floorShare: number } {
   const height = Math.max(160, chartHeight);
   const nodeWidth = 12;
-  const nodeGap = 14;
-  const cap = Math.round(height * 0.62);
-  const plot = Math.max(120, Math.min(cap, height - 36));
+  const nodeGap = 16;
+  const plot = Math.max(120, height - 48);
   const spare = Math.max(0, height - plot);
   const top = Math.round(spare / 2);
   const bottom = height - plot - top;
@@ -469,11 +534,29 @@ export function flowConserved(flow: MoneyFlow): boolean {
     const out = flow.links.filter((link) => link.source === node.id).reduce((sum, link) => sum + link.amountMinor, 0);
     if (node.role === "source" && (inn !== 0 || out !== node.amountMinor)) return false;
     if (node.role === "pool" && (inn !== node.amountMinor || out !== node.amountMinor)) return false;
+    if (node.role === "hub" && inn !== node.amountMinor) return false;
+    if (node.role === "hub" && out !== 0 && out !== node.amountMinor) return false;
     if (node.role === "sink" && inn !== node.amountMinor) return false;
     if (node.role === "sink" && out !== 0 && out !== node.amountMinor) return false;
     if (node.role === "child" && (inn !== node.amountMinor || out !== 0)) return false;
   }
   return true;
+}
+
+/** One sentence for Talk: income, spending, savings or shortfall, and the largest categories. */
+export function describeFlow(flow: MoneyFlow): string {
+  if (flow.state === "empty") return "Nothing recorded in this period.";
+  if (flow.state === "needs-rate") return `Needs a rate for ${flow.missing.join(", ")}.`;
+  const money = (amount: number) => compactLabeled(amount, flow.currency);
+  const tops = flow.nodes
+    .filter((node) => node.role === "sink" && node.kind !== "investment")
+    .sort((a, b) => b.amountMinor - a.amountMinor)
+    .slice(0, 3)
+    .map((node) => `${node.label} ${money(node.amountMinor)} (${flowPercent(node.share)})`);
+  const topText = tops.length ? ` Largest categories: ${tops.join(", ")}.` : "";
+  if (flow.noIncome) return `No income this month. Spending ${money(flow.spendingMinor)}.${topText}`;
+  const saved = flow.savingsMinor < 0 ? `Shortfall ${money(-flow.savingsMinor)}.` : `Savings ${money(flow.savingsMinor)}.`;
+  return `Income ${money(flow.incomeMinor)}. Spending ${money(flow.spendingMinor)}. ${saved} Investments ${money(flow.investmentMinor)}.${topText}`;
 }
 
 export interface SankeyBox {
@@ -548,18 +631,20 @@ function ribbonPath(x0: number, y0: number, w0: number, x1: number, y1: number, 
 
 export function linkedIds(flow: Extract<MoneyFlow, { state: "ready" }>, id: string): Set<string> {
   const keep = new Set<string>([id]);
-  if (id === "pool") {
+  let grew = true;
+  while (grew) {
+    grew = false;
     for (const link of flow.links) {
-      keep.add(link.source);
-      keep.add(link.target);
-    }
-    return keep;
-  }
-  for (const link of flow.links) {
-    if (link.source === id || link.target === id) {
-      keep.add(link.source);
-      keep.add(link.target);
-      keep.add("pool");
+      if (keep.has(link.source) || keep.has(link.target)) {
+        if (!keep.has(link.source)) {
+          keep.add(link.source);
+          grew = true;
+        }
+        if (!keep.has(link.target)) {
+          keep.add(link.target);
+          grew = true;
+        }
+      }
     }
   }
   return keep;

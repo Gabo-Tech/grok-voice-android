@@ -10,16 +10,25 @@ import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
 import { buildMoneyFlow, sankeyFrame, sankeyValue, type MoneyFlow } from "@/lib/moneyFlow";
-import { formatMoney } from "@/lib/money";
+import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
+import { compactLabeled, flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
-import { fill, useT } from "@/lib/i18n";
+import { activeLocale, fill, useT } from "@/lib/i18n";
 
 use([SankeyChart, CanvasRenderer, TooltipComponent]);
 
 const COLOR_KEY = "grok-flow-colors";
 const OPTION_KEY = "grok-flow-options";
 
-type ColorMode = "category" | "source" | "mono";
+type FlowGroupMode = "category" | "entry";
+
+interface FlowOptions {
+  labels: boolean;
+  values: boolean;
+  group: FlowGroupMode;
+  mono: boolean;
+  planned: boolean;
+}
 
 function readColors(): Record<string, string> {
   try {
@@ -31,21 +40,22 @@ function readColors(): Record<string, string> {
   }
 }
 
-function readOptions(): { labels: boolean; values: boolean; mode: ColorMode } {
+function readOptions(): FlowOptions {
   try {
     const raw = localStorage.getItem(OPTION_KEY);
-    const parsed = raw ? (JSON.parse(raw) as { labels?: boolean; values?: boolean; mode?: ColorMode }) : {};
-    const mode = parsed.mode === "source" || parsed.mode === "mono" ? parsed.mode : "category";
-    return { labels: parsed.labels !== false, values: parsed.values !== false, mode };
+    const parsed = raw ? (JSON.parse(raw) as Partial<FlowOptions> & { mode?: string }) : {};
+    const legacy = parsed.mode;
+    const group: FlowGroupMode = parsed.group === "entry" || legacy === "entry" || legacy === "source" ? "entry" : "category";
+    return {
+      labels: parsed.labels !== false,
+      values: parsed.values !== false,
+      group,
+      mono: parsed.mono === true || legacy === "mono",
+      planned: parsed.planned === true,
+    };
   } catch {
-    return { labels: true, values: true, mode: "category" };
+    return { labels: true, values: true, group: "category", mono: false, planned: false };
   }
-}
-
-function token(name: string, fallback: string): string {
-  if (typeof document === "undefined") return fallback;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
 }
 
 export function MoneyFlowPanel({
@@ -60,6 +70,7 @@ export function MoneyFlowPanel({
   detached = false,
   onDetach,
   onFollow,
+  budgets = [],
 }: {
   transactions: FinanceTransaction[];
   accounts: FinanceAccount[];
@@ -72,6 +83,7 @@ export function MoneyFlowPanel({
   detached?: boolean;
   onDetach?: (period: ChartPeriod) => void;
   onFollow?: () => void;
+  budgets?: BudgetRecord[];
 }) {
   const t = useT();
   const own = useChartPeriod("flow");
@@ -88,9 +100,10 @@ export function MoneyFlowPanel({
   const [options, setOptions] = useState(() => {
     if (typeof window === "undefined") return readOptions();
     const flow = new URLSearchParams(window.location.search).get("flow");
-    if (flow === "plain") return { labels: false, values: false, mode: "mono" as const };
-    if (flow === "source") return { labels: true, values: true, mode: "source" as const };
-    if (flow === "category") return { labels: true, values: true, mode: "category" as const };
+    if (flow === "plain") return { labels: false, values: false, group: "category" as const, mono: false, planned: false };
+    if (flow === "entry" || flow === "source") return { labels: true, values: true, group: "entry" as const, mono: false, planned: false };
+    if (flow === "category") return { labels: true, values: true, group: "category" as const, mono: false, planned: false };
+    if (flow === "planned") return { labels: true, values: true, group: "category" as const, mono: false, planned: true };
     return readOptions();
   });
   const [scale, setScale] = useState(1);
@@ -99,10 +112,34 @@ export function MoneyFlowPanel({
   const nowMs = useMemo(() => Date.now(), [transactions, fx, display]);
   const kinds = useMemo(() => new Map(accounts.map((account) => [account.id, account.kind])), [accounts]);
   const names = useMemo(() => new Map(accounts.map((account) => [account.id, account.name])), [accounts]);
-  const flow = useMemo(
-    () =>
-      buildMoneyFlow(
-        transactions.map((tx) => ({
+  const months = useMemo(() => monthNames(activeLocale()), []);
+  const flowLabels = useMemo(
+    () => ({
+      income: t("Income"),
+      totalIncome: t("Total income"),
+      totalSpending: t("Total spending"),
+      shortfall: t("Shortfall / From savings"),
+      drawn: t("From savings"),
+      total: t("Total"),
+      surplus: t("Surplus"),
+      other: t("Rest"),
+      uncategorized: t("Uncategorized"),
+      debt: t("Debt payments"),
+      savings: t("Savings"),
+      investments: t("Investments"),
+      card: t("Card"),
+      cash: t("Cash"),
+      bank: t("Bank"),
+      spending: t("Spending"),
+    }),
+    [t],
+  );
+  const flow = useMemo(() => {
+    const plannedMonths = options.planned ? monthsCovered(bounds.start, bounds.end) : [];
+    const plannedTxs = plannedMonths.flatMap((month) => budgetAsFlow(budgets.find((row) => row.period === month)?.lines || inheritLines(budgets, month), month));
+    const rows = options.planned
+      ? plannedTxs
+      : transactions.map((tx) => ({
           amountMinor: tx.amountMinor,
           currency: tx.currency,
           direction: tx.direction,
@@ -113,36 +150,21 @@ export function MoneyFlowPanel({
           accountKind: kinds.get(tx.accountId) || "",
           fromKind: kinds.get(tx.fromAccountId) || "",
           accountName: names.get(tx.accountId) || "",
-        })),
-        {
-          categories,
-          display,
-          book,
-          nowMs,
-          start: bounds.start,
-          end: bounds.end,
-          expandedOther: openOther,
-          group: options.mode === "source" ? "source" : "category",
-          nodeColors: { ...Object.fromEntries(categories.map((row) => [row.name, row.color])), ...colors },
-          labels: {
-            income: t("Income"),
-            drawn: t("From savings"),
-            total: t("Total"),
-            surplus: t("Surplus"),
-            other: t("Other"),
-            uncategorized: t("Uncategorized"),
-            debt: t("Debt payments"),
-            savings: t("Savings"),
-            investments: t("Investing"),
-            card: t("Card"),
-            cash: t("Cash"),
-            bank: t("Bank"),
-            spending: t("Spending"),
-          },
-        },
-      ),
-    [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, options.mode, t],
-  );
+        }));
+    return buildMoneyFlow(rows, {
+      categories,
+      display,
+      book,
+      nowMs,
+      start: bounds.start,
+      end: bounds.end,
+      expandedOther: openOther,
+      group: options.group,
+      months,
+      nodeColors: { ...Object.fromEntries(categories.filter((row) => row.color).map((row) => [row.name, row.color])), ...colors },
+      labels: flowLabels,
+    });
+  }, [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, options.group, options.planned, budgets, months, flowLabels]);
 
   useEffect(() => {
     try {
@@ -159,9 +181,11 @@ export function MoneyFlowPanel({
       if (detail.action === "labels") setOptions((current) => ({ ...current, labels: !current.labels }));
       if (detail.action === "values") setOptions((current) => ({ ...current, values: !current.values }));
       if (detail.action === "fullscreen") setFull(true);
-      if (detail.action === "color" && (detail.mode === "category" || detail.mode === "source" || detail.mode === "mono")) {
-        setOptions((current) => ({ ...current, mode: detail.mode as ColorMode }));
-      }
+      if (detail.action === "planned") setOptions((current) => ({ ...current, planned: !current.planned }));
+      const mode = detail.mode;
+      if (mode === "entry" || mode === "source") setOptions((current) => ({ ...current, group: "entry", mono: false }));
+      if (mode === "category") setOptions((current) => ({ ...current, group: "category", mono: false }));
+      if (mode === "mono") setOptions((current) => ({ ...current, mono: true }));
     };
     window.addEventListener("grok-finance-voice", onVoice);
     return () => window.removeEventListener("grok-finance-voice", onVoice);
@@ -177,7 +201,7 @@ export function MoneyFlowPanel({
       currency={display}
       labelsOn={options.labels}
       valuesOn={options.values}
-      mode={options.mode}
+      mono={options.mono}
       tall={full}
       onDrill={(id) => setDrill(id)}
     />
@@ -191,14 +215,17 @@ export function MoneyFlowPanel({
       <button type="button" className="fin-chip" aria-pressed={options.values} onClick={() => setOptions((current) => ({ ...current, values: !current.values }))}>
         {t("Values")}
       </button>
-      <button type="button" className="fin-chip" aria-pressed={options.mode === "category"} onClick={() => setOptions((current) => ({ ...current, mode: "category" }))}>
+      <button type="button" className="fin-chip" aria-pressed={options.group === "category" && !options.mono} onClick={() => setOptions((current) => ({ ...current, group: "category", mono: false }))}>
         {t("By category")}
       </button>
-      <button type="button" className="fin-chip" aria-pressed={options.mode === "source"} onClick={() => setOptions((current) => ({ ...current, mode: "source" }))}>
-        {t("By source")}
+      <button type="button" className="fin-chip" aria-pressed={options.group === "entry"} onClick={() => setOptions((current) => ({ ...current, group: "entry", mono: false }))}>
+        {t("By entry")}
       </button>
-      <button type="button" className="fin-chip" aria-pressed={options.mode === "mono"} onClick={() => setOptions((current) => ({ ...current, mode: "mono" }))}>
+      <button type="button" className="fin-chip" aria-pressed={options.mono} onClick={() => setOptions((current) => ({ ...current, mono: !current.mono }))}>
         {t("One color")}
+      </button>
+      <button type="button" className="fin-chip" aria-pressed={options.planned} onClick={() => setOptions((current) => ({ ...current, planned: !current.planned }))}>
+        {t("Planned")}
       </button>
       <button type="button" className="fin-chip" onClick={() => setOpenOther((value) => !value)}>
         {openOther ? t("Group small flows") : t("Show small flows")}
@@ -214,8 +241,9 @@ export function MoneyFlowPanel({
     </div>
   );
 
+  const title = flowTitle(period, bounds, t);
   return (
-    <ChartCard title={t("Where my money went")}>
+    <ChartCard title={title}>
       <ChartPeriodBar period={period} onChange={setPeriod} />
       {controls}
       {drill ? (
@@ -223,8 +251,13 @@ export function MoneyFlowPanel({
           {t("Back")}
         </button>
       ) : null}
-      <div className="mt-3 overflow-x-auto" data-swipe-ignore="">
-        {flow.state === "empty" ? <p className="text-[15px] leading-5">{t("No income or expenses in this period.")}</p> : full ? null : chart}
+      <div className="mt-3 overflow-x-auto" data-swipe-ignore="" data-flow-state={flow.state}>
+        {flow.state === "empty" ? (
+          <p className="text-[15px] leading-5">{options.planned ? t("No budget for this period.") : t("Nothing recorded in this period. Income and spending will show up here.")}</p>
+        ) : flow.state === "needs-rate" ? (
+          <p className="text-[15px] leading-5">{fill("This chart needs a rate for {codes}.", { codes: flow.missing.join(", ") })}</p>
+        ) : full ? null : chart}
+        {flow.state === "ready" && flow.noIncome ? <p className="fin-muted mt-2 text-[13px] leading-5">{t("No income this month. Spending still shows.")}</p> : null}
       </div>
       {uncategorized && onReassign ? (
         <button type="button" className="fin-chip mt-2" onClick={onReassign}>
@@ -250,7 +283,7 @@ export function MoneyFlowPanel({
       {full
         ? createPortal(
             <FullFlow
-              title={t("Where my money went")}
+              title={title}
               scale={scale}
               pan={pan}
               onScale={setScale}
@@ -269,6 +302,97 @@ export function MoneyFlowPanel({
         : null}
     </ChartCard>
   );
+}
+
+function flowTitle(period: ChartPeriod, bounds: { start: string; end: string }, t: (english: string) => string): string {
+  const locale = activeLocale() === "ca-ES-valencia" ? "ca-ES" : activeLocale();
+  let name = t("This month");
+  if ((period.preset === "this" || period.preset === "last") && bounds.start) {
+    name = new Date(`${bounds.start}T12:00:00`).toLocaleDateString(locale, { month: "long", year: "numeric" });
+  } else if (period.preset === "all") {
+    name = t("All");
+  } else if (bounds.start && bounds.end) {
+    name = `${bounds.start} – ${bounds.end}`;
+  }
+  return fill("Income and spending, {period}", { period: name });
+}
+
+function monthNames(locale: string): string[] {
+  const tag = locale === "ca-ES-valencia" ? "ca-ES" : locale;
+  return Array.from({ length: 12 }, (_, index) => new Date(2026, index, 1).toLocaleDateString(tag, { month: "short" }).replace(".", ""));
+}
+
+function monthsCovered(start: string, end: string): string[] {
+  if (!start) return [];
+  const out: string[] = [];
+  let cursor = start.slice(0, 7);
+  const last = (end || start).slice(0, 7);
+  while (cursor && cursor <= last && out.length < 18) {
+    out.push(cursor);
+    cursor = shiftMonth(cursor, 1);
+  }
+  return out;
+}
+
+function inheritLines(budgets: BudgetRecord[], month: string) {
+  return resolveBudget(budgets, month).budget?.lines || [];
+}
+
+function depthOf(node: { role: string }): number {
+  if (node.role === "source") return 0;
+  if (node.role === "pool") return 1;
+  if (node.role === "hub") return 2;
+  if (node.role === "child") return 4;
+  return 3;
+}
+
+function labelPlace(role: string, depth: number): { position: "left" | "right" | "top" | "bottom"; align: "left" | "right" | "center" } {
+  if (depth === 0) return { position: "left", align: "right" };
+  if (role === "pool") return { position: "top", align: "center" };
+  if (role === "hub") return { position: "top", align: "center" };
+  return { position: "right", align: "left" };
+}
+
+function usedColor(value: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const probe = document.createElement("span");
+  probe.style.color = value.startsWith("#") || value.startsWith("rgb") ? value : value.startsWith("var(") ? value : `var(${value})`;
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  return color && color !== "rgba(0, 0, 0, 0)" ? color : fallback;
+}
+
+function contrast(fore: string, back: string): number {
+  const a = rgb(fore);
+  const b = rgb(back);
+  if (!a || !b) return 7;
+  const light = Math.max(luminance(a), luminance(b));
+  const dark = Math.min(luminance(a), luminance(b));
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function readable(color: string, paper: string, ink: string): string {
+  return contrast(color, paper) >= 4.5 ? color : ink;
+}
+
+function rgb(color: string): [number, number, number] | null {
+  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function luminance(channels: [number, number, number]): number {
+  const linear = channels.map((channel) => {
+    const c = channel / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function richText(label: string): string {
+  return label.replace(/[{}|]/g, " ");
 }
 
 function drilled(flow: MoneyFlow, id: string): MoneyFlow {
@@ -290,7 +414,7 @@ function FlowChart({
   currency,
   labelsOn,
   valuesOn,
-  mode,
+  mono,
   tall,
   onDrill,
 }: {
@@ -298,7 +422,7 @@ function FlowChart({
   currency: string;
   labelsOn: boolean;
   valuesOn: boolean;
-  mode: ColorMode;
+  mono: boolean;
   tall: boolean;
   onDrill: (id: string) => void;
 }) {
@@ -337,41 +461,42 @@ function FlowChart({
   useEffect(() => {
     const instance = chart.current;
     if (!instance || !flow || flow.state !== "ready") return;
-    const ink = token("--text-primary", "#3a342c");
-    const brand = token("--brand", "#7d6b58");
-    const muted = token("--text-tertiary", "#8a8175");
+    const ink = usedColor("var(--text-primary)", "rgb(58, 52, 44)");
+    const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
+    const brand = usedColor("var(--brand)", "rgb(125, 107, 88)");
+    const paper = usedColor("var(--surface-0)", "rgb(23, 24, 27)");
     const total = flow.nodes.find((node) => node.id === "pool")?.amountMinor || flow.incomeMinor || 1;
-    const width = Math.max(280, host.current?.clientWidth || window.innerWidth - 32);
-    const height = tall ? Math.max(280, window.innerHeight - 148) : 320;
+    const gutter = labelsOn ? 156 : 16;
+    const visible = Math.max(280, host.current?.clientWidth || window.innerWidth - 32);
+    const width = Math.max(visible, gutter * 2 + 280);
+    const busiest = Math.max(1, ...[0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node) === depth).length));
+    const height = tall ? Math.max(320, window.innerHeight - 148) : Math.max(420, busiest * 36 + 72);
     instance.resize({ width, height });
-    const depths = flow.nodes.map((node) => (node.role === "source" ? 0 : node.role === "pool" ? 1 : node.role === "child" ? 3 : 2));
-    const counts = [0, 1, 2, 3].map((depth) => depths.filter((row) => row === depth).length).filter((count) => count > 0);
+    const counts = [0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node) === depth).length).filter((count) => count > 0);
     const frame = sankeyFrame(height, counts);
-    const rightmost = Math.max(...depths, 0);
     const safe = new Map(flow.nodes.map((node, index) => [node.id, `n${index}`]));
-    const bySafe = new Map(flow.nodes.map((node, index) => [`n${index}`, node]));
+    const byId = new Map(flow.nodes.map((node, index) => [`n${index}`, node]));
     safeToReal.current = new Map(flow.nodes.map((node, index) => [`n${index}`, node.id]));
-    const byId = bySafe;
+    const paint = new Map(flow.nodes.map((node) => [node.id, readable(mono ? brand : usedColor(node.color, brand), paper, ink)]));
     try {
     instance.setOption(
       {
-        backgroundColor: token("--surface-0", "#17181b"),
+        backgroundColor: paper,
         tooltip: {
           trigger: "item",
-          backgroundColor: token("--surface-1", "#f4f1ea"),
-          borderColor: token("--line", "#d9d2c5"),
+          backgroundColor: usedColor("var(--surface-1)", "rgb(244, 241, 234)"),
+          borderColor: usedColor("var(--line)", "rgb(217, 210, 197)"),
           textStyle: { color: ink, fontSize: 13 },
           formatter: (raw: unknown) => {
-            const params = raw as { dataType?: string; data?: { name?: string; source?: string; target?: string; value?: number } };
-            const value = Number(params.data?.value || 0);
-            const share = total > 0 ? Math.round((value / total) * 1000) / 10 : 0;
+            const params = raw as { dataType?: string; data?: { name?: string; source?: string; target?: string; raw?: number } };
+            const value = Number(params.data?.raw || 0);
             if (params.dataType === "edge") {
-              const from = byId.get(params.data?.source || "")?.label || "";
-              const to = byId.get(params.data?.target || "")?.label || "";
-              return `${from} → ${to}<br/>${formatMoney(value, currency)} · ${share}%`;
+              const from = byId.get(params.data?.source || "");
+              const to = byId.get(params.data?.target || "");
+              return `${from?.label || ""} → ${to?.label || ""}<br/>${formatMoney(value, currency)}`;
             }
-            const name = byId.get(params.data?.name || "")?.label || "";
-            return `${name}<br/>${formatMoney(value, currency)} · ${share}%`;
+            const node = byId.get(params.data?.name || "");
+            return `${node?.label || ""}<br/>${formatMoney(value, currency)} · ${flowPercent(node?.share || 0)}`;
           },
         },
         series: [
@@ -381,45 +506,54 @@ function FlowChart({
             nodeAlign: "left",
             draggable: false,
             nodeWidth: frame.nodeWidth,
-            nodeGap: frame.nodeGap,
-            left: labelsOn ? 12 : 8,
-            right: 16,
-            top: frame.top,
-            bottom: frame.bottom,
+            nodeGap: Math.max(frame.nodeGap, 28),
+            left: gutter,
+            right: gutter,
+            top: labelsOn ? 64 : 16,
+            bottom: labelsOn ? 48 : 16,
             emphasis: { focus: "adjacency" },
-            lineStyle: { color: mode === "source" ? "source" : mode === "mono" ? brand : "gradient", curveness: 0.55, opacity: 0.55 },
-            label: {
-              show: labelsOn,
-              color: ink,
-              fontSize: 13,
-              overflow: "truncate",
-              width: Math.max(72, Math.round(width * 0.34)),
-              lineHeight: 16,
-              formatter: (raw: unknown) => {
-                const params = raw as { name?: string };
-                const node = byId.get(params.name || "");
-                if (!node) return "";
-                if (!valuesOn) return node.label;
-                const share = total > 0 ? Math.round((node.amountMinor / total) * 1000) / 10 : 0;
-                return `${node.label}\n${formatMoney(node.amountMinor, currency)} · ${share}%`;
-              },
-            },
+            lineStyle: { color: mono ? brand : "gradient", curveness: 0.5, opacity: mono ? 0.72 : 0.45 },
+            label: { show: labelsOn },
             data: flow.nodes.map((node) => {
-              const depth = node.role === "source" ? 0 : node.role === "pool" ? 1 : node.role === "child" ? 3 : 2;
-              const atRight = depth === rightmost;
+              const depth = depthOf(node);
+              const place = node.kind === "savings" || node.kind === "investment"
+                ? { position: "bottom" as const, align: "center" as const }
+                : node.kind === "spending"
+                  ? { position: "right" as const, align: "left" as const }
+                  : labelPlace(node.role, depth);
+              const fillColor = mono ? brand : usedColor(node.color, brand);
+              const nameColor = paint.get(node.id) || ink;
+              const text = richText(node.label);
+              const meta = `${compactLabeled(node.amountMinor, currency)} (${flowPercent(node.share)})`;
               return {
                 name: safe.get(node.id),
                 depth,
+                raw: node.amountMinor,
                 value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
                 label: {
-                  position: atRight ? "left" : "right",
-                  align: atRight ? "right" : "left",
-                  distance: 6,
+                  show: labelsOn,
+                  position: place.position,
+                  align: place.align,
+                  distance: 8,
+                  width: depth === 1 || depth === 2 ? 120 : 148,
+                  overflow: "break",
+                  fontSize: 13,
+                  lineHeight: 16,
+                  formatter: valuesOn ? `{name|${text}}\n{meta|${meta}}` : `{name|${text}}`,
+                  rich: {
+                    name: { color: nameColor, fontWeight: 650, fontSize: 13, fontStyle: node.italic ? "italic" : "normal", lineHeight: 16, align: place.align },
+                    meta: { color: muted, fontSize: 13, lineHeight: 16, align: place.align },
+                  },
                 },
-                itemStyle: { color: mode === "mono" ? brand : node.color.startsWith("var(") ? (node.role === "pool" ? brand : muted) : node.color, borderWidth: 0 },
+                itemStyle: { color: fillColor, borderWidth: 0 },
               };
             }),
-            links: flow.links.map((link) => ({ source: safe.get(link.source), target: safe.get(link.target), value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)) })),
+            links: flow.links.map((link) => ({
+              source: safe.get(link.source),
+              target: safe.get(link.target),
+              raw: link.amountMinor,
+              value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)),
+            })),
           },
         ],
       },
@@ -428,13 +562,14 @@ function FlowChart({
     } catch (error) {
       if (host.current) host.current.dataset.chartError = error instanceof Error ? error.message : "chart";
     }
-  }, [flow, currency, labelsOn, valuesOn, mode, tall]);
+  }, [flow, currency, labelsOn, valuesOn, mono, tall]);
 
   useEffect(() => {
     chart.current?.resize();
   }, [tall, labelsOn]);
 
-  return <div ref={host} style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : 360 }} />;
+  const busiest = flow && flow.state === "ready" ? Math.max(1, ...[0, 1, 2, 3, 4].map((depth) => flow.nodes.filter((node) => depthOf(node) === depth).length)) : 1;
+  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : Math.max(420, busiest * 36 + 72) }} />;
 }
 
 function CategoryColors({
@@ -495,6 +630,12 @@ function FullFlow({
   closeRef.current = onClose;
 
   useEffect(() => pushOverlay(() => closeRef.current()), []);
+
+  useEffect(() => {
+    const orientation = screen.orientation as ScreenOrientation & { lock?: (mode: string) => Promise<void>; unlock?: () => void };
+    void orientation?.lock?.("landscape")?.catch(() => undefined);
+    return () => orientation?.unlock?.();
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
