@@ -9,7 +9,7 @@ import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
-import { buildMoneyFlow, buildSankeyOption, type MoneyFlow } from "@/lib/moneyFlow";
+import { buildMoneyFlow, buildSankeyOption, spreadColumn, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
 import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
@@ -506,6 +506,7 @@ function FlowChart({
       },
     };
     try {
+      (instance as ECharts & { __flowSpread?: boolean }).__flowSpread = false;
       instance.setOption(option, true);
     } catch (error) {
       if (host.current) host.current.dataset.chartError = error instanceof Error ? error.message : "chart";
@@ -514,7 +515,16 @@ function FlowChart({
     const publish = () => {
       if (publishing) return;
       publishing = true;
-      nudgeLabels(instance, frame.width, frame.height);
+      const marked = instance as ECharts & { __flowSpread?: boolean };
+      if (frame.portrait) {
+        if (!marked.__flowSpread) {
+          marked.__flowSpread = true;
+          spreadPortrait(instance, frame, flow.nodes, flow.links);
+        }
+      } else {
+        nudgeLabels(instance, frame.width, frame.height);
+        liftSpending(instance);
+      }
       const report = readLabelAudit(instance, frame.width, frame.height);
       publishing = false;
       const node = host.current;
@@ -538,6 +548,8 @@ interface AuditEl {
   x?: number;
   y?: number;
   parent?: AuditEl;
+  shape?: { x?: number; y?: number; width?: number; height?: number; x1?: number; y1?: number; x2?: number; y2?: number; cpx1?: number; cpy1?: number; cpx2?: number; cpy2?: number; extent?: number };
+  setShape?: (shape: AuditEl["shape"]) => void;
   dirty?: () => void;
   transform?: number[];
   getBoundingRect?: () => { width: number; height: number; clone: () => { x: number; y: number; width: number; height: number; applyTransform: (m: number[]) => void } };
@@ -561,6 +573,189 @@ function labelElements(instance: ECharts): Array<{ el: AuditEl; x: number; y: nu
 
 function boxesHit(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
   return a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y < b.y + b.h - 1 && a.y + a.h > b.y + 1;
+}
+
+function measure(el: AuditEl): { x: number; y: number; w: number; h: number } | null {
+  const rect = el.getBoundingRect?.().clone();
+  if (!rect) return null;
+  const matrix = el.getComputedTransform?.() || el.transform;
+  if (matrix) rect.applyTransform(matrix);
+  return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
+}
+
+/** Portrait only. Thin the ribbons to a width-based thickness and give each leaf its own row. */
+function spreadPortrait(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[], links: FlowLink[]) {
+  const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] }; refresh: () => void };
+  const list = zr.storage.getDisplayList?.(true) || [];
+  const rects = list.filter((el) => el.type === "rect" && el.shape && (el.shape.width || 0) >= 2 && (el.shape.width || 0) <= 24 && (el.shape.height || 0) > 3);
+  const curves = list.filter((el) => el.shape && el.shape.x1 != null && el.shape.y1 != null);
+  if (rects.length !== nodes.length) return;
+  const texts = list.flatMap((el) => {
+    const box = (el.style?.text || "").trim() ? measure(el) : null;
+    return box ? [{ el, ...box }] : [];
+  });
+  const paired = rects.map((el, index) => ({
+    el,
+    index,
+    node: nodes[index],
+    old: { x: el.shape?.x || 0, y: el.shape?.y || 0, w: el.shape?.width || 0, h: el.shape?.height || 0 },
+  }));
+  const columns: Array<typeof paired> = [];
+  for (const item of [...paired].sort((a, b) => a.old.x - b.old.x)) {
+    const column = columns.find((group) => Math.abs(group[0].old.x - item.old.x) < 6);
+    if (column) column.push(item);
+    else columns.push([item]);
+  }
+  for (const column of columns) column.sort((a, b) => a.old.y - b.old.y);
+  const maxSum = Math.max(1, ...columns.map((column) => column.reduce((sum, item) => sum + item.old.h, 0)));
+  const placed = new Map<number, { x: number; y: number; w: number; h: number }>();
+  for (const column of columns) {
+    const sum = column.reduce((total, item) => total + item.old.h, 0);
+    const boxes = spreadColumn(column.map((item) => item.old.h), frame.seriesTop, frame.plot, frame.flowPx * (sum / maxSum));
+    column.forEach((item, index) => {
+      const next = boxes[index];
+      item.el.setShape?.({ y: next.y, height: next.h });
+      item.el.dirty?.();
+      placed.set(item.index, { x: item.old.x, y: next.y, w: item.old.w, h: next.h });
+    });
+  }
+  const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
+  curves.forEach((curve, index) => {
+    const link = links[index];
+    const shape = curve.shape;
+    if (!link || !shape || shape.y1 == null || shape.y2 == null) return;
+    const source = idIndex.get(link.source);
+    const target = idIndex.get(link.target);
+    if (source == null || target == null) return;
+    const src = placed.get(source);
+    const dst = placed.get(target);
+    const oldSrc = paired[source];
+    const oldDst = paired[target];
+    if (!src || !dst || !oldSrc || !oldDst) return;
+    const sy = oldSrc.old.h > 0 ? (shape.y1 - oldSrc.old.y) / oldSrc.old.h : 0;
+    const ty = oldDst.old.h > 0 ? (shape.y2 - oldDst.old.y) / oldDst.old.h : 0;
+    const y1 = src.y + Math.min(1, Math.max(0, sy)) * src.h;
+    const y2 = dst.y + Math.min(1, Math.max(0, ty)) * dst.h;
+    const x1 = shape.x1 || 0;
+    const x2 = shape.x2 || 0;
+    curve.setShape?.({
+      y1,
+      y2,
+      cpy1: y1,
+      cpy2: y2,
+      cpx1: x1 * 0.55 + x2 * 0.45,
+      cpx2: x1 * 0.45 + x2 * 0.55,
+      extent: Math.max(1, (shape.extent || 1) * (src.h / Math.max(1, oldSrc.old.h))),
+    });
+    curve.dirty?.();
+  });
+  const minX = Math.min(...paired.map((item) => item.old.x));
+  const maxX = Math.max(...paired.map((item) => item.old.x));
+  const ordered = [...texts].sort((a, b) => a.y - b.y || a.x - b.x);
+  const pairs: Array<typeof texts> = [];
+  const used = new Set<AuditEl>();
+  for (let index = 0; index < ordered.length; index += 1) {
+    const line = ordered[index];
+    if (used.has(line.el)) continue;
+    const next = ordered[index + 1];
+    const together = next && !used.has(next.el) && Math.abs(next.x - line.x) < 40 && next.y <= line.y + line.h + 8;
+    const pair = together && next ? [line, next] : [line];
+    for (const row of pair) used.add(row.el);
+    pairs.push(pair);
+  }
+  const laneOf = (x: number, w: number) => (x + w < minX + 8 ? "left" : x > maxX + 2 ? "right" : "middle");
+  const nodesIn = (lane: string) => paired.filter((item) => laneOf(item.old.x, item.old.w) === lane).sort((a, b) => a.old.y - b.old.y);
+  const groups = new Map<number, typeof texts>();
+  for (const lane of ["left", "right", "middle"]) {
+    const lanePairs = pairs.filter((pair) => laneOf(pair[0].x, pair[0].w) === lane).sort((a, b) => a[0].y - b[0].y);
+    const laneNodes = nodesIn(lane);
+    lanePairs.forEach((pair, index) => {
+      const item = laneNodes[Math.min(index, Math.max(0, laneNodes.length - 1))];
+      if (!item) return;
+      groups.set(item.index, pair);
+    });
+  }
+  let margin = 8;
+  for (const item of paired) {
+    const box = placed.get(item.index);
+    const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
+    if (!box || !lines.length) continue;
+    for (const line of lines) {
+      const now = measure(line.el);
+      if (!now) continue;
+      line.x = now.x;
+      line.y = now.y;
+      line.w = now.w;
+      line.h = now.h;
+    }
+    const blockH = lines.length * frame.lineHeight;
+    const role = item.node.role;
+    const nearTop = box.y <= frame.seriesTop + frame.flowPx;
+    let cursor = box.y + Math.min(box.h, blockH) / 2 - blockH / 2;
+    if ((role === "pool" || role === "hub") && nearTop) {
+      cursor = margin;
+      margin += blockH + 8;
+    } else if (role === "pool" || role === "hub") {
+      cursor = box.y - 10 - blockH;
+    }
+    cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
+    for (const line of lines) {
+      const x = role === "source"
+        ? Math.max(2, box.x - 8 - line.w)
+        : role === "sink" || role === "child"
+          ? Math.min(frame.width - line.w - 2, box.x + box.w + 8)
+          : Math.max(2, Math.min(box.x - 4, frame.width - line.w - 2));
+      line.el.x = (line.el.x || 0) + (x - line.x);
+      line.el.y = (line.el.y || 0) + (cursor - line.y);
+      line.el.dirty?.();
+      cursor += frame.lineHeight;
+    }
+  }
+  for (const el of list) {
+    if (!(el.style?.text || "").trim()) continue;
+    const now = measure(el);
+    if (!now) continue;
+    if (now.x < 2) el.x = (el.x || 0) + (2 - now.x);
+    if (now.x + now.w > frame.width - 2) el.x = (el.x || 0) + (frame.width - 2 - (now.x + now.w));
+    if (now.y < 2) el.y = (el.y || 0) + (2 - now.y);
+    if (now.y + now.h > frame.height - 2) el.y = (el.y || 0) + (frame.height - 2 - (now.y + now.h));
+    el.dirty?.();
+  }
+  zr.refresh();
+}
+
+/** Landscape only. Lift the Total spending label off the red bar without moving the rest. */
+function liftSpending(instance: ECharts) {
+  const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] }; refresh: () => void };
+  const list = zr.storage.getDisplayList?.(true) || [];
+  const nodes = list.flatMap((el) => {
+    if (el.type !== "rect" || !el.shape || (el.shape.width || 0) > 24 || (el.shape.height || 0) < 4) return [];
+    const box = measure(el);
+    return box ? [box] : [];
+  });
+  const spending = list.filter((el) => (el.style?.text || "").includes("Total spending") || (el.style?.text || "").includes("spending"));
+  if (!spending.length || !nodes.length) return;
+  const boxes = spending.flatMap((el) => {
+    const box = measure(el);
+    return box ? [{ el, ...box }] : [];
+  });
+  const top = Math.min(...boxes.map((box) => box.y));
+  const bottom = Math.max(...boxes.map((box) => box.y + box.h));
+  const left = Math.min(...boxes.map((box) => box.x));
+  const right = Math.max(...boxes.map((box) => box.x + box.w));
+  let dy = 0;
+  for (const node of nodes) {
+    const close = left < node.x + node.w + 8 && right > node.x - 8 && top < node.y + node.h + 8 && bottom > node.y - 8;
+    if (!close) continue;
+    dy = Math.min(dy, node.y - 8 - bottom);
+  }
+  if (dy < 0 && top + dy >= 2) {
+    for (const box of boxes) {
+      box.el.y = (box.el.y || 0) + dy;
+      box.el.dirty?.();
+    }
+    zr.refresh();
+  }
 }
 
 function nudgeLabels(instance: ECharts, width: number, height: number) {
