@@ -549,40 +549,42 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Responsive plot. Bar thickness, gaps, gutters, and type size follow the
- * container. The series box is 60% of the plot, so the tallest column is a
- * ribbon instead of a wall. ECharts fills that series box, not the canvas.
+ * Responsive plot. Bar width, gaps, gutters, and type size follow the container.
+ * ECharts fills the series box, so that box is about a third of the plot and the
+ * tallest ribbon stays thin. Portrait canvases hug the labels instead of the
+ * viewport, which drops the empty band above the flows.
  */
 export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true, chartHeight = 0): SankeyFrame {
   const width = Math.max(280, Math.round(chartWidth || 0));
-  const height = chartHeight >= 240 ? Math.round(chartHeight) : Math.round(clamp(width * 1.2, 420, 760));
+  const reported = chartHeight >= 240 ? Math.round(chartHeight) : Math.round(clamp(width * 0.85, 300, 560));
+  const portrait = reported > width;
   const phone = width < 700;
-  const nodeWidth = Math.round(clamp(width * 0.015, 4, 12));
+  const nodeWidth = Math.round(clamp(width * 0.011, 3, 8));
   const counts = columnCounts.filter((count) => count > 0);
   const columns = Math.max(1, counts.length);
   const busiest = Math.max(1, ...counts, 1);
   const fontSize = Math.round(clamp(width * 0.034, 13, 15));
   const lineHeight = fontSize + 3;
   const compact = width < 640;
+  const columnFill = 0.32;
 
-  let top = labels ? Math.round(clamp(height * 0.1, 56, 84)) : 8;
-  let bottom = labels ? Math.round(clamp(height * 0.06, 28, 48)) : 8;
-  if (top + bottom > height - 140) {
-    const spare = Math.max(16, height - 140);
-    top = labels ? Math.max(28, Math.round(spare * 0.62)) : 8;
-    bottom = labels ? Math.max(16, spare - top) : 8;
+  const below = Math.max(56, busiest * (lineHeight + 4));
+  let plot = Math.round(clamp(below / (1 - columnFill), 168, portrait ? 250 : 340));
+  let top = labels ? (portrait ? 76 : Math.round(clamp(reported * 0.1, 56, 84))) : 8;
+  let bottom = labels ? 12 : 8;
+  if (!portrait && top + bottom + plot > reported) {
+    plot = Math.max(128, reported - top - bottom);
   }
-  const plot = Math.max(120, height - top - bottom);
-  const columnFill = 0.6;
+  const height = top + plot + bottom;
   const seriesH = Math.round(plot * columnFill);
-  const pad = Math.floor((plot - seriesH) / 2);
-  const seriesTop = top + pad;
+  const seriesTop = top + 2;
   const seriesBottom = height - seriesTop - seriesH;
 
-  let nodeGap = Math.round(clamp(height * 0.04, phone ? 20 : 16, phone ? 28 : 40));
-  if (busiest > 1) {
-    const maxGap = Math.floor((seriesH - busiest * 4) / Math.max(1, busiest - 1));
-    nodeGap = maxGap >= (phone ? 20 : 12) ? Math.min(nodeGap, maxGap) : Math.max(8, maxGap);
+  const gaps = Math.max(0, busiest - 1);
+  let nodeGap = 10;
+  if (gaps > 0) {
+    const room = Math.max(0, Math.round(seriesH * (1 - columnFill)) - busiest * 2);
+    nodeGap = Math.max(8, Math.min(phone ? 22 : 28, Math.floor(room / gaps)));
   }
 
   let left = labels ? Math.round(clamp(width * 0.24, 84, 188)) : 8;
@@ -606,7 +608,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     seriesBottom,
     nodeWidth,
     nodeGap,
-    floorShare: 4 / Math.max(48, seriesH),
+    floorShare: 2 / Math.max(40, seriesH),
     layoutIterations: 0,
     linkOpacity: 0.3,
     columnFill,

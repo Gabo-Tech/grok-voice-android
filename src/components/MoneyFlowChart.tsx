@@ -537,15 +537,16 @@ interface AuditEl {
   style?: { text?: string; x?: number; y?: number };
   x?: number;
   y?: number;
+  parent?: AuditEl;
   dirty?: () => void;
   transform?: number[];
   getBoundingRect?: () => { width: number; height: number; clone: () => { x: number; y: number; width: number; height: number; applyTransform: (m: number[]) => void } };
   getComputedTransform?: () => number[] | null;
 }
 
-function labelElements(instance: ECharts): Array<{ el: AuditEl; x: number; y: number; w: number; h: number; text: string }> {
+function labelElements(instance: ECharts): Array<{ el: AuditEl; x: number; y: number; w: number; h: number; text: string; parent?: AuditEl }> {
   const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] } };
-  const out: Array<{ el: AuditEl; x: number; y: number; w: number; h: number; text: string }> = [];
+  const out: Array<{ el: AuditEl; x: number; y: number; w: number; h: number; text: string; parent?: AuditEl }> = [];
   for (const el of zr.storage.getDisplayList?.(true) || []) {
     const text = el.style?.text || "";
     if (!text.trim() || !el.getBoundingRect) continue;
@@ -553,7 +554,7 @@ function labelElements(instance: ECharts): Array<{ el: AuditEl; x: number; y: nu
     const matrix = el.getComputedTransform?.() || el.transform;
     if (matrix) rect.applyTransform(matrix);
     if (rect.width < 2 || rect.height < 2) continue;
-    out.push({ el, x: rect.x, y: rect.y, w: rect.width, h: rect.height, text: text.replace(/\n/g, " ") });
+    out.push({ el, parent: el.parent, x: rect.x, y: rect.y, w: rect.width, h: rect.height, text: text.replace(/\n/g, " ") });
   }
   return out;
 }
@@ -564,38 +565,60 @@ function boxesHit(a: { x: number; y: number; w: number; h: number }, b: { x: num
 
 function nudgeLabels(instance: ECharts, width: number, height: number) {
   const items = labelElements(instance);
-  const move = (item: (typeof items)[number], dx: number, dy: number) => {
-    item.el.x = (item.el.x || 0) + dx;
-    item.el.y = (item.el.y || 0) + dy;
-    item.x += dx;
-    item.y += dy;
-    item.el.dirty?.();
+  const grouped = new Map<AuditEl, typeof items>();
+  for (const item of items) {
+    const key = item.parent || item.el;
+    const group = grouped.get(key) || [];
+    group.push(item);
+    grouped.set(key, group);
+  }
+  const clusters = [...grouped.values()].map((group) => {
+    const x = Math.min(...group.map((row) => row.x));
+    const y = Math.min(...group.map((row) => row.y));
+    return {
+      x,
+      y,
+      w: Math.max(...group.map((row) => row.x + row.w)) - x,
+      h: Math.max(...group.map((row) => row.y + row.h)) - y,
+      items: group,
+    };
+  });
+  const move = (cluster: (typeof clusters)[number], dx: number, dy: number) => {
+    for (const item of cluster.items) {
+      item.el.x = (item.el.x || 0) + dx;
+      item.el.y = (item.el.y || 0) + dy;
+      item.x += dx;
+      item.y += dy;
+      item.el.dirty?.();
+    }
+    cluster.x += dx;
+    cluster.y += dy;
   };
   for (let pass = 0; pass < 16; pass += 1) {
     let moved = false;
-    for (let i = 0; i < items.length; i += 1) {
-      for (let j = i + 1; j < items.length; j += 1) {
-        if (!boxesHit(items[i], items[j])) continue;
-        const lower = items[i].y <= items[j].y ? items[j] : items[i];
-        const upper = lower === items[i] ? items[j] : items[i];
-        move(lower, 0, upper.y + upper.h - lower.y + 6);
+    for (let i = 0; i < clusters.length; i += 1) {
+      for (let j = i + 1; j < clusters.length; j += 1) {
+        if (!boxesHit(clusters[i], clusters[j])) continue;
+        const lower = clusters[i].y <= clusters[j].y ? clusters[j] : clusters[i];
+        const upper = lower === clusters[i] ? clusters[j] : clusters[i];
+        move(lower, 0, upper.y + upper.h - lower.y + 4);
         moved = true;
       }
-      const item = items[i];
-      if (item.y + item.h > height - 2) {
-        move(item, 0, height - 2 - (item.y + item.h));
+      const cluster = clusters[i];
+      if (cluster.y + cluster.h > height - 2) {
+        move(cluster, 0, height - 2 - (cluster.y + cluster.h));
         moved = true;
       }
-      if (item.y < 2) {
-        move(item, 0, 2 - item.y);
+      if (cluster.y < 2) {
+        move(cluster, 0, 2 - cluster.y);
         moved = true;
       }
-      if (item.x < 2) {
-        move(item, 2 - item.x, 0);
+      if (cluster.x < 2) {
+        move(cluster, 2 - cluster.x, 0);
         moved = true;
       }
-      if (item.x + item.w > width - 2) {
-        move(item, width - 2 - (item.x + item.w), 0);
+      if (cluster.x + cluster.w > width - 2) {
+        move(cluster, width - 2 - (cluster.x + cluster.w), 0);
         moved = true;
       }
     }

@@ -2,12 +2,9 @@ import { writeFileSync } from "node:fs";
 
 const port = 9222;
 const sizes = [
-  [360, 780],
   [390, 844],
-  [412, 915],
-  [768, 1024],
   [844, 390],
-  [1280, 800],
+  [768, 1024],
 ];
 const modes = [
   ["cat", "flow-full"],

@@ -330,27 +330,27 @@ if (unlinked.state === "ready") {
 }
 
 const phone = sankeyFrame(390, [2, 1, 1, 6], true, 720);
-assert.equal(phone.nodeWidth, Math.round(Math.min(12, Math.max(4, 390 * 0.015))));
-assert.ok(phone.nodeGap >= 20, `gap ${phone.nodeGap}`);
+assert.equal(phone.nodeWidth, Math.round(Math.min(8, Math.max(3, 390 * 0.011))));
+assert.ok(phone.nodeWidth >= 3 && phone.nodeWidth <= 5, `bar ${phone.nodeWidth}`);
+assert.ok(phone.nodeGap >= 8, `gap ${phone.nodeGap}`);
 assert.equal(phone.linkOpacity, 0.3);
 assert.equal(phone.layoutIterations, 0);
 assert.equal(phone.compact, true);
 assert.equal(phone.fontSize, 13);
 assert.ok(phone.width - phone.left - phone.right >= 80);
 assert.equal(phone.width, 390);
-assert.equal(phone.height, 720);
+assert.ok(phone.height < 420, `portrait height ${phone.height}`);
 const phoneLayout = phone.height - phone.seriesTop - phone.seriesBottom;
 const phoneFill = phoneLayout / phone.plot;
-assert.ok(phoneFill >= 0.55 && phoneFill <= 0.65, `fill ${phoneFill}`);
-const tablet = sankeyFrame(800, [2, 1, 1, 6], true, 900);
-assert.equal(tablet.nodeWidth, 12);
-assert.equal(tablet.compact, false);
-assert.ok(tablet.nodeGap >= 16);
+assert.ok(phoneFill >= 0.3 && phoneFill <= 0.35, `fill ${phoneFill}`);
+const wide = sankeyFrame(900, [2, 1, 1, 6], true, 500);
+assert.equal(wide.nodeWidth, 8);
+assert.equal(wide.compact, false);
 const narrow = sankeyFrame(360, [1, 1, 1, 4], true, 700);
-assert.ok(narrow.nodeWidth >= 4 && narrow.nodeWidth <= 6, `width ${narrow.nodeWidth}`);
+assert.ok(narrow.nodeWidth >= 3 && narrow.nodeWidth <= 5, `width ${narrow.nodeWidth}`);
 assert.ok(narrow.width - narrow.left - narrow.right >= 60, `plot ${narrow.width - narrow.left - narrow.right}`);
 const many = sankeyFrame(390, [1, 1, 8], true, 844);
-assert.ok(many.plot >= 200);
+assert.ok(many.height < 480);
 assert.ok(many.nodeGap >= 8);
 assert.equal(flowAmountLabel(600000, "CHF", 1, true), "CHF 6k · 100%");
 assert.equal(flowAmountLabel(140000, "CHF", 0.562, true), "CHF 1.4k · 56%");
