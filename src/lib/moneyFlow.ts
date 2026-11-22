@@ -587,13 +587,19 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     nodeGap = Math.max(8, Math.min(phone ? 22 : 28, Math.floor(Math.max(0, room) / gaps)));
   }
 
-  let left = labels ? Math.round(clamp(width * 0.24, 84, 188)) : 8;
-  let right = labels ? Math.round(clamp(width * 0.28, 96, 210)) : 8;
-  const minPlotW = nodeWidth * columns + 12 * Math.max(0, columns - 1);
+  let left = labels ? Math.round(clamp(width * (portrait ? 0.42 : 0.24), portrait ? 156 : 84, portrait ? 190 : 188)) : 8;
+  let right = labels ? Math.round(clamp(width * (portrait ? 0.34 : 0.28), portrait ? 136 : 96, portrait ? 170 : 210)) : 8;
+  const minPlotW = nodeWidth * columns + 8 * Math.max(0, columns - 1);
   if (left + right + minPlotW > width - 4) {
-    const gutters = Math.max(0, width - 4 - minPlotW);
-    right = Math.max(48, Math.round(gutters * 0.56));
-    left = Math.max(40, gutters - right);
+    const room = Math.max(0, width - 4 - minPlotW);
+    if (portrait) {
+      // Leaf labels need the right gutter. Source labels need the left one. The plot keeps the rest.
+      right = Math.min(right, Math.max(96, room - 80));
+      left = Math.max(48, room - right);
+    } else {
+      right = Math.max(48, Math.round(room * 0.56));
+      left = Math.max(40, room - right);
+    }
   }
 
   return {

@@ -591,13 +591,16 @@ function spreadPortrait(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   const curves = list.filter((el) => el.shape && el.shape.x1 != null && el.shape.y1 != null);
   if (rects.length !== nodes.length) return;
   const texts = list.flatMap((el) => {
-    const box = (el.style?.text || "").trim() ? measure(el) : null;
-    return box ? [{ el, ...box }] : [];
+    const label = (el.style?.text || "").trim();
+    const box = label ? measure(el) : null;
+    return box ? [{ el, text: label.replace(/\n/g, " "), ...box }] : [];
   });
   const paired = rects.map((el, index) => ({
     el,
     index,
     node: nodes[index],
+    originX: el.parent?.x || 0,
+    originY: el.parent?.y || 0,
     old: { x: el.shape?.x || 0, y: el.shape?.y || 0, w: el.shape?.width || 0, h: el.shape?.height || 0 },
   }));
   const columns: Array<typeof paired> = [];
@@ -608,15 +611,16 @@ function spreadPortrait(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   }
   for (const column of columns) column.sort((a, b) => a.old.y - b.old.y);
   const maxSum = Math.max(1, ...columns.map((column) => column.reduce((sum, item) => sum + item.old.h, 0)));
-  const placed = new Map<number, { x: number; y: number; w: number; h: number }>();
+  const placed = new Map<number, { x: number; y: number; w: number; h: number; localY: number }>();
   for (const column of columns) {
     const sum = column.reduce((total, item) => total + item.old.h, 0);
     const boxes = spreadColumn(column.map((item) => item.old.h), frame.seriesTop, frame.plot, frame.flowPx * (sum / maxSum));
     column.forEach((item, index) => {
       const next = boxes[index];
-      item.el.setShape?.({ y: next.y, height: next.h });
+      const localY = next.y - item.originY;
+      item.el.setShape?.({ y: localY, height: next.h });
       item.el.dirty?.();
-      placed.set(item.index, { x: item.old.x, y: next.y, w: item.old.w, h: next.h });
+      placed.set(item.index, { x: item.originX + item.old.x, y: item.originY + localY, w: item.old.w, h: next.h, localY });
     });
   }
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
@@ -634,8 +638,8 @@ function spreadPortrait(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     if (!src || !dst || !oldSrc || !oldDst) return;
     const sy = oldSrc.old.h > 0 ? (shape.y1 - oldSrc.old.y) / oldSrc.old.h : 0;
     const ty = oldDst.old.h > 0 ? (shape.y2 - oldDst.old.y) / oldDst.old.h : 0;
-    const y1 = src.y + Math.min(1, Math.max(0, sy)) * src.h;
-    const y2 = dst.y + Math.min(1, Math.max(0, ty)) * dst.h;
+    const y1 = src.localY + Math.min(1, Math.max(0, sy)) * src.h;
+    const y2 = dst.localY + Math.min(1, Math.max(0, ty)) * dst.h;
     const x1 = shape.x1 || 0;
     const x2 = shape.x2 || 0;
     curve.setShape?.({
@@ -649,34 +653,44 @@ function spreadPortrait(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     });
     curve.dirty?.();
   });
-  const minX = Math.min(...paired.map((item) => item.old.x));
-  const maxX = Math.max(...paired.map((item) => item.old.x));
-  const ordered = [...texts].sort((a, b) => a.y - b.y || a.x - b.x);
-  const pairs: Array<typeof texts> = [];
-  const used = new Set<AuditEl>();
-  for (let index = 0; index < ordered.length; index += 1) {
-    const line = ordered[index];
-    if (used.has(line.el)) continue;
-    const next = ordered[index + 1];
-    const together = next && !used.has(next.el) && Math.abs(next.x - line.x) < 40 && next.y <= line.y + line.h + 8;
-    const pair = together && next ? [line, next] : [line];
-    for (const row of pair) used.add(row.el);
-    pairs.push(pair);
-  }
-  const laneOf = (x: number, w: number) => (x + w < minX + 8 ? "left" : x > maxX + 2 ? "right" : "middle");
-  const nodesIn = (lane: string) => paired.filter((item) => laneOf(item.old.x, item.old.w) === lane).sort((a, b) => a.old.y - b.old.y);
   const groups = new Map<number, typeof texts>();
-  for (const lane of ["left", "right", "middle"]) {
-    const lanePairs = pairs.filter((pair) => laneOf(pair[0].x, pair[0].w) === lane).sort((a, b) => a[0].y - b[0].y);
-    const laneNodes = nodesIn(lane);
-    lanePairs.forEach((pair, index) => {
-      const item = laneNodes[Math.min(index, Math.max(0, laneNodes.length - 1))];
-      if (!item) return;
-      groups.set(item.index, pair);
-    });
+  const ownerIndex = (el: AuditEl) => {
+    const seen = new Set<AuditEl>();
+    let current: AuditEl | undefined = el;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      const hit = paired.find((item) => item.el === current);
+      if (hit) return hit.index;
+      const host = (current as AuditEl & { __hostTarget?: AuditEl }).__hostTarget;
+      if (host) {
+        const hostHit = paired.find((item) => item.el === host);
+        if (hostHit) return hostHit.index;
+      }
+      current = current.parent;
+    }
+    return -1;
+  };
+  for (const text of texts) {
+    const index = ownerIndex(text.el);
+    if (index < 0) continue;
+    const group = groups.get(index) || [];
+    group.push(text);
+    groups.set(index, group);
   }
-  let margin = 8;
-  for (const item of paired) {
+  zr.refresh();
+  let margin = 4;
+  const roleOf = new Map<number, string>();
+  const nearTopOf = new Map<number, boolean>();
+  const members = new Map<number, Array<{ el: AuditEl; x: number; y: number; w: number; h: number }>>();
+  const sourceNodes = paired.filter((item) => item.node.role === "source");
+  const gutterEdge = sourceNodes.length
+    ? Math.min(...sourceNodes.map((item) => placed.get(item.index)?.x ?? frame.left))
+    : Math.min(...[...placed.values()].map((box) => box.x));
+  const orderedItems = [...paired].sort((a, b) => {
+    const rank = (role: string) => (role === "pool" ? 0 : role === "hub" ? 1 : role === "source" ? 2 : 3);
+    return rank(a.node.role) - rank(b.node.role) || a.old.y - b.old.y || a.old.x - b.old.x;
+  });
+  for (const item of orderedItems) {
     const box = placed.get(item.index);
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
@@ -690,36 +704,103 @@ function spreadPortrait(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     }
     const blockH = lines.length * frame.lineHeight;
     const role = item.node.role;
-    const nearTop = box.y <= frame.seriesTop + frame.flowPx;
-    let cursor = box.y + Math.min(box.h, blockH) / 2 - blockH / 2;
+    roleOf.set(item.index, role);
+    const nearTop = box.y <= frame.seriesTop + frame.flowPx + 8;
+    nearTopOf.set(item.index, nearTop);
+    let cursor = box.y + box.h / 2 - blockH / 2;
     if ((role === "pool" || role === "hub") && nearTop) {
       cursor = margin;
       margin += blockH + 8;
     } else if (role === "pool" || role === "hub") {
-      cursor = box.y - 10 - blockH;
+      cursor = box.y - 8 - blockH;
     }
+    if (role === "source" && cursor < margin) cursor = margin;
     cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
+    const placedLines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> = [];
+    const centered = box.y + box.h / 2 - blockH / 2;
+    const anchorTop = role === "pool"
+      ? box.y - 8 - blockH - 40
+      : role === "hub" && item.node.kind !== "spending"
+        ? box.y + box.h + 8
+        : role === "hub"
+          ? box.y - 8 - blockH
+          : centered;
+    const deltaY = cursor - anchorTop;
     for (const line of lines) {
-      const x = role === "source"
-        ? Math.max(2, box.x - 8 - line.w)
-        : role === "sink" || role === "child"
-          ? Math.min(frame.width - line.w - 2, box.x + box.w + 8)
-          : Math.max(2, Math.min(box.x - 4, frame.width - line.w - 2));
+      const x = role === "sink" || role === "child"
+        ? Math.min(frame.width - line.w - 2, box.x + box.w + 8)
+        : Math.max(2, (role === "source" ? box.x : gutterEdge) - 8 - line.w);
       line.el.x = (line.el.x || 0) + (x - line.x);
-      line.el.y = (line.el.y || 0) + (cursor - line.y);
+      line.el.y = (line.el.y || 0) + deltaY;
       line.el.dirty?.();
+      placedLines.push({ el: line.el, x, y: cursor, w: line.w, h: line.h });
       cursor += frame.lineHeight;
     }
+    members.set(item.index, placedLines);
   }
-  for (const el of list) {
-    if (!(el.style?.text || "").trim()) continue;
-    const now = measure(el);
-    if (!now) continue;
-    if (now.x < 2) el.x = (el.x || 0) + (2 - now.x);
-    if (now.x + now.w > frame.width - 2) el.x = (el.x || 0) + (frame.width - 2 - (now.x + now.w));
-    if (now.y < 2) el.y = (el.y || 0) + (2 - now.y);
-    if (now.y + now.h > frame.height - 2) el.y = (el.y || 0) + (frame.height - 2 - (now.y + now.h));
-    el.dirty?.();
+  const blockOf = (index: number) => {
+    const lines = members.get(index) || [];
+    if (!lines.length) return null;
+    const x = Math.min(...lines.map((line) => line.x));
+    const y = Math.min(...lines.map((line) => line.y));
+    return {
+      x,
+      y,
+      w: Math.max(...lines.map((line) => line.x + line.w)) - x,
+      h: Math.max(...lines.map((line) => line.y + line.h)) - y,
+    };
+  };
+  const shift = (index: number, dy: number) => {
+    if (!dy) return;
+    for (const line of members.get(index) || []) {
+      line.el.y = (line.el.y || 0) + dy;
+      line.el.dirty?.();
+      line.y += dy;
+    }
+  };
+  for (let pass = 0; pass < 10; pass += 1) {
+    let moved = false;
+    const hubs = [...members.keys()].filter((index) => roleOf.get(index) === "hub" || roleOf.get(index) === "pool");
+    const sinks = [...members.keys()].filter((index) => roleOf.get(index) === "sink" || roleOf.get(index) === "child");
+    const sources = [...members.keys()].filter((index) => roleOf.get(index) === "source");
+    for (const hub of hubs) {
+      const hubBox = blockOf(hub);
+      if (!hubBox) continue;
+      for (const sink of sinks) {
+        const sinkBox = blockOf(sink);
+        if (!sinkBox || !boxesHit(hubBox, sinkBox)) continue;
+        shift(hub, sinkBox.y - 6 - (hubBox.y + hubBox.h));
+        moved = true;
+      }
+      for (const source of sources) {
+        const sourceBox = blockOf(source);
+        if (!sourceBox || !boxesHit(hubBox, sourceBox)) continue;
+        if (nearTopOf.get(hub)) shift(source, hubBox.y + hubBox.h + 6 - sourceBox.y);
+        else shift(hub, sourceBox.y - 6 - (hubBox.y + hubBox.h));
+        moved = true;
+      }
+      for (const other of hubs) {
+        if (other === hub) continue;
+        const otherBox = blockOf(other);
+        if (!otherBox || !boxesHit(hubBox, otherBox)) continue;
+        const lower = hubBox.y >= otherBox.y ? hub : other;
+        const upper = lower === hub ? otherBox : hubBox;
+        shift(lower, upper.y + upper.h + 6 - blockOf(lower)!.y);
+        moved = true;
+      }
+    }
+    for (const index of members.keys()) {
+      const box = blockOf(index);
+      if (!box) continue;
+      if (box.y < 2) {
+        shift(index, 2 - box.y);
+        moved = true;
+      } else if (box.y + box.h > frame.height - 2) {
+        shift(index, frame.height - 2 - (box.y + box.h));
+        moved = true;
+      }
+    }
+    if (!moved) break;
   }
   zr.refresh();
 }
