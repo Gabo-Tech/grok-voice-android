@@ -195,6 +195,13 @@ export function FinancePage({
   }, []);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (new URLSearchParams(window.location.search).get("program") === "1") {
+      setSheet("rule");
+    }
+  }, []);
+
+  useEffect(() => {
     const shot = new URLSearchParams(window.location.search).get("shot");
     if (!shot) return;
     const node = document.querySelector(`[data-shot="${shot}"]`);

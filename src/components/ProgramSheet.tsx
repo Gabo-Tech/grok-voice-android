@@ -51,10 +51,11 @@ export function ProgramSheet({
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = editing?.id || "new";
+  const previewForm = import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("program") === "1";
   if (!open && seen !== null) setSeen(null);
   if (open && seen !== key) {
     setSeen(key);
-    setStep(editing ? 1 : 0);
+    setStep(editing || previewForm ? 1 : 0);
     setPreset(presetOf(editing));
     setName(editing?.name || "");
     setAmount(editing ? majorString(editing.amountMinor, editing.currency) : "");
@@ -75,6 +76,15 @@ export function ProgramSheet({
     setCategory(editing?.category || "");
     setNotes(editing?.notes || "");
     setConfirming(false);
+    if (previewForm && !editing) {
+      setName("Gym");
+      setAmount("20");
+      setCadence("every_n_days");
+      setInterval("10");
+      setUnit("day");
+      setPurpose("recurring");
+      setEndKind("none");
+    }
   }
 
   const choose = (next: Preset) => {
