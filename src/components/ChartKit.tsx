@@ -115,6 +115,7 @@ export function Legend({
   colors,
   painting,
   setPainting,
+  onUnpriced,
 }: {
   rows: LegendRow[];
   hidden: Set<string>;
@@ -126,6 +127,7 @@ export function Legend({
   colors?: string[];
   painting?: string;
   setPainting?: (id: string) => void;
+  onUnpriced?: (id: string) => void;
 }) {
   const t = useT();
   const visible = rows.filter((row) => !hidden.has(row.id) && !row.unpriced && row.amountMinor != null && !row.omitShare);
@@ -154,11 +156,11 @@ export function Legend({
                     <span className="fin-swatch" style={{ background: row.color }} />
                   </span>
                 )}
-                <button type="button" className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left" aria-pressed={!off} onClick={() => onToggle(row.id)}>
+                <div className="min-w-0 flex-1">
+                <button type="button" className="flex min-h-11 w-full min-w-0 items-center gap-2 text-left" aria-pressed={!off} onClick={() => onToggle(row.id)}>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] leading-5">{row.label}</span>
                     {row.original ? <span className="fin-muted block text-[13px] leading-4">{row.original}</span> : null}
-                    {row.unpriced ? <span className="fin-muted block text-[13px] leading-4">{t("No price")}</span> : null}
                     {row.note && !row.unpriced ? <span className="fin-muted block text-[13px] leading-4">{row.note}</span> : null}
                   </span>
                   <span className="shrink-0 text-right">
@@ -170,6 +172,16 @@ export function Legend({
                     )}
                   </span>
                 </button>
+                {row.unpriced ? (
+                  <button
+                    type="button"
+                    className="fin-muted block min-h-11 text-left text-[13px] leading-4 underline"
+                    onClick={() => (onUnpriced ? onUnpriced(row.id) : onToggle(row.id))}
+                  >
+                    {t("No price")}
+                  </button>
+                ) : null}
+                </div>
               </div>
               {painting === row.id && colors && onColor ? (
                 <div className="mb-1 flex flex-wrap gap-1 pl-1">

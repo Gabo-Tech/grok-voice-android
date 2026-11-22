@@ -30,6 +30,9 @@ pub struct ProviderPin {
     pub coingecko_id: String,
     #[serde(default)]
     pub paprika_id: String,
+    /// Set from the price sheet. An automatic pin can be replaced. This one stays.
+    #[serde(default)]
+    pub manual: bool,
 }
 
 /// Keep the last value for a holding on a calendar day.

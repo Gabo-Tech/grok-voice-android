@@ -233,6 +233,7 @@ pub fn run() {
             commands::export_finance_pdf,
             commands::refresh_finance_rates,
             commands::refresh_holding_price,
+            commands::set_holding_provider_id,
             commands::set_finance_manual_rate,
             commands::set_finance_manual_price,
             commands::set_finance_price_provider,
