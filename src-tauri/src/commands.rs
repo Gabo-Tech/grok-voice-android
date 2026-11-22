@@ -1592,7 +1592,7 @@ pub fn notify_budget_warning(app: AppHandle, title: String, body: String) -> Res
     let Some(bridge) = app.try_state::<crate::native::NativeBridge>() else {
         return Ok(());
     };
-    bridge.notify_budget(&title, &body).map_err(msg)
+    bridge.notify_budget(&title, &body)
 }
 
 #[tauri::command]
