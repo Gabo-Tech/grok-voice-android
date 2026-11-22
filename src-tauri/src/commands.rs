@@ -1685,6 +1685,18 @@ pub fn refresh_holding_price(app: AppHandle, id: String) -> Result<crate::financ
 }
 
 #[tauri::command]
+pub fn set_holding_provider_id(
+    app: AppHandle,
+    id: String,
+    coingecko_id: String,
+    paprika_id: String,
+) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .set_holding_provider(&app, &id, &coingecko_id, &paprika_id)
+        .map_err(msg)
+}
+
+#[tauri::command]
 pub fn set_finance_manual_price(
     app: AppHandle,
     symbol: String,

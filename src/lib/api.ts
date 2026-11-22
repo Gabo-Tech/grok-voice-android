@@ -371,6 +371,8 @@ export interface FinanceAccount {
   marketEstimated?: boolean;
   marketUnit?: string;
   marketSymbol?: string;
+  providerCoingeckoId?: string;
+  providerPaprikaId?: string;
   leadDays: number | null;
   shownBalanceMinor: number | null;
   creditLimitMinor: number | null;
@@ -477,11 +479,20 @@ export interface FinancePriceQuote {
   estimated?: boolean;
 }
 
+export interface PriceAttempt {
+  symbol: string;
+  source: string;
+  id: string;
+  status: string;
+  detail: string;
+}
+
 export interface FinancePrices {
   quotes: FinancePriceQuote[];
   manual: { symbol: string; price: number; currency: string; asOf?: string; overrideLive?: boolean }[];
   disabled: string[];
   lastError?: string;
+  attempts?: PriceAttempt[];
 }
 
 export interface FinanceFxLeg {
@@ -888,6 +899,8 @@ export const api = {
   exportFinancePdf: (filter: FinancePdfRequest) => invoke<ExportedFinancePdf>("export_finance_pdf", { filter }),
   refreshFinanceRates: (force = false) => invoke<FinanceSnapshot>("refresh_finance_rates", { force }),
   refreshHoldingPrice: (id: string) => invoke<FinanceSnapshot>("refresh_holding_price", { id }),
+  setHoldingProvider: (id: string, coingeckoId: string, paprikaId: string) =>
+    invoke<FinanceSnapshot>("set_holding_provider_id", { id, coingeckoId, paprikaId }),
   setFinanceManualRate: (base: string, quote: string, rate: string, overrideLive = false) =>
     invoke<FinanceSnapshot>("set_finance_manual_rate", { base, quote, rate, overrideLive }),
   setFinanceManualPrice: (symbol: string, price: string, currency: string, overrideLive = false) =>

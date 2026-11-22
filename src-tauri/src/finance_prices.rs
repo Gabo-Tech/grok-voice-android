@@ -71,6 +71,19 @@ pub struct PriceMiss {
     pub reason: String,
 }
 
+/// One source tried for one symbol. `status` is `ok`, `miss`, `error`, or `skipped`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceAttempt {
+    pub symbol: String,
+    pub source: String,
+    #[serde(default)]
+    pub id: String,
+    pub status: String,
+    #[serde(default)]
+    pub detail: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceBook {
@@ -87,6 +100,9 @@ pub struct PriceBook {
     /// Failed lookups. Kept so the reason is visible. Never treated as a fresh price.
     #[serde(default)]
     pub misses: Vec<PriceMiss>,
+    /// What the last refresh tried for each symbol. Not a price.
+    #[serde(default)]
+    pub attempts: Vec<PriceAttempt>,
     /// Short English sentence when the last pass left a symbol unpriced. Empty after a full success.
     #[serde(default)]
     pub last_error: String,
@@ -143,7 +159,9 @@ pub fn resolve_holding(name: &str, ticker: &str, currency: &str, investment_type
     let unit = metal_unit(&format!("{name} {ticker} {notes}"));
     let label = if name.trim().is_empty() { ticker.trim().to_string() } else { name.trim().to_string() };
     // The typed name wins over a ticker saved by an older version. "EPIC Cash" stays EPIC even when the ticker is ETH.
-    if let Some(mut asset) = alias(name).or_else(|| alias(ticker)).or_else(|| alias(&label)) {
+    // "Epic Chain" must not inherit the EPIC Cash ids from a shared ticker.
+    let named = alias(name).or_else(|| if epic_chain_name(name) { None } else { alias(ticker) }).or_else(|| alias(&label));
+    if let Some(mut asset) = named {
         if asset.kind == "metal" {
             asset.holding_unit = unit.to_string();
         }
@@ -170,8 +188,10 @@ pub fn resolve_holding(name: &str, ticker: &str, currency: &str, investment_type
             return None;
         }
         if let Some(mut asset) = alias(&sym) {
-            asset.label = label;
-            return Some(asset);
+            if !(asset.symbol == "EPIC" && epic_chain_name(name)) {
+                asset.label = label;
+                return Some(asset);
+            }
         }
         let mut asset = crypto_ref(sym, String::new(), String::new(), String::new());
         asset.label = label;
@@ -274,6 +294,8 @@ pub fn refresh_book(
     if pending.is_empty() {
         return next;
     }
+    let pending_symbols: Vec<String> = pending.iter().map(|asset| asset.symbol.clone()).collect();
+    next.attempts.retain(|row| !pending_symbols.iter().any(|symbol| symbol.eq_ignore_ascii_case(&row.symbol)));
     let mut open: Vec<&AssetRef> = pending.clone();
     fill_crypto(&mut next, &open, now_ms, get);
     open.retain(|asset| asset.kind == "crypto" && find_quote(&next, &asset.symbol).map(|quote| quote.estimated || quote_stale(quote.fetched_ms, now_ms) && force).unwrap_or(true) && !(find_quote(&next, &asset.symbol).is_some_and(|quote| !quote.estimated && quote.fetched_ms == now_ms)));
@@ -305,10 +327,24 @@ pub fn refresh_book(
                             estimated: true,
                         },
                     );
+                    note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "ok", "AI estimate");
                 }
-                Ok(_) => log::warn!("price estimate for {} had no usable number", asset.symbol),
-                Err(err) => log::warn!("price estimate failed for {}: {err}", asset.symbol),
+                Ok(_) => {
+                    note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "miss", "The estimate had no price.");
+                    log::warn!("price estimate for {} had no usable number", asset.symbol);
+                }
+                Err(err) => {
+                    note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "error", &err);
+                    log::warn!("price estimate failed for {}: {err}", asset.symbol);
+                }
             }
+        }
+    } else {
+        for asset in &pending {
+            if fresh_api(&next, asset, now_ms) || find_quote(&next, &asset.symbol).is_some_and(|quote| !quote.estimated) {
+                continue;
+            }
+            note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "skipped", "No estimate was asked.");
         }
     }
     let mut failed = false;
@@ -354,12 +390,26 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
                         for asset in &cryptos {
                             if let Some((price, currency)) = rows.iter().find(|(id, _, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price, currency)| (*price, currency.as_str())) {
                                 put_api(book, asset, price, currency, "coingecko", now_ms);
+                                note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "ok", "Price received");
                             }
                         }
                     }
-                    Err(err) => log::warn!("price parse failed for coingecko batch: {err}"),
+                    Err(err) => {
+                        log::warn!("price parse failed for coingecko batch: {err}");
+                        for asset in &cryptos {
+                            if !asset.coingecko_id.is_empty() {
+                                note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "miss", &err);
+                            }
+                        }
+                    }
                 },
-                Err(_) => {}
+                Err(err) => {
+                    for asset in &cryptos {
+                        if !asset.coingecko_id.is_empty() {
+                            note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "error", &err);
+                        }
+                    }
+                }
             }
         }
         for asset in &cryptos {
@@ -369,30 +419,50 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             // The batch can fail or omit one id. Ask for that id on its own before searching.
             if !asset.coingecko_id.is_empty() {
                 let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=eur,usd", enc(&asset.coingecko_id));
-                if let Ok(body) = get_logged(get, &url, &asset.symbol) {
-                    if let Ok(rows) = parse_coingecko_priced(&body) {
-                        if let Some((price, currency)) = rows.into_iter().find(|(id, _, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price, currency)| (price, currency)) {
-                            put_api(book, asset, price, &currency, "coingecko", now_ms);
-                            continue;
+                match get_logged(get, &url, &asset.symbol) {
+                    Ok(body) => match parse_coingecko_priced(&body) {
+                        Ok(rows) => {
+                            if let Some((price, currency)) = rows.into_iter().find(|(id, _, _)| id.eq_ignore_ascii_case(&asset.coingecko_id)).map(|(_, price, currency)| (price, currency)) {
+                                put_api(book, asset, price, &currency, "coingecko", now_ms);
+                                note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "ok", "Price received");
+                                continue;
+                            }
+                            note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "miss", "No price in the response");
                         }
-                    }
+                        Err(err) => note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "miss", &err),
+                    },
+                    Err(err) => note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "error", &err),
                 }
+            } else {
+                note_attempt(book, &asset.symbol, "coingecko", "", "skipped", "No id is saved.");
             }
             if gecko_by_search(book, asset, now_ms, get) {
                 continue;
             }
             // symbols= is last. It can answer a different coin that shares the ticker.
-            if asset.coingecko_id.is_empty() {
+            // EPIC still tries it after a failed id, because CoinGecko lists Epic Cash under that ticker.
+            if asset.coingecko_id.is_empty() || asset.symbol.eq_ignore_ascii_case("EPIC") {
                 let query = asset.symbol.to_ascii_lowercase();
                 let url = format!("https://api.coingecko.com/api/v3/simple/price?symbols={query}&vs_currencies=eur,usd");
-                if let Ok(body) = get_logged(get, &url, &asset.symbol) {
-                    if let Ok(rows) = parse_coingecko_priced(&body) {
-                        if let Some((price, currency)) = rows.into_iter().find(|(sym, _, _)| sym.eq_ignore_ascii_case(&asset.symbol)).map(|(_, price, currency)| (price, currency)) {
-                            put_api(book, asset, price, &currency, "coingecko", now_ms);
+                match get_logged(get, &url, &asset.symbol) {
+                    Ok(body) => match parse_coingecko_priced(&body) {
+                        Ok(rows) => {
+                            if let Some((price, currency)) = rows.into_iter().find(|(sym, _, _)| sym.eq_ignore_ascii_case(&asset.symbol)).map(|(_, price, currency)| (price, currency)) {
+                                put_api(book, asset, price, &currency, "coingecko", now_ms);
+                                note_attempt(book, &asset.symbol, "coingecko", &query, "ok", "Price received");
+                            } else {
+                                note_attempt(book, &asset.symbol, "coingecko", &query, "miss", "No price in the response");
+                            }
                         }
-                    }
+                        Err(err) => note_attempt(book, &asset.symbol, "coingecko", &query, "miss", &err),
+                    },
+                    Err(err) => note_attempt(book, &asset.symbol, "coingecko", &query, "error", &err),
                 }
             }
+        }
+    } else {
+        for asset in &cryptos {
+            note_attempt(book, &asset.symbol, "coingecko", &asset.coingecko_id, "skipped", "Turned off");
         }
     }
     if provider_enabled(book, "coinpaprika") {
@@ -404,28 +474,59 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
                 if paprika_price(book, asset, &asset.paprika_id, now_ms, get) {
                     continue;
                 }
+            } else {
+                note_attempt(book, &asset.symbol, "coinpaprika", "", "skipped", "No id is saved.");
             }
+            let mut found = false;
             for query in search_queries(asset) {
                 let url = format!("https://api.coinpaprika.com/v1/search/?q={}&c=currencies&limit=8", enc(&query));
-                let Ok(body) = get_logged(get, &url, &asset.symbol) else { continue };
-                let Some(id) = paprika_search_id(&body, &asset.symbol, &asset.label) else { continue };
+                let Ok(body) = get_logged(get, &url, &asset.symbol) else {
+                    note_attempt(book, &asset.symbol, "coinpaprika", &query, "error", "Could not refresh the price.");
+                    continue;
+                };
+                let Some(id) = paprika_search_id(&body, &asset.symbol, &asset.label) else {
+                    note_attempt(book, &asset.symbol, "coinpaprika", &query, "miss", "No price in the response");
+                    continue;
+                };
                 if paprika_price(book, asset, &id, now_ms, get) {
+                    found = true;
                     break;
                 }
             }
+            if !found && asset.paprika_id.is_empty() {
+                note_attempt(book, &asset.symbol, "coinpaprika", "", "miss", "No price in the response");
+            }
+        }
+    } else {
+        for asset in &cryptos {
+            note_attempt(book, &asset.symbol, "coinpaprika", &asset.paprika_id, "skipped", "Turned off");
         }
     }
     if provider_enabled(book, "kraken") {
         for asset in &cryptos {
-            if fresh_api(book, asset, now_ms) || asset.kraken_pair.is_empty() {
+            if fresh_api(book, asset, now_ms) {
+                continue;
+            }
+            if asset.kraken_pair.is_empty() {
+                note_attempt(book, &asset.symbol, "kraken", "", "skipped", "No id is saved.");
                 continue;
             }
             let url = format!("https://api.kraken.com/0/public/Ticker?pair={}", asset.kraken_pair);
-            if let Ok(body) = get_logged(get, &url, &asset.symbol) {
-                if let Some(price) = parse_kraken_last(&body) {
-                    put_api(book, asset, price, "EUR", "kraken", now_ms);
+            match get_logged(get, &url, &asset.symbol) {
+                Ok(body) => {
+                    if let Some(price) = parse_kraken_last(&body) {
+                        put_api(book, asset, price, "EUR", "kraken", now_ms);
+                        note_attempt(book, &asset.symbol, "kraken", &asset.kraken_pair, "ok", "Price received");
+                    } else {
+                        note_attempt(book, &asset.symbol, "kraken", &asset.kraken_pair, "miss", "No price in the response");
+                    }
                 }
+                Err(err) => note_attempt(book, &asset.symbol, "kraken", &asset.kraken_pair, "error", &err),
             }
+        }
+    } else {
+        for asset in &cryptos {
+            note_attempt(book, &asset.symbol, "kraken", &asset.kraken_pair, "skipped", "Turned off");
         }
     }
 }
@@ -442,8 +543,10 @@ fn gecko_by_search(book: &mut PriceBook, asset: &AssetRef, now_ms: i64, get: &dy
             if let Ok(rows) = parse_coingecko_priced(&body) {
                 if let Some((price, currency)) = rows.into_iter().find(|(row, _, _)| row.eq_ignore_ascii_case(&id)).map(|(_, price, currency)| (price, currency)) {
                     put_api(book, asset, price, &currency, "coingecko", now_ms);
+                    note_attempt(book, &asset.symbol, "coingecko", &id, "ok", "Price received");
                     return true;
                 }
+                note_attempt(book, &asset.symbol, "coingecko", &id, "miss", "No price in the response");
             }
         }
     }
@@ -456,9 +559,16 @@ fn paprika_price(book: &mut PriceBook, asset: &AssetRef, id: &str, now_ms: i64, 
     }
     for quote in ["EUR", "USD"] {
         let url = format!("https://api.coinpaprika.com/v1/tickers/{id}?quotes={quote}");
-        let Ok(body) = get_logged(get, &url, &asset.symbol) else { continue };
-        let Some(price) = parse_paprika_quote(&body, quote) else { continue };
+        let Ok(body) = get_logged(get, &url, &asset.symbol) else {
+            note_attempt(book, &asset.symbol, "coinpaprika", id, "error", "Could not refresh the price.");
+            continue;
+        };
+        let Some(price) = parse_paprika_quote(&body, quote) else {
+            note_attempt(book, &asset.symbol, "coinpaprika", id, "miss", "No price in the response");
+            continue;
+        };
         put_api(book, asset, price, quote, "coinpaprika", now_ms);
+        note_attempt(book, &asset.symbol, "coinpaprika", id, "ok", "Price received");
         return true;
     }
     false
@@ -560,6 +670,16 @@ pub fn parse_twelve_quote(body: &str) -> Option<(f64, String)> {
     let price = json_rate(value.get("close")?)?;
     let currency = value.get("currency").and_then(|item| item.as_str()).unwrap_or("USD").to_ascii_uppercase();
     if price.is_finite() && price > 0.0 && currency.len() == 3 { Some((price, currency)) } else { None }
+}
+
+fn note_attempt(book: &mut PriceBook, symbol: &str, source: &str, id: &str, status: &str, detail: &str) {
+    book.attempts.push(PriceAttempt {
+        symbol: symbol.to_string(),
+        source: source.to_string(),
+        id: id.to_string(),
+        status: status.to_string(),
+        detail: detail.to_string(),
+    });
 }
 
 fn put_api(book: &mut PriceBook, asset: &AssetRef, price: f64, currency: &str, source: &str, now_ms: i64) {
@@ -906,12 +1026,57 @@ pub fn metal_unit(text: &str) -> &'static str {
     }
 }
 
+/// First decimal in `text`, including a phrase such as "128.60340395 EPIC Cash".
+pub fn first_quantity(text: &str) -> Option<String> {
+    if let Some(parsed) = parse_holding_phrase(text) {
+        return Some(parsed.quantity);
+    }
+    for token in fold(text).split_whitespace() {
+        if let Some(number) = number_token(token) {
+            return Some(number);
+        }
+    }
+    None
+}
+
 fn alias(raw: &str) -> Option<AssetRef> {
     let key = fold(raw);
     if key.is_empty() {
         return None;
     }
-    let row = match key.as_str() {
+    if let Some(asset) = alias_exact(&key) {
+        return Some(asset);
+    }
+    let stripped = fold(&key.chars().filter(|ch| ch.is_ascii_alphanumeric() || ch.is_whitespace()).collect::<String>());
+    if stripped != key {
+        if let Some(asset) = alias_exact(&stripped) {
+            return Some(asset);
+        }
+    }
+    epic_phrase(&stripped)
+}
+
+/// "EPIC Cash", "my EPIC Cash wallet", and "EPIC-Cash." are Epic Cash.
+/// "Epic Chain" is a different coin and stays unmatched.
+fn epic_chain_name(name: &str) -> bool {
+    let folded = fold(name);
+    let tokens: Vec<&str> = folded.split_whitespace().collect();
+    tokens.iter().any(|token| *token == "chain") && !tokens.iter().any(|token| *token == "cash" || *token == "epiccash")
+}
+
+fn epic_phrase(key: &str) -> Option<AssetRef> {
+    let tokens: Vec<&str> = key.split_whitespace().filter(|token| !token.is_empty()).collect();
+    let cash = tokens.iter().any(|token| *token == "cash" || *token == "epiccash");
+    let chain = tokens.iter().any(|token| *token == "chain");
+    if chain && !cash {
+        return None;
+    }
+    let epic = tokens.iter().any(|token| *token == "epic" || *token == "epiccash");
+    if epic && cash { alias_exact("epic cash") } else { None }
+}
+
+fn alias_exact(key: &str) -> Option<AssetRef> {
+    let row = match key {
         "btc" | "xbt" | "bitcoin" => ("BTC", "crypto", "bitcoin", "btc-bitcoin", "XXBTZEUR"),
         "eth" | "ethereum" => ("ETH", "crypto", "ethereum", "eth-ethereum", "XETHZEUR"),
         "xmr" | "monero" => ("XMR", "crypto", "monero", "xmr-monero", "XXMRZEUR"),
@@ -1035,6 +1200,9 @@ mod tests {
         assert_eq!(epic.paprika_id, "epic-epic-cash");
         assert_eq!(resolve_holding("Epic Cash", "", "CHF", "other", "").unwrap().coingecko_id, "epic-cash");
         assert_eq!(resolve_holding("EPIC-Cash", "", "CHF", "custom", "").unwrap().symbol, "EPIC");
+        assert_eq!(resolve_holding("  Epic   Cash. ", "", "CHF", "custom", "").unwrap().coingecko_id, "epic-cash");
+        assert_eq!(resolve_holding("my EPIC Cash wallet", "", "CHF", "custom", "").unwrap().symbol, "EPIC");
+        assert!(resolve_holding("Epic Chain", "EPIC", "CHF", "crypto", "").unwrap().coingecko_id.is_empty(), "Epic Chain does not inherit the Epic Cash id");
         let named = resolve_holding("EPIC Cash", "ETH", "CHF", "custom", "").unwrap();
         assert_eq!(named.symbol, "EPIC", "the typed name wins over a ticker saved earlier");
         let xmr = resolve_holding("Monero", "XMR", "XMR", "crypto", "").unwrap();

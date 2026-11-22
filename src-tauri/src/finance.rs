@@ -370,6 +370,12 @@ pub struct AccountView {
     pub market_unit: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub market_symbol: String,
+    /// CoinGecko id used for the last resolution. Empty when the holding is not a known coin.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub provider_coingecko_id: String,
+    /// CoinPaprika id used for the last resolution.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub provider_paprika_id: String,
 }
 
 fn is_zero(value: &i64) -> bool {
@@ -830,6 +836,38 @@ impl Finance {
         self.commit(app, store)
     }
 
+    /// Save a CoinGecko or CoinPaprika id for one holding and fetch it now.
+    pub fn set_holding_provider(&self, app: &AppHandle, account_id: &str, gecko: &str, paprika: &str) -> Result<Snapshot, String> {
+        let mut store = self.lock().clone();
+        let locale = currency_locale(app, &store);
+        let _guard = push_locale(&locale);
+        let id = account_id.trim();
+        if !store.accounts.iter().any(|account| account.id == id) {
+            return Err(spoken("No holding matches {name}.", &[("name", id)]));
+        }
+        let gecko = gecko.trim().to_string();
+        let paprika = paprika.trim().to_string();
+        if gecko.is_empty() && paprika.is_empty() {
+            return Err(spoken("Say the provider id.", &[]));
+        }
+        if let Some(pin) = store.provider_pins.iter_mut().find(|pin| pin.account_id == id) {
+            pin.coingecko_id = gecko;
+            pin.paprika_id = paprika;
+            pin.manual = true;
+        } else {
+            store.provider_pins.push(crate::finance_history::ProviderPin {
+                account_id: id.to_string(),
+                coingecko_id: gecko,
+                paprika_id: paprika,
+                manual: true,
+            });
+        }
+        let _ = link_holdings(&mut store);
+        let now_ms = Local::now().timestamp_millis();
+        let _ = fetch_holding_prices(&mut store, now_ms, true, Some(id), &crate::finance_prices::blocking_get, Some(&|asset| ai_spot(app, asset)));
+        self.commit(app, store)
+    }
+
     /// Fetch one holding now. A fresh quote from earlier today does not block it.
     pub fn refresh_holding(&self, app: &AppHandle, name_or_id: &str) -> Result<Snapshot, String> {
         let mut store = self.lock().clone();
@@ -1122,7 +1160,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "list_finance",
-            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's rates and holding prices and does not wait until tomorrow. When they say refresh price of a holding, such as refresh price of EPIC Cash, set refresh true and account to that name. phrase may be that whole sentence. Speak a holding's market worth and its source when the detail includes them, and say when the price is an AI estimate. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result. view activity, transactions, or search returns each transaction id, date, amount, currency, category, and account. amount, date, query, and account filter that list. transactionCount on an account is how many transactions are attached. Do not say there are none unless that count is zero or transactions is empty.",
+            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's rates and holding prices and does not wait until tomorrow. When they say refresh price of a holding, such as refresh price of EPIC Cash or refresh EPIC price, set refresh true and account to that name. phrase may be that whole sentence. When they ask why a holding has no price, such as why has EPIC no price, set phrase to that sentence. Speak the sources, the ids, and the status of each source. Speak a holding's market worth and its source when the detail includes them, and say when the price is an AI estimate. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result. view activity, transactions, or search returns each transaction id, date, amount, currency, category, and account. amount, date, query, and account filter that list. transactionCount on an account is how many transactions are attached. Do not say there are none unless that count is zero or transactions is empty.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1234,7 +1272,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 }
 
 pub fn voice_money_hint() -> &'static str {
-    " When logging money, call log_money and then confirm only the rows in saved, each with its id. If failed is not empty or the tool returns an error, say what failed and do not say those items were logged. items logs several expenses in one call. A correction in the same sentence, such as 79.95 no wait 63.96, saves only 63.96. To change 695 to 6.95, edit the existing id from list_finance view activity. Do not add a second expense. Activity returns id, date, amount, currency, category, and account. Swiss card matches an existing Swisscard. Logging never creates an account or card. If none match, or several do, ask and list the closest names. Create a card only with save_account after they explicitly ask to add one. move_transactions moves saved rows and recalculates balances and card debt without copying them. delete_finance on an account says how many transactions it has. Do not say there are none unless that count is zero."
+    " When they say refresh EPIC price, call list_finance with phrase set to that sentence. When they ask why has EPIC no price, call list_finance with phrase set to that sentence and speak the sources, ids, and status. When logging money, call log_money and then confirm only the rows in saved, each with its id. If failed is not empty or the tool returns an error, say what failed and do not say those items were logged. items logs several expenses in one call. A correction in the same sentence, such as 79.95 no wait 63.96, saves only 63.96. To change 695 to 6.95, edit the existing id from list_finance view activity. Do not add a second expense. Activity returns id, date, amount, currency, category, and account. Swiss card matches an existing Swisscard. Logging never creates an account or card. If none match, or several do, ask and list the closest names. Create a card only with save_account after they explicitly ask to add one. move_transactions moves saved rows and recalculates balances and card debt without copying them. delete_finance on an account says how many transactions it has. Do not say there are none unless that count is zero."
 }
 
 pub fn try_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>, String> {
@@ -1302,6 +1340,16 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
     }
     if name == "list_finance" {
         let phrase_name = ["phrase", "query", "account"].iter().find_map(|key| args[*key].as_str().and_then(parse_refresh_phrase));
+        let why_name = ["phrase", "query", "account"].iter().find_map(|key| args[*key].as_str().and_then(parse_why_price));
+        if let Some(name) = why_name {
+            let mut store = finance.lock().clone();
+            let _ = link_holdings(&mut store);
+            let now_ms = Local::now().timestamp_millis();
+            let _ = fetch_holding_prices(&mut store, now_ms, true, Some(&name), &crate::finance_prices::blocking_get, Some(&|asset| ai_spot(app, asset)));
+            let detail = explain_unpriced(&store, &name, now_ms)?;
+            finance.commit(app, store)?;
+            return Ok(Some(json!({ "ok": true, "detail": detail, "refreshed": true })));
+        }
         if let Some(name) = phrase_name {
             let mut store = finance.lock().clone();
             let detail = refresh_named(&mut store, app, &name)?;
@@ -4041,6 +4089,36 @@ fn recover_quantity(account: &mut Account) -> bool {
             }
         }
     }
+    if account.units.trim().is_empty() && holding_name_resolves(account) {
+        if let Some(qty) = crate::finance_prices::first_quantity(&format!("{} {}", account.notes, account.name)) {
+            account.units = qty;
+            dirty = true;
+        }
+    }
+    dirty
+}
+
+fn recover_history_quantities(store: &mut Store) -> bool {
+    let found: Vec<(String, String)> = store
+        .accounts
+        .iter()
+        .filter(|account| account.units.trim().is_empty() && holding_name_resolves(account))
+        .filter_map(|account| {
+            let saved = store.history.iter().rev().find(|point| point.account_id == account.id && !point.quantity.trim().is_empty())?.quantity.clone();
+            let qty = crate::finance_prices::first_quantity(&saved).unwrap_or(saved);
+            let plain = !qty.is_empty() && qty.chars().all(|ch| ch.is_ascii_digit() || ch == '.');
+            plain.then_some((account.id.clone(), qty))
+        })
+        .collect();
+    let mut dirty = false;
+    for (id, qty) in found {
+        if let Some(account) = store.accounts.iter_mut().find(|account| account.id == id) {
+            if account.units.trim().is_empty() {
+                account.units = qty;
+                dirty = true;
+            }
+        }
+    }
     dirty
 }
 
@@ -4054,7 +4132,9 @@ fn quantity_text(amount: i64, currency: &str) -> String {
 }
 
 fn link_holdings(store: &mut Store) -> bool {
-    let mut dirty = invalidate_price_cache(store);
+    // Read quantities and pins before the cache version bump. A bump must not erase the id that prices this holding.
+    let mut dirty = recover_history_quantities(store);
+    dirty |= invalidate_price_cache(store);
     for account in &mut store.accounts {
         dirty |= recover_quantity(account);
         if matches!(account.kind.as_str(), "bank" | "credit_card" | "loan" | "other_debt") {
@@ -4067,9 +4147,11 @@ fn link_holdings(store: &mut Store) -> bool {
         if account.kind == "cash" && asset.kind != "crypto" {
             continue;
         }
-        if matches!(account.kind.as_str(), "other" | "custom" | "") {
-            account.kind = "investment".into();
-            dirty = true;
+        if matches!(account.kind.as_str(), "other" | "custom" | "") || (account.kind == "cash" && asset.kind == "crypto") {
+            if account.kind != "investment" {
+                account.kind = "investment".into();
+                dirty = true;
+            }
         }
         let name_known = crate::finance_prices::resolve_holding(&account.name, "", "", "", "").is_some();
         if account.ticker.trim().is_empty() || (name_known && !account.ticker.eq_ignore_ascii_case(&asset.symbol)) {
@@ -4082,7 +4164,10 @@ fn link_holdings(store: &mut Store) -> bool {
             account.measure_unit = asset.holding_unit.clone();
             dirty = true;
         }
-        if account.investment_type.is_empty() || (account.investment_type == "custom" && asset.kind != "custom") {
+        if asset.symbol == "EPIC" && account.investment_type != "crypto" {
+            account.investment_type = "crypto".into();
+            dirty = true;
+        } else if account.investment_type.is_empty() || (account.investment_type == "custom" && asset.kind != "custom") {
             let next = match asset.kind.as_str() {
                 "crypto" => "crypto",
                 "stock" => "stock",
@@ -4116,24 +4201,43 @@ fn holding_of(account: &Account) -> Option<crate::finance_prices::AssetRef> {
 
 fn holding_resolved(store: &Store, account: &Account) -> Option<crate::finance_prices::AssetRef> {
     let mut asset = holding_of(account)?;
+    if let Some(pin) = store.provider_pins.iter().find(|pin| pin.account_id == account.id && pin.manual) {
+        if !pin.coingecko_id.is_empty() {
+            asset.coingecko_id = pin.coingecko_id.clone();
+        }
+        if !pin.paprika_id.is_empty() {
+            asset.paprika_id = pin.paprika_id.clone();
+        }
+        return Some(asset);
+    }
     // A known coin keeps the id from its name. A pin is only for a ticker the alias table does not know.
+    // epic-chain is the wrong coin for EPIC Cash. Never let that automatic pin win.
+    if asset.symbol == "EPIC" && !asset.coingecko_id.is_empty() {
+        return Some(asset);
+    }
     let known = !asset.coingecko_id.is_empty() || !asset.paprika_id.is_empty();
     if !known {
         if let Some(pin) = store.provider_pins.iter().find(|pin| pin.account_id == account.id) {
-            if !pin.coingecko_id.is_empty() {
-                asset.coingecko_id = pin.coingecko_id.clone();
-            }
-            if !pin.paprika_id.is_empty() {
-                asset.paprika_id = pin.paprika_id.clone();
+            if pin.coingecko_id.eq_ignore_ascii_case("epic-chain") && asset.symbol == "EPIC" {
+                asset.coingecko_id = "epic-cash".into();
+                asset.paprika_id = "epic-epic-cash".into();
+            } else {
+                if !pin.coingecko_id.is_empty() {
+                    asset.coingecko_id = pin.coingecko_id.clone();
+                }
+                if !pin.paprika_id.is_empty() {
+                    asset.paprika_id = pin.paprika_id.clone();
+                }
             }
         }
     }
     Some(asset)
 }
 
-const PRICE_CACHE_VERSION: u32 = 3;
+const PRICE_CACHE_VERSION: u32 = 4;
 
-/// Drop provider ids that cannot be a price: a version change, a non-positive quote, or a pin whose holding has no live price.
+/// Drop quotes that cannot be a price. A version change clears misses so the next pass tries again.
+/// Pins are read and corrected first. They are not wiped, including a pin for a holding that has no price yet.
 fn invalidate_price_cache(store: &mut Store) -> bool {
     let mut changed = false;
     let before = store.prices.quotes.len();
@@ -4142,27 +4246,9 @@ fn invalidate_price_cache(store: &mut Store) -> bool {
         changed = true;
     }
     if store.price_cache_version != PRICE_CACHE_VERSION {
-        store.provider_pins.clear();
         store.prices.misses.clear();
+        store.prices.attempts.clear();
         store.price_cache_version = PRICE_CACHE_VERSION;
-        changed = true;
-    }
-    let priced: Vec<String> = store.prices.quotes.iter().filter(|quote| !quote.estimated).map(|quote| quote.symbol.to_ascii_uppercase()).collect();
-    let drop: Vec<String> = store
-        .accounts
-        .iter()
-        .filter_map(|account| {
-            let asset = holding_of(account)?;
-            if priced.iter().any(|symbol| symbol.eq_ignore_ascii_case(&asset.symbol)) {
-                None
-            } else {
-                Some(account.id.clone())
-            }
-        })
-        .collect();
-    let pins = store.provider_pins.len();
-    store.provider_pins.retain(|pin| !drop.iter().any(|id| id == &pin.account_id));
-    if store.provider_pins.len() != pins {
         changed = true;
     }
     changed
@@ -4173,6 +4259,9 @@ fn remember_pin(store: &mut Store, account_id: &str, asset: &crate::finance_pric
         return;
     }
     if let Some(pin) = store.provider_pins.iter_mut().find(|pin| pin.account_id == account_id) {
+        if pin.manual {
+            return;
+        }
         // A known coin replaces a pin saved under the wrong id, such as epic-chain for EPIC Cash.
         if !asset.coingecko_id.is_empty() && !pin.coingecko_id.eq_ignore_ascii_case(&asset.coingecko_id) {
             pin.coingecko_id = asset.coingecko_id.clone();
@@ -4185,6 +4274,7 @@ fn remember_pin(store: &mut Store, account_id: &str, asset: &crate::finance_pric
             account_id: account_id.to_string(),
             coingecko_id: asset.coingecko_id.clone(),
             paprika_id: asset.paprika_id.clone(),
+            manual: false,
         });
     }
 }
@@ -4215,11 +4305,22 @@ struct MarketNote {
 }
 
 fn market_note(store: &Store, account: &Account, now_ms: i64, display: &str) -> Option<MarketNote> {
-    let asset = holding_of(account)?;
+    let asset = holding_resolved(store, account)?;
     let qty = if !account.units.trim().is_empty() {
         account.units.clone()
     } else {
-        return None;
+        return Some(MarketNote {
+            worth_minor: None,
+            worth_currency: String::new(),
+            price: None,
+            price_currency: String::new(),
+            source: String::new(),
+            fetched_ms: 0,
+            stale: false,
+            estimated: false,
+            unit: asset.holding_unit,
+            symbol: asset.symbol,
+        });
     };
     let (unit_price, currency, source, fetched_ms, stale, estimated) = if account.price_override {
         let price = account.price_minor?;
@@ -4281,8 +4382,17 @@ fn view_of(store: &Store, account: &Account, now_ms: i64, display: &str) -> Acco
         market_estimated: false,
         market_unit: String::new(),
         market_symbol: String::new(),
+        provider_coingecko_id: String::new(),
+        provider_paprika_id: String::new(),
         account: account.clone(),
     };
+    if let Some(asset) = holding_resolved(store, account) {
+        view.provider_coingecko_id = asset.coingecko_id;
+        view.provider_paprika_id = asset.paprika_id;
+        if view.market_symbol.is_empty() {
+            view.market_symbol = asset.symbol;
+        }
+    }
     let Some(note) = market_note(store, account, now_ms, display) else { return view };
     view.market_worth_minor = note.worth_minor;
     view.market_worth_currency = note.worth_currency;
@@ -4344,7 +4454,16 @@ fn price_store(app: &AppHandle, store: &mut Store, force: bool, allow_ai: bool) 
 
 fn account_matches(account: &Account, key: &str) -> bool {
     let key = key.trim();
-    !key.is_empty() && (account.id == key || fold(&account.name) == fold(key) || (!account.ticker.is_empty() && fold(&account.ticker) == fold(key)))
+    if key.is_empty() {
+        return false;
+    }
+    if account.id == key || fold(&account.name) == fold(key) {
+        return true;
+    }
+    if !account.ticker.is_empty() && fold(&account.ticker) == fold(key) {
+        return true;
+    }
+    holding_of(account).is_some_and(|asset| fold(&asset.symbol) == fold(key))
 }
 
 /// `only` limits the fetch to that holding and bypasses the daily gate for it.
@@ -4427,7 +4546,97 @@ fn parse_refresh_phrase(text: &str) -> Option<String> {
             return Some(name);
         }
     }
+    // "refresh EPIC price" and "aktualisiere EPIC Preis".
+    const HEADS: &[&str] = &["refresh ", "update ", "actualiza ", "actualizar ", "aktualisiere ", "atualiza ", "atualizar ", "actualitza "];
+    const TAILS: &[&str] = &[" price", " precio", " preis", " preco", " preu"];
+    for head in HEADS {
+        let Some(rest) = folded.strip_prefix(head) else { continue };
+        for tail in TAILS {
+            let Some(name) = rest.strip_suffix(tail) else { continue };
+            let name = name.trim().trim_end_matches('.').to_string();
+            if !name.is_empty() && !name.contains("price") && !name.contains("precio") && !name.contains("preis") && !name.contains("preco") && !name.contains("preu") {
+                return Some(name);
+            }
+        }
+    }
     None
+}
+
+/// "why has EPIC no price" and the same question in es, de, pt, and ca.
+fn parse_why_price(text: &str) -> Option<String> {
+    let folded = fold(text).trim_end_matches('.').trim().to_string();
+    const WRAPS: &[(&str, &str)] = &[
+        ("why has ", " no price"),
+        ("why does ", " have no price"),
+        ("why is there no price for ", ""),
+        ("why no price for ", ""),
+        ("por que no tiene precio ", ""),
+        ("por que ", " no tiene precio"),
+        ("warum hat ", " keinen preis"),
+        ("warum hat ", " kein preis"),
+        ("porque ", " nao tem preco"),
+        ("por que ", " nao tem preco"),
+        ("per que no te preu ", ""),
+        ("per que ", " no te preu"),
+    ];
+    for (head, tail) in WRAPS {
+        let Some(rest) = folded.strip_prefix(head) else { continue };
+        if tail.is_empty() {
+            let name = rest.trim().to_string();
+            if !name.is_empty() {
+                return Some(name);
+            }
+            continue;
+        }
+        let Some(name) = rest.strip_suffix(tail) else { continue };
+        let name = name.trim().to_string();
+        if !name.is_empty() {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn explain_unpriced(store: &Store, name: &str, now_ms: i64) -> Result<String, String> {
+    let account = store.accounts.iter().find(|account| account_matches(account, name)).cloned().ok_or_else(|| spoken("No holding matches {name}.", &[("name", name)]))?;
+    let asset = holding_resolved(store, &account);
+    let symbol = asset.as_ref().map(|row| row.symbol.clone()).filter(|symbol| !symbol.is_empty()).unwrap_or_else(|| account.name.clone());
+    let gecko = asset.as_ref().map(|row| row.coingecko_id.clone()).filter(|id| !id.is_empty()).unwrap_or_else(|| spoken("none", &[]));
+    let paprika = asset.as_ref().map(|row| row.paprika_id.clone()).filter(|id| !id.is_empty()).unwrap_or_else(|| spoken("none", &[]));
+    let mut detail = spoken(
+        "{name} is symbol {symbol}. CoinGecko id {gecko}. CoinPaprika id {paprika}.",
+        &[("name", &account.name), ("symbol", &symbol), ("gecko", &gecko), ("paprika", &paprika)],
+    );
+    let attempts: Vec<_> = store.prices.attempts.iter().filter(|row| row.symbol.eq_ignore_ascii_case(&symbol)).cloned().collect();
+    if attempts.is_empty() {
+        detail.push(' ');
+        detail.push_str(&spoken("No source has been tried yet.", &[]));
+    } else {
+        for row in attempts {
+            let status = match row.status.as_str() {
+                "ok" => spoken("source answered", &[]),
+                "miss" => spoken("source missed", &[]),
+                "skipped" => spoken("source skipped", &[]),
+                _ => spoken("source failed", &[]),
+            };
+            let id = if row.id.is_empty() { spoken("none", &[]) } else { row.id };
+            detail.push(' ');
+            detail.push_str(&spoken("{source} {id}: {status}.", &[("source", &row.source), ("id", &id), ("status", &status)]));
+        }
+    }
+    if account.units.trim().is_empty() {
+        detail.push(' ');
+        detail.push_str(&spoken("No quantity is saved for {name}, so the price cannot become a value.", &[("name", &account.name)]));
+    } else if store.prices.quotes.iter().any(|row| row.symbol.eq_ignore_ascii_case(&symbol) && row.estimated) {
+        detail.push(' ');
+        detail.push_str(&spoken("The saved price for {symbol} is an AI estimate.", &[("symbol", &symbol)]));
+    } else if let Some(sentence) = market_note(store, &account, now_ms, &effective_default(store, &store.locale_hint)).filter(|note| note.worth_minor.is_some()).map(|_| worth_sentence(store, &account, now_ms, &effective_default(store, &store.locale_hint))) {
+        if !sentence.is_empty() {
+            detail.push(' ');
+            detail.push_str(&sentence);
+        }
+    }
+    Ok(detail)
 }
 
 fn capture_history(store: &mut Store, today: NaiveDate, now_ms: i64) -> bool {
@@ -5702,6 +5911,10 @@ fn infer_kind(name: &str, explicit: &str) -> String {
     }
     if !explicit.is_empty() {
         return explicit;
+    }
+    // "EPIC Cash" contains the word cash. It is a coin, not a wallet, when the name resolves.
+    if crate::finance_prices::resolve_holding(&name, "", "", "", "").is_some() {
+        return "investment".into();
     }
     if folded == "cash" || folded == "wallet" || folded.contains("cash") {
         return "cash".into();
@@ -8750,7 +8963,7 @@ mod tests {
         epic.investment_type = "custom".into();
         epic.ticker = "ETH".into();
         store.accounts.push(epic);
-        store.provider_pins.push(crate::finance_history::ProviderPin { account_id: "e".into(), coingecko_id: "epic-chain".into(), paprika_id: "ep-epic-chain".into() });
+        store.provider_pins.push(crate::finance_history::ProviderPin { account_id: "e".into(), coingecko_id: "epic-chain".into(), paprika_id: "ep-epic-chain".into(), manual: false });
         let calls = std::sync::Mutex::new(Vec::new());
         assert!(link_holdings(&mut store));
         let linked = store.accounts.iter().find(|account| account.name == "EPIC Cash").unwrap();
@@ -8827,5 +9040,183 @@ mod tests {
         assert_eq!(note.source, "manual");
         assert!((note.price.unwrap_or(0.0) - 1.2).abs() < 0.0001);
         assert!(!note.estimated);
+    }
+
+    #[test]
+    fn every_epic_shape_prices_from_a_provider_or_an_ai_estimate() {
+        let now = 1_700_000_000_000;
+        let mut store = Store::default();
+        store.price_cache_version = 2;
+        store.default_currency = "CHF".into();
+        store.fx.per_eur.push(crate::finance_fx::FxLeg { currency: "EUR".into(), per_eur: 1.0 });
+        store.fx.per_eur.push(crate::finance_fx::FxLeg { currency: "CHF".into(), per_eur: 0.95 });
+        store.prices.misses.push(crate::finance_prices::PriceMiss { symbol: "EPIC".into(), fetched_ms: now, reason: "Could not refresh the price.".into() });
+        let mut symbol = empty_account("sym".into());
+        symbol.name = "EPIC".into();
+        symbol.kind = "investment".into();
+        symbol.investment_type = "crypto".into();
+        symbol.ticker = "EPIC".into();
+        symbol.currency = "EPIC".into();
+        symbol.units = "3".into();
+        symbol.color = "#5C6B58".into();
+        let mut bare = empty_account("bare".into());
+        bare.name = "EPIC Cash".into();
+        bare.kind = "investment".into();
+        bare.investment_type = "crypto".into();
+        bare.currency = "CHF".into();
+        bare.units = "4".into();
+        let mut custom = empty_account("custom".into());
+        custom.name = "my EPIC Cash wallet".into();
+        custom.kind = "investment".into();
+        custom.investment_type = "custom".into();
+        custom.currency = "CHF".into();
+        custom.notes = "5.5 coins, bought by hand".into();
+        custom.color = "#6E8B74".into();
+        custom.purchase_minor = Some(100);
+        custom.purchase_currency = "CHF".into();
+        let mut legacy = empty_account("legacy".into());
+        legacy.name = "EPIC Cash".into();
+        legacy.kind = "other".into();
+        legacy.currency = "CHF".into();
+        legacy.notes = "128.60340395".into();
+        legacy.color = "#8C6A3F".into();
+        let mut pinned = empty_account("pin".into());
+        pinned.name = "  Epic   Cash. ".into();
+        pinned.kind = "custom".into();
+        pinned.investment_type = "other".into();
+        pinned.ticker = "ETH".into();
+        pinned.currency = "CHF".into();
+        pinned.notes = "9".into();
+        pinned.price_override = false;
+        store.provider_pins.push(crate::finance_history::ProviderPin { account_id: "pin".into(), coingecko_id: "epic-chain".into(), paprika_id: "ep-epic-chain".into(), manual: false });
+        let mut history_only = empty_account("hist".into());
+        history_only.name = "EPIC Cash".into();
+        history_only.kind = "investment".into();
+        history_only.investment_type = "custom".into();
+        history_only.currency = "CHF".into();
+        store.history.push(crate::finance_history::ValuePoint {
+            account_id: "hist".into(),
+            date: "2026-09-01".into(),
+            quantity: "7.5".into(),
+            value_minor: 1,
+            currency: "EUR".into(),
+            native_minor: 1,
+            native_currency: "EUR".into(),
+            source: "stated".into(),
+            name: "EPIC Cash".into(),
+            class_name: "custom".into(),
+        });
+        let mut balance_coin = empty_account("bal".into());
+        balance_coin.name = "EPIC".into();
+        balance_coin.kind = "cash".into();
+        balance_coin.currency = "EPIC".into();
+        balance_coin.balance_minor = Some(250_000_000);
+        let mut eggs = empty_account("eggs".into());
+        eggs.name = "Nitroeggs".into();
+        eggs.kind = "investment".into();
+        eggs.investment_type = "custom".into();
+        eggs.currency = "CHF".into();
+        eggs.units = "2".into();
+        eggs.color = "#A56B66".into();
+        store.accounts.extend([symbol, bare, custom, legacy, pinned, history_only, balance_coin, eggs]);
+        let today = NaiveDate::from_ymd_opt(2026, 11, 21).unwrap();
+        let clock = clock(today);
+        let mut talked_store = Store::default();
+        talked_store.default_currency = "CHF".into();
+        account_from_tool(&mut talked_store, &json!({"phrase": "6.25 EPIC Cash"}), &clock).unwrap();
+        let talked = talked_store.accounts.iter().find(|account| account.units == "6.25").unwrap();
+        assert_eq!(talked.kind, "investment");
+        assert_eq!(talked.ticker, "EPIC");
+        assert_eq!(talked.investment_type, "crypto");
+        assert_ne!(talked.kind, "cash", "Talk must not file EPIC Cash as a cash wallet");
+        assert!(link_holdings(&mut store));
+        assert_eq!(store.price_cache_version, PRICE_CACHE_VERSION);
+        assert!(store.prices.misses.iter().all(|row| row.symbol != "EPIC"), "a version bump clears the cached miss before the next fetch");
+        let expect = [
+            ("sym", "3"),
+            ("bare", "4"),
+            ("custom", "5.5"),
+            ("legacy", "128.60340395"),
+            ("pin", "9"),
+            ("hist", "7.5"),
+            ("bal", "2.50"),
+        ];
+        for (id, units) in expect {
+            let account = store.accounts.iter().find(|account| account.id == id).unwrap();
+            assert_eq!(account.kind, "investment", "{id} kind");
+            assert_eq!(account.investment_type, "crypto", "{id} type");
+            assert_eq!(account.ticker, "EPIC", "{id} ticker");
+            assert_eq!(account.units, units, "{id} units");
+            let asset = holding_resolved(&store, account).unwrap();
+            assert_eq!(asset.coingecko_id, "epic-cash", "{id} gecko");
+            assert_eq!(asset.paprika_id, "epic-epic-cash", "{id} paprika");
+        }
+        let custom = store.accounts.iter().find(|account| account.id == "custom").unwrap();
+        assert_eq!(custom.color, "#6E8B74");
+        assert_eq!(custom.purchase_minor, Some(100));
+        assert!(custom.notes.contains("bought by hand"));
+        let eggs = store.accounts.iter().find(|account| account.id == "eggs").unwrap();
+        assert_eq!(eggs.investment_type, "custom");
+        assert_eq!(eggs.ticker, "");
+        assert!(store.provider_pins.iter().all(|pin| pin.coingecko_id != "epic-chain"));
+        assert!(store.provider_pins.iter().any(|pin| pin.account_id == "pin" && pin.coingecko_id == "epic-cash"));
+        let calls = std::sync::Mutex::new(Vec::new());
+        let _ = fetch_holding_prices(&mut store, now, false, None, &|url| {
+            calls.lock().unwrap().push(url.to_string());
+            if url.contains("epic-chain") || url.contains("ep-epic-chain") {
+                return Err("stale id".into());
+            }
+            if url.contains("ids=epic-cash") || url.contains("symbols=epic") {
+                return Ok(r#"{"epic-cash":{"eur":0.809,"usd":0.888}}"#.into());
+            }
+            if url.contains("symbols=epic") {
+                return Ok(r#"{"EPIC":{"eur":0.809}}"#.into());
+            }
+            if url.contains("epic-epic-cash") {
+                return Ok(r#"{"quotes":{"EUR":{"price":0.811}}}"#.into());
+            }
+            if url.contains("query=EPIC") || url.contains("q=EPIC") || url.contains("q=my") {
+                return Ok(if url.contains("coinpaprika") { r#"{"currencies":[]}"#.into() } else { r#"{"coins":[]}"#.into() });
+            }
+            Err("unused".into())
+        }, None);
+        let seen = calls.lock().unwrap().clone();
+        assert!(seen.iter().any(|url| url.contains("epic-cash") || url.contains("symbols=epic")), "live id was requested: {seen:?}");
+        assert!(seen.iter().all(|url| !url.contains("epic-chain") && !url.contains("ep-epic-chain")), "stale pin was not requested: {seen:?}");
+        let quote = store.prices.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
+        assert!((quote.price - 0.809).abs() < 0.0001 || (quote.price - 0.811).abs() < 0.0001);
+        assert!(!quote.estimated);
+        assert!(store.prices.attempts.iter().any(|row| row.symbol == "EPIC" && row.status == "ok"));
+        for id in ["sym", "bare", "custom", "legacy", "pin", "hist", "bal"] {
+            let account = store.accounts.iter().find(|account| account.id == id).unwrap().clone();
+            let note = market_note(&store, &account, now, "CHF").unwrap();
+            assert!(note.worth_minor.unwrap_or(0) > 0, "{id} worth");
+            assert_eq!(note.symbol, "EPIC");
+        }
+        store.prices.quotes.retain(|row| row.symbol != "EPIC");
+        store.prices.attempts.clear();
+        let asked = std::cell::Cell::new(false);
+        let _ = fetch_holding_prices(&mut store, now + 1, false, None, &|_url| Err("down".into()), Some(&|_asset| {
+            asked.set(true);
+            Ok((0.77, "EUR".into()))
+        }));
+        assert!(asked.get(), "a custom-shaped EPIC holding asks for an AI estimate when every provider misses");
+        let estimated = store.prices.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
+        assert!(estimated.estimated);
+        assert_eq!(estimated.source, "ai");
+        assert!((estimated.price - 0.77).abs() < 0.0001);
+        assert!(store.prices.attempts.iter().any(|row| row.source == "ai" && row.status == "ok"));
+        let legacy = store.accounts.iter().find(|account| account.id == "legacy").unwrap().clone();
+        let note = market_note(&store, &legacy, now + 1, "EUR").unwrap();
+        assert!(note.estimated);
+        assert_eq!(parse_refresh_phrase("refresh EPIC price").as_deref(), Some("epic"));
+        assert_eq!(parse_why_price("why has EPIC no price").as_deref(), Some("epic"));
+        assert_eq!(parse_why_price("por que EPIC Cash no tiene precio").as_deref(), Some("epic cash"));
+        assert_eq!(parse_why_price("warum hat EPIC keinen preis").as_deref(), Some("epic"));
+        assert_eq!(parse_why_price("porque EPIC Cash nao tem preco").as_deref(), Some("epic cash"));
+        assert_eq!(parse_why_price("per que EPIC no te preu").as_deref(), Some("epic"));
+        let detail = explain_unpriced(&store, "EPIC", now + 1).unwrap();
+        assert!(detail.contains("EPIC"), "{detail}");
+        assert!(detail.contains("epic-cash") || detail.to_ascii_lowercase().contains("coingecko"), "{detail}");
     }
 }
