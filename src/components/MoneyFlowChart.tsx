@@ -89,6 +89,7 @@ export function MoneyFlowPanel({
     const flow = new URLSearchParams(window.location.search).get("flow");
     if (flow === "plain") return { labels: false, values: false, mode: "mono" as const };
     if (flow === "source") return { labels: true, values: true, mode: "source" as const };
+    if (flow === "category") return { labels: true, values: true, mode: "category" as const };
     return readOptions();
   });
   const [scale, setScale] = useState(1);
@@ -301,10 +302,11 @@ function FlowChart({
   useEffect(() => {
     const node = host.current;
     if (!node) return;
-    const width = Math.max(300, window.innerWidth - 32);
+    const visible = Math.min(node.parentElement?.clientWidth || window.innerWidth, window.innerWidth - (tall ? 16 : 36));
+    const width = Math.max(280, visible);
     node.style.width = `${width}px`;
     node.style.maxWidth = "100%";
-    const instance = init(node, undefined, { renderer: "canvas", width, height: tall ? Math.max(320, window.innerHeight - 80) : 360 });
+    const instance = init(node, undefined, { renderer: "canvas", width, height: tall ? Math.max(280, window.innerHeight - 120) : 320 });
     chart.current = instance;
     const onClick = (params: { dataType?: string; data?: { name?: string; id?: string } | null }) => {
       const data = params.data;
@@ -330,6 +332,8 @@ function FlowChart({
     const brand = token("--brand", "#7d6b58");
     const muted = token("--text-tertiary", "#8a8175");
     const total = flow.nodes.find((node) => node.id === "pool")?.amountMinor || flow.incomeMinor || 1;
+    const width = Math.max(280, host.current?.clientWidth || window.innerWidth - 32);
+    instance.resize({ width, height: tall ? Math.max(280, window.innerHeight - 120) : 320 });
     const safe = new Map(flow.nodes.map((node, index) => [node.id, `n${index}`]));
     const bySafe = new Map(flow.nodes.map((node, index) => [`n${index}`, node]));
     safeToReal.current = new Map(flow.nodes.map((node, index) => [`n${index}`, node.id]));
@@ -337,7 +341,7 @@ function FlowChart({
     try {
     instance.setOption(
       {
-        backgroundColor: "transparent",
+        backgroundColor: token("--surface-0", "#17181b"),
         tooltip: {
           trigger: "item",
           backgroundColor: token("--surface-1", "#f4f1ea"),
@@ -364,8 +368,8 @@ function FlowChart({
             draggable: false,
             nodeWidth: 14,
             nodeGap: 14,
-            left: 4,
-            right: 8,
+            left: 8,
+            right: labelsOn ? 88 : 12,
             top: 8,
             bottom: 8,
             emphasis: { focus: "adjacency" },
@@ -379,7 +383,8 @@ function FlowChart({
                 const node = byId.get(params.name || "");
                 if (!node) return "";
                 if (!valuesOn) return node.label;
-                return `${node.label}\n${formatMoney(node.amountMinor, currency)}`;
+                const share = total > 0 ? Math.round((node.amountMinor / total) * 1000) / 10 : 0;
+                return `${node.label}\n${formatMoney(node.amountMinor, currency)} · ${share}%`;
               },
             },
             data: flow.nodes.map((node) => ({
@@ -394,7 +399,6 @@ function FlowChart({
       },
       true,
     );
-    instance.resize();
     } catch (error) {
       if (host.current) host.current.dataset.chartError = error instanceof Error ? error.message : "chart";
     }

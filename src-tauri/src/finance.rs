@@ -1193,14 +1193,15 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow is where the money went and can keep its own period. period is this, last, 3m, 6m, ytd, 1y, all, or custom, with start and end when custom. action is hide, show, only, or reset, and name is a holding, a class such as crypto, or a dashboard section. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow is where the money went. For chart flow, action labels toggles names, action values toggles amounts and percentages, action color uses mode category, source, or mono, and action fullscreen opens the landscape chart. period is this, last, 3m, 6m, ytd, 1y, all, or custom, with start and end when custom. action is hide, show, only, reset, labels, values, color, or fullscreen. name is a holding, a class such as crypto, or a dashboard section. Do not invent a rate.",
             json!({
                 "type": "object",
                 "properties": {
                     "view": { "type": "string" },
                     "chart": { "type": "string", "description": "allocation, category, debts, trend, holdings, or portfolio" },
-                    "action": { "type": "string", "description": "hide, show, only, or reset" },
-                    "name": { "type": "string", "description": "Holding name or class such as Quanloop or crypto" },
+                    "action": { "type": "string", "description": "hide, show, only, reset, labels, values, color, or fullscreen" },
+                    "mode": { "type": "string", "description": "For chart flow color: category, source, or mono" },
+                    "name": { "type": "string", "description": "Holding name, class such as crypto, or a dashboard section" },
                     "period": { "type": "string", "description": "this, last, 3m, 6m, ytd, 1y, all, or custom" },
                     "start": { "type": "string", "description": "Custom range start, YYYY-MM-DD" },
                     "end": { "type": "string", "description": "Custom range end, YYYY-MM-DD" }
@@ -1272,7 +1273,8 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         let period = args["period"].as_str().unwrap_or("").trim().to_string();
         let start = args["start"].as_str().unwrap_or("").trim().to_string();
         let end = args["end"].as_str().unwrap_or("").trim().to_string();
-        touch_chart(app, view, &chart, &action, &chart_name, &period, &start, &end);
+        let mode = args["mode"].as_str().unwrap_or("").trim().to_string();
+        touch_chart(app, view, &chart, &action, &chart_name, &period, &start, &end, &mode);
         let store = finance.lock().clone();
         let today = Local::now().date_naive();
         let raw_view = fold(args["view"].as_str().unwrap_or(""));
@@ -5836,12 +5838,12 @@ fn touch(app: &AppHandle) {
 }
 
 fn touch_view(app: &AppHandle, view: &str) {
-    touch_chart(app, view, "", "", "", "", "", "");
+    touch_chart(app, view, "", "", "", "", "", "", "");
 }
 
-fn touch_chart(app: &AppHandle, view: &str, chart: &str, action: &str, name: &str, period: &str, start: &str, end: &str) {
+fn touch_chart(app: &AppHandle, view: &str, chart: &str, action: &str, name: &str, period: &str, start: &str, end: &str, mode: &str) {
     if let Some(hub) = app.try_state::<std::sync::Arc<crate::diagnostics::Hub>>() {
-        hub.emit("voice://finance", json!({ "view": view, "chart": chart, "action": action, "name": name, "period": period, "start": start, "end": end }));
+        hub.emit("voice://finance", json!({ "view": view, "chart": chart, "action": action, "name": name, "mode": mode, "period": period, "start": start, "end": end }));
     }
 }
 
@@ -7208,17 +7210,25 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
             notes: vec![tr(locale, "A description without a category stays under Uncategorized.")],
             numbers: vec![],
             rows: vec![],
-            chart: Some(Chart::Bars {
-                rows: flow_rows
-                    .into_iter()
-                    .take(12)
-                    .map(|(name, amount, currency)| Slice {
-                        label: name,
-                        value: amount as f64,
-                        color: "#6E8B74".into(),
-                        caption: format_minor(amount, &currency),
-                    })
-                    .collect(),
+            chart: Some(Chart::Flow {
+                columns: {
+                    let sinks: Vec<Slice> = flow_rows
+                        .iter()
+                        .take(8)
+                        .map(|(name, amount, currency)| Slice {
+                            label: name.clone(),
+                            value: *amount as f64,
+                            color: "#C48984".into(),
+                            caption: format_minor(*amount, currency),
+                        })
+                        .collect();
+                    let total: i64 = sinks.iter().map(|slice| slice.value as i64).sum();
+                    vec![
+                        vec![Slice { label: tr(locale, "Income"), value: total as f64, color: "#7D9A86".into(), caption: String::new() }],
+                        vec![Slice { label: tr(locale, "Total"), value: total as f64, color: "#C4B5A0".into(), caption: String::new() }],
+                        sinks,
+                    ]
+                },
             }),
         });
     }

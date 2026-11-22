@@ -31,6 +31,7 @@ pub enum Chart {
     Bars { rows: Vec<Slice> },
     Groups { captions: Vec<String>, series: Vec<String>, values: Vec<Vec<f64>>, colors: Vec<String> },
     Trend { labels: Vec<String>, income: Vec<f64>, expense: Vec<f64>, net: Vec<f64> },
+    Flow { columns: Vec<Vec<Slice>> },
 }
 
 const W: f64 = 595.28;
@@ -74,6 +75,7 @@ impl Clone for Chart {
             Chart::Bars { rows } => Chart::Bars { rows: rows.clone() },
             Chart::Groups { captions, series, values, colors } => Chart::Groups { captions: captions.clone(), series: series.clone(), values: values.clone(), colors: colors.clone() },
             Chart::Trend { labels, income, expense, net } => Chart::Trend { labels: labels.clone(), income: income.clone(), expense: expense.clone(), net: net.clone() },
+            Chart::Flow { columns } => Chart::Flow { columns: columns.clone() },
         }
     }
 }
@@ -118,6 +120,7 @@ fn paint(page: &Page) -> String {
             Chart::Bars { rows } => bars(&mut ops, rows),
             Chart::Groups { captions, series, values, colors } => groups(&mut ops, captions, series, values, colors),
             Chart::Trend { labels, income, expense, net } => trend(&mut ops, labels, income, expense, net),
+            Chart::Flow { columns } => flow(&mut ops, columns),
         }
     }
     ops
@@ -261,6 +264,36 @@ fn disk(ops: &mut String, cx: f64, cy: f64, radius: f64, color: (f64, f64, f64))
 
 fn swatch(ops: &mut String, x: f64, y: f64, color: &str) {
     rect(ops, x, y, 10.0, 10.0, parse_color(color));
+}
+
+fn flow(ops: &mut String, columns: &[Vec<Slice>]) {
+    if columns.is_empty() {
+        return;
+    }
+    let left = 52.0;
+    let gap = 28.0;
+    let col_w = 70.0;
+    let bottom = 220.0;
+    let height = 280.0;
+    for (index, column) in columns.iter().enumerate() {
+        let total: f64 = column.iter().map(|slice| slice.value.abs()).sum();
+        if total <= 0.0 {
+            continue;
+        }
+        let x = left + index as f64 * (col_w + gap);
+        let mut y = bottom;
+        for slice in column {
+            let h = (slice.value.abs() / total) * height;
+            if h < 1.0 {
+                continue;
+            }
+            rect(ops, x, y, col_w, h, parse_color(&slice.color));
+            if h > 16.0 {
+                text(ops, x + 4.0, y + h - 14.0, 8.0, &clip(&slice.label, 12), false, rgb("1A1B1E"));
+            }
+            y += h;
+        }
+    }
 }
 
 fn rect(ops: &mut String, x: f64, y: f64, w: f64, h: f64, color: (f64, f64, f64)) {
