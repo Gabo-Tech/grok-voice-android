@@ -59,6 +59,8 @@ const categories: FinanceCategory[] = [
   { name: "Food", color: "#e07a74", kind: "expense" },
   { name: "Transport", color: "#e0b15a", kind: "expense" },
   { name: "Subscriptions", color: "#6aa8e0", kind: "expense" },
+  { name: "Coffee", color: "#c4a484", kind: "expense" },
+  { name: "Tips", color: "#d7a3c4", kind: "expense" },
 ];
 
 function flowTransactions(empty: boolean): FinanceTransaction[] {
@@ -68,6 +70,8 @@ function flowTransactions(empty: boolean): FinanceTransaction[] {
     tx({ id: "food", amountMinor: 62000, direction: "expense", category: "Food", date: `${month}-04` }),
     tx({ id: "transport", amountMinor: 28000, direction: "expense", category: "Transport", date: `${month}-06` }),
     tx({ id: "subs", amountMinor: 19000, direction: "expense", category: "Subscriptions", date: `${month}-08` }),
+    tx({ id: "coffee", amountMinor: 2000, direction: "expense", category: "Coffee", date: `${month}-09` }),
+    tx({ id: "tips", amountMinor: 1500, direction: "expense", category: "Tips", date: `${month}-10` }),
   ];
   if (empty) return expenses;
   return [

@@ -541,6 +541,10 @@ export interface SankeyFrame {
   columnFill: number;
   flowPx: number;
   portrait: boolean;
+  /** Narrow portrait draws top to bottom so labels use the full width. */
+  vertical: boolean;
+  /** Narrow portrait, left to right, with even rows and labels beside each bar. */
+  reference: boolean;
   fontSize: number;
   lineHeight: number;
   compact: boolean;
@@ -552,15 +556,18 @@ function clamp(value: number, min: number, max: number): number {
 
 /**
  * Landscape keeps the da7d786 proportions: a short plot and a ribbon about
- * a third of that plot. Portrait scales the ribbon with the container width
- * and gives the plot a row per leaf so labels stay beside their nodes.
+ * a third of that plot. A wide portrait does the same. A narrow portrait
+ * turns the chart upright so each row can use the full width for labels.
  */
-export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true, chartHeight = 0): SankeyFrame {
+export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true, chartHeight = 0, layout: "vertical" | "horizontal" = "vertical"): SankeyFrame {
   const width = Math.max(280, Math.round(chartWidth || 0));
   const reported = chartHeight >= 240 ? Math.round(chartHeight) : Math.round(clamp(width * 0.85, 300, 560));
   const portrait = reported > width;
+  const narrow = portrait && width < 520;
+  const vertical = narrow && layout !== "horizontal";
+  const reference = narrow && layout === "horizontal";
   const phone = width < 700;
-  const nodeWidth = Math.round(clamp(width * 0.011, 3, 8));
+  const nodeWidth = reference ? 12 : Math.round(clamp(width * 0.011, 3, 8));
   const counts = columnCounts.filter((count) => count > 0);
   const columns = Math.max(1, counts.length);
   const busiest = Math.max(1, ...counts, 1);
@@ -569,37 +576,40 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const compact = width < 640;
   const flowPx = Math.round(clamp(width * 0.055, 16, 48));
 
-  let top = labels ? (portrait ? 96 : Math.round(clamp(reported * 0.1, 56, 84))) : 8;
-  let bottom = labels ? (portrait ? 88 : 12) : 8;
+  let top = labels ? (reference ? 20 : portrait ? (vertical ? 72 : 96) : Math.round(clamp(reported * 0.1, 56, 84))) : 8;
+  let bottom = labels ? (reference ? 16 : portrait ? (vertical ? 96 : 88) : 12) : 8;
   let plot = portrait
     ? Math.round(clamp(busiest * (lineHeight * 2 + 18), 260, 440))
     : Math.round(clamp(Math.max(56, busiest * (lineHeight + 4)) / 0.68, 168, 340));
   if (!portrait && top + bottom + plot > reported) plot = Math.max(128, reported - top - bottom);
   const height = top + plot + bottom;
-  const columnFill = portrait ? flowPx / plot : 0.32;
-  const seriesH = Math.round(plot * columnFill);
+  const columnFill = vertical ? 0.32 : portrait ? flowPx / plot : 0.32;
+  const seriesH = Math.round(plot * (vertical ? 1 : columnFill));
   const seriesTop = portrait ? top : top + 2;
   const seriesBottom = portrait ? bottom : height - seriesTop - seriesH;
   const gaps = Math.max(0, busiest - 1);
   let nodeGap = 10;
   if (gaps > 0) {
-    const room = portrait ? plot - flowPx : Math.round(seriesH * 0.68) - busiest * 2;
-    nodeGap = Math.max(8, Math.min(phone ? 22 : 28, Math.floor(Math.max(0, room) / gaps)));
+    const room = vertical ? Math.round((width - 24) * 0.68) : portrait ? plot - flowPx : Math.round(seriesH * 0.68) - busiest * 2;
+    nodeGap = Math.max(8, Math.min(vertical ? 72 : phone ? 22 : 28, Math.floor(Math.max(0, room) / gaps)));
   }
 
-  let left = labels ? Math.round(clamp(width * (portrait ? 0.42 : 0.24), portrait ? 156 : 84, portrait ? 190 : 188)) : 8;
-  let right = labels ? Math.round(clamp(width * (portrait ? 0.34 : 0.28), portrait ? 136 : 96, portrait ? 170 : 210)) : 8;
-  const minPlotW = nodeWidth * columns + 8 * Math.max(0, columns - 1);
-  if (left + right + minPlotW > width - 4) {
-    const room = Math.max(0, width - 4 - minPlotW);
-    if (portrait) {
-      // Leaf labels need the right gutter. Source labels need the left one. The plot keeps the rest.
-      right = Math.min(right, Math.max(96, room - 80));
-      left = Math.max(48, room - right);
-    } else {
-      right = Math.max(48, Math.round(room * 0.56));
-      left = Math.max(40, room - right);
-    }
+  let left = labels ? Math.round(clamp(width * 0.24, 84, 188)) : 8;
+  let right = labels ? Math.round(clamp(width * 0.28, 96, 210)) : 8;
+  if (vertical) {
+    left = labels ? 12 : 8;
+    right = labels ? 12 : 8;
+  } else if (reference) {
+    const plotW = Math.round(Math.max(112, Math.min(width * 0.42, width - 150)));
+    const gutters = Math.max(0, width - plotW);
+    left = Math.round(gutters * 0.5);
+    right = gutters - left;
+  }
+  const minPlotW = nodeWidth * columns + 12 * Math.max(0, columns - 1);
+  if (!vertical && !reference && left + right + minPlotW > width - 4) {
+    const gutters = Math.max(0, width - 4 - minPlotW);
+    right = Math.max(48, Math.round(gutters * 0.56));
+    left = Math.max(40, gutters - right);
   }
 
   return {
@@ -616,10 +626,12 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     nodeGap,
     floorShare: 2 / Math.max(40, seriesH),
     layoutIterations: 0,
-    linkOpacity: 0.3,
+    linkOpacity: reference ? 0.42 : 0.3,
     columnFill,
     flowPx,
     portrait,
+    vertical,
+    reference,
     fontSize,
     lineHeight,
     compact,
@@ -651,6 +663,45 @@ export function spreadColumn(values: number[], plotTop: number, plotH: number, f
   return bars.map((bar, index) => {
     const h = Math.min(bar, Math.max(4, slot - 12));
     return { y: plotTop + index * slot + Math.max(0, (slot - h) / 2), h };
+  });
+}
+
+export interface LevelBox {
+  x: number;
+  w: number;
+}
+
+/**
+ * One upright row. The bars together stay within `budget` (about a third of the width).
+ * A single bar sits on the right when `side` is set, so its label can use the left.
+ * Two bars sit at the ends. Several bars share equal slots.
+ */
+export function spreadLevel(weights: number[], plotWidth: number, budget: number, mode: "center" | "right" | "ends" | "slots"): LevelBox[] {
+  const count = weights.length;
+  if (!count || plotWidth <= 0) return [];
+  const total = weights.reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+  const room = Math.max(count * 4, Math.min(budget, plotWidth));
+  const bars = weights.map((value) => Math.max(4, (Math.max(0, value) / total) * room));
+  if (count === 1 || mode === "center" || mode === "right") {
+    const w = Math.min(bars[0], room);
+    const x = mode === "right" ? Math.max(0, plotWidth - w) : Math.max(0, (plotWidth - w) / 2);
+    return [{ x, w }];
+  }
+  if (mode === "ends") {
+    const leftW = Math.min(bars[0], plotWidth * 0.2);
+    const rightW = Math.min(bars[bars.length - 1], plotWidth * 0.2);
+    const gap = Math.max(8, plotWidth - leftW - rightW);
+    return weights.map((_, index) => {
+      if (index === 0) return { x: 0, w: leftW };
+      if (index === count - 1) return { x: leftW + gap, w: rightW };
+      const mid = plotWidth / 2 - bars[index] / 2;
+      return { x: Math.max(leftW + 4, Math.min(mid, plotWidth - rightW - bars[index] - 4)), w: Math.min(bars[index], plotWidth * 0.2) };
+    });
+  }
+  const slot = plotWidth / count;
+  return bars.map((bar, index) => {
+    const w = Math.min(bar, Math.max(4, slot - 8));
+    return { x: index * slot + Math.max(0, (slot - w) / 2), w };
   });
 }
 
@@ -791,6 +842,7 @@ export interface SankeyOptionInput {
   paper: string;
   line: string;
   mono: boolean;
+  portraitLayout?: "vertical" | "horizontal";
 }
 
 /** ECharts option. Width is the container. Labels keep a line break between the name and the amount. */
@@ -802,7 +854,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   };
   const depthOf = (node: FlowNode) => flowDepth(node.role, present);
   const counts = [0, 1, 2, 3, 4].map((depth) => input.nodes.filter((node) => depthOf(node) === depth).length);
-  const frame = sankeyFrame(input.width, counts, input.labels, input.height || 0);
+  const frame = sankeyFrame(input.width, counts, input.labels, input.height || 0, input.portraitLayout || "vertical");
   const total = Math.max(1, ...input.nodes.map((node) => node.amountMinor));
   const safe = new Map(input.nodes.map((node, index) => [node.id, `n${index}`]));
   const compact = frame.compact;
@@ -811,8 +863,8 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   const data = input.nodes.map((node) => {
     const depth = depthOf(node);
     const name = node.label.replace(/[{}|]/g, " ");
-    const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact);
-    const tiny = node.share < 0.03;
+    const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact).replace(/ · (\d+%)$/, frame.reference ? " ($1)" : " · $1");
+    const tiny = node.share < 0.03 && !node.italic;
     const small = node.share < 0.05;
     const showValue = input.values && !small;
     return {
@@ -825,9 +877,27 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
       label: {
         show: input.labels && !tiny,
         color: input.ink,
-        position: node.role === "source" ? "left" : node.role === "sink" || node.role === "child" ? "right" : node.role === "hub" && node.kind !== "spending" ? "bottom" : "top",
+        position: frame.reference
+          ? node.role === "source"
+            ? "left"
+            : node.role === "sink" || node.role === "child"
+              ? "right"
+              : "top"
+          : frame.vertical
+          ? node.role === "source"
+            ? "top"
+            : node.role === "sink" || node.role === "child"
+              ? "bottom"
+              : "left"
+          : node.role === "source"
+            ? "left"
+            : node.role === "sink" || node.role === "child"
+              ? "right"
+              : node.role === "hub" && node.kind !== "spending"
+                ? "bottom"
+                : "top",
         distance: 8,
-        offset: node.role === "pool" ? [0, -40] : [0, 0],
+        offset: !frame.vertical && !frame.reference && node.role === "pool" ? [0, -40] : [0, 0],
         overflow: "none",
         fontSize: frame.fontSize,
         lineHeight: frame.lineHeight,
@@ -843,7 +913,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
       series: [
         {
           type: "sankey",
-          orient: "horizontal",
+          orient: frame.vertical ? "vertical" : "horizontal",
           nodeAlign: "justify",
           layoutIterations: frame.layoutIterations,
           draggable: false,
