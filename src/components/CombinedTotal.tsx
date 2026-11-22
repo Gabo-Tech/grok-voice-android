@@ -23,6 +23,7 @@ export function CombinedHeadline({
   busy = false,
   size = "text-4xl",
   tone,
+  quiet = false,
 }: {
   parts: MoneyPart[];
   display: string;
@@ -31,6 +32,7 @@ export function CombinedHeadline({
   busy?: boolean;
   size?: string;
   tone?: "in" | "out" | "auto";
+  quiet?: boolean;
 }) {
   const t = useT();
   const head = headlineOf(parts, display, book, nowMs);
@@ -60,8 +62,8 @@ export function CombinedHeadline({
           formatMoney(head.amountMinor, head.currency)
         )}
       </p>
-      {rateCaption(head, t) ? <p className="fin-muted mt-1 text-[13px] leading-5 break-words">{rateCaption(head, t)}</p> : null}
-      <NativeAside parts={parts} display={display} />
+      {quiet || !rateCaption(head, t) ? null : <p className="fin-muted mt-1 text-[13px] leading-5 break-words">{rateCaption(head, t)}</p>}
+      {quiet ? null : <NativeAside parts={parts} display={display} />}
     </div>
   );
 }

@@ -228,11 +228,33 @@ export function useFinance() {
   );
 
   const refreshHolding = useCallback(
-    (id: string) => {
-      if (!inApp) return;
-      void run(() => api.refreshHoldingPrice(id));
+    async (id: string) => {
+      if (!inApp) {
+        const reason = t("Could not refresh the price.");
+        setError(reason);
+        return reason;
+      }
+      setBusy(true);
+      try {
+        const next = await api.refreshHoldingPrice(id);
+        setSnapshot(next);
+        setError(null);
+        const account = next.accounts.find((row) => row.id === id);
+        if (account && account.marketPrice == null) {
+          const reason = (next.prices?.lastError || "").trim() || t("Could not refresh the price.");
+          setError(reason);
+          return reason;
+        }
+        return "";
+      } catch (err) {
+        const reason = errorText(err);
+        setError(reason);
+        return reason;
+      } finally {
+        setBusy(false);
+      }
     },
-    [inApp, run],
+    [inApp, t],
   );
 
   const setHoldingProvider = useCallback(

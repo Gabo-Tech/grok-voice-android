@@ -1,5 +1,5 @@
 import { convertMinor, type RateBook } from "./financeMath.ts";
-import { compactLabeled, flowPercent } from "./money.ts";
+import { compactLabeled, flowPercent, minorExponent } from "./money.ts";
 import { inBounds } from "./chartPeriod.ts";
 import type { CategoryRecord } from "./financeCategories.ts";
 
@@ -151,8 +151,9 @@ function paint(map: Map<string, Bucket>, id: string, label: string, kind: string
 
 /**
  * Income sources flow into Total income, then out to Total spending, Investments, and Savings.
- * Savings is income minus spending minus investments. A negative result is a shortfall source
- * on the left, labelled as money from savings. It is never a fake income source named Spending.
+ * Total income is actual income only. A shortfall joins on the spending side. It is never
+ * drawn as income. When income is zero there is no Total income node: shortfall flows
+ * straight into Total spending. It is never a fake income source named Spending.
  * A card charge is an expense. Paying that card is spending, not a second expense category named Spending.
  * Amounts are converted into `display`. A missing rate stops the chart instead of assuming 1:1.
  */
@@ -245,14 +246,13 @@ export function buildMoneyFlow(
 
   const savingsMinor = incomeMinor - spendingMinor - investmentMinor;
   const shortfall = savingsMinor < 0 ? -savingsMinor : 0;
-  const pool = incomeMinor + shortfall;
-  if (shortfall > 0) {
-    const drawn = paint(sources, "in:shortfall", labels.shortfall, "drawn", -1);
-    remember(drawn, shortfall, 0, display, display);
-  }
+  const inflow = incomeMinor + shortfall;
 
-  const base = pool || 1;
+  const base = incomeMinor || 1;
   let sourceList = groupRest([...sources.values()], base, threshold, Boolean(opts.expandedOther), "in:rest", labels.other, "income");
+  if (shortfall > 0) {
+    sourceList.push({ id: "in:shortfall", label: labels.shortfall, kind: "drawn", amount: shortfall, originals: new Map(), order: -1, children: new Map() });
+  }
   let spendList = groupRest([...spends.values()], spendingMinor || 1, threshold, Boolean(opts.expandedOther), "out:rest", labels.other, "expense");
   const fanInvest = group === "entry" || invests.size > 1;
   let investList = fanInvest ? groupRest([...invests.values()], investmentMinor || 1, threshold, Boolean(opts.expandedOther), "inv:rest", labels.other, "investment") : [];
@@ -296,21 +296,23 @@ export function buildMoneyFlow(
 
   let inPaint = 0;
   let outPaint = 0;
-  const sourceNodes = sourceList.map((row) => toNode(row, "source", pool, row.kind === "drawn" ? colorFor(row, "short", 0) : colorFor(row, "in", inPaint++)));
+  const sourceNodes = sourceList.map((row) => toNode(row, "source", inflow || 1, row.kind === "drawn" ? colorFor(row, "short", 0) : colorFor(row, "in", inPaint++)));
   const spendNodes = spendList.map((row) => toNode(row, "sink", spendingMinor || 1, colorFor(row, "out", outPaint++)));
   const investNodes = investList.map((row) => toNode(row, "sink", investmentMinor || 1, colorFor(row, "invest", 0)));
-  const poolNode = toNode(
-    { id: "pool", label: labels.totalIncome, kind: "pool", amount: pool, originals: new Map(), order: 0, children: new Map() },
-    "pool",
-    pool,
-    "var(--flow-in)",
-  );
+  const poolNode = incomeMinor > 0
+    ? toNode(
+        { id: "pool", label: labels.totalIncome, kind: "pool", amount: incomeMinor, originals: new Map(), order: 0, children: new Map() },
+        "pool",
+        incomeMinor,
+        "var(--flow-in)",
+      )
+    : null;
   const hubs: FlowNode[] = [];
   if (spendingMinor > 0) {
     hubs.push(toNode(
       { id: "spend", label: labels.totalSpending, kind: "spending", amount: spendingMinor, originals: new Map(), order: 0, children: new Map() },
       "hub",
-      pool,
+      inflow || 1,
       "var(--flow-out)",
     ));
   }
@@ -318,7 +320,7 @@ export function buildMoneyFlow(
     hubs.push(toNode(
       { id: "invest", label: labels.investments, kind: "investment", amount: investmentMinor, originals: new Map(), order: 1, children: new Map() },
       "hub",
-      pool,
+      inflow || 1,
       "var(--flow-invest)",
     ));
   }
@@ -326,7 +328,7 @@ export function buildMoneyFlow(
     hubs.push(toNode(
       { id: "save", label: labels.savings, kind: "savings", amount: savingsMinor, originals: new Map(), order: 2, children: new Map() },
       "hub",
-      pool,
+      inflow || 1,
       "var(--flow-save)",
     ));
   }
@@ -344,14 +346,14 @@ export function buildMoneyFlow(
       children: [],
     })),
   );
-  const nodes = [...sourceNodes, poolNode, ...hubs, ...spendNodes, ...investNodes, ...childNodes];
+  const nodes = [...sourceNodes, ...(poolNode ? [poolNode] : []), ...hubs, ...spendNodes, ...investNodes, ...childNodes];
   const links: FlowLink[] = [
-    ...sourceNodes.map((row) => ({ source: row.id, target: "pool", amountMinor: row.amountMinor })),
-    ...hubs.map((row) => ({ source: "pool", target: row.id, amountMinor: row.amountMinor })),
+    ...sourceNodes.filter((row) => row.kind !== "drawn").map((row) => ({ source: row.id, target: "pool", amountMinor: row.amountMinor })),
+    ...fundedLinks(incomeMinor, shortfall, spendingMinor, investmentMinor, savingsMinor),
     ...spendNodes.map((row) => ({ source: "spend", target: row.id, amountMinor: row.amountMinor })),
     ...investNodes.map((row) => ({ source: "invest", target: row.id, amountMinor: row.amountMinor })),
     ...spendNodes.flatMap((node) => node.children.map((child) => ({ source: node.id, target: child.id, amountMinor: child.amountMinor }))),
-  ];
+  ].filter((link) => link.amountMinor > 0 && (link.source !== "pool" || incomeMinor > 0));
   const uncategorizedMinor = spendNodes.filter((row) => fold(row.label) === fold(labels.uncategorized)).reduce((sum, row) => sum + row.amountMinor, 0);
   return {
     state: "ready",
@@ -369,6 +371,26 @@ export function buildMoneyFlow(
 
 function sumMap(map: Map<string, Bucket>): number {
   return [...map.values()].reduce((sum, row) => sum + row.amount, 0);
+}
+
+/** Income covers spending, then investments, then savings. Shortfall covers whatever income did not. */
+function fundedLinks(income: number, shortfall: number, spending: number, investment: number, savings: number): FlowLink[] {
+  let incomeLeft = Math.max(0, income);
+  let shortLeft = Math.max(0, shortfall);
+  const links: FlowLink[] = [];
+  const fund = (id: string, need: number) => {
+    const wanted = Math.max(0, need);
+    const fromIncome = Math.min(incomeLeft, wanted);
+    incomeLeft -= fromIncome;
+    const fromShort = Math.min(shortLeft, wanted - fromIncome);
+    shortLeft -= fromShort;
+    if (fromIncome > 0) links.push({ source: "pool", target: id, amountMinor: fromIncome });
+    if (fromShort > 0) links.push({ source: "in:shortfall", target: id, amountMinor: fromShort });
+  };
+  fund("spend", spending);
+  fund("invest", investment);
+  fund("save", savings);
+  return links;
 }
 
 function groupRest(rows: Bucket[], base: number, threshold: number, expanded: boolean, id: string, label: string, kind: string): Bucket[] {
@@ -501,22 +523,178 @@ function sinkKind(tx: FlowTx, categoryKind: string): "income" | "expense" | "sav
   return "expense";
 }
 
+export interface SankeyFrame {
+  width: number;
+  height: number;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  plot: number;
+  nodeWidth: number;
+  nodeGap: number;
+  floorShare: number;
+  layoutIterations: number;
+  linkOpacity: number;
+}
+
 /**
- * Plot box for an ECharts sankey. Node width stays near 12px so a column reads as
- * thin bars. `floor` is the value share that should still paint about 2px.
+ * Plot box for an ECharts sankey. The chart width is the container width.
+ * Node bars stay near 10px on a phone and 14px on a tablet. Height grows with
+ * the busiest column so one flow is a ribbon, not a wall.
  */
-export function sankeyFrame(chartHeight: number, columnCounts: number[]): { top: number; bottom: number; plot: number; nodeWidth: number; nodeGap: number; floorShare: number } {
-  const height = Math.max(160, chartHeight);
-  const nodeWidth = 12;
+export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true): SankeyFrame {
+  const width = Math.max(280, Math.round(chartWidth || 0));
+  const phone = width < 600;
+  const nodeWidth = phone ? 10 : 14;
   const nodeGap = 16;
-  const plot = Math.max(120, height - 48);
-  const spare = Math.max(0, height - plot);
-  const top = Math.round(spare / 2);
-  const bottom = height - plot - top;
-  const busiest = Math.max(1, ...columnCounts, 1);
+  const counts = columnCounts.filter((count) => count > 0);
+  const columns = Math.max(1, counts.length);
+  const busiest = Math.max(1, ...counts, 1);
+  const minPlot = nodeWidth * columns + 16 * Math.max(0, columns - 1);
+  const room = Math.max(8, Math.floor((width - minPlot) / 2));
+  const gutter = labels ? Math.max(72, Math.min(phone ? 136 : 160, room)) : 12;
+  const slot = 28;
+  const plot = Math.round(Math.min(560, Math.max(phone ? 88 : 112, busiest * (nodeGap + slot))));
+  const top = labels ? 40 : 12;
+  const bottom = labels ? 20 : 12;
+  const height = plot + top + bottom;
   const usable = Math.max(2, plot - Math.max(0, busiest - 1) * nodeGap);
   const floorShare = 2 / usable;
-  return { top, bottom, plot, nodeWidth, nodeGap, floorShare };
+  return {
+    width,
+    height,
+    top,
+    bottom,
+    left: gutter,
+    right: gutter,
+    plot,
+    nodeWidth,
+    nodeGap,
+    floorShare,
+    layoutIterations: 0,
+    linkOpacity: 0.42,
+  };
+}
+
+/** "CHF 523.70 (100%)". The code is the caller's currency. Two decimals for ordinary fiat. */
+export function flowAmountLabel(amountMinor: number, currency: string, share: number): string {
+  const code = currency.trim().toUpperCase();
+  const exp = minorExponent(code);
+  const digits = exp <= 0 ? 0 : Math.min(exp, 2);
+  const value = amountMinor / 10 ** (exp < 0 ? 0 : exp);
+  const body = value.toFixed(digits);
+  const money = code ? `${code} ${body}` : body;
+  return `${money} (${flowPercent(share)})`;
+}
+
+export function flowDepth(role: FlowNode["role"], present: { pool: boolean; hub: boolean; sink: boolean }): number {
+  if (role === "source") return 0;
+  if (role === "pool") return 1;
+  if (role === "hub") return present.pool ? 2 : 1;
+  if (role === "child") return 1 + Number(present.pool) + Number(present.hub) + Number(present.sink);
+  return 1 + Number(present.pool) + Number(present.hub);
+}
+
+export interface SankeyOptionInput {
+  nodes: FlowNode[];
+  links: FlowLink[];
+  currency: string;
+  width: number;
+  labels: boolean;
+  values: boolean;
+  colors: Record<string, string>;
+  ink: string;
+  muted: string;
+  brand: string;
+  paper: string;
+  line: string;
+  mono: boolean;
+}
+
+/** ECharts option. Width is the container. Labels keep a line break between the name and the amount. */
+export function buildSankeyOption(input: SankeyOptionInput): { option: Record<string, unknown>; frame: SankeyFrame } {
+  const present = {
+    pool: input.nodes.some((node) => node.role === "pool"),
+    hub: input.nodes.some((node) => node.role === "hub"),
+    sink: input.nodes.some((node) => node.role === "sink" || node.role === "child"),
+  };
+  const depthOf = (node: FlowNode) => flowDepth(node.role, present);
+  const counts = [0, 1, 2, 3, 4].map((depth) => input.nodes.filter((node) => depthOf(node) === depth).length);
+  const frame = sankeyFrame(input.width, counts, input.labels);
+  const lastDepth = Math.max(0, ...input.nodes.map(depthOf));
+  const total = Math.max(1, ...input.nodes.map((node) => node.amountMinor));
+  const safe = new Map(input.nodes.map((node, index) => [node.id, `n${index}`]));
+  const sideWidth = Math.max(56, Math.min(frame.left, frame.right) - 18);
+  const clip = (value: string, width: number) => {
+    const max = Math.max(8, Math.floor(width / 6.4));
+    const clean = value.replace(/[{}|]/g, " ");
+    return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+  };
+  const data = input.nodes.map((node) => {
+    const depth = depthOf(node);
+    const outsideRight = depth === lastDepth && frame.right >= 150;
+    const end = depth === 0 ? "left" : outsideRight ? "right" : depth === lastDepth ? "left" : node.role === "hub" ? "bottom" : "top";
+    const align = end === "right" ? "left" : end === "left" ? "right" : "center";
+    const box = end === "top" || end === "bottom" ? Math.max(72, sideWidth) : sideWidth;
+    const name = clip(node.label, box);
+    const meta = clip(flowAmountLabel(node.amountMinor, input.currency, node.share), box);
+    const text = input.values ? `{name|${name}}\n{meta|${meta}}` : `{name|${name}}`;
+    return {
+      name: safe.get(node.id),
+      depth,
+      raw: node.amountMinor,
+      value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
+      label: {
+        show: input.labels,
+        position: end,
+        align,
+        distance: 6,
+        width: box,
+        overflow: "truncate",
+        ellipsis: "…",
+        fontSize: 13,
+        lineHeight: 16,
+        formatter: text,
+        rich: {
+          name: { color: input.ink, fontWeight: 650, fontSize: 13, fontStyle: node.italic ? "italic" : "normal", lineHeight: 16, width: box, overflow: "truncate", align },
+          meta: { color: input.muted, fontSize: 13, lineHeight: 16, width: box, overflow: "truncate", align },
+        },
+      },
+      itemStyle: { color: input.mono ? input.brand : input.colors[node.id] || input.brand, borderWidth: 0 },
+    };
+  });
+  return {
+    frame,
+    option: {
+      backgroundColor: input.paper,
+      series: [
+        {
+          type: "sankey",
+          orient: "horizontal",
+          nodeAlign: "justify",
+          layoutIterations: frame.layoutIterations,
+          draggable: false,
+          nodeWidth: frame.nodeWidth,
+          nodeGap: frame.nodeGap,
+          left: frame.left,
+          right: frame.right,
+          top: frame.top,
+          bottom: frame.bottom,
+          emphasis: { focus: "adjacency" },
+          lineStyle: { color: input.mono ? input.brand : "gradient", curveness: 0.5, opacity: frame.linkOpacity },
+          label: { show: input.labels },
+          data,
+          links: input.links.map((link) => ({
+            source: safe.get(link.source),
+            target: safe.get(link.target),
+            raw: link.amountMinor,
+            value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)),
+          })),
+        },
+      ],
+    },
+  };
 }
 
 /** Keep a tiny flow visible without letting it dominate the column. */

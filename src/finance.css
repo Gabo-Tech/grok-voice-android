@@ -321,6 +321,113 @@
   margin: 0;
 }
 
+.plan-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+@media (orientation: landscape) and (min-width: 700px) {
+  .plan-board {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+}
+
+.plan-month {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.plan-chevron {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.plan-chip {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.plan-ghost {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.plan-ghost i {
+  display: block;
+  height: 2px;
+  background: var(--line-soft);
+}
+
+.plan-rule {
+  margin: 16px 0 0;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plan-timeline {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.plan-timeline span {
+  height: 8px;
+  background: var(--line-soft);
+}
+
+.plan-timeline span[data-due="true"] {
+  background: var(--brand);
+}
+
+.plan-bill {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid var(--line-soft);
+}
+
+.plan-bill[data-shift="paid"] {
+  background: color-mix(in srgb, var(--positive) 28%, var(--surface-0));
+}
+
+.plan-bill[data-shift="skip"] {
+  background: color-mix(in srgb, var(--negative) 28%, var(--surface-0));
+}
+
+.plan-bill-row {
+  background: var(--surface-0);
+}
+
+.plan-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+}
+
 .finance .fin-hero-num {
   font-size: var(--text-display, 48px);
   font-weight: 500;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Info, Repeat } from "lucide-react";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { CombinedHeadline, StaticHeadline } from "@/components/CombinedTotal";
@@ -126,6 +127,7 @@ export function FinanceDashboard({
   onFocus,
   onOpenExpenses,
   onOpenIncome,
+  onOpenRule,
   onRefreshPrices,
   children,
 }: {
@@ -138,6 +140,7 @@ export function FinanceDashboard({
   onFocus: (focus: WorthFocus) => void;
   onOpenExpenses?: () => void;
   onOpenIncome?: () => void;
+  onOpenRule?: (id: string) => void;
   onRefreshPrices?: () => void;
   children?: ReactNode;
 }) {
@@ -328,12 +331,13 @@ export function FinanceDashboard({
       {panels.includes("coming-expenses") ? (
         <Coming
           title={t("Coming expenses")}
-          body={t("The next 30 days. Bills paid from cash or a bank, and credit-card payments that are due.")}
+          body={place === "plan" ? "" : t("The next 30 days. Bills paid from cash or a bank, and credit-card payments that are due.")}
           rows={comingOut}
           parts={comingOutParts}
           emptyTitle={t("Program a bill")}
-          emptyBody={t("Rent, a subscription, or a course with an end.")}
+          emptyBody={place === "plan" ? "" : t("Rent, a subscription, or a course with an end.")}
           onEmpty={onProgram}
+          onOpen={onOpenRule}
           onPaid={(id, date) => finance.markPaid(id, date)}
           onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
           paidLabel={t("Mark paid")}
@@ -341,6 +345,9 @@ export function FinanceDashboard({
           display={display}
           nowMs={nowMs}
           busy={finance.busy}
+          dense={place === "plan"}
+          today={today}
+          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, row.color]))}
         />
       ) : null}
 
@@ -361,12 +368,16 @@ export function FinanceDashboard({
       {panels.includes("coming-income") ? (
         <Coming
           title={t("Coming income")}
-          body={t("The next 30 days.")}
+          body={place === "plan" ? "" : t("The next 30 days.")}
           rows={incomeRows}
           parts={incomeParts}
           emptyTitle={t("Program income")}
-          emptyBody={t("A payday, money you will get, or a payout.")}
+          emptyBody={place === "plan" ? "" : t("A payday, money you will get, or a payout.")}
           onEmpty={onIncome}
+          onOpen={onOpenRule}
+          dense={place === "plan"}
+          today={today}
+          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, row.color]))}
           onPaid={(id, date) => finance.markPaid(id, date)}
           onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
           paidLabel={t("Mark received")}
@@ -380,12 +391,16 @@ export function FinanceDashboard({
       {panels.includes("payouts") ? (
         <Coming
           title={t("Investment payouts")}
-          body={t("The payout only. The principal stays what you entered.")}
+          body={place === "plan" ? "" : t("The payout only. The principal stays what you entered.")}
           rows={payoutRows}
           parts={payoutParts}
           emptyTitle={t("Program income")}
-          emptyBody={t("A payday, money you will get, or a payout.")}
+          emptyBody={place === "plan" ? "" : t("A payday, money you will get, or a payout.")}
           onEmpty={openPayout}
+          onOpen={onOpenRule}
+          dense={place === "plan"}
+          today={today}
+          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, row.color]))}
           onPaid={(id, date) => finance.markPaid(id, date)}
           onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
           paidLabel={t("Mark received")}
@@ -492,6 +507,7 @@ function Coming({
   emptyTitle,
   emptyBody,
   onEmpty,
+  onOpen,
   onPaid,
   onSkip,
   paidLabel,
@@ -499,6 +515,9 @@ function Coming({
   display,
   nowMs,
   busy,
+  dense = false,
+  today = "",
+  colors = {},
 }: {
   title: string;
   body: string;
@@ -507,6 +526,7 @@ function Coming({
   emptyTitle: string;
   emptyBody: string;
   onEmpty: () => void;
+  onOpen?: (id: string) => void;
   onPaid: (id: string, date: string) => void;
   onSkip: (id: string, date: string) => void;
   paidLabel: string;
@@ -514,31 +534,66 @@ function Coming({
   display: string;
   nowMs: number;
   busy: boolean;
+  dense?: boolean;
+  today?: string;
+  colors?: Record<string, string>;
 }) {
   const t = useT();
-  const groups = ["overdue", "week", "month", "later"] as const;
+  const [info, setInfo] = useState(false);
+  const groups = dense ? (["week", "later"] as const) : (["overdue", "week", "month", "later"] as const);
   const label = { overdue: t("Overdue"), week: t("This week"), month: t("This month"), later: t("Later") };
+  const inGroup = (row: ComingRow, bucket: string) => {
+    if (!dense) return row.bucket === bucket;
+    if (bucket === "week") return row.bucket === "overdue" || row.bucket === "week";
+    return row.bucket === "month" || row.bucket === "later";
+  };
+  const natives = parts.map((part) => formatMoney(part.amountMinor, part.currency)).join(" · ");
   return (
     <section className="fin-panel">
-      <h2 className="fin-kicker">{title}</h2>
-      <p className="fin-muted mt-2 text-sm leading-5">{body}</p>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="fin-kicker">{title}</h2>
+        {dense ? <span className="plan-chip">30d</span> : null}
+      </div>
+      {body ? <p className="fin-muted mt-2 text-sm leading-5">{body}</p> : null}
       {rows.length === 0 ? (
-        <button type="button" className="mt-4 min-h-16 w-full text-left" onClick={onEmpty}>
-          <p className="text-base font-extrabold tracking-wide uppercase">{emptyTitle}</p>
-          <p className="fin-muted mt-1 text-sm leading-5">{emptyBody}</p>
+        <button type="button" className="mt-4 min-h-11 w-full text-left text-[16px]" onClick={onEmpty}>
+          {emptyTitle}
+          {emptyBody ? <span className="fin-muted mt-1 block text-[13px]">{emptyBody}</span> : null}
         </button>
       ) : (
         <>
-          <CombinedHeadline parts={parts} display={display} book={book} nowMs={nowMs} busy={busy} size="text-4xl" />
+          <div className="mt-3 flex items-start justify-between gap-3">
+            <CombinedHeadline parts={parts} display={display} book={book} nowMs={nowMs} busy={busy} size="text-4xl" quiet={dense} />
+            {dense ? (
+              <button type="button" className="plan-chevron" aria-label={t("Details")} aria-expanded={info} onClick={() => setInfo((value) => !value)}>
+                <Info size={18} strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+          {info ? <p className="fin-muted text-[13px] leading-5">{natives}</p> : null}
+          {dense && today ? <DueTimeline today={today} dates={rows.map((row) => row.date)} /> : null}
           {groups.map((bucket) => {
-            const items = rows.filter((row) => row.bucket === bucket);
+            const items = rows.filter((row) => inGroup(row, bucket));
             if (items.length === 0) return null;
             return (
-              <div key={bucket} className="mt-4">
-                <p className="stamp">{label[bucket]}</p>
-                <div className="mt-2 space-y-3">
+              <div key={bucket}>
+                <p className={dense ? "plan-rule" : "stamp mt-4"}>{label[bucket]}</p>
+                <div className={dense ? "" : "mt-2 space-y-3"}>
                   {items.map((row) => (
-                    <ComingLine key={`${row.id}-${row.date}`} row={row} paidLabel={paidLabel} onPaid={onPaid} onSkip={onSkip} book={book} display={display} nowMs={nowMs} />
+                    <ComingLine
+                      key={`${row.id}-${row.date}`}
+                      row={row}
+                      paidLabel={paidLabel}
+                      onPaid={onPaid}
+                      onSkip={onSkip}
+                      onOpen={onOpen}
+                      book={book}
+                      display={display}
+                      nowMs={nowMs}
+                      dense={dense}
+                      today={today}
+                      color={colors[row.category] || "var(--text-tertiary)"}
+                    />
                   ))}
                 </div>
               </div>
@@ -550,84 +605,129 @@ function Coming({
   );
 }
 
+function DueTimeline({ today, dates }: { today: string; dates: string[] }) {
+  const due = new Set(dates);
+  return (
+    <div className="plan-timeline" aria-hidden="true">
+      {Array.from({ length: 30 }, (_, index) => {
+        const date = addDays(today, index);
+        return <span key={date} data-due={due.has(date) ? "true" : "false"} />;
+      })}
+    </div>
+  );
+}
+
+function relativeWhen(date: string, today: string, t: (english: string) => string): string {
+  if (!today) return date;
+  const days = Math.round((Date.parse(`${date}T12:00:00`) - Date.parse(`${today}T12:00:00`)) / 86_400_000);
+  if (!Number.isFinite(days)) return date;
+  if (days < 0) return t("Overdue");
+  if (days === 0) return t("Today");
+  if (days === 1) return t("Tomorrow");
+  return fill("in {n} d", { n: String(days) });
+}
+
 function ComingLine({
   row,
   paidLabel,
   onPaid,
   onSkip,
+  onOpen,
   book,
   display,
   nowMs,
+  dense = false,
+  today = "",
+  color = "var(--text-tertiary)",
 }: {
   row: ComingRow;
   paidLabel: string;
   onPaid: (id: string, date: string) => void;
   onSkip: (id: string, date: string) => void;
+  onOpen?: (id: string) => void;
   book: RateBook | null;
   display: string;
   nowMs: number;
+  dense?: boolean;
+  today?: string;
+  color?: string;
 }) {
   const t = useT();
+  void nowMs;
+  const drag = useRef<{ x: number; y: number } | null>(null);
+  const [shift, setShift] = useState(0);
   const converted = row.amountMinor == null ? null : headlineOf([{ amountMinor: row.amountMinor, currency: row.currency }], display, book, nowMs);
   const showConverted = converted && converted.state === "ready" && converted.source !== "identity";
-  const progress = row.progress;
-  const cadence =
-    row.progress.mode === "open"
-      ? row.purpose === "investment_payout"
-        ? t("Investment payout")
-        : t("No end date")
-      : "";
-  return (
-    <div className={cn("border px-3 py-3", row.bucket === "overdue" ? "border-border" : "fin-planned")}>
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base">{row.name}</p>
-          <p className="fin-muted text-sm">
-            {row.date}
-            {cadence ? ` · ${cadence}` : ""}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="fin-num text-lg">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</p>
-          {showConverted ? (
-            <p className="fin-muted text-xs">
-              {formatMoney(converted.amountMinor, converted.currency)}
-              {converted.stale ? ` · ${t("Rates are stale")}` : ""}
-            </p>
-          ) : null}
+  const repeating = row.progress.mode === "open" || (row.purpose !== "one_off" && row.purpose !== "");
+  const open = () => onOpen?.(row.id);
+  if (!dense) {
+    const progress = row.progress;
+    return (
+      <div className={cn("border px-3 py-3", row.bucket === "overdue" ? "border-border" : "fin-planned")}>
+        <button type="button" className="flex w-full items-baseline justify-between gap-3 text-left" onClick={open}>
+          <div className="min-w-0">
+            <p className="truncate text-base">{row.name}</p>
+            <p className="fin-muted text-sm">{row.date}</p>
+          </div>
+          <div className="text-right">
+            <p className="fin-num text-lg">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</p>
+            {showConverted ? <p className="fin-muted text-[13px]">{formatMoney(converted.amountMinor, converted.currency)}</p> : null}
+          </div>
+        </button>
+        {progress.mode === "fixed" && progress.totalCount != null && progress.remainingCount != null ? (
+          <p className="mt-2 text-sm">{fill("{paid} of {total}", { paid: progress.paidCount, total: progress.totalCount })}</p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className="stamp min-h-12 px-3" onClick={() => onPaid(row.id, row.date)}>{paidLabel}</button>
+          <button type="button" className="stamp min-h-12 px-3" onClick={() => onSkip(row.id, row.date)}>{t("Skip")}</button>
         </div>
       </div>
-      {progress.mode === "fixed" && progress.totalCount != null && progress.remainingCount != null ? (
-        <p className="mt-2 text-sm">
-          {fill("{paid} of {total}", { paid: progress.paidCount, total: progress.totalCount })}
-          {" · "}
-          {fill("{left} left", { left: progress.remainingCount })}
-          {progress.remainingMinor != null ? ` · ${fill("{amount} remaining", { amount: formatMoney(progress.remainingMinor, progress.currency) })}` : ""}
-        </p>
-      ) : null}
-      {progress.mode === "open" && progress.perPeriodMinor != null ? (
-        <p className="fin-muted mt-2 text-sm">
-          {formatMoney(progress.perPeriodMinor, progress.currency)} · {t("No end date")}
-        </p>
-      ) : null}
-      {row.track ? (
-        <p className="fin-muted mt-2 text-sm leading-5">
-          {row.track.expectedMinor != null
-            ? fill("Expected {amount}", { amount: formatMoney(row.track.expectedMinor, row.track.expectedCurrency) })
-            : t("Expected")}
-          {" · "}
-          {row.track.received.length === 0
-            ? t("None received yet")
-            : row.track.received.map((item) => formatMoney(item.amountMinor, item.currency)).join(", ")}
-          {row.amountMode === "quote" && row.payoutCurrency ? ` · ${fill("Worth of {code}", { code: row.payoutCurrency })}` : ""}
-        </p>
-      ) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className="stamp min-h-12 max-w-full px-3 whitespace-normal text-center leading-4" onClick={() => onPaid(row.id, row.date)}>
-          {paidLabel}
-        </button>
-        <button type="button" className="stamp min-h-12 px-3" onClick={() => onSkip(row.id, row.date)}>
-          {t("Skip")}
+    );
+  }
+  return (
+    <div className="plan-bill" data-shift={shift > 24 ? "paid" : shift < -24 ? "skip" : ""}>
+      <div
+        className="plan-bill-row"
+        style={{ transform: `translateX(${shift}px)` }}
+        onPointerDown={(event) => {
+          drag.current = { x: event.clientX, y: event.clientY };
+        }}
+        onPointerMove={(event) => {
+          if (!drag.current) return;
+          const dx = event.clientX - drag.current.x;
+          const dy = event.clientY - drag.current.y;
+          if (Math.abs(dx) < 8 || Math.abs(dy) > Math.abs(dx)) return;
+          setShift(Math.max(-96, Math.min(96, dx)));
+        }}
+        onPointerUp={(event) => {
+          const origin = drag.current;
+          drag.current = null;
+          if (!origin) return;
+          const dx = event.clientX - origin.x;
+          const dy = event.clientY - origin.y;
+          if (dx > 64) onPaid(row.id, row.date);
+          else if (dx < -64) onSkip(row.id, row.date);
+          else if (Math.abs(dx) < 8 && Math.abs(dy) < 8) open();
+          setShift(0);
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+          setShift(0);
+        }}
+      >
+        <button type="button" className="flex min-h-11 w-full items-center gap-3 text-left" onClick={open}>
+          <span className="plan-dot" style={{ background: color }} aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className="truncate text-[16px]">{row.name}</span>
+              {repeating ? <Repeat size={14} strokeWidth={1.5} aria-label={t("Recurring bill")} /> : null}
+            </span>
+            <span className="fin-muted block text-[13px]">{relativeWhen(row.date, today, t)}</span>
+          </span>
+          <span className="shrink-0 text-right">
+            <span className="fin-num block text-[16px]">{row.amountMinor != null ? formatMoney(row.amountMinor, row.currency) : ""}</span>
+            {showConverted ? <span className="fin-muted block text-[13px]">{formatMoney(converted.amountMinor, converted.currency)}</span> : null}
+          </span>
         </button>
       </div>
     </div>

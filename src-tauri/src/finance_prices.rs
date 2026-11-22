@@ -16,7 +16,8 @@ pub const PRICE_STALE_MS: i64 = 24 * 60 * 60 * 1000;
 pub const TROY_OZ_GRAMS: f64 = 31.1034768;
 
 /// Crypto, first success per symbol wins. Later books fill symbols the earlier one missed.
-pub const CRYPTO_PROVIDERS: &[&str] = &["coingecko", "coinpaprika", "kraken"];
+/// CoinMarketCap has no keyless price route, so it is not called.
+pub const CRYPTO_PROVIDERS: &[&str] = &["coingecko", "coinpaprika", "kraken", "cryptocompare", "tradeogre", "bitmart"];
 /// Spot metals per troy ounce. gold-api.com is the keyless source whose terms allow this.
 pub const METAL_PROVIDERS: &[&str] = &["gold-api"];
 /// US ETF last close is keyless. Individual stocks use an optional user key, in this order.
@@ -284,7 +285,7 @@ pub fn refresh_book(
     now_ms: i64,
     force: bool,
     get: &dyn Fn(&str) -> Result<String, String>,
-    ai: Option<&dyn Fn(&AssetRef) -> Result<(f64, String), String>>,
+    ai: Option<&dyn Fn(&AssetRef) -> Result<AiEstimate, String>>,
     prefer: &str,
 ) -> PriceBook {
     let mut next = previous.clone();
@@ -326,20 +327,21 @@ pub fn refresh_book(
                 continue;
             }
             match ai(asset) {
-                Ok((price, currency)) if price.is_finite() && price > 0.0 && currency.len() == 3 => {
+                Ok(estimate) if estimate.price.is_finite() && estimate.price > 0.0 && estimate.currency.len() == 3 => {
                     put_quote(
                         &mut next,
                         Spot {
                             symbol: asset.symbol.clone(),
                             kind: asset.kind.clone(),
-                            price,
-                            currency: currency.to_ascii_uppercase(),
+                            price: estimate.price,
+                            currency: estimate.currency.to_ascii_uppercase(),
                             source: "ai".into(),
                             fetched_ms: now_ms,
                             estimated: true,
                         },
                     );
-                    note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "ok", "AI estimate");
+                    let detail = if estimate.source_url.trim().is_empty() { "AI estimate".to_string() } else { estimate.source_url.trim().to_string() };
+                    note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "ok", &detail);
                 }
                 Ok(_) => {
                     note_attempt(&mut next, &asset.symbol, "ai", &asset.label, "miss", "The estimate had no price.");
@@ -559,6 +561,65 @@ fn fill_crypto(book: &mut PriceBook, assets: &[&AssetRef], now_ms: i64, get: &dy
             note_attempt(book, &asset.symbol, "kraken", &asset.kraken_pair, "skipped", "Turned off");
         }
     }
+    fill_public_ticker(book, &cryptos, now_ms, get, prefer);
+}
+
+/// Keyless public books after the named providers. USDT is treated as one US dollar.
+fn fill_public_ticker(book: &mut PriceBook, assets: &[&&AssetRef], now_ms: i64, get: &dyn Fn(&str) -> Result<String, String>, prefer: &str) {
+    for asset in assets {
+        if fresh_api(book, asset, now_ms) {
+            continue;
+        }
+        let sym = asset.symbol.to_ascii_uppercase();
+        if provider_enabled(book, "cryptocompare") {
+            let url = format!("https://min-api.cryptocompare.com/data/price?fsym={sym}&tsyms=USD,EUR,CHF");
+            match get_logged(get, &url, &asset.symbol) {
+                Ok(body) => {
+                    if let Some((price, currency)) = parse_cryptocompare(&body, prefer) {
+                        put_api(book, asset, price, &currency, "cryptocompare", now_ms);
+                        note_attempt(book, &asset.symbol, "cryptocompare", &sym, "ok", "Price received");
+                        continue;
+                    }
+                    note_attempt(book, &asset.symbol, "cryptocompare", &sym, "miss", "No price in the response");
+                }
+                Err(err) => note_attempt(book, &asset.symbol, "cryptocompare", &sym, "error", &err),
+            }
+        }
+        if fresh_api(book, asset, now_ms) {
+            continue;
+        }
+        if provider_enabled(book, "tradeogre") {
+            let url = format!("https://tradeogre.com/api/v1/ticker/{sym}-USDT");
+            match get_logged(get, &url, &asset.symbol) {
+                Ok(body) => {
+                    if let Some(price) = parse_tradeogre(&body) {
+                        put_api(book, asset, price, "USD", "tradeogre", now_ms);
+                        note_attempt(book, &asset.symbol, "tradeogre", &format!("{sym}-USDT"), "ok", "Price received");
+                        continue;
+                    }
+                    note_attempt(book, &asset.symbol, "tradeogre", &format!("{sym}-USDT"), "miss", "No price in the response");
+                }
+                Err(err) => note_attempt(book, &asset.symbol, "tradeogre", &format!("{sym}-USDT"), "error", &err),
+            }
+        }
+        if fresh_api(book, asset, now_ms) {
+            continue;
+        }
+        if provider_enabled(book, "bitmart") {
+            let url = format!("https://api-cloud.bitmart.com/spot/quotation/v3/ticker?symbol={sym}_USDT");
+            match get_logged(get, &url, &asset.symbol) {
+                Ok(body) => {
+                    if let Some(price) = parse_bitmart(&body) {
+                        put_api(book, asset, price, "USD", "bitmart", now_ms);
+                        note_attempt(book, &asset.symbol, "bitmart", &format!("{sym}_USDT"), "ok", "Price received");
+                        continue;
+                    }
+                    note_attempt(book, &asset.symbol, "bitmart", &format!("{sym}_USDT"), "miss", "No price in the response");
+                }
+                Err(err) => note_attempt(book, &asset.symbol, "bitmart", &format!("{sym}_USDT"), "error", &err),
+            }
+        }
+    }
 }
 
 /// CoinGecko's search for the full typed name "EPIC Cash" returns no coins.
@@ -748,12 +809,35 @@ fn put_quote(book: &mut PriceBook, quote: Spot) {
     }
 }
 
-pub fn parse_ai_price(text: &str) -> Result<(f64, String), String> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct AiEstimate {
+    pub price: f64,
+    pub currency: String,
+    pub source_url: String,
+    pub as_of: String,
+}
+
+impl AiEstimate {
+    pub fn priced(price: f64, currency: impl Into<String>) -> Self {
+        Self { price, currency: currency.into(), source_url: String::new(), as_of: String::new() }
+    }
+}
+
+/// Accepts `{"price_usd","source_url","as_of"}` and the older `{"price","currency"}` shape.
+pub fn parse_ai_price(text: &str) -> Result<AiEstimate, String> {
     let trimmed = text.trim();
     let start = trimmed.find('{').ok_or("The estimate had no price.")?;
     let end = trimmed.rfind('}').ok_or("The estimate had no price.")?;
     let value: serde_json::Value = serde_json::from_str(&trimmed[start..=end]).map_err(|_| "The estimate had no price.".to_string())?;
-    if value.get("price").is_some_and(|price| price.is_null()) {
+    let source_url = value.get("source_url").and_then(|item| item.as_str()).unwrap_or("").trim().to_string();
+    let as_of = value.get("as_of").and_then(|item| item.as_str()).unwrap_or("").trim().to_string();
+    if let Some(price) = value.get("price_usd").and_then(json_rate) {
+        if price.is_finite() && price > 0.0 {
+            return Ok(AiEstimate { price, currency: "USD".into(), source_url, as_of });
+        }
+        return Err("The estimate had no price.".into());
+    }
+    if value.get("price").is_some_and(|price| price.is_null()) || value.get("price_usd").is_some_and(|price| price.is_null()) {
         return Err("The estimate had no price.".into());
     }
     let price = value.get("price").and_then(json_rate).ok_or("The estimate had no price.")?;
@@ -761,7 +845,29 @@ pub fn parse_ai_price(text: &str) -> Result<(f64, String), String> {
     if !price.is_finite() || price <= 0.0 || currency.len() != 3 || !currency.chars().all(|ch| ch.is_ascii_alphabetic()) {
         return Err("The estimate had no price.".into());
     }
-    Ok((price, currency))
+    Ok(AiEstimate { price, currency, source_url, as_of })
+}
+
+pub fn parse_cryptocompare(body: &str, prefer: &str) -> Option<(f64, String)> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    if value.get("Response").and_then(|item| item.as_str()).is_some_and(|item| item.eq_ignore_ascii_case("Error")) {
+        return None;
+    }
+    pick_vs(&value, prefer)
+}
+
+pub fn parse_tradeogre(body: &str) -> Option<f64> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    if value.get("success").and_then(|item| item.as_bool()) == Some(false) {
+        return None;
+    }
+    json_rate(value.get("price")?).filter(|price| price.is_finite() && *price > 0.0)
+}
+
+pub fn parse_bitmart(body: &str) -> Option<f64> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let data = value.get("data").unwrap_or(&value);
+    json_rate(data.get("last").or_else(|| data.get("last_price")).or_else(|| data.get("close"))?).filter(|price| price.is_finite() && *price > 0.0)
 }
 
 /// EUR when the provider has it, otherwise USD, then the caller's currency. Either is a real quote.
@@ -1323,7 +1429,7 @@ mod tests {
 
     #[test]
     fn providers_run_in_order_and_a_later_one_only_fills_gaps() {
-        assert_eq!(CRYPTO_PROVIDERS, ["coingecko", "coinpaprika", "kraken"]);
+        assert_eq!(CRYPTO_PROVIDERS, ["coingecko", "coinpaprika", "kraken", "cryptocompare", "tradeogre", "bitmart"]);
         assert_eq!(METAL_PROVIDERS[0], "gold-api");
         assert_eq!(STOCK_PROVIDERS[0], "atlantis");
         let calls = std::sync::Mutex::new(Vec::new());
@@ -1368,20 +1474,26 @@ mod tests {
     #[test]
     fn a_total_miss_does_not_invent_a_price_and_ai_cannot_replace_an_api_quote() {
         let previous = book_with(Spot { symbol: "XMR".into(), kind: "crypto".into(), price: 150.0, currency: "EUR".into(), source: "coingecko".into(), fetched_ms: 1_000, estimated: false });
-        let kept = refresh_book(&previous, &[xmr()], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok((1.0, "USD".into()))), "");
+        let kept = refresh_book(&previous, &[xmr()], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok(AiEstimate::priced(1.0, "USD"))), "");
         let quote = kept.quotes.iter().find(|row| row.symbol == "XMR").unwrap();
         assert_eq!(quote.price, 150.0);
         assert!(!quote.estimated);
         assert_ne!(quote.price, 1.0);
         let epic = alias("EPIC").unwrap();
-        let estimated = refresh_book(&PriceBook::default(), &[epic], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok((0.9, "eur".into()))), "");
+        let estimated = refresh_book(&PriceBook::default(), &[epic], 9_000, true, &|_url| Err("down".into()), Some(&|_asset| Ok(AiEstimate::priced(0.9, "eur"))), "");
         let epic_quote = estimated.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
         assert!(epic_quote.estimated);
         assert_eq!(epic_quote.source, "ai");
         assert_eq!(epic_quote.price, 0.9);
         assert!(parse_ai_price("I think about 12").is_err());
         assert!(parse_ai_price(r#"{"price":null,"currency":"USD"}"#).is_err());
-        assert_eq!(parse_ai_price(r#"{"price":"408.5","currency":"eur"}"#).unwrap(), (408.5, "EUR".to_string()));
+        let legacy = parse_ai_price(r#"{"price":"408.5","currency":"eur"}"#).unwrap();
+        assert_eq!((legacy.price, legacy.currency.as_str()), (408.5, "EUR"));
+        let web = parse_ai_price(r#"{"price_usd":0.832979,"source_url":"https://www.coingecko.com/en/coins/epic-cash","as_of":"2026-11-22"}"#).unwrap();
+        assert_eq!(web.currency, "USD");
+        assert!((web.price - 0.832979).abs() < 0.000001);
+        assert!(web.source_url.contains("coingecko"));
+        assert!(parse_ai_price(r#"{"price_usd":0,"source_url":"https://example.com","as_of":"2026-11-22"}"#).is_err());
     }
 
     #[test]
@@ -1530,7 +1642,7 @@ mod tests {
         let asked = std::cell::Cell::new(false);
         let estimated = refresh_book(&missed, &[epic.clone()], now, false, &|_url| Err("down".into()), Some(&|_asset| {
             asked.set(true);
-            Ok((0.77, "EUR".into()))
+            Ok(AiEstimate::priced(0.77, "EUR"))
         }), "");
         assert!(asked.get(), "an unpriced holding asks the configured AI provider");
         let quote = estimated.quotes.iter().find(|row| row.symbol == "EPIC").unwrap();
@@ -1556,7 +1668,7 @@ mod tests {
         let again = std::cell::Cell::new(false);
         let kept = refresh_book(&estimated, &[epic], now, false, &|_url| Err("down".into()), Some(&|_asset| {
             again.set(true);
-            Ok((9.0, "EUR".into()))
+            Ok(AiEstimate::priced(9.0, "EUR"))
         }), "");
         assert!(!again.get(), "a fresh AI estimate is not requested again the same day");
         assert_eq!(kept.quotes.iter().find(|row| row.symbol == "EPIC").unwrap().price, 0.77);
