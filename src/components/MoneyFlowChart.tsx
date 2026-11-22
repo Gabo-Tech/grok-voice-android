@@ -412,7 +412,7 @@ function FlowChart({
   const drillRef = useRef(onDrill);
   drillRef.current = onDrill;
   const safeToReal = useRef(new Map<string, string>());
-  const [box, setBox] = useState(0);
+  const [box, setBox] = useState({ w: 0, h: 0 });
   const [drawn, setDrawn] = useState(460);
 
   useEffect(() => {
@@ -427,25 +427,37 @@ function FlowChart({
     };
     instance.on("click", onClick as never);
     const measure = () => {
-      const parent = node.parentElement?.clientWidth || node.clientWidth || window.innerWidth;
-      setBox(Math.max(280, Math.floor(parent)));
+      const stage = node.closest(".flow-full-stage") as HTMLElement | null;
+      const parent = node.parentElement;
+      const width = Math.floor((stage || parent)?.clientWidth || node.clientWidth || window.innerWidth);
+      const stageHeight = stage && stage.clientHeight > 160 ? stage.clientHeight : 0;
+      const fromViewport = window.innerHeight - node.getBoundingClientRect().top - 8;
+      const height = Math.floor(stageHeight || fromViewport);
+      const next = { w: Math.max(280, width), h: Math.max(240, height) };
+      setBox((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
     };
     measure();
     const observer = new ResizeObserver(measure);
     if (node.parentElement) observer.observe(node.parentElement);
+    const stage = node.closest(".flow-full-stage");
+    if (stage) observer.observe(stage);
     window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    screen.orientation?.addEventListener("change", measure);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+      screen.orientation?.removeEventListener("change", measure);
       instance.off("click", onClick);
       instance.dispose();
       chart.current = null;
     };
-  }, []);
+  }, [tall]);
 
   useEffect(() => {
     const instance = chart.current;
-    if (!instance || !flow || flow.state !== "ready" || box < 280) return;
+    if (!instance || !flow || flow.state !== "ready" || box.w < 280 || box.h < 240) return;
     const ink = usedColor("var(--text-primary)", "rgb(58, 52, 44)");
     const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
     const brand = usedColor("var(--brand)", "rgb(125, 107, 88)");
@@ -456,7 +468,8 @@ function FlowChart({
       nodes: flow.nodes,
       links: flow.links,
       currency,
-      width: box,
+      width: box.w,
+      height: box.h,
       labels: labelsOn,
       values: valuesOn,
       colors,

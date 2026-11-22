@@ -531,41 +531,69 @@ export interface SankeyFrame {
   left: number;
   right: number;
   plot: number;
+  seriesTop: number;
+  seriesBottom: number;
   nodeWidth: number;
   nodeGap: number;
   floorShare: number;
   layoutIterations: number;
   linkOpacity: number;
+  columnFill: number;
+  fontSize: number;
+  lineHeight: number;
+  compact: boolean;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 /**
- * Plot box for an ECharts sankey. The chart width is the container width.
- * Node bars stay near 10px on a phone and 14px on a tablet. Height grows with
- * the busiest column so one flow is a ribbon, not a wall.
+ * Responsive plot. Bar thickness, gaps, gutters, and type size follow the
+ * container. The series box is 60% of the plot, so the tallest column is a
+ * ribbon instead of a wall. ECharts fills that series box, not the canvas.
  */
-export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true): SankeyFrame {
+export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true, chartHeight = 0): SankeyFrame {
   const width = Math.max(280, Math.round(chartWidth || 0));
-  const phone = width < 600;
-  const nodeWidth = phone ? 10 : 14;
-  const nodeGap = 24;
+  const height = chartHeight >= 240 ? Math.round(chartHeight) : Math.round(clamp(width * 1.2, 420, 760));
+  const phone = width < 700;
+  const nodeWidth = Math.round(clamp(width * 0.015, 4, 12));
   const counts = columnCounts.filter((count) => count > 0);
   const columns = Math.max(1, counts.length);
   const busiest = Math.max(1, ...counts, 1);
-  const minPlotW = nodeWidth * columns + 24 * Math.max(0, columns - 1);
-  let left = labels ? (phone ? 112 : 160) : 12;
-  let right = labels ? (phone ? 136 : 176) : 12;
-  if (left + right + minPlotW > width) {
-    const over = left + right + minPlotW - width;
-    const cut = Math.ceil(over / 2);
-    left = Math.max(labels ? 96 : 8, left - cut);
-    right = Math.max(labels ? 108 : 8, right - cut);
+  const fontSize = Math.round(clamp(width * 0.034, 13, 15));
+  const lineHeight = fontSize + 3;
+  const compact = width < 640;
+
+  let top = labels ? Math.round(clamp(height * 0.1, 56, 84)) : 8;
+  let bottom = labels ? Math.round(clamp(height * 0.06, 28, 48)) : 8;
+  if (top + bottom > height - 140) {
+    const spare = Math.max(16, height - 140);
+    top = labels ? Math.max(28, Math.round(spare * 0.62)) : 8;
+    bottom = labels ? Math.max(16, spare - top) : 8;
   }
-  const plot = Math.max(360, busiest * 44);
-  const top = labels ? 96 : 12;
-  const bottom = labels ? 56 : 12;
-  const height = plot + top + bottom;
-  const usable = Math.max(2, plot - Math.max(0, busiest - 1) * nodeGap);
-  const floorShare = 8 / usable;
+  const plot = Math.max(120, height - top - bottom);
+  const columnFill = 0.6;
+  const seriesH = Math.round(plot * columnFill);
+  const pad = Math.floor((plot - seriesH) / 2);
+  const seriesTop = top + pad;
+  const seriesBottom = height - seriesTop - seriesH;
+
+  let nodeGap = Math.round(clamp(height * 0.04, phone ? 20 : 16, phone ? 28 : 40));
+  if (busiest > 1) {
+    const maxGap = Math.floor((seriesH - busiest * 4) / Math.max(1, busiest - 1));
+    nodeGap = maxGap >= (phone ? 20 : 12) ? Math.min(nodeGap, maxGap) : Math.max(8, maxGap);
+  }
+
+  let left = labels ? Math.round(clamp(width * 0.24, 84, 188)) : 8;
+  let right = labels ? Math.round(clamp(width * 0.28, 96, 210)) : 8;
+  const minPlotW = nodeWidth * columns + 12 * Math.max(0, columns - 1);
+  if (left + right + minPlotW > width - 4) {
+    const gutters = Math.max(0, width - 4 - minPlotW);
+    right = Math.max(48, Math.round(gutters * 0.56));
+    left = Math.max(40, gutters - right);
+  }
+
   return {
     width,
     height,
@@ -574,12 +602,18 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     left,
     right,
     plot,
+    seriesTop,
+    seriesBottom,
     nodeWidth,
     nodeGap,
-    floorShare,
+    floorShare: 4 / Math.max(48, seriesH),
     layoutIterations: 0,
-    linkOpacity: 0.4,
-    };
+    linkOpacity: 0.3,
+    columnFill,
+    fontSize,
+    lineHeight,
+    compact,
+  };
 }
 
 /** Phone: "CHF 1.4k · 56%". Wider screens: "CHF 6,000.00 · 100%". The code is the caller's currency. */
@@ -709,6 +743,7 @@ export interface SankeyOptionInput {
   links: FlowLink[];
   currency: string;
   width: number;
+  height?: number;
   labels: boolean;
   values: boolean;
   colors: Record<string, string>;
@@ -729,10 +764,10 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   };
   const depthOf = (node: FlowNode) => flowDepth(node.role, present);
   const counts = [0, 1, 2, 3, 4].map((depth) => input.nodes.filter((node) => depthOf(node) === depth).length);
-  const frame = sankeyFrame(input.width, counts, input.labels);
+  const frame = sankeyFrame(input.width, counts, input.labels, input.height || 0);
   const total = Math.max(1, ...input.nodes.map((node) => node.amountMinor));
   const safe = new Map(input.nodes.map((node, index) => [node.id, `n${index}`]));
-  const compact = input.width < 600;
+  const compact = frame.compact;
   const labelWidth = Math.max(108, Math.max(frame.left, frame.right) - 8);
   const seen = new Map<number, { x: number; y: number; width: number; height: number }>();
   const data = input.nodes.map((node) => {
@@ -756,8 +791,8 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
         distance: 8,
         offset: node.role === "pool" ? [0, -40] : [0, 0],
         overflow: "none",
-        fontSize: 13,
-        lineHeight: 16,
+        fontSize: frame.fontSize,
+        lineHeight: frame.lineHeight,
         formatter: showValue ? `${name}\n${meta}` : name,
       },
       itemStyle: { color: input.mono ? input.brand : input.colors[node.id] || input.brand, borderWidth: 0 },
@@ -778,10 +813,10 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
           nodeGap: frame.nodeGap,
           left: frame.left,
           right: frame.right,
-          top: frame.top,
-          bottom: frame.bottom,
+          top: frame.seriesTop,
+          bottom: frame.seriesBottom,
           emphasis: { focus: "adjacency" },
-          lineStyle: { color: input.mono ? input.brand : "gradient", curveness: 0.5, opacity: frame.linkOpacity },
+          lineStyle: { color: input.mono ? input.brand : "gradient", curveness: 0.45, opacity: frame.linkOpacity },
           label: { show: input.labels },
           labelLayout: (params: { dataType?: string; dataIndex?: number; rect?: { x: number; y: number; width: number; height: number } }) => {
             if (params.dataType !== "node" || params.dataIndex == null || !params.rect) return {};

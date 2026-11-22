@@ -329,20 +329,29 @@ if (unlinked.state === "ready") {
   assert.ok(flowConserved(unlinked));
 }
 
-const phone = sankeyFrame(390, [2, 1, 1, 6], true);
-assert.equal(phone.nodeWidth, 10);
-assert.ok(phone.nodeGap >= 12);
-assert.ok(phone.plot >= 360);
-assert.ok(phone.linkOpacity >= 0.35 && phone.linkOpacity <= 0.5);
+const phone = sankeyFrame(390, [2, 1, 1, 6], true, 720);
+assert.equal(phone.nodeWidth, Math.round(Math.min(12, Math.max(4, 390 * 0.015))));
+assert.ok(phone.nodeGap >= 20, `gap ${phone.nodeGap}`);
+assert.equal(phone.linkOpacity, 0.3);
 assert.equal(phone.layoutIterations, 0);
-assert.ok(phone.width - phone.left - phone.right >= 100);
+assert.equal(phone.compact, true);
+assert.equal(phone.fontSize, 13);
+assert.ok(phone.width - phone.left - phone.right >= 80);
 assert.equal(phone.width, 390);
-const tablet = sankeyFrame(800, [2, 1, 1, 6], true);
-assert.equal(tablet.nodeWidth, 14);
-const narrow = sankeyFrame(360, [1, 1, 1, 4], true);
-assert.ok(narrow.width - narrow.left - narrow.right >= 80, `plot ${narrow.width - narrow.left - narrow.right}`);
-const many = sankeyFrame(390, [1, 1, 8], true);
-assert.ok(many.plot >= 8 * 44);
+assert.equal(phone.height, 720);
+const phoneLayout = phone.height - phone.seriesTop - phone.seriesBottom;
+const phoneFill = phoneLayout / phone.plot;
+assert.ok(phoneFill >= 0.55 && phoneFill <= 0.65, `fill ${phoneFill}`);
+const tablet = sankeyFrame(800, [2, 1, 1, 6], true, 900);
+assert.equal(tablet.nodeWidth, 12);
+assert.equal(tablet.compact, false);
+assert.ok(tablet.nodeGap >= 16);
+const narrow = sankeyFrame(360, [1, 1, 1, 4], true, 700);
+assert.ok(narrow.nodeWidth >= 4 && narrow.nodeWidth <= 6, `width ${narrow.nodeWidth}`);
+assert.ok(narrow.width - narrow.left - narrow.right >= 60, `plot ${narrow.width - narrow.left - narrow.right}`);
+const many = sankeyFrame(390, [1, 1, 8], true, 844);
+assert.ok(many.plot >= 200);
+assert.ok(many.nodeGap >= 8);
 assert.equal(flowAmountLabel(600000, "CHF", 1, true), "CHF 6k · 100%");
 assert.equal(flowAmountLabel(140000, "CHF", 0.562, true), "CHF 1.4k · 56%");
 assert.equal(flowAmountLabel(600000, "CHF", 1, false), "CHF 6,000.00 · 100%");
@@ -355,6 +364,7 @@ if (describedEmpty.state === "ready") {
     links: describedEmpty.links,
     currency: "CHF",
     width: 390,
+    height: 720,
     labels: true,
     values: true,
     colors: {},
@@ -366,8 +376,8 @@ if (describedEmpty.state === "ready") {
     mono: false,
   });
   const series = (built.option.series as Array<Record<string, unknown>>)[0];
-  assert.equal(series.nodeWidth, 10);
-  assert.ok(Number(series.nodeGap) >= 12);
+  assert.equal(series.nodeWidth, phone.nodeWidth);
+  assert.ok(Number(series.nodeGap) >= 8);
   assert.equal((series.lineStyle as { opacity: number }).opacity, built.frame.linkOpacity);
   const labels = (series.data as Array<{ label: { formatter: string; show: boolean } }>).map((row) => row.label.formatter);
   assert.ok(labels.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("·")));
