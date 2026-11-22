@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { Sheet } from "@/components/Sheet";
 import { api } from "@/lib/api";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceBudget, FinanceBudgetLine } from "@/lib/api";
@@ -22,6 +23,52 @@ function asRecord(row: FinanceBudget): BudgetRecord {
     warned: row.warned || [],
     updatedMs: row.updatedMs || 0,
   };
+}
+
+function BudgetLineRow({
+  name,
+  actual,
+  planned,
+  ratio,
+  warn,
+  over,
+  onOpen,
+  onSwipe,
+}: {
+  name: string;
+  actual: string;
+  planned: string;
+  ratio: number;
+  warn: boolean;
+  over: boolean;
+  onOpen: () => void;
+  onSwipe: () => void;
+}) {
+  const drag = useRef<{ x: number; y: number } | null>(null);
+  return (
+    <div
+      className="budget-line"
+      onPointerDown={(event) => {
+        drag.current = { x: event.clientX, y: event.clientY };
+      }}
+      onPointerUp={(event) => {
+        const origin = drag.current;
+        drag.current = null;
+        if (!origin) return;
+        const dx = event.clientX - origin.x;
+        const dy = event.clientY - origin.y;
+        if (dx < -48 && Math.abs(dx) > Math.abs(dy)) onSwipe();
+      }}
+    >
+      <button type="button" className="flex min-h-11 w-full items-baseline justify-between gap-3 text-left" onClick={onOpen}>
+        <span className="min-w-0 truncate text-[15px]">{name}</span>
+        <span className="fin-num shrink-0 text-[13px]">{actual} / {planned}</span>
+      </button>
+      <div className="budget-bar" data-warn={warn ? "true" : "false"} data-over={over ? "true" : "false"}>
+        <span style={{ width: `${Math.min(100, Math.round(ratio * 100))}%` }} />
+      </div>
+    </div>
+  );
 }
 
 function cnLeft(left: number): string {
@@ -76,6 +123,8 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [pendingDelete, setPendingDelete] = useState("");
+  const [more, setMore] = useState(false);
+  const [editing, setEditing] = useState("");
   const budgets = useMemo(() => (finance.snapshot.budgets || []).map(asRecord), [finance.snapshot.budgets]);
   const resolved = useMemo(() => resolveBudget(budgets, month), [budgets, month]);
   const book = useMemo(() => bookFromStatus(finance.snapshot.fx), [finance.snapshot.fx]);
@@ -140,26 +189,25 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
     const amountMinor = toMinor(amount, display);
     if (!category.trim() || amountMinor <= 0) return;
     const lines = [...(resolved.budget?.lines || [])];
-    lines.push({
-      id: "",
-      role,
-      category: category.trim(),
-      subcategory: subcategory.trim(),
-      label: label.trim(),
-      amountMinor,
-      currency: display,
-    });
+    const next = { id: editing, role, category: category.trim(), subcategory: subcategory.trim(), label: label.trim(), amountMinor, currency: display };
+    const index = lines.findIndex((line) => line.id === editing);
+    if (editing && index >= 0) lines[index] = next;
+    else lines.push({ ...next, id: "" });
     saveLines(lines);
     setCategory("");
     setSubcategory("");
     setLabel("");
     setAmount("");
+    setEditing("");
+    setPendingDelete("");
     setOpen(false);
   };
 
   const removeLine = (id: string) => {
     saveLines((resolved.budget?.lines || []).filter((line) => line.id !== id));
     setPendingDelete("");
+    setEditing("");
+    setOpen(false);
   };
 
   const locale = activeLocale() === "ca-ES-valencia" ? "ca-ES" : activeLocale();
@@ -191,61 +239,59 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
           <div className="budget-bar mt-3" data-over={overBudget(summary) ? "true" : "false"}>
             <span style={{ width: `${Math.min(100, Math.round(spentRatio * 100))}%` }} />
           </div>
-          <div className="mt-3">
-            {summary.rows.map((row) => (
-              <div key={row.id || row.name} className="budget-line">
-                <div className="flex items-baseline justify-between gap-3">
-                  <p className="min-w-0 truncate text-[15px]">{row.name}</p>
-                  <p className="fin-num shrink-0 text-[13px]">{formatMoney(row.actualMinor, display)} / {formatMoney(row.plannedMinor, display)}</p>
-                </div>
-                <div className="budget-bar" data-warn={row.warn ? "true" : "false"} data-over={row.over ? "true" : "false"}>
-                  <span style={{ width: `${Math.min(100, Math.round((Number.isFinite(row.ratio) ? row.ratio : 1) * 100))}%` }} />
-                </div>
-                {pendingDelete === row.id ? (
-                  <div className="flex items-center gap-3">
-                    <p className="text-[13px]">{t("Delete this line?")}</p>
-                    <button type="button" className="min-h-11 bg-[var(--negative)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => removeLine(row.id)}>
-                      {t("Yes, delete")}
-                    </button>
-                    <button type="button" className="fin-chip" onClick={() => setPendingDelete("")}>
-                      {t("Cancel")}
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" className="fin-chip" onClick={() => setPendingDelete(row.id)}>
-                    {t("Delete")}
-                  </button>
-                )}
-              </div>
-            ))}
+          <div className="mt-3 flex justify-end">
+            <button type="button" className="plan-chevron" aria-label={t("More")} aria-expanded={more} onClick={() => setMore((value) => !value)}>
+              <MoreHorizontal size={18} strokeWidth={1.5} aria-hidden="true" />
+            </button>
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
-            <button type="button" className="fin-chip" onClick={() => setOpen((value) => !value)}>
-              {t("Add a line")}
-            </button>
-            <button
-              type="button"
-              className="fin-chip"
-              onClick={() => finance.saveBudget({ action: "set", period: shiftMonth(month, 1), currency: display, replaceLines: true, copyForward: true, lines: resolved.budget?.lines || [], notify: resolved.budget?.notify || false })}
-            >
-              {t("Copy to next month")}
-            </button>
-            <button
-              type="button"
-              className="fin-chip"
-              onClick={() => finance.saveBudget({ action: "set", period: "", currency: display, replaceLines: true, copyForward: true, lines: resolved.budget?.lines || [], notify: resolved.budget?.notify || false })}
-            >
-              {t("Use as template")}
-            </button>
-            <button type="button" className="fin-chip" aria-pressed={resolved.budget.notify} onClick={() => saveLines(resolved.budget?.lines || [], { notify: !resolved.budget?.notify })}>
-              {t("Notify at 80% and 100%")}
-            </button>
+          {more ? (
+            <div className="flex flex-col" data-swipe-ignore="">
+              <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => { setEditing(""); setOpen(true); setMore(false); }}>{t("Add a line")}</button>
+              <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => { finance.saveBudget({ action: "set", period: shiftMonth(month, 1), currency: display, replaceLines: true, copyForward: true, lines: resolved.budget?.lines || [], notify: resolved.budget?.notify || false }); setMore(false); }}>{t("Copy to next month")}</button>
+              <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => { finance.saveBudget({ action: "set", period: "", currency: display, replaceLines: true, copyForward: true, lines: resolved.budget?.lines || [], notify: resolved.budget?.notify || false }); setMore(false); }}>{t("Use as template")}</button>
+              <button type="button" className="min-h-11 text-left text-[15px] underline" aria-pressed={resolved.budget.notify} onClick={() => { saveLines(resolved.budget?.lines || [], { notify: !resolved.budget?.notify }); setMore(false); }}>{t("Notify at 80% and 100%")}</button>
+            </div>
+          ) : null}
+          <div className="mt-1">
+            {summary.rows.map((row) => (
+              <BudgetLineRow
+                key={row.id || row.name}
+                name={row.name}
+                actual={formatMoney(row.actualMinor, display)}
+                planned={formatMoney(row.plannedMinor, display)}
+                ratio={Number.isFinite(row.ratio) ? row.ratio : 1}
+                warn={row.warn}
+                over={row.over}
+                onOpen={() => {
+                  const line = resolved.budget?.lines.find((item) => item.id === row.id);
+                  setEditing(row.id);
+                  setRole((line?.role as BudgetRole) || "expense");
+                  setCategory(line?.category || row.name);
+                  setSubcategory(line?.subcategory || "");
+                  setLabel(line?.label || "");
+                  setAmount(line ? String(line.amountMinor / 10 ** minorExponent(display)) : "");
+                  setPendingDelete("");
+                  setOpen(true);
+                }}
+                onSwipe={() => {
+                  const line = resolved.budget?.lines.find((item) => item.id === row.id);
+                  setEditing(row.id);
+                  setRole((line?.role as BudgetRole) || "expense");
+                  setCategory(line?.category || row.name);
+                  setSubcategory(line?.subcategory || "");
+                  setLabel(line?.label || "");
+                  setAmount(line ? String(line.amountMinor / 10 ** minorExponent(display)) : "");
+                  setPendingDelete(row.id);
+                  setOpen(true);
+                }}
+              />
+            ))}
           </div>
         </>
       )}
-      {open ? (
+      <Sheet open={open} title={editing ? t("Edit line") : t("Add a line")} onClose={() => { setOpen(false); setPendingDelete(""); setEditing(""); }} className="finance">
         <form
-          className="mt-4 space-y-3"
+          className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
             addLine();
@@ -277,8 +323,25 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
           <button type="submit" className="min-h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]">
             {t("Save")}
           </button>
+          {editing ? (
+            pendingDelete === editing ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-[13px]">{t("Delete this line?")}</p>
+                <button type="button" className="min-h-11 bg-[var(--negative)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => removeLine(editing)}>
+                  {t("Yes, delete")}
+                </button>
+                <button type="button" className="min-h-11 px-3 text-[15px] underline" onClick={() => setPendingDelete("")}>
+                  {t("Cancel")}
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="min-h-11 px-3 text-[15px] text-[var(--negative)]" onClick={() => setPendingDelete(editing)}>
+                {t("Delete")}
+              </button>
+            )
+          ) : null}
         </form>
-      ) : null}
+      </Sheet>
     </section>
   );
 }

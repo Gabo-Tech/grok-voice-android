@@ -547,45 +547,153 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const width = Math.max(280, Math.round(chartWidth || 0));
   const phone = width < 600;
   const nodeWidth = phone ? 10 : 14;
-  const nodeGap = 16;
+  const nodeGap = 24;
   const counts = columnCounts.filter((count) => count > 0);
   const columns = Math.max(1, counts.length);
   const busiest = Math.max(1, ...counts, 1);
-  const minPlot = nodeWidth * columns + 16 * Math.max(0, columns - 1);
-  const room = Math.max(8, Math.floor((width - minPlot) / 2));
-  const gutter = labels ? Math.max(72, Math.min(phone ? 136 : 160, room)) : 12;
-  const slot = 28;
-  const plot = Math.round(Math.min(560, Math.max(phone ? 88 : 112, busiest * (nodeGap + slot))));
-  const top = labels ? 40 : 12;
-  const bottom = labels ? 20 : 12;
+  const minPlotW = nodeWidth * columns + 24 * Math.max(0, columns - 1);
+  let left = labels ? (phone ? 112 : 160) : 12;
+  let right = labels ? (phone ? 136 : 176) : 12;
+  if (left + right + minPlotW > width) {
+    const over = left + right + minPlotW - width;
+    const cut = Math.ceil(over / 2);
+    left = Math.max(labels ? 96 : 8, left - cut);
+    right = Math.max(labels ? 108 : 8, right - cut);
+  }
+  const plot = Math.max(360, busiest * 44);
+  const top = labels ? 96 : 12;
+  const bottom = labels ? 56 : 12;
   const height = plot + top + bottom;
   const usable = Math.max(2, plot - Math.max(0, busiest - 1) * nodeGap);
-  const floorShare = 2 / usable;
+  const floorShare = 8 / usable;
   return {
     width,
     height,
     top,
     bottom,
-    left: gutter,
-    right: gutter,
+    left,
+    right,
     plot,
     nodeWidth,
     nodeGap,
     floorShare,
     layoutIterations: 0,
-    linkOpacity: 0.42,
-  };
+    linkOpacity: 0.4,
+    };
 }
 
-/** "CHF 523.70 (100%)". The code is the caller's currency. Two decimals for ordinary fiat. */
-export function flowAmountLabel(amountMinor: number, currency: string, share: number): string {
+/** Phone: "CHF 1.4k · 56%". Wider screens: "CHF 6,000.00 · 100%". The code is the caller's currency. */
+export function flowAmountLabel(amountMinor: number, currency: string, share: number, compact = false): string {
   const code = currency.trim().toUpperCase();
   const exp = minorExponent(code);
-  const digits = exp <= 0 ? 0 : Math.min(exp, 2);
   const value = amountMinor / 10 ** (exp < 0 ? 0 : exp);
-  const body = value.toFixed(digits);
-  const money = code ? `${code} ${body}` : body;
-  return `${money} (${flowPercent(share)})`;
+  const pct = Math.round((Number.isFinite(share) ? share : 0) * 100);
+  const body = compact ? compactAmount(value) : groupedAmount(value, exp <= 0 ? 0 : Math.min(exp, 2));
+  return code ? `${code} ${body} · ${pct}%` : `${body} · ${pct}%`;
+}
+
+function groupedAmount(value: number, digits: number): string {
+  return new Intl.NumberFormat("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+}
+
+function compactAmount(value: number): string {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1000) {
+    const shown = abs / 1000;
+    const digits = shown >= 10 || Math.abs(shown - Math.round(shown)) < 0.05 ? 0 : 1;
+    return `${sign}${shown.toFixed(digits)}k`;
+  }
+  if (abs >= 100) return `${sign}${groupedAmount(Math.round(abs), 0)}`;
+  return `${sign}${groupedAmount(abs, abs >= 10 ? 0 : 2)}`;
+}
+
+export interface FlowLabelInput {
+  id: string;
+  role: FlowNode["role"];
+  kind: string;
+  text: string;
+  rect: { x: number; y: number; w: number; h: number };
+}
+
+export interface LabelBox {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  text: string;
+}
+
+const LABEL_CHAR = 6.7;
+
+export function labelBoxSize(text: string, maxWidth: number): { w: number; h: number } {
+  const maxChars = Math.max(6, Math.floor(maxWidth / LABEL_CHAR));
+  const lines: string[] = [];
+  for (const para of text.split("\n")) {
+    let rest = para;
+    if (!rest) {
+      lines.push("");
+      continue;
+    }
+    while (rest.length > maxChars) {
+      lines.push(rest.slice(0, maxChars));
+      rest = rest.slice(maxChars);
+    }
+    lines.push(rest);
+  }
+  const w = Math.min(maxWidth, Math.max(1, ...lines.map((line) => Math.ceil(line.length * LABEL_CHAR))));
+  return { w, h: Math.max(16, lines.length * 16) };
+}
+
+function boxesHit(a: LabelBox, b: LabelBox): boolean {
+  return a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y < b.y + b.h - 1 && a.y + a.h > b.y + 1;
+}
+
+/** Place two-line labels in the gutters or above a node, then shift any that still touch. */
+export function placeFlowLabels(items: FlowLabelInput[], canvas: { width: number; height: number }, maxWidth: number): LabelBox[] {
+  const placed: LabelBox[] = [];
+  for (const item of items) {
+    if (!item.text.trim()) continue;
+    const size = labelBoxSize(item.text, maxWidth);
+    let x = item.rect.x + item.rect.w + 8;
+    let y = item.rect.y + (item.rect.h - size.h) / 2;
+    if (item.role === "source") {
+      x = item.rect.x - size.w - 8;
+      y = item.rect.y + (item.rect.h - size.h) / 2;
+    } else if (item.role === "pool") {
+      x = item.rect.x;
+      y = 4;
+    } else if (item.role === "hub" && item.kind === "spending") {
+      x = Math.max(2, item.rect.x - 8);
+      y = 42;
+    } else if (item.role === "hub") {
+      x = item.rect.x + item.rect.w / 2 - size.w / 2;
+      y = item.rect.y + item.rect.h + 6;
+    }
+    x = Math.max(2, Math.min(x, canvas.width - size.w - 2));
+    y = Math.max(2, Math.min(y, canvas.height - size.h - 2));
+    const box: LabelBox = { id: item.id, x, y, w: size.w, h: size.h, text: item.text };
+    for (let step = 0; step < 24 && placed.some((row) => boxesHit(box, row)); step += 1) {
+      box.y = Math.min(canvas.height - box.h - 2, box.y + 8);
+    }
+    if (box.y < 2) box.y = 2;
+    placed.push(box);
+  }
+  return placed;
+}
+
+export function labelsOverlap(boxes: LabelBox[]): boolean {
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      if (boxesHit(boxes[i], boxes[j])) return true;
+    }
+  }
+  return false;
+}
+
+export function labelsInside(boxes: LabelBox[], canvas: { width: number; height: number }): boolean {
+  return boxes.every((box) => box.x >= -1 && box.y >= -1 && box.x + box.w <= canvas.width + 1 && box.y + box.h <= canvas.height + 1);
 }
 
 export function flowDepth(role: FlowNode["role"], present: { pool: boolean; hub: boolean; sink: boolean }): number {
@@ -622,44 +730,35 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   const depthOf = (node: FlowNode) => flowDepth(node.role, present);
   const counts = [0, 1, 2, 3, 4].map((depth) => input.nodes.filter((node) => depthOf(node) === depth).length);
   const frame = sankeyFrame(input.width, counts, input.labels);
-  const lastDepth = Math.max(0, ...input.nodes.map(depthOf));
   const total = Math.max(1, ...input.nodes.map((node) => node.amountMinor));
   const safe = new Map(input.nodes.map((node, index) => [node.id, `n${index}`]));
-  const sideWidth = Math.max(56, Math.min(frame.left, frame.right) - 18);
-  const clip = (value: string, width: number) => {
-    const max = Math.max(8, Math.floor(width / 6.4));
-    const clean = value.replace(/[{}|]/g, " ");
-    return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
-  };
+  const compact = input.width < 600;
+  const labelWidth = Math.max(108, Math.max(frame.left, frame.right) - 8);
+  const seen = new Map<number, { x: number; y: number; width: number; height: number }>();
   const data = input.nodes.map((node) => {
     const depth = depthOf(node);
-    const outsideRight = depth === lastDepth && frame.right >= 150;
-    const end = depth === 0 ? "left" : outsideRight ? "right" : depth === lastDepth ? "left" : node.role === "hub" ? "bottom" : "top";
-    const align = end === "right" ? "left" : end === "left" ? "right" : "center";
-    const box = end === "top" || end === "bottom" ? Math.max(72, sideWidth) : sideWidth;
-    const name = clip(node.label, box);
-    const meta = clip(flowAmountLabel(node.amountMinor, input.currency, node.share), box);
-    const text = input.values ? `{name|${name}}\n{meta|${meta}}` : `{name|${name}}`;
+    const name = node.label.replace(/[{}|]/g, " ");
+    const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact);
+    const tiny = node.share < 0.03;
+    const small = node.share < 0.05;
+    const showValue = input.values && !small;
     return {
       name: safe.get(node.id),
       depth,
       raw: node.amountMinor,
+      role: node.role,
+      kind: node.kind,
       value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
       label: {
-        show: input.labels,
-        position: end,
-        align,
-        distance: 6,
-        width: box,
-        overflow: "truncate",
-        ellipsis: "…",
+        show: input.labels && !tiny,
+        color: input.ink,
+        position: node.role === "source" ? "left" : node.role === "sink" || node.role === "child" ? "right" : node.role === "hub" && node.kind !== "spending" ? "bottom" : "top",
+        distance: 8,
+        offset: node.role === "pool" ? [0, -40] : [0, 0],
+        overflow: "none",
         fontSize: 13,
         lineHeight: 16,
-        formatter: text,
-        rich: {
-          name: { color: input.ink, fontWeight: 650, fontSize: 13, fontStyle: node.italic ? "italic" : "normal", lineHeight: 16, width: box, overflow: "truncate", align },
-          meta: { color: input.muted, fontSize: 13, lineHeight: 16, width: box, overflow: "truncate", align },
-        },
+        formatter: showValue ? `${name}\n${meta}` : name,
       },
       itemStyle: { color: input.mono ? input.brand : input.colors[node.id] || input.brand, borderWidth: 0 },
     };
@@ -684,6 +783,33 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
           emphasis: { focus: "adjacency" },
           lineStyle: { color: input.mono ? input.brand : "gradient", curveness: 0.5, opacity: frame.linkOpacity },
           label: { show: input.labels },
+          labelLayout: (params: { dataType?: string; dataIndex?: number; rect?: { x: number; y: number; width: number; height: number } }) => {
+            if (params.dataType !== "node" || params.dataIndex == null || !params.rect) return {};
+            const current = params.dataIndex;
+            try {
+            if (current === 0) seen.clear();
+            seen.set(current, params.rect);
+            const items = [...seen.entries()]
+              .sort((a, b) => a[0] - b[0])
+              .map(([index, rect]) => {
+                const node = input.nodes[index];
+                const row = data[index];
+                const text = row?.label.show ? String(row.label.formatter) : "";
+                return {
+                  id: node?.id || String(index),
+                  role: node?.role || "sink",
+                  kind: node?.kind || "",
+                  text,
+                  rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+                };
+              });
+            const box = placeFlowLabels(items, { width: frame.width, height: frame.height }, labelWidth).find((row) => row.id === input.nodes[current]?.id);
+            return box ? { x: box.x, y: box.y, align: "left" as const, verticalAlign: "top" as const } : { hideOverlap: true };
+            } catch (error) {
+              (globalThis as { __labelError?: string }).__labelError = error instanceof Error ? error.message : "label";
+              return {};
+            }
+          },
           data,
           links: input.links.map((link) => ({
             source: safe.get(link.source),

@@ -12,7 +12,12 @@ bootAppearance();
 installKeyboardInset();
 installHistory();
 
-const shot = new URLSearchParams(window.location.search).get("shot");
+const shotParams = new URLSearchParams(window.location.search);
+const shot = shotParams.get("shot");
+if (shot?.startsWith("flow")) {
+  const group = shotParams.get("flow") === "entry" ? "entry" : "category";
+  localStorage.setItem("grok-flow-options", JSON.stringify({ labels: true, values: true, group, mono: false, planned: false }));
+}
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     {shot ? <ShotPage kind={shot} /> : <App />}
