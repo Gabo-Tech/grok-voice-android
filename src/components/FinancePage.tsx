@@ -195,6 +195,13 @@ export function FinancePage({
   }, []);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (new URLSearchParams(window.location.search).get("program") === "1") {
+      setSheet("rule");
+    }
+  }, []);
+
+  useEffect(() => {
     const shot = new URLSearchParams(window.location.search).get("shot");
     if (!shot) return;
     const node = document.querySelector(`[data-shot="${shot}"]`);
@@ -776,7 +783,7 @@ function Activity({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-base">{rule.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {rule.cadence ? t(cadenceLabel(rule.cadence)) : t("Once")}
+                    {rule.cadence ? scheduleLabel(rule.cadence, rule.intervalDays, t) : t("Once")}
                     {rule.nextDate ? ` · ${rule.nextDate}` : ` · ${t("No date yet")}`}
                     {rule.calendarEventId ? ` · ${t("On Calendar")}` : ""}
                   </p>
@@ -1547,11 +1554,23 @@ function Chip({ on, onClick, wide, children }: { on: boolean; onClick: () => voi
 
 function cadenceLabel(cadence: string): string {
   if (cadence === "every_n_days") return "Every N days";
+  if (cadence === "every_n_weeks") return "Every N weeks";
+  if (cadence === "every_n_months") return "Every N months";
+  if (cadence === "every_n_years") return "Every N years";
   if (cadence === "daily") return "Daily";
   if (cadence === "weekly") return "Weekly";
   if (cadence === "monthly") return "Monthly";
   if (cadence === "yearly") return "Yearly";
   return "Once";
+}
+
+function scheduleLabel(cadence: string, interval: number | undefined, t: (text: string) => string): string {
+  const n = interval && interval > 0 ? String(interval) : "1";
+  if (cadence === "every_n_days") return `${t("Every")} ${n} ${t("Days")}`;
+  if (cadence === "every_n_weeks") return `${t("Every")} ${n} ${t("Weeks")}`;
+  if (cadence === "every_n_months") return `${t("Every")} ${n} ${t("Months")}`;
+  if (cadence === "every_n_years") return `${t("Every")} ${n} ${t("Years")}`;
+  return t(cadenceLabel(cadence));
 }
 
 function directionLabel(direction: string): string {

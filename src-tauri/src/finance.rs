@@ -63,13 +63,17 @@ fn and_list<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
     out
 }
 
-fn cadence_spoken(cadence: &str) -> String {
-    let key = match cadence {
-        "daily" | "weekly" | "monthly" | "yearly" => cadence,
-        "every_n_days" => "every few days",
+fn cadence_spoken(cadence: &str, interval: u32) -> String {
+    let unit = match cadence {
+        "every_n_days" => "days",
+        "every_n_weeks" => "weeks",
+        "every_n_months" => "months",
+        "every_n_years" => "years",
+        "daily" | "weekly" | "monthly" | "yearly" => return spoken(cadence, &[]),
         _ => return cadence.to_string(),
     };
-    spoken(key, &[])
+    let count = interval.max(1).to_string();
+    spoken("every {n} {unit}", &[("n", &count), ("unit", &spoken(unit, &[]))])
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -1064,7 +1068,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "save_recurring",
-            "Save a repeating bill, payday, subscription, card payment, or automated investment on this phone. name is the nickname. amount may be omitted when they only named a date. cadence is daily, weekly, monthly, yearly, or every N days with intervalDays. occurrences is how many times a fixed run lasts, such as 9. openEnded true means it does not end. date is YYYY-MM-DD, tomorrow, or a day such as 1. direction is expense, income, or payment. leadDays is how many days before to remind them in this app. Default is 2, and the day itself is reminded too. 0 means only on the day. Do not invent an amount or a date. The date is saved on this app's Calendar and Time list, not the phone Clock. Pass phrase instead when they describe the whole plan in one sentence.",
+            "Save a repeating bill, payday, subscription, card payment, or automated investment on this phone. name is the nickname. amount may be omitted when they only named a date. cadence is daily, weekly, monthly, yearly, every_n_days, every_n_weeks, every_n_months, or every_n_years. intervalDays is N, at least 1. A phrase can be the whole sentence, such as add a 20 CHF payment every 10 days starting tomorrow, or change gym to every 2 weeks. Do not create an account or card unless they explicitly ask to add one. occurrences is how many times a fixed run lasts, such as 9. openEnded true means it does not end. date is YYYY-MM-DD, tomorrow, or a day such as 1. direction is expense, income, or payment. leadDays is how many days before to remind them in this app. Default is 2, and the day itself is reminded too. 0 means only on the day. Do not invent an amount or a date. The date is saved on this app's Calendar and Time list, not the phone Clock. Pass phrase instead when they describe the whole plan in one sentence.",
             json!({
                 "type": "object",
                 "properties": {
@@ -2557,7 +2561,7 @@ fn rule_from_tool(store: &mut Store, args: &Value, clock: &Clock, programmed: bo
     }
     let cadence = normalize_cadence(args["cadence"].as_str().unwrap_or(""));
     if args["cadence"].as_str().map(str::trim).filter(|value| !value.is_empty()).is_some() && cadence.is_empty() {
-        return Err("Cadence is daily, weekly, monthly, yearly, or every N days.".into());
+        return Err("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.".into());
     }
     let date_raw = if let Some(day) = args["day"].as_i64().filter(|day| (1..=31).contains(day)) {
         iso(next_month_day(day as u32, clock.today))
@@ -2639,7 +2643,7 @@ fn rule_from_tool(store: &mut Store, args: &Value, clock: &Clock, programmed: bo
     let template = if programmed { "Programmed {name}, {money}." } else { "Saved {name}, {money}." };
     let mut detail = spoken(template, &[("name", &name), ("money", &money)]);
     if recurrence::is_repeating(&cadence) {
-        let word = cadence_spoken(&cadence);
+        let word = cadence_spoken(&cadence, store.rules.iter().find(|rule| rule.id == saved).map(|rule| rule.interval_days).unwrap_or(0));
         detail.push_str(&spoken(" Repeats {cadence}.", &[("cadence", &word)]));
     }
     detail.push_str(&calendar_clause(&cadence, &date_raw));
@@ -2713,8 +2717,76 @@ fn apply_phrase(store: &mut Store, phrase: &str, clock: &Clock) -> Result<String
         ),
         "action" => phrase_action(store, &parsed, clock),
         "payout" => phrase_payout(store, &parsed, clock),
+        "list" => Ok(list_schedules(store)),
+        "delete" => phrase_delete(store, &parsed),
+        "edit" => phrase_edit(store, &parsed, clock),
         _ => phrase_schedule(store, &parsed, clock),
     }
+}
+
+fn list_schedules(store: &Store) -> String {
+    let rows: Vec<&Rule> = store.rules.iter().filter(|rule| !rule.from_account).collect();
+    if rows.is_empty() {
+        return spoken("No recurring item is saved.", &[]);
+    }
+    let mut lines = Vec::new();
+    for rule in rows {
+        let money = match rule.amount_minor {
+            Some(amount) => format_minor(amount, &rule.currency),
+            None => spoken("no amount", &[]),
+        };
+        let when = if rule.next_date.is_empty() { spoken("No date yet", &[]) } else { rule.next_date.clone() };
+        let cadence = cadence_spoken(&rule.cadence, rule.interval_days);
+        lines.push(spoken("{name}, {money}, {cadence}, next {date}.", &[("name", &rule.name), ("money", &money), ("cadence", &cadence), ("date", &when)]));
+    }
+    lines.join(" ")
+}
+
+fn phrase_delete(store: &mut Store, parsed: &crate::finance_schedule::Parsed) -> Result<String, String> {
+    let args = json!({ "kind": "rule", "name": parsed.name, "confirmed": parsed.action == "delete_yes" });
+    if parsed.action != "delete_yes" {
+        return describe_delete(store, &args);
+    }
+    apply_delete(store, &args)
+}
+
+fn phrase_edit(store: &mut Store, parsed: &crate::finance_schedule::Parsed, clock: &Clock) -> Result<String, String> {
+    let index = rule_by_name(store, &parsed.name)?;
+    if !parsed.account_name.is_empty() {
+        let account_id = resolve_pay_account(store, &parsed.account_name, "", &clock.default_currency, clock)?;
+        store.rules[index].account_id = account_id;
+    }
+    let rule = &mut store.rules[index];
+    if !parsed.new_name.is_empty() {
+        rule.name = parsed.new_name.clone();
+    }
+    if !parsed.cadence.is_empty() {
+        rule.cadence = parsed.cadence.clone();
+        rule.interval_days = parsed.interval_days;
+    }
+    if !parsed.amount.is_empty() {
+        let (minor, currency) = resolve_money(&parsed.amount, &parsed.currency, &clock.default_currency)?;
+        rule.amount_minor = Some(minor);
+        if !currency.is_empty() {
+            rule.currency = currency;
+        }
+    }
+    if !parsed.start_date.is_empty() {
+        rule.start_date = parsed.start_date.clone();
+        rule.next_date = parsed.start_date.clone();
+    }
+    if !parsed.category.is_empty() {
+        rule.category = parsed.category.clone();
+    }
+    if parsed.end_kind == "none" {
+        rule.end_kind = "none".into();
+        rule.end_count = 0;
+        rule.end_date.clear();
+    }
+    rule.updated_ms = clock.ms;
+    let name = rule.name.clone();
+    let cadence = cadence_spoken(&rule.cadence, rule.interval_days);
+    Ok(spoken("Updated {name}. Repeats {cadence}.", &[("name", &name), ("cadence", &cadence)]))
 }
 
 fn phrase_schedule(store: &mut Store, parsed: &crate::finance_schedule::Parsed, clock: &Clock) -> Result<String, String> {
@@ -3211,7 +3283,7 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
     if !draft.cadence.trim().is_empty() || mask.due {
         let cadence = normalize_cadence(&draft.cadence);
         if !draft.cadence.trim().is_empty() && cadence.is_empty() {
-            return Err("Cadence is daily, weekly, monthly, yearly, or every N days.".into());
+            return Err("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.".into());
         }
         if mask.due || !draft.cadence.trim().is_empty() {
             account.cadence = cadence;
@@ -3646,7 +3718,7 @@ fn hydrate_store(store: &mut Store) -> bool {
 }
 
 fn schedule_repeats(cadence: &str, interval: u32) -> bool {
-    cadence == "every_n_days" && interval > 0 || recurrence::is_repeating(cadence)
+    crate::finance_schedule::repeats(cadence, interval)
 }
 
 fn fx_status(store: &Store, _today: NaiveDate) -> FxStatus {
@@ -6156,8 +6228,22 @@ fn normalize_cadence(value: &str) -> String {
     if folded == "every day" || folded == "everyday" {
         return "daily".into();
     }
-    if raw == "every_n_days" || (folded.contains("every") && folded.contains("day") && folded.chars().any(|c| c.is_ascii_digit())) {
-        return "every_n_days".into();
+    if matches!(raw.as_str(), "every_n_days" | "every_n_weeks" | "every_n_months" | "every_n_years") {
+        return raw;
+    }
+    if folded.contains("every") && folded.chars().any(|c| c.is_ascii_digit()) {
+        if folded.contains("week") {
+            return "every_n_weeks".into();
+        }
+        if folded.contains("month") {
+            return "every_n_months".into();
+        }
+        if folded.contains("year") {
+            return "every_n_years".into();
+        }
+        if folded.contains("day") {
+            return "every_n_days".into();
+        }
     }
     let kind = recurrence::normalize_kind(value);
     if recurrence::is_repeating(&kind) { kind } else { String::new() }

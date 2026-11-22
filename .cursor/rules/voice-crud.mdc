@@ -1,0 +1,15 @@
+---
+description: Voice CRUD parity. Every user-facing record can be created, read, updated, and deleted from the screen and by Talk.
+alwaysApply: true
+---
+
+Every entity the person can see must be fully CRUD-able from the UI and by voice through Talk.
+
+- Create, read, update, and delete each exist as a screen action and as a spoken request.
+- Talk uses the same saved record the screen uses. It does not invent a second copy.
+- Deletes ask for a clear yes before anything is removed.
+- Talk does not create an account, card, or other record the person did not ask for.
+- Copy for the request and the spoken reply exists in en, es, de, pt, and ca-ES-valencia.
+- Apostrophes in Android `strings.xml` are written as `\'`.
+
+When a change adds a field or a new kind of record, add the four operations on both paths in the same change.

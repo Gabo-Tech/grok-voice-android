@@ -37,6 +37,7 @@ export function ProgramSheet({
   const [purpose, setPurpose] = useState("recurring");
   const [cadence, setCadence] = useState("monthly");
   const [interval, setInterval] = useState("10");
+  const [unit, setUnit] = useState("day");
   const [endKind, setEndKind] = useState("after_count");
   const [times, setTimes] = useState("9");
   const [endDate, setEndDate] = useState("");
@@ -50,10 +51,11 @@ export function ProgramSheet({
   const [confirming, setConfirming] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
   const key = editing?.id || "new";
+  const previewForm = import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("program") === "1";
   if (!open && seen !== null) setSeen(null);
   if (open && seen !== key) {
     setSeen(key);
-    setStep(editing ? 1 : 0);
+    setStep(editing || previewForm ? 1 : 0);
     setPreset(presetOf(editing));
     setName(editing?.name || "");
     setAmount(editing ? majorString(editing.amountMinor, editing.currency) : "");
@@ -62,6 +64,7 @@ export function ProgramSheet({
     setPurpose(editing?.purpose || "recurring");
     setCadence(editing?.cadence || "monthly");
     setInterval(String(editing?.intervalDays || 10));
+    setUnit(unitOfCadence(editing?.cadence || ""));
     setEndKind(editing?.endKind || (editing?.cadence ? "none" : "after_count"));
     setTimes(String(editing?.endCount || 9));
     setEndDate(editing?.endDate || "");
@@ -73,6 +76,15 @@ export function ProgramSheet({
     setCategory(editing?.category || "");
     setNotes(editing?.notes || "");
     setConfirming(false);
+    if (previewForm && !editing) {
+      setName("Gym");
+      setAmount("20");
+      setCadence("every_n_days");
+      setInterval("10");
+      setUnit("day");
+      setPurpose("recurring");
+      setEndKind("none");
+    }
   }
 
   const choose = (next: Preset) => {
@@ -136,7 +148,7 @@ export function ProgramSheet({
       endKind: purpose === "one_off" || cadence === "" ? "after_count" : endKind,
       endCount: purpose === "one_off" || cadence === "" || endKind === "after_count" ? Number(times) || 1 : 0,
       endDate: endKind === "on_date" ? endDate : "",
-      intervalDays: cadence === "every_n_days" ? Number(interval) || 10 : 0,
+      intervalDays: cadence.startsWith("every_n_") ? Math.max(1, Number(interval) || 1) : 0,
       amountMode: purpose === "investment_payout" ? amountMode : "fixed",
       payoutCurrency: purpose === "investment_payout" ? payoutCurrency : "",
       accountId: account?.id || "",
@@ -243,17 +255,18 @@ export function ProgramSheet({
           <Field label={t("How often")}>
             <div className="chip-scroller">
               <Chip on={cadence === ""} onClick={() => { setCadence(""); setPurpose("one_off"); setEndKind("after_count"); setTimes("1"); }}>{t("Once")}</Chip>
+              <Chip on={cadence === "daily"} onClick={() => { setCadence("daily"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Daily")}</Chip>
               <Chip on={cadence === "weekly"} onClick={() => { setCadence("weekly"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Weekly")}</Chip>
               <Chip on={cadence === "monthly"} onClick={() => { setCadence("monthly"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Monthly")}</Chip>
               <Chip on={cadence === "yearly"} onClick={() => { setCadence("yearly"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Yearly")}</Chip>
-              <Chip on={cadence === "every_n_days"} onClick={() => { setCadence("every_n_days"); if (purpose === "one_off") setPurpose("recurring"); }}>{t("Every N days")}</Chip>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Input className="h-11 w-16" inputMode="numeric" aria-label={t("Every")} value={interval} onChange={(event) => { setInterval(event.target.value); setCadence(intervalCadence(unit)); if (purpose === "one_off") setPurpose("recurring"); }} />
+              {(["day", "week", "month", "year"] as const).map((id) => (
+                <Chip key={id} on={cadence === intervalCadence(id)} onClick={() => { setUnit(id); setCadence(intervalCadence(id)); if (purpose === "one_off") setPurpose("recurring"); }}>{t(unitLabel(id))}</Chip>
+              ))}
             </div>
           </Field>
-          {cadence === "every_n_days" ? (
-            <Field label={t("Days apart")}>
-              <Input inputMode="numeric" value={interval} onChange={(event) => setInterval(event.target.value)} />
-            </Field>
-          ) : null}
           {repeating ? (
             <div className="space-y-3">
               <p className="fin-kicker">{t("How long")}</p>
@@ -295,6 +308,27 @@ export function ProgramSheet({
       )}
     </Sheet>
   );
+}
+
+export function intervalCadence(unit: string): string {
+  if (unit === "week") return "every_n_weeks";
+  if (unit === "month") return "every_n_months";
+  if (unit === "year") return "every_n_years";
+  return "every_n_days";
+}
+
+export function unitOfCadence(cadence: string): string {
+  if (cadence === "every_n_weeks") return "week";
+  if (cadence === "every_n_months") return "month";
+  if (cadence === "every_n_years") return "year";
+  return "day";
+}
+
+function unitLabel(unit: string): string {
+  if (unit === "week") return "Weeks";
+  if (unit === "month") return "Months";
+  if (unit === "year") return "Years";
+  return "Days";
 }
 
 function Chip({ on, onClick, wide, children }: { on: boolean; onClick: () => void; wide?: boolean; children: string }) {
