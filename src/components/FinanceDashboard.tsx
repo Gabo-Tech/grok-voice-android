@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { CombinedHeadline, StaticHeadline } from "@/components/CombinedTotal";
@@ -10,7 +10,6 @@ import {
   comingCashRows,
   headlineOf,
   monthBounds,
-  nativeParts,
   netWorth,
   worthAccount,
   netWorthChange,
@@ -22,6 +21,7 @@ import {
   type MoneyPart,
   type RateBook,
 } from "@/lib/financeMath";
+import { selectDebt, type DebtSelection, type DebtSliceId } from "@/lib/financeDebt";
 import { flowParts as flowPartsOf, monthActivity, monthCash, netWorthParts, worthBuckets, type CashTx } from "@/lib/financeLedger";
 import { formatMoney, moneyParts } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
@@ -173,6 +173,37 @@ export function FinanceDashboard({
   const nextPlan = useMemo(() => projectWindow([], planned, today, horizon, today, false), [planned, today, horizon]);
   const overduePlan = useMemo(() => projectWindow([], planned, "1970-01-01", yesterday, today, false), [planned, today, yesterday]);
   const worthParts = net.parts.length > 0 ? net.parts : worth.map((row) => ({ amountMinor: row.net, currency: row.currency }));
+  const debt = useMemo(
+    () =>
+      selectDebt(
+        accounts.map((account) => ({
+          id: account.id,
+          name: account.name,
+          kind: account.kind,
+          currency: account.currency,
+          shownBalanceMinor: account.shownBalanceMinor,
+        })),
+        planned.map((hit) => ({
+          id: `${hit.scheduleId}-${hit.date}`,
+          name: hit.name,
+          amountMinor: hit.amountMinor,
+          currency: hit.currency,
+          date: hit.date,
+          direction: hit.direction,
+          accountId: hit.accountId,
+        })),
+        display,
+        book,
+        nowMs,
+        today,
+      ),
+    [accounts, planned, display, book, nowMs, today],
+  );
+  const worthShown = useMemo(() => {
+    const bills = debt.slices.find((slice) => slice.id === "bills");
+    const extra = (bills?.items || []).filter((item) => item.amountMinor > 0).map((item) => ({ amountMinor: -item.amountMinor, currency: item.currency }));
+    return [...worthParts, ...extra];
+  }, [worthParts, debt]);
   const realized = useMemo(
     () =>
       monthActivity(
@@ -191,15 +222,6 @@ export function FinanceDashboard({
   const earnedParts = useMemo(() => flowPartsOf(realized, bounds.start, bounds.end, "income"), [realized, bounds.start, bounds.end]);
   const resultFlow = useMemo(() => cashFlow(realized, bounds.start, bounds.end), [realized, bounds.start, bounds.end]);
   const flowParts = useMemo(() => resultFlow.map((row) => ({ amountMinor: row.left, currency: row.currency })), [resultFlow]);
-  const cardDebtParts = useMemo(
-    () =>
-      accounts.flatMap((account) =>
-        account.kind === "credit_card" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 && account.currency
-          ? [{ amountMinor: account.shownBalanceMinor, currency: account.currency }]
-          : [],
-      ),
-    [accounts],
-  );
   const comingOutParts = useMemo(() => listed(comingOut), [comingOut]);
   const incomeParts = useMemo(() => listed(incomeRows), [incomeRows]);
   const payoutParts = useMemo(() => listed(payoutRows), [payoutRows]);
@@ -245,10 +267,10 @@ export function FinanceDashboard({
         <section className="fin-panel fin-tight" data-finance-panel="net-worth">
           <h2 className="fin-kicker">{t("Net worth")}</h2>
           <p className="fin-muted mt-1 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
-          {worthParts.length === 0 ? (
+          {worthShown.length === 0 ? (
             <p className="mt-3 text-base">{t("No balances stated yet")}</p>
           ) : (
-            <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
+            <CombinedHeadline parts={worthShown} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
           )}
           {net.unpriced.length > 0 ? (
             <button type="button" className="fin-chip mt-2" onClick={onRefreshPrices}>
@@ -257,8 +279,8 @@ export function FinanceDashboard({
               {t("Refresh price now")}
             </button>
           ) : null}
-          <WorthRows buckets={buckets.buckets} display={display} onFocus={onFocus} />
-          {cardDebtParts.length > 0 ? <CardDebt parts={cardDebtParts} display={display} book={book} nowMs={nowMs} /> : null}
+          <WorthRows buckets={buckets.buckets} owed={debt.amountMinor} display={display} onFocus={onFocus} />
+          <DebtBlock debt={debt} display={display} />
         </section>
       ) : null}
 
@@ -376,13 +398,9 @@ export function FinanceDashboard({
 
       {panels.includes("card-debt") ? (
         <section className="fin-panel" data-finance-panel="card-debt">
-          <h2 className="fin-kicker">{t("Card debt")}</h2>
-          <p className="fin-muted mt-2 text-sm leading-5">{t("What the cards owe right now. A payment later is not another expense.")}</p>
-          {cardDebtParts.length === 0 ? (
-            <p className="mt-4 text-base">{t("No card debt")}</p>
-          ) : (
-            <CombinedHeadline parts={cardDebtParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="out" />
-          )}
+          <h2 className="fin-kicker">{t("Debt")}</h2>
+          <p className="fin-muted mt-2 text-sm leading-5">{t("Cards, loans, people, and overdue bills. A future bill is not included.")}</p>
+          {debt.amountMinor <= 0 ? <p className="mt-4 text-base">{t("No debt")}</p> : <DebtBlock debt={debt} display={display} />}
         </section>
       ) : null}
 
@@ -706,16 +724,17 @@ function signedMoney(minor: number, currency: string): string {
 
 function WorthRows({
   buckets,
+  owed,
   display,
   onFocus,
 }: {
   buckets: ReturnType<typeof worthBuckets>["buckets"];
+  owed: number;
   display: string;
   onFocus: (focus: WorthFocus) => void;
 }) {
   const t = useT();
   const money = buckets.find((row) => row.id === "money")?.amountMinor || 0;
-  const owed = buckets.find((row) => row.id === "debt")?.amountMinor || 0;
   const invested = buckets.find((row) => row.id === "investment")?.amountMinor || 0;
   const credit = buckets.find((row) => row.id === "credit")?.amountMinor || 0;
   const rows: Array<{ focus: WorthFocus; label: string; amount: number }> = [
@@ -736,27 +755,52 @@ function WorthRows({
   );
 }
 
-function CardDebt({
-  parts,
-  display,
-  book,
-  nowMs,
-}: {
-  parts: MoneyPart[];
-  display: string;
-  book: RateBook | null;
-  nowMs: number;
-}) {
+function DebtBlock({ debt, display }: { debt: DebtSelection; display: string }) {
   const t = useT();
-  const head = headlineOf(parts, display, book, nowMs);
-  const natives = nativeParts(parts).filter((row) => row.currency !== display);
+  const [open, setOpen] = useState<DebtSliceId | null>(null);
+  const labels: Record<DebtSliceId, string> = {
+    cards: t("Cards"),
+    loans: t("Loans"),
+    people: t("Owed to people"),
+    bills: t("Overdue bills"),
+  };
+  if (debt.amountMinor <= 0 && debt.slices.length === 0) return null;
+  const slice = debt.slices.find((row) => row.id === open);
   return (
     <div className="mt-4 border-t border-[var(--line-soft)] pt-3">
       <div className="flex min-h-11 items-center justify-between gap-3">
-        <span className="text-[15px]">{t("Card debt")}</span>
-        <span className="fin-num fin-out text-[15px]">{head.state === "ready" ? signedMoney(head.amountMinor, head.currency) : "—"}</span>
+        <span className="text-[15px]">{t("Debt")}</span>
+        <span className="fin-num fin-out text-[15px]">{formatMoney(debt.amountMinor, debt.currency || display)}</span>
       </div>
-      {natives.length > 0 ? <p className="fin-muted text-[13px] leading-5">{natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ")}</p> : null}
+      {debt.natives.length > 0 ? <p className="fin-muted text-[13px] leading-5">{debt.natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ")}</p> : null}
+      {debt.missing.length > 0 ? <p className="fin-muted text-[13px] leading-5">{debt.missing.join(", ")}</p> : null}
+      {debt.slices.map((row) => (
+        <button
+          key={row.id}
+          type="button"
+          className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
+          aria-expanded={open === row.id}
+          onClick={() => setOpen(open === row.id ? null : row.id)}
+        >
+          <span className="text-[15px]">{labels[row.id]}</span>
+          <span className="fin-num text-[15px]">{formatMoney(row.amountMinor, debt.currency || display)}</span>
+        </button>
+      ))}
+      {slice ? (
+        <ul className="mt-1">
+          {slice.items.map((item) => (
+            <li key={item.id} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--line-soft)]">
+              <span className="text-[15px]">{item.label}</span>
+              <span className="text-right">
+                <span className="fin-num block text-[15px]">{formatMoney(item.displayMinor || 0, debt.currency || display)}</span>
+                {item.currency.toUpperCase() !== (debt.currency || display).toUpperCase() ? (
+                  <span className="fin-muted text-[13px] leading-4">{formatMoney(item.amountMinor, item.currency)}</span>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

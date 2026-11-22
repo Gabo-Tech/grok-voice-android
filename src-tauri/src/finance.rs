@@ -1193,7 +1193,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview is net worth, this month (income, expenses, card payments, result, cash flow), and the next 30 days. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow is where the money went. period is this, last, 3m, 6m, ytd, 1y, all, or custom, with start and end when custom. action is hide, show, only, or reset, and name is a holding or a class such as crypto. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow is where the money went and can keep its own period. period is this, last, 3m, 6m, ytd, 1y, all, or custom, with start and end when custom. action is hide, show, only, or reset, and name is a holding, a class such as crypto, or a dashboard section. Do not invent a rate.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1934,17 +1934,20 @@ fn parse_spoken_expenses(phrase: &str) -> Vec<Value> {
         } else {
             carry_account = account.clone();
         }
+        let described = description_of(&clause);
         let category = if forgotten(&clause) && !clause.to_lowercase().contains(" on ") {
             String::new()
         } else {
-            category_of(&clause)
+            hinted_label(&described)
         };
+        let notes = if category.is_empty() { described } else { String::new() };
         items.push(json!({
             "direction": "expense",
             "amount": amount,
             "currency": currency,
             "category": category,
             "account": account,
+            "notes": notes,
         }));
     }
     items
@@ -2114,6 +2117,10 @@ fn scan_amounts(text: &str) -> Vec<(String, String)> {
 }
 
 fn category_of(clause: &str) -> String {
+    hinted_label(&description_of(clause))
+}
+
+fn description_of(clause: &str) -> String {
     let lower = clause.to_lowercase();
     let Some(on) = lower.rfind(" on ") else {
         return String::new();
@@ -2131,7 +2138,43 @@ fn category_of(clause: &str) -> String {
             }
         }
     }
-    title_phrase(&strip_article(rest[..end].trim()))
+    strip_article(rest[..end].trim())
+}
+
+/// A single known word such as groceries becomes its category. A description does not.
+fn hinted_label(text: &str) -> String {
+    let folded = fold(text);
+    let tokens: Vec<&str> = folded.split_whitespace().collect();
+    if tokens.len() != 1 {
+        return String::new();
+    }
+    const HINTS: &[(&str, &str)] = &[
+        ("grocery", "Groceries"),
+        ("grocer", "Groceries"),
+        ("supermerc", "Groceries"),
+        ("rent", "Housing"),
+        ("alquiler", "Housing"),
+        ("miete", "Housing"),
+        ("renda", "Housing"),
+        ("lloguer", "Housing"),
+        ("food", "Food"),
+        ("comida", "Food"),
+        ("essen", "Food"),
+        ("restaurant", "Food"),
+        ("coffee", "Food"),
+        ("cafe", "Food"),
+        ("uber", "Transport"),
+        ("salary", "Salary"),
+        ("sueldo", "Salary"),
+        ("gehalt", "Salary"),
+        ("nomina", "Salary"),
+    ];
+    for (word, name) in HINTS {
+        if tokens[0] == *word || tokens[0] == fold(name) || tokens[0].contains(word) {
+            return (*name).to_string();
+        }
+    }
+    String::new()
 }
 
 fn account_of(clause: &str) -> String {
@@ -4795,7 +4838,48 @@ fn speak_pair(store: &Store, base: &str, quote: &str, now_ms: i64) -> Result<Str
     }
 }
 
+fn asks_owed(text: &str) -> bool {
+    let folded = fold(text);
+    folded.contains("owe") || folded.contains("debo") || folded.contains("deuda") || folded.contains("schulde") || folded.contains("devo") || folded.contains("deute")
+}
+
+fn asks_worth(text: &str) -> bool {
+    let folded = fold(text);
+    folded.contains("net worth") || folded.contains("patrimonio") || folded.contains("patrimoni") || folded.contains("vermogen")
+}
+
+fn asks_spent(text: &str) -> bool {
+    let folded = fold(text);
+    folded.contains("spend") || folded.contains("spent") || folded.contains("gasto") || folded.contains("gaste") || folded.contains("despes") || folded.contains("ausgegeben")
+}
+
+fn speak_spent(store: &Store, today: NaiveDate) -> String {
+    let display = effective_default(store, &current_locale());
+    let now_ms = Local::now().timestamp_millis();
+    let month = format!("{:04}-{:02}", today.year(), today.month());
+    let totals = period_totals(&flow_transactions(store, today), &month, "", "", "");
+    let parts: Vec<(i64, String)> = totals.iter().filter(|row| row.expense_minor != 0).map(|row| (row.expense_minor, row.currency.clone())).collect();
+    if parts.is_empty() {
+        return spoken("No income or expenses are saved for {month}.", &[("month", &month)]);
+    }
+    let Some(combined) = crate::finance_fx::combine(&parts, &display, &store.fx, now_ms) else {
+        let missing = crate::finance_fx::missing_codes(&parts, &display, &store.fx).join(", ");
+        return spoken("Net worth needs a rate for {codes}.", &[("codes", &missing)]);
+    };
+    let amount = format_minor(combined.amount_minor, &combined.currency);
+    spoken("Spent {amount} this month.", &[("amount", &amount)])
+}
+
 fn speak(store: &Store, ask: &Ask, today: NaiveDate) -> String {
+    if asks_owed(&ask.query) {
+        return speak_debt(store, today);
+    }
+    if asks_worth(&ask.query) {
+        return speak_net_worth(store);
+    }
+    if asks_spent(&ask.query) {
+        return speak_spent(store, today);
+    }
     let month = if ask.month.len() == 7 { ask.month.clone() } else { format!("{:04}-{:02}", today.year(), today.month()) };
     let kind = if !ask.kind.is_empty() {
         ask.kind.clone()
@@ -4924,6 +5008,102 @@ fn current_locale() -> String {
     })
 }
 
+/// Unpaid planned expenses on or before today. Future bills stay out.
+/// A bill on a card, loan, or personal debt is skipped so that balance is not counted twice.
+fn overdue_bills(store: &Store, today: NaiveDate) -> Vec<(i64, String)> {
+    let mut parts = Vec::new();
+    for rule in &store.rules {
+        if rule.direction != "expense" || matches!(rule.status.as_str(), "paused" | "stopped" | "completed") {
+            continue;
+        }
+        let Some(amount) = rule.amount_minor else { continue };
+        if amount <= 0 || rule.currency.trim().is_empty() {
+            continue;
+        }
+        if store.accounts.iter().any(|account| account.id == rule.account_id && is_debt(&account.kind)) {
+            continue;
+        }
+        let spec = rule_spec(rule);
+        let settled = settled_dates(store, &rule.id);
+        for date in crate::finance_schedule::occurrence_dates(&spec, today) {
+            if date > today || settled.contains(&date) || spec.skipped.contains(&date) {
+                continue;
+            }
+            parts.push((amount, rule.currency.to_ascii_uppercase()));
+        }
+    }
+    parts
+}
+
+fn subtract_parts(parts: &mut Vec<(i64, String)>, bills: &[(i64, String)]) {
+    for (amount, currency) in bills {
+        if let Some(row) = parts.iter_mut().find(|row| row.1.eq_ignore_ascii_case(currency)) {
+            row.0 -= *amount;
+        } else {
+            parts.push((-*amount, currency.clone()));
+        }
+    }
+}
+
+fn owed_parts(store: &Store, today: NaiveDate, now_ms: i64) -> Vec<(i64, String)> {
+    let mut parts = Vec::new();
+    for account in &store.accounts {
+        if !is_debt(&account.kind) {
+            continue;
+        }
+        let Some(shown) = shown_with_fx(account, &store.transactions, &store.fx, now_ms) else { continue };
+        if shown <= 0 || account.currency.trim().is_empty() {
+            continue;
+        }
+        parts.push((shown, account.currency.to_ascii_uppercase()));
+    }
+    parts.extend(overdue_bills(store, today));
+    parts
+}
+
+fn speak_debt(store: &Store, today: NaiveDate) -> String {
+    let display = effective_default(store, &current_locale());
+    let now_ms = Local::now().timestamp_millis();
+    let parts = owed_parts(store, today, now_ms);
+    if parts.is_empty() {
+        return spoken("Nothing is owed.", &[]);
+    }
+    let Some(combined) = crate::finance_fx::combine(&parts, &display, &store.fx, now_ms) else {
+        let missing = crate::finance_fx::missing_codes(&parts, &display, &store.fx).join(", ");
+        return spoken("Net worth needs a rate for {codes}.", &[("codes", &missing)]);
+    };
+    if combined.amount_minor <= 0 {
+        return spoken("Nothing is owed.", &[]);
+    }
+    let amount = format_minor(combined.amount_minor, &combined.currency);
+    let mut line = spoken("You owe {amount}.", &[("amount", &amount)]);
+    for (slice, label) in [("credit_card", " Cards {amount}."), ("loan", " Loans {amount}."), ("other_debt", " Owed to people {amount}.")] {
+        let slice_parts: Vec<(i64, String)> = store
+            .accounts
+            .iter()
+            .filter(|account| account.kind == slice)
+            .filter_map(|account| {
+                let shown = shown_with_fx(account, &store.transactions, &store.fx, now_ms)?;
+                if shown <= 0 { None } else { Some((shown, account.currency.to_ascii_uppercase())) }
+            })
+            .collect();
+        if let Some(row) = crate::finance_fx::combine(&slice_parts, &display, &store.fx, now_ms) {
+            if row.amount_minor > 0 {
+                let piece = format_minor(row.amount_minor, &row.currency);
+                line.push_str(&spoken(label, &[("amount", &piece)]));
+            }
+        }
+    }
+    let bills = overdue_bills(store, today);
+    if let Some(row) = crate::finance_fx::combine(&bills, &display, &store.fx, now_ms) {
+        if row.amount_minor > 0 {
+            let piece = format_minor(row.amount_minor, &row.currency);
+            line.push_str(&spoken(" Overdue bills {amount}.", &[("amount", &piece)]));
+        }
+    }
+    line
+}
+
 fn speak_net_worth(store: &Store) -> String {
     let display = effective_default(store, &current_locale());
     let now_ms = Local::now().timestamp_millis();
@@ -4932,7 +5112,9 @@ fn speak_net_worth(store: &Store) -> String {
     if rows.is_empty() {
         return String::new();
     }
-    let parts: Vec<(i64, String)> = rows.iter().map(|row| (row.net_minor, row.currency.clone())).collect();
+    let mut parts: Vec<(i64, String)> = rows.iter().map(|row| (row.net_minor, row.currency.clone())).collect();
+    let today = Local::now().date_naive();
+    subtract_parts(&mut parts, &overdue_bills(store, today));
     let Some(net) = crate::finance_fx::combine(&parts, &display, &store.fx, now_ms) else {
         let missing = crate::finance_fx::missing_codes(&parts, &display, &store.fx).join(", ");
         if missing.is_empty() {
@@ -4942,7 +5124,7 @@ fn speak_net_worth(store: &Store) -> String {
     };
     let amount = format_minor(net.amount_minor, &net.currency);
     let mut line = spoken("Net worth is {amount}.", &[("amount", &amount)]);
-    let owed: Vec<(i64, String)> = rows.iter().filter(|row| row.owed_minor > 0).map(|row| (row.owed_minor, row.currency.clone())).collect();
+    let owed = owed_parts(store, today, now_ms);
     if let Some(debt) = crate::finance_fx::combine(&owed, &display, &store.fx, now_ms) {
         if debt.amount_minor > 0 {
             let owed_amount = format_minor(debt.amount_minor, &debt.currency);
@@ -6911,7 +7093,9 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
     nets.sort_by(|a, b| a.0.cmp(&b.0));
     let display = effective_default(store, locale);
     let now_ms = Local::now().timestamp_millis();
-    let parts: Vec<(i64, String)> = nets.iter().map(|row| (row.1 + row.3 - row.2, row.0.clone())).filter(|row| row.0 != 0).collect();
+    let bills = overdue_bills(store, today);
+    let mut parts: Vec<(i64, String)> = nets.iter().map(|row| (row.1 + row.3 - row.2, row.0.clone())).filter(|row| row.0 != 0).collect();
+    subtract_parts(&mut parts, &bills);
     let heading = tr(locale, "Finance summary");
     let mut notes = vec![tr(locale, "Balances are what you last said.")];
     let mut numbers = Vec::new();
@@ -6960,7 +7144,15 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
     }
     let mut pages = vec![summary];
     let money_parts: Vec<(i64, String)> = nets.iter().filter(|row| row.1 != 0).map(|row| (row.1, row.0.clone())).collect();
-    let debt_parts: Vec<(i64, String)> = nets.iter().filter(|row| row.2 != 0).map(|row| (row.2, row.0.clone())).collect();
+    let mut debt_parts: Vec<(i64, String)> = accounts
+        .iter()
+        .filter(|account| is_debt(&account.kind))
+        .filter_map(|account| {
+            let shown = shown_balance(account, &store.transactions)?;
+            if shown <= 0 { None } else { Some((shown, account.currency.clone())) }
+        })
+        .collect();
+    debt_parts.extend(bills.iter().cloned());
     let invest_parts: Vec<(i64, String)> = nets.iter().filter(|row| row.3 != 0).map(|row| (row.3, row.0.clone())).collect();
     let money = combined_amount(&money_parts, &display, &store.fx, now_ms);
     let debt = combined_amount(&debt_parts, &display, &store.fx, now_ms);
@@ -6998,6 +7190,38 @@ fn pdf_pages(store: &Store, request: &PdfRequest, today: NaiveDate, locale: &str
                 chart: Some(Chart::Donut { center_label: tr(locale, "Net worth"), center_value: format_minor(net.amount_minor, &display), slices }),
             });
         }
+    let mut flow_rows: Vec<(String, i64, String)> = Vec::new();
+    for tx in txs.iter().filter(|tx| tx.direction == "expense" && tx.amount_minor > 0) {
+        let known = store.categories.iter().any(|category| fold(&category.name) == fold(&tx.category));
+        let name = if tx.category.trim().is_empty() || !known { tr(locale, "Uncategorized") } else { tx.category.clone() };
+        if let Some(row) = flow_rows.iter_mut().find(|row| row.0 == name && row.2 == tx.currency) {
+            row.1 += tx.amount_minor;
+        } else {
+            flow_rows.push((name, tx.amount_minor, tx.currency.clone()));
+        }
+    }
+    if !flow_rows.is_empty() {
+        flow_rows.sort_by(|a, b| b.1.cmp(&a.1));
+        pages.push(Page {
+            title: tr(locale, "Where my money went"),
+            subtitle: span.label.clone(),
+            notes: vec![tr(locale, "A description without a category stays under Uncategorized.")],
+            numbers: vec![],
+            rows: vec![],
+            chart: Some(Chart::Bars {
+                rows: flow_rows
+                    .into_iter()
+                    .take(12)
+                    .map(|(name, amount, currency)| Slice {
+                        label: name,
+                        value: amount as f64,
+                        color: "#6E8B74".into(),
+                        caption: format_minor(amount, &currency),
+                    })
+                    .collect(),
+            }),
+        });
+    }
     } else if !parts.is_empty() {
         let missing = crate::finance_fx::missing_codes(&parts, &display, &store.fx);
         remember_rate(&mut pages, locale, &missing);
@@ -7336,7 +7560,8 @@ fn widget_board(store: &Store, today: NaiveDate, now_ms: i64) -> WidgetBoard {
     let display = effective_default(store, &store.locale_hint);
     let accounts = worth_account_list(store, &display, now_ms);
     let nets = crate::finance_schedule::worth_rows(&accounts);
-    let net_parts: Vec<(i64, String)> = nets.into_iter().map(|row| (row.net_minor, row.currency)).collect();
+    let mut net_parts: Vec<(i64, String)> = nets.into_iter().map(|row| (row.net_minor, row.currency)).collect();
+    subtract_parts(&mut net_parts, &overdue_bills(store, today));
     let month_key = format!("{:04}-{:02}", today.year(), today.month());
     let mut month_by: Vec<(String, i64)> = Vec::new();
     let flowed = flow_transactions(store, today);
@@ -7438,6 +7663,8 @@ fn tr(locale: &str, key: &str) -> String {
 }
 
 const ES_PDF: &[(&str, &str)] = &[
+    ("Where my money went", "A dónde fue el dinero"),
+    ("A description without a category stays under Uncategorized.", "Una descripción sin categoría queda en Sin categoría."),
     ("Finance summary", "Resumen de finanzas"),
     ("On this phone. No bank login.", "En este teléfono. Sin acceso al banco."),
     ("Balances are what you last said.", "Los saldos son lo último que dijiste."),
@@ -7476,6 +7703,8 @@ const ES_PDF: &[(&str, &str)] = &[
 ];
 
 const DE_PDF: &[(&str, &str)] = &[
+    ("Where my money went", "Wohin das Geld ging"),
+    ("A description without a category stays under Uncategorized.", "Eine Beschreibung ohne Kategorie bleibt unter Ohne Kategorie."),
     ("Finance summary", "Finanzüberblick"),
     ("On this phone. No bank login.", "Auf diesem Telefon. Kein Bankzugang."),
     ("Balances are what you last said.", "Die Salden sind, was du zuletzt gesagt hast."),
@@ -7514,6 +7743,8 @@ const DE_PDF: &[(&str, &str)] = &[
 ];
 
 const PT_PDF: &[(&str, &str)] = &[
+    ("Where my money went", "Para onde foi o dinheiro"),
+    ("A description without a category stays under Uncategorized.", "Uma descrição sem categoria fica em Sem categoria."),
     ("Finance summary", "Resumo financeiro"),
     ("On this phone. No bank login.", "Neste telefone. Sem acesso ao banco."),
     ("Balances are what you last said.", "Os saldos são o que você disse por último."),
@@ -7552,6 +7783,8 @@ const PT_PDF: &[(&str, &str)] = &[
 ];
 
 const CA_PDF: &[(&str, &str)] = &[
+    ("Where my money went", "On ha anat els diners"),
+    ("A description without a category stays under Uncategorized.", "Una descripció sense categoria queda en Sense categoria."),
     ("Finance summary", "Resum de finances"),
     ("On this phone. No bank login.", "En este telèfon. Sense accés al banc."),
     ("Balances are what you last said.", "Els saldos són l'últim que has dit."),
@@ -8516,10 +8749,12 @@ mod tests {
         let amounts: Vec<i64> = txs.iter().map(|tx| tx.amount_minor).collect();
         assert_eq!(amounts, vec![17_900, 69_500, 6_396, 200, 995]);
         assert!(txs.iter().all(|tx| tx.currency == "CHF"));
-        assert_eq!(txs[0].category, "Vacuum Cleaner");
-        assert_eq!(txs[1].category, "Mop");
-        assert_eq!(txs[2].category, "Air Purifier");
-        assert_eq!(txs[3].category, "Takeaway Bag");
+        assert!(txs[0].category.is_empty(), "{}", txs[0].category);
+        assert!(txs[0].notes.to_lowercase().contains("vacuum"));
+        assert!(txs[1].category.is_empty());
+        assert!(txs[1].notes.to_lowercase().contains("mop"));
+        assert!(txs[2].category.is_empty());
+        assert!(txs[3].category.is_empty());
         assert!(txs[4].category.is_empty());
         assert!(txs.iter().all(|tx| !tx.id.is_empty()));
         assert_eq!(txs.iter().map(|tx| tx.id.as_str()).collect::<std::collections::HashSet<_>>().len(), 5);
