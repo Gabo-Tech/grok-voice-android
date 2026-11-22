@@ -192,6 +192,14 @@ const eggs: ScheduleShape = {
   status: "active",
 };
 assert.deepEqual(occurrenceDates(eggs, "2026-11-12").slice(0, 3), ["2026-11-01", "2026-11-11", "2026-11-21"]);
+assert.deepEqual(
+  occurrenceDates({ id: "jan", direction: "expense", cadence: "monthly", startDate: "2024-01-31", endKind: "after_count", endCount: 4, amountMinor: 1, currency: "EUR" }, "2024-01-31"),
+  ["2024-01-31", "2024-02-29", "2024-03-31", "2024-04-30"],
+);
+assert.deepEqual(
+  occurrenceDates({ id: "fortnight", direction: "expense", cadence: "every_n_weeks", intervalDays: 2, startDate: "2026-11-01", endKind: "after_count", endCount: 3, amountMinor: 1, currency: "CHF" }, "2026-11-01"),
+  ["2026-11-01", "2026-11-15", "2026-11-29"],
+);
 const eggTrack = payoutTrack(
   eggs,
   [{ ruleId: "eggs", occurrenceDate: "2026-11-01", date: "2026-11-01", amountMinor: 9_000_000, currency: "XMR", direction: "income" }],

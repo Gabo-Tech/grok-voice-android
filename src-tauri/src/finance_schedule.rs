@@ -49,48 +49,63 @@ pub struct Parsed {
     pub balance: String,
     pub balance_currency: String,
     pub action: String,
+    pub new_name: String,
 }
 
 pub fn occurrence_dates(spec: &Spec, today: NaiveDate) -> Vec<NaiveDate> {
-    if spec.cadence.is_empty() {
+    if spec.cadence.is_empty() || !repeats(&spec.cadence, spec.interval_days) {
         return vec![spec.start];
     }
     if spec.end_kind == "after_count" && spec.end_count > 0 {
         let mut dates = Vec::new();
-        let mut cursor = spec.start;
-        for _ in 0..spec.end_count.min(600) {
+        for n in 0..spec.end_count.min(600) {
+            let Some(cursor) = nth_date(spec.start, &spec.cadence, spec.interval_days, n as i32) else { break };
             dates.push(cursor);
-            let Some(next) = step(cursor, &spec.cadence, spec.interval_days) else { break };
-            if next <= cursor {
-                break;
-            }
-            cursor = next;
         }
         return dates;
     }
     let horizon = add_months(today, 24).unwrap_or(today);
     let floor = add_months(today, -24).unwrap_or(today);
     let end = if spec.end_kind == "on_date" { spec.end_date.unwrap_or(horizon) } else { horizon };
-    let mut cursor = if spec.start < floor && spec.end_kind != "on_date" {
-        jump_to(spec.start, floor, &spec.cadence, spec.interval_days)
-    } else {
-        spec.start
-    };
+    let first = if spec.start < floor && spec.end_kind != "on_date" { first_on_or_after(spec.start, floor, &spec.cadence, spec.interval_days) } else { 0 };
     let mut dates = Vec::new();
-    for _ in 0..800 {
+    for n in first..first.saturating_add(800) {
+        let Some(cursor) = nth_date(spec.start, &spec.cadence, spec.interval_days, n) else { break };
         if cursor > end {
             break;
         }
         if cursor >= floor || spec.end_kind == "on_date" {
             dates.push(cursor);
         }
-        let Some(next) = step(cursor, &spec.cadence, spec.interval_days) else { break };
-        if next <= cursor {
-            break;
-        }
-        cursor = next;
     }
     dates
+}
+
+pub fn repeats(cadence: &str, interval: u32) -> bool {
+    matches!(cadence, "daily" | "weekly" | "monthly" | "yearly") || (is_interval(cadence) && interval >= 1)
+}
+
+pub fn is_interval(cadence: &str) -> bool {
+    matches!(cadence, "every_n_days" | "every_n_weeks" | "every_n_months" | "every_n_years")
+}
+
+/// Date of occurrence `n`, counted from the start. Month and year steps clamp to the
+/// start day's month length, so 31 January stays the 31st after February.
+pub fn nth_date(start: NaiveDate, cadence: &str, interval: u32, n: i32) -> Option<NaiveDate> {
+    if n < 0 {
+        return None;
+    }
+    match cadence {
+        "daily" => start.checked_add_signed(Duration::days(i64::from(n))),
+        "weekly" => start.checked_add_signed(Duration::days(7 * i64::from(n))),
+        "monthly" => add_months(start, n),
+        "yearly" => add_months(start, n.saturating_mul(12)),
+        "every_n_days" if interval >= 1 => start.checked_add_signed(Duration::days(i64::from(interval) * i64::from(n))),
+        "every_n_weeks" if interval >= 1 => start.checked_add_signed(Duration::days(7 * i64::from(interval) * i64::from(n))),
+        "every_n_months" if interval >= 1 => add_months(start, n.saturating_mul(interval as i32)),
+        "every_n_years" if interval >= 1 => add_months(start, n.saturating_mul((interval as i32).saturating_mul(12))),
+        _ => (n == 0).then_some(start),
+    }
 }
 
 pub fn progress(spec: &Spec, settled: &[NaiveDate], today: NaiveDate) -> Progress {
@@ -143,28 +158,25 @@ pub fn progress(spec: &Spec, settled: &[NaiveDate], today: NaiveDate) -> Progres
     }
 }
 
-pub fn next_open(spec: &Spec, settled: &[NaiveDate], today: NaiveDate) -> Option<NaiveDate> {
+pub fn next_open(spec: &Spec, settled: &[NaiveDate], _today: NaiveDate) -> Option<NaiveDate> {
     if spec.status == "paused" || spec.status == "stopped" || spec.status == "completed" {
         return None;
     }
-    occurrence_dates(spec, today).into_iter().find(|date| !settled.contains(date) && !spec.skipped.contains(date)).or_else(|| {
-        if spec.end_kind == "after_count" {
-            return None;
-        }
-        let mut cursor = settled.iter().copied().chain(spec.skipped.iter().copied()).max().unwrap_or(spec.start);
-        for _ in 0..36 {
-            cursor = step(cursor, &spec.cadence, spec.interval_days)?;
+    let limit = if spec.end_kind == "after_count" && spec.end_count > 0 { spec.end_count.min(600) } else { 2_000 };
+    for n in 0..limit {
+        let Some(date) = nth_date(spec.start, &spec.cadence, spec.interval_days, n as i32) else { break };
+        if spec.end_kind == "on_date" {
             if let Some(end) = spec.end_date {
-                if spec.end_kind == "on_date" && cursor > end {
-                    return None;
+                if date > end {
+                    break;
                 }
             }
-            if !spec.skipped.contains(&cursor) && !settled.contains(&cursor) {
-                return Some(cursor);
-            }
         }
-        None
-    })
+        if !settled.contains(&date) && !spec.skipped.contains(&date) {
+            return Some(date);
+        }
+    }
+    None
 }
 
 #[derive(Clone, Debug)]
@@ -245,6 +257,18 @@ pub fn parse_phrase(phrase: &str, today: NaiveDate, default_currency: &str) -> R
     }
     if tokens.iter().any(|token| token == "spent" || token == "spend") {
         return Ok(spent(&tokens, today, default_currency));
+    }
+    if let Some(parsed) = list_of(&tokens) {
+        return Ok(parsed);
+    }
+    if let Some(parsed) = delete_of(&tokens) {
+        return Ok(parsed);
+    }
+    if let Some(parsed) = edit_of(&tokens, today) {
+        return Ok(parsed);
+    }
+    if let Some(parsed) = payment_every(&tokens, today, default_currency) {
+        return Ok(parsed);
     }
     Err("Say the amount, how often, and whether it ends.".into())
 }
@@ -432,6 +456,182 @@ fn for_count(tokens: &[String]) -> Option<(u32, String)> {
     None
 }
 
+fn find_interval(tokens: &[String]) -> Option<(u32, &'static str)> {
+    for (index, token) in tokens.iter().enumerate() {
+        let (number_at, unit_at) = if matches!(token.as_str(), "every" | "cada" | "alle") {
+            (index + 1, index + 2)
+        } else if token == "a" && tokens.get(index + 1).map(String::as_str) == Some("cada") {
+            (index + 2, index + 3)
+        } else {
+            continue;
+        };
+        let number = tokens.get(number_at)?;
+        if !is_number(number) {
+            continue;
+        }
+        let count: u32 = number.parse().ok()?;
+        if count < 1 {
+            continue;
+        }
+        let unit = interval_unit(tokens.get(unit_at)?.as_str())?;
+        return Some((count, unit));
+    }
+    None
+}
+
+fn interval_unit(word: &str) -> Option<&'static str> {
+    let word = fold(word);
+    if matches!(word.as_str(), "day" | "days" | "dia" | "dias" | "tag" | "tage" | "tagen" | "dies") {
+        Some("day")
+    } else if matches!(word.as_str(), "week" | "weeks" | "semana" | "semanas" | "woche" | "wochen" | "setmana" | "setmanes") {
+        Some("week")
+    } else if word.starts_with("month") || word.starts_with("monat") || matches!(word.as_str(), "mes" | "meses" | "mesos" | "mesi") {
+        Some("month")
+    } else if matches!(word.as_str(), "year" | "years" | "ano" | "anos" | "jahr" | "jahre" | "jahren" | "any" | "anys") {
+        Some("year")
+    } else {
+        None
+    }
+}
+
+pub fn cadence_for_unit(unit: &str) -> &'static str {
+    match unit {
+        "week" => "every_n_weeks",
+        "month" => "every_n_months",
+        "year" => "every_n_years",
+        _ => "every_n_days",
+    }
+}
+
+fn starts_on(tokens: &[String], today: NaiveDate) -> NaiveDate {
+    let tomorrow = tokens.iter().any(|token| matches!(token.as_str(), "tomorrow" | "manana" | "morgen" | "amanha" | "dema"));
+    if tomorrow {
+        return today + Duration::days(1);
+    }
+    today
+}
+
+fn list_of(tokens: &[String]) -> Option<Parsed> {
+    let head = tokens.first().map(String::as_str)?;
+    if !matches!(head, "list" | "lista" | "liste" | "llista") {
+        return None;
+    }
+    let joined = tokens.join(" ");
+    if !(joined.contains("recurr") || joined.contains("bill") || joined.contains("pago") || joined.contains("pagament") || joined.contains("zahlung") || joined.contains("despesa") || joined.contains("gasto")) {
+        return None;
+    }
+    let mut parsed = Parsed::blank();
+    parsed.kind = "list".into();
+    Some(parsed)
+}
+
+fn delete_of(tokens: &[String]) -> Option<Parsed> {
+    let confirmed = tokens.iter().any(|token| matches!(token.as_str(), "yes" | "si" | "ja" | "sim"));
+    let verb_at = tokens.iter().position(|token| matches!(token.as_str(), "delete" | "borra" | "borrar" | "losche" | "apaga" | "apagar" | "esborra"))?;
+    let name = tokens
+        .iter()
+        .skip(verb_at + 1)
+        .filter(|token| !matches!(token.as_str(), "the" | "a" | "my" | "el" | "la" | "o" | "yes" | "si" | "ja" | "sim" | "payment" | "pago" | "bill" | "pagament"))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if name.is_empty() {
+        return None;
+    }
+    let mut parsed = Parsed::blank();
+    parsed.kind = "delete".into();
+    parsed.action = if confirmed { "delete_yes".into() } else { "delete".into() };
+    parsed.name = title_word(&name);
+    Some(parsed)
+}
+
+fn edit_of(tokens: &[String], today: NaiveDate) -> Option<Parsed> {
+    let head = tokens.first().map(String::as_str)?;
+    if !matches!(head, "change" | "cambia" | "cambiar" | "andere" | "muda" | "mudar" | "canvia" | "rename") {
+        return None;
+    }
+    let split = tokens.iter().position(|token| matches!(token.as_str(), "to" | "a" | "auf" | "para")).unwrap_or(tokens.len());
+    let name = tokens
+        .iter()
+        .take(split)
+        .skip(1)
+        .filter(|token| !matches!(token.as_str(), "the" | "el" | "la" | "o" | "my" | "payment" | "pago" | "bill" | "amount" | "name" | "start" | "category" | "account"))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if name.is_empty() {
+        return None;
+    }
+    let mut parsed = Parsed::blank();
+    parsed.kind = "edit".into();
+    parsed.name = title_word(&name);
+    parsed.end_kind.clear();
+    if let Some((count, unit)) = find_interval(tokens) {
+        parsed.cadence = cadence_for_unit(unit).into();
+        parsed.interval_days = count;
+    }
+    if head == "rename" {
+        let renamed = tokens.iter().skip(split + 1).cloned().collect::<Vec<_>>().join(" ");
+        if !renamed.is_empty() {
+            parsed.new_name = title_word(&renamed);
+        }
+    }
+    let money = first_money(tokens);
+    if !money.amount.is_empty() && find_interval(tokens).is_none() {
+        parsed.amount = money.amount;
+        parsed.currency = money.currency;
+    }
+    if tokens.iter().any(|token| matches!(token.as_str(), "tomorrow" | "manana" | "morgen" | "amanha" | "dema")) {
+        parsed.start_date = iso(starts_on(tokens, today));
+    }
+    if let Some(category) = labeled_tail(tokens, &["category", "categoria", "kategorie", "categoria"]) {
+        parsed.category = category;
+    }
+    if let Some(account) = account_tail(tokens) {
+        parsed.account_name = account;
+    }
+    if tokens.iter().any(|token| matches!(token.as_str(), "never" | "nunca" | "nie" | "mai")) {
+        parsed.end_kind = "none".into();
+    }
+    if parsed.cadence.is_empty() && parsed.amount.is_empty() && parsed.start_date.is_empty() && parsed.category.is_empty() && parsed.account_name.is_empty() && parsed.end_kind.is_empty() && parsed.new_name.is_empty() {
+        return None;
+    }
+    Some(parsed)
+}
+
+fn payment_every(tokens: &[String], today: NaiveDate, default_currency: &str) -> Option<Parsed> {
+    let (count, unit) = find_interval(tokens)?;
+    let money = first_money(tokens);
+    if money.amount.is_empty() {
+        return None;
+    }
+    let direction = if tokens.iter().any(|token| matches!(token.as_str(), "income" | "salary" | "ingreso" | "einnahme" | "receita" | "ingres")) { "income" } else { "expense" };
+    let mut parsed = schedule("Payment", direction, "recurring", &money, today);
+    if parsed.currency.is_empty() {
+        parsed.currency = default_currency.to_string();
+    }
+    parsed.cadence = cadence_for_unit(unit).into();
+    parsed.interval_days = count;
+    parsed.end_kind = "none".into();
+    parsed.start_date = iso(starts_on(tokens, today));
+    if let Some(account) = account_tail(tokens) {
+        parsed.account_name = account;
+    }
+    Some(parsed)
+}
+
+fn labeled_tail(tokens: &[String], labels: &[&str]) -> Option<String> {
+    let at = tokens.iter().position(|token| labels.contains(&token.as_str()))?;
+    let word = tokens.iter().skip(at + 1).find(|token| !matches!(token.as_str(), "to" | "a" | "auf" | "para" | "the" | "el" | "la"))?;
+    Some(title_word(word))
+}
+
+fn account_tail(tokens: &[String]) -> Option<String> {
+    let at = tokens.iter().position(|token| matches!(token.as_str(), "from" | "account" | "card" | "desde" | "cuenta" | "tarjeta" | "von" | "konto" | "karte" | "conta" | "cartao" | "compte" | "targeta"))?;
+    let name = tokens.iter().skip(at + 1).filter(|token| !matches!(token.as_str(), "the" | "el" | "la" | "o" | "my")).cloned().collect::<Vec<_>>().join(" ");
+    if name.is_empty() { None } else { Some(title_word(&name)) }
+}
+
 fn cadence_of(tokens: &[String]) -> String {
     if tokens.iter().any(|token| token.starts_with("year")) {
         "yearly".into()
@@ -511,47 +711,66 @@ fn words(folded: &str) -> Vec<String> {
 }
 
 fn fold(value: &str) -> String {
-    value.trim().to_lowercase()
+    value
+        .trim()
+        .chars()
+        .map(|ch| match ch {
+            'á' | 'à' | 'ä' | 'â' | 'ã' => 'a',
+            'é' | 'è' | 'ë' | 'ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' | 'õ' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ñ' => 'n',
+            'ç' => 'c',
+            other => other.to_ascii_lowercase(),
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
-fn step(date: NaiveDate, cadence: &str, interval: u32) -> Option<NaiveDate> {
-    match cadence {
-        "daily" => Some(date + Duration::days(1)),
-        "weekly" => Some(date + Duration::days(7)),
-        "monthly" => add_months(date, 1),
-        "yearly" => add_months(date, 12),
-        "every_n_days" if interval > 0 => Some(date + Duration::days(i64::from(interval))),
-        _ => None,
-    }
-}
-
-fn jump_to(start: NaiveDate, target: NaiveDate, cadence: &str, interval: u32) -> NaiveDate {
+fn first_on_or_after(start: NaiveDate, target: NaiveDate, cadence: &str, interval: u32) -> i32 {
     if start >= target {
-        return start;
+        return 0;
     }
-    let span = match cadence {
-        "daily" => 1,
-        "weekly" => 7,
-        "every_n_days" if interval > 0 => i64::from(interval),
+    let guess = match cadence {
+        "daily" => (target - start).num_days() as i32,
+        "weekly" => ((target - start).num_days() / 7) as i32,
+        "every_n_days" if interval >= 1 => ((target - start).num_days() / i64::from(interval)) as i32,
+        "every_n_weeks" if interval >= 1 => ((target - start).num_days() / (7 * i64::from(interval))) as i32,
+        "monthly" | "yearly" | "every_n_months" | "every_n_years" => {
+            let step = month_step(cadence, interval);
+            let months = (target.year() - start.year()) * 12 + target.month() as i32 - start.month() as i32;
+            (months / step).max(0)
+        }
         _ => 0,
     };
-    if span > 0 {
-        let steps = (target - start).num_days() / span;
-        let landed = start + Duration::days(steps * span);
-        return if landed < target { landed + Duration::days(span) } else { landed };
-    }
-    let mut cursor = start;
-    for _ in 0..800 {
-        if cursor >= target {
-            return cursor;
+    let mut n = guess.max(0);
+    while n > 0 {
+        let Some(date) = nth_date(start, cadence, interval, n) else { break };
+        if date < target {
+            break;
         }
-        let Some(next) = step(cursor, cadence, interval) else { return cursor };
-        if next <= cursor {
-            return cursor;
-        }
-        cursor = next;
+        n -= 1;
     }
-    cursor
+    for _ in 0..12 {
+        let Some(date) = nth_date(start, cadence, interval, n) else { return n };
+        if date >= target {
+            return n;
+        }
+        n += 1;
+    }
+    n
+}
+
+fn month_step(cadence: &str, interval: u32) -> i32 {
+    match cadence {
+        "yearly" => 12,
+        "every_n_years" => (interval.max(1) as i32).saturating_mul(12),
+        "every_n_months" => interval.max(1) as i32,
+        _ => 1,
+    }
 }
 
 pub fn add_months(date: NaiveDate, months: i32) -> Option<NaiveDate> {
@@ -593,6 +812,7 @@ impl Parsed {
             balance: String::new(),
             balance_currency: String::new(),
             action: String::new(),
+            new_name: String::new(),
         }
     }
 
@@ -716,6 +936,53 @@ mod tests {
         assert_eq!(june.amount, "500");
         assert_eq!(june.currency, "EUR");
         assert_eq!(june.start_date, "2027-06-01");
+        let every = parse_phrase("add a 20 CHF payment every 10 days starting tomorrow", today, "EUR").unwrap();
+        assert_eq!(every.kind, "schedule");
+        assert_eq!(every.amount, "20");
+        assert_eq!(every.currency, "CHF");
+        assert_eq!(every.cadence, "every_n_days");
+        assert_eq!(every.interval_days, 10);
+        assert_eq!(every.start_date, "2026-11-13");
+        assert_eq!(every.end_kind, "none");
+        let weeks = parse_phrase("cambia el gym a cada 2 semanas", today, "EUR").unwrap();
+        assert_eq!(weeks.kind, "edit");
+        assert_eq!(weeks.name.to_lowercase(), "gym");
+        assert_eq!(weeks.cadence, "every_n_weeks");
+        assert_eq!(weeks.interval_days, 2);
+        assert_eq!(parse_phrase("ändere gym auf alle 2 wochen", today, "EUR").unwrap().cadence, "every_n_weeks");
+        assert_eq!(parse_phrase("muda o gym para cada 2 semanas", today, "EUR").unwrap().interval_days, 2);
+        assert_eq!(parse_phrase("canvia el gym a cada 2 setmanes", today, "EUR").unwrap().cadence, "every_n_weeks");
+        let months = parse_phrase("add a 15 EUR expense every 3 months", today, "CHF").unwrap();
+        assert_eq!(months.cadence, "every_n_months");
+        assert_eq!(months.interval_days, 3);
+        let years = parse_phrase("a cada 2 anos", today, "EUR");
+        assert!(years.is_err() || years.unwrap().cadence == "every_n_years");
+        let renamed = parse_phrase("rename gym to fitness", today, "EUR").unwrap();
+        assert_eq!(renamed.kind, "edit");
+        assert_eq!(renamed.new_name.to_lowercase(), "fitness");
+        let amount = parse_phrase("change gym to 30 CHF", today, "EUR").unwrap();
+        assert_eq!(amount.amount, "30");
+        assert_eq!(amount.currency, "CHF");
+        assert_eq!(parse_phrase("delete gym", today, "EUR").unwrap().action, "delete");
+        assert_eq!(parse_phrase("yes delete gym", today, "EUR").unwrap().action, "delete_yes");
+        assert_eq!(parse_phrase("list recurring payments", today, "EUR").unwrap().kind, "list");
+        let anchor = Spec {
+            cadence: "monthly".into(),
+            interval_days: 0,
+            start: day(2024, 1, 31),
+            end_kind: "after_count".into(),
+            end_count: 4,
+            end_date: None,
+            amount_minor: Some(1),
+            skipped: Vec::new(),
+            status: "active".into(),
+        };
+        let clamped = occurrence_dates(&anchor, day(2024, 1, 31));
+        assert_eq!(clamped, vec![day(2024, 1, 31), day(2024, 2, 29), day(2024, 3, 31), day(2024, 4, 30)]);
+        let leap = nth_date(day(2024, 2, 29), "yearly", 0, 1).unwrap();
+        assert_eq!(leap, day(2025, 2, 28));
+        let weeks = Spec { cadence: "every_n_weeks".into(), interval_days: 2, start: day(2026, 11, 1), end_kind: "after_count".into(), end_count: 3, end_date: None, amount_minor: None, skipped: Vec::new(), status: "active".into() };
+        assert_eq!(occurrence_dates(&weeks, day(2026, 11, 1)), vec![day(2026, 11, 1), day(2026, 11, 15), day(2026, 11, 29)]);
         let stop = parse_phrase("stop the Netflix subscription", today, "EUR").unwrap();
         assert_eq!(stop.kind, "action");
         assert_eq!(stop.action, "stop");

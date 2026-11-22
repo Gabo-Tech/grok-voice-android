@@ -197,6 +197,15 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("The saved price for {symbol} is an AI estimate.", "El precio guardado de {symbol} es una estimación de la IA."),
     ("none", "ninguno"),
     ("Say the provider id.", "Di el id del proveedor."),
+    ("every {n} {unit}", "cada {n} {unit}"),
+    ("days", "días"),
+    ("weeks", "semanas"),
+    ("months", "meses"),
+    ("years", "años"),
+    ("No recurring item is saved.", "No hay ningún pago periódico guardado."),
+    ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, siguiente {date}."),
+    ("Updated {name}. Repeats {cadence}.", "Actualizado {name}. Se repite {cadence}."),
+    ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "La frecuencia es diaria, semanal, mensual, anual, o cada N días, semanas, meses o años."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -398,6 +407,15 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("The saved price for {symbol} is an AI estimate.", "Der gespeicherte Preis für {symbol} ist eine KI-Schätzung."),
     ("none", "keins"),
     ("Say the provider id.", "Sag die Anbieter-Id."),
+    ("every {n} {unit}", "alle {n} {unit}"),
+    ("days", "Tage"),
+    ("weeks", "Wochen"),
+    ("months", "Monate"),
+    ("years", "Jahre"),
+    ("No recurring item is saved.", "Es ist kein wiederkehrender Posten gespeichert."),
+    ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, nächster {date}."),
+    ("Updated {name}. Repeats {cadence}.", "{name} aktualisiert. Wiederholt sich {cadence}."),
+    ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "Der Rhythmus ist täglich, wöchentlich, monatlich, jährlich oder alle N Tage, Wochen, Monate oder Jahre."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -599,6 +617,15 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("The saved price for {symbol} is an AI estimate.", "O preço guardado de {symbol} é uma estimativa da IA."),
     ("none", "nenhum"),
     ("Say the provider id.", "Diz o id do fornecedor."),
+    ("every {n} {unit}", "a cada {n} {unit}"),
+    ("days", "dias"),
+    ("weeks", "semanas"),
+    ("months", "meses"),
+    ("years", "anos"),
+    ("No recurring item is saved.", "Não há nenhum item recorrente guardado."),
+    ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, próximo {date}."),
+    ("Updated {name}. Repeats {cadence}.", "Atualizado {name}. Repete-se {cadence}."),
+    ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "A frequência é diária, semanal, mensal, anual, ou a cada N dias, semanas, meses ou anos."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -800,4 +827,13 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("The saved price for {symbol} is an AI estimate.", "El preu guardat de {symbol} és una estimació de la IA."),
     ("none", "cap"),
     ("Say the provider id.", "Digues l'id del proveïdor."),
+    ("every {n} {unit}", "cada {n} {unit}"),
+    ("days", "dies"),
+    ("weeks", "setmanes"),
+    ("months", "mesos"),
+    ("years", "anys"),
+    ("No recurring item is saved.", "No hi ha cap element periòdic guardat."),
+    ("{name}, {money}, {cadence}, next {date}.", "{name}, {money}, {cadence}, següent {date}."),
+    ("Updated {name}. Repeats {cadence}.", "Actualitzat {name}. Es repeteix {cadence}."),
+    ("Cadence is daily, weekly, monthly, yearly, or every N days, weeks, months, or years.", "La freqüència és diària, setmanal, mensual, anual, o cada N dies, setmanes, mesos o anys."),
 ];

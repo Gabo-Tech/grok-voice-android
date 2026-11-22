@@ -228,7 +228,7 @@ interface Norm {
 function normSchedule(schedule: ScheduleShape): Norm {
   const cadence = (schedule.cadence || "").toLowerCase();
   const interval = schedule.intervalDays && schedule.intervalDays > 0 ? schedule.intervalDays : 0;
-  const repeating = cadence === "daily" || cadence === "weekly" || cadence === "monthly" || cadence === "yearly" || (cadence === "every_n_days" && interval > 0);
+  const repeating = repeats(cadence, interval);
   const purpose = (schedule.purpose || (repeating ? "recurring" : schedule.startDate || schedule.nextDate ? "one_off" : "recurring")) as SchedulePurpose;
   const start = schedule.startDate || schedule.nextDate || "";
   let endKind = (schedule.endKind || "") as Norm["endKind"];
@@ -263,31 +263,22 @@ function normSchedule(schedule: ScheduleShape): Norm {
   };
 }
 
-function stepDate(iso: string, cadence: string, interval: number): string | null {
-  if (cadence === "daily") return addDays(iso, 1);
-  if (cadence === "weekly") return addDays(iso, 7);
-  if (cadence === "monthly") return addMonths(iso, 1);
-  if (cadence === "yearly") return addMonths(iso, 12);
-  if (cadence === "every_n_days" && interval > 0) return addDays(iso, interval);
-  return null;
+export function repeats(cadence: string, interval: number): boolean {
+  if (cadence === "daily" || cadence === "weekly" || cadence === "monthly" || cadence === "yearly") return true;
+  return (cadence === "every_n_days" || cadence === "every_n_weeks" || cadence === "every_n_months" || cadence === "every_n_years") && interval >= 1;
 }
 
-function jumpTo(start: string, target: string, cadence: string, interval: number): string {
-  if (start >= target) return start;
-  if (cadence === "daily" || cadence === "weekly" || cadence === "every_n_days") {
-    const span = cadence === "weekly" ? 7 : cadence === "daily" ? 1 : interval;
-    if (span <= 0) return start;
-    const steps = Math.floor(daysBetween(start, target) / span);
-    const landed = addDays(start, steps * span);
-    return landed < target ? addDays(landed, span) : landed;
-  }
-  let cursor = start;
-  for (let i = 0; i < 800 && cursor < target; i += 1) {
-    const next = stepDate(cursor, cadence, interval);
-    if (!next || next <= cursor) return cursor;
-    cursor = next;
-  }
-  return cursor;
+function nthDate(start: string, cadence: string, interval: number, n: number): string | null {
+  if (n < 0) return null;
+  if (cadence === "daily") return addDays(start, n);
+  if (cadence === "weekly") return addDays(start, 7 * n);
+  if (cadence === "monthly") return addMonths(start, n);
+  if (cadence === "yearly") return addMonths(start, 12 * n);
+  if (cadence === "every_n_days" && interval >= 1) return addDays(start, interval * n);
+  if (cadence === "every_n_weeks" && interval >= 1) return addDays(start, 7 * interval * n);
+  if (cadence === "every_n_months" && interval >= 1) return addMonths(start, interval * n);
+  if (cadence === "every_n_years" && interval >= 1) return addMonths(start, 12 * interval * n);
+  return n === 0 ? start : null;
 }
 
 /** Occurrence dates. Open-ended series stop at a 24-month window. Fixed runs include every remaining date. */
@@ -297,12 +288,10 @@ export function occurrenceDates(schedule: ScheduleShape, today: string): string[
   if (!spec.cadence) return [spec.start];
   if (spec.endKind === "after_count" && spec.endCount && spec.endCount > 0) {
     const dates: string[] = [];
-    let cursor = spec.start;
-    for (let i = 0; i < Math.min(spec.endCount, 600); i += 1) {
+    for (let n = 0; n < Math.min(spec.endCount, 600); n += 1) {
+      const cursor = nthDate(spec.start, spec.cadence, spec.intervalDays, n);
+      if (!cursor) break;
       dates.push(cursor);
-      const next = stepDate(cursor, spec.cadence, spec.intervalDays);
-      if (!next || next <= cursor) break;
-      cursor = next;
     }
     return dates;
   }
@@ -310,17 +299,37 @@ export function occurrenceDates(schedule: ScheduleShape, today: string): string[
   const floor = addMonths(today, -24);
   let end = horizon;
   if (spec.endKind === "on_date" && spec.endDate) end = spec.endDate;
-  const begin = jumpTo(spec.start, spec.start > floor ? spec.start : floor, spec.cadence, spec.intervalDays);
+  const first = spec.start < floor && spec.endKind !== "on_date" ? firstOnOrAfter(spec.start, floor, spec.cadence, spec.intervalDays) : 0;
   const dates: string[] = [];
-  let cursor = spec.start < begin ? begin : spec.start;
-  if (spec.start < floor && spec.endKind !== "on_date") cursor = begin;
-  for (let i = 0; i < 800 && cursor <= end; i += 1) {
+  for (let n = first; n < first + 800; n += 1) {
+    const cursor = nthDate(spec.start, spec.cadence, spec.intervalDays, n);
+    if (!cursor || cursor > end) break;
     if (cursor >= floor || spec.endKind === "on_date") dates.push(cursor);
-    const next = stepDate(cursor, spec.cadence, spec.intervalDays);
-    if (!next || next <= cursor) break;
-    cursor = next;
   }
   return dates;
+}
+
+function firstOnOrAfter(start: string, target: string, cadence: string, interval: number): number {
+  if (start >= target) return 0;
+  let n = 0;
+  if (cadence === "daily" || cadence === "weekly" || cadence === "every_n_days" || cadence === "every_n_weeks") {
+    const span = cadence === "weekly" ? 7 : cadence === "daily" ? 1 : cadence === "every_n_weeks" ? 7 * interval : interval;
+    if (span > 0) n = Math.floor(daysBetween(start, target) / span);
+  }
+  for (let guard = 0; guard < 24; guard += 1) {
+    const cursor = nthDate(start, cadence, interval, n);
+    if (!cursor) return n;
+    if (cursor >= target) {
+      while (n > 0) {
+        const prev = nthDate(start, cadence, interval, n - 1);
+        if (!prev || prev < target) return n;
+        n -= 1;
+      }
+      return 0;
+    }
+    n += 1;
+  }
+  return n;
 }
 
 export interface Settlement {
