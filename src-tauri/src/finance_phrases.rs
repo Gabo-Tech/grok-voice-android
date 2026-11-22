@@ -186,6 +186,17 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("Net worth needs a rate for {codes}.", "El patrimonio neto necesita un tipo para {codes}."),
     ("Showing the money flow.", "Mostrando el flujo del dinero."),
     ("No holding matches {name}.", "Ninguna posición coincide con {name}."),
+    ("{name} is symbol {symbol}. CoinGecko id {gecko}. CoinPaprika id {paprika}.", "{name} es el símbolo {symbol}. Id de CoinGecko {gecko}. Id de CoinPaprika {paprika}."),
+    ("No source has been tried yet.", "Todavía no se ha probado ninguna fuente."),
+    ("source answered", "respondió"),
+    ("source missed", "sin precio"),
+    ("source skipped", "omitida"),
+    ("source failed", "falló"),
+    ("{source} {id}: {status}.", "{source}, id {id}: {status}."),
+    ("No quantity is saved for {name}, so the price cannot become a value.", "No hay cantidad guardada para {name}, así que el precio no puede convertirse en un valor."),
+    ("The saved price for {symbol} is an AI estimate.", "El precio guardado de {symbol} es una estimación de la IA."),
+    ("none", "ninguno"),
+    ("Say the provider id.", "Di el id del proveedor."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -376,6 +387,17 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("Net worth needs a rate for {codes}.", "Das Vermögen braucht einen Kurs für {codes}."),
     ("Showing the money flow.", "Der Geldfluss wird angezeigt."),
     ("No holding matches {name}.", "Kein Bestand passt zu {name}."),
+    ("{name} is symbol {symbol}. CoinGecko id {gecko}. CoinPaprika id {paprika}.", "{name} hat das Symbol {symbol}. CoinGecko-Id {gecko}. CoinPaprika-Id {paprika}."),
+    ("No source has been tried yet.", "Es wurde noch keine Quelle versucht."),
+    ("source answered", "hat geantwortet"),
+    ("source missed", "kein Preis"),
+    ("source skipped", "übersprungen"),
+    ("source failed", "fehlgeschlagen"),
+    ("{source} {id}: {status}.", "{source}, id {id}: {status}."),
+    ("No quantity is saved for {name}, so the price cannot become a value.", "Für {name} ist keine Menge gespeichert, deshalb wird der Preis kein Wert."),
+    ("The saved price for {symbol} is an AI estimate.", "Der gespeicherte Preis für {symbol} ist eine KI-Schätzung."),
+    ("none", "keins"),
+    ("Say the provider id.", "Sag die Anbieter-Id."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -566,6 +588,17 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("Net worth needs a rate for {codes}.", "O patrimônio líquido precisa de uma taxa para {codes}."),
     ("Showing the money flow.", "Mostrando o fluxo do dinheiro."),
     ("No holding matches {name}.", "Nenhuma posição corresponde a {name}."),
+    ("{name} is symbol {symbol}. CoinGecko id {gecko}. CoinPaprika id {paprika}.", "{name} é o símbolo {symbol}. Id CoinGecko {gecko}. Id CoinPaprika {paprika}."),
+    ("No source has been tried yet.", "Ainda não se tentou nenhuma fonte."),
+    ("source answered", "respondeu"),
+    ("source missed", "sem preço"),
+    ("source skipped", "ignorada"),
+    ("source failed", "falhou"),
+    ("{source} {id}: {status}.", "{source}, id {id}: {status}."),
+    ("No quantity is saved for {name}, so the price cannot become a value.", "Não há quantidade guardada para {name}, por isso o preço não vira um valor."),
+    ("The saved price for {symbol} is an AI estimate.", "O preço guardado de {symbol} é uma estimativa da IA."),
+    ("none", "nenhum"),
+    ("Say the provider id.", "Diz o id do fornecedor."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -756,4 +789,15 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("Net worth needs a rate for {codes}.", "El patrimoni net necessita un tipus per a {codes}."),
     ("Showing the money flow.", "Mostrant el flux dels diners."),
     ("No holding matches {name}.", "Cap posició coincideix amb {name}."),
+    ("{name} is symbol {symbol}. CoinGecko id {gecko}. CoinPaprika id {paprika}.", "{name} és el símbol {symbol}. Id de CoinGecko {gecko}. Id de CoinPaprika {paprika}."),
+    ("No source has been tried yet.", "Encara no s'ha provat cap font."),
+    ("source answered", "ha respost"),
+    ("source missed", "sense preu"),
+    ("source skipped", "ometesa"),
+    ("source failed", "ha fallat"),
+    ("{source} {id}: {status}.", "{source}, id {id}: {status}."),
+    ("No quantity is saved for {name}, so the price cannot become a value.", "No hi ha quantitat guardada per a {name}, així que el preu no es pot convertir en un valor."),
+    ("The saved price for {symbol} is an AI estimate.", "El preu guardat de {symbol} és una estimació de la IA."),
+    ("none", "cap"),
+    ("Say the provider id.", "Digues l'id del proveïdor."),
 ];

@@ -90,6 +90,15 @@ assert.equal(epic.unpriced, false);
 const cased = positionOf({ name: "Epic Cash", kind: "custom", currency: "CHF", notes: "2", ticker: "ETH", investmentType: "other" }, "EUR", book, quotes, now);
 assert.equal(cased.symbol, "EPIC");
 assert.equal(cased.unpriced, false);
+const spaced = positionOf({ name: "  Epic   Cash. ", kind: "cash", currency: "CHF", units: "1", investmentType: "custom" }, "EUR", book, quotes, now);
+assert.equal(spaced.symbol, "EPIC");
+assert.equal(spaced.unpriced, false);
+const wallet = positionOf({ name: "my EPIC Cash wallet", kind: "investment", currency: "CHF", notes: "5.5", investmentType: "custom" }, "CHF", book, quotes, now);
+assert.equal(wallet.symbol, "EPIC");
+assert.equal(wallet.quantity, "5.5");
+assert.equal(wallet.unpriced, false);
+const chain = positionOf({ name: "Epic Chain", kind: "investment", currency: "CHF", units: "1", ticker: "", investmentType: "crypto" }, "EUR", book, quotes, now);
+assert.equal(chain.symbol, "");
 const estimate = positionOf(
   { name: "EPIC Cash", kind: "investment", currency: "CHF", units: "1", ticker: "EPIC" },
   "EUR",

@@ -222,6 +222,14 @@ export function useFinance() {
     [inApp, run],
   );
 
+  const setHoldingProvider = useCallback(
+    (id: string, coingeckoId: string, paprikaId: string) => {
+      if (!inApp) return;
+      void run(() => api.setHoldingProvider(id, coingeckoId, paprikaId));
+    },
+    [inApp, run],
+  );
+
   const refreshRates = useCallback((force = false) => {
     if (!inApp) return;
     setBusy(true);
@@ -300,6 +308,7 @@ export function useFinance() {
     scheduleAction,
     refreshRates,
     refreshHolding,
+    setHoldingProvider,
     setManualRate,
     setPriceProvider,
     exportPdf,

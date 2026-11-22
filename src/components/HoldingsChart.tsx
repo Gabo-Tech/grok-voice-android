@@ -42,6 +42,7 @@ export function HoldingsChart({
   prices,
   history = [],
   onRecolor,
+  onUnpriced,
 }: {
   accounts: FinanceAccount[];
   display: string;
@@ -49,6 +50,7 @@ export function HoldingsChart({
   prices?: FinancePrices | null;
   history?: ValuePoint[];
   onRecolor: (account: FinanceAccount, color: string) => void;
+  onUnpriced?: (account: FinanceAccount) => void;
 }) {
   const t = useT();
   const [pref, setPref] = useState(readPref);
@@ -192,6 +194,10 @@ export function HoldingsChart({
           colors={["var(--brand)", "var(--text-primary)", "var(--text-tertiary)", "var(--line)"]}
           painting={painting}
           setPainting={setPainting}
+          onUnpriced={(id) => {
+            const account = accounts.find((row) => row.id === id);
+            if (account && onUnpriced) onUnpriced(account);
+          }}
         />
       </ChartCard>
 

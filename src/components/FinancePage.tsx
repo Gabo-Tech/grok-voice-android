@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FinanceCarousel, type ChartPick } from "@/components/FinanceCharts";
 import { HoldingsChart } from "@/components/HoldingsChart";
+import { PriceSources } from "@/components/PriceSources";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { formatQuantity, isHoldingAccount, originalHolding, positionOf } from "@/lib/financeLedger";
@@ -72,6 +73,7 @@ export function FinancePage({
   const rateDay = useRef(todayIso());
   const [tab, setTab] = useState<FinanceTab>(() => readFinanceTab(readStoredTab()));
   const [sheet, setSheet] = useState<SheetKind | null>(null);
+  const [priceAccount, setPriceAccount] = useState<FinanceAccount | null>(null);
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
@@ -516,6 +518,7 @@ export function FinancePage({
               onAdd={openInvestment}
               onOpen={openAccount}
               onRefreshPrice={(account) => finance.refreshHolding(account.id)}
+              onDiagnose={setPriceAccount}
               priceNote={finance.snapshot.prices?.lastError || ""}
               display={finance.snapshot.defaultCurrency}
               fx={finance.snapshot.fx}
@@ -529,6 +532,7 @@ export function FinancePage({
                 prices={finance.snapshot.prices}
                 history={finance.snapshot.history || []}
                 onRecolor={(account, color) => finance.saveAccount({ id: account.id, name: account.name, kind: account.kind, color })}
+                onUnpriced={setPriceAccount}
               />
             </div>
           </div>
@@ -568,6 +572,14 @@ export function FinancePage({
         onClose={() => setSheet(null)}
       />
       <ProgramSheet open={sheet === "rule"} finance={finance} editing={editingRule} onClose={() => setSheet(null)} />
+      <PriceSources
+        open={priceAccount != null}
+        account={priceAccount ? finance.snapshot.accounts.find((row) => row.id === priceAccount.id) || priceAccount : null}
+        attempts={finance.snapshot.prices?.attempts || []}
+        onClose={() => setPriceAccount(null)}
+        onRefresh={(account) => finance.refreshHolding(account.id)}
+        onSave={(account, coingeckoId, paprikaId) => finance.setHoldingProvider(account.id, coingeckoId, paprikaId)}
+      />
       <PayCardSheet open={sheet === "pay"} finance={finance} card={paying} onClose={() => setSheet(null)} />
       <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} />
     </div>
@@ -834,6 +846,7 @@ function AccountList({
   onOpen,
   onPay,
   onRefreshPrice,
+  onDiagnose,
   priceNote = "",
   display = "",
   fx,
@@ -850,13 +863,14 @@ function AccountList({
   onOpen: (account: FinanceAccount) => void;
   onPay?: (account: FinanceAccount) => void;
   onRefreshPrice?: (account: FinanceAccount) => void;
+  onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
 }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} priceNote={priceNote} display={display} fx={fx} quotes={quotes} />;
+  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} onDiagnose={onDiagnose} priceNote={priceNote} display={display} fx={fx} quotes={quotes} />;
 }
 
 function AccountRows({
@@ -867,6 +881,7 @@ function AccountRows({
   onPaid,
   onPay,
   onRefreshPrice,
+  onDiagnose,
   priceNote = "",
   display = "",
   fx,
@@ -879,6 +894,7 @@ function AccountRows({
   onPaid: (id: string) => void;
   onPay?: (account: FinanceAccount) => void;
   onRefreshPrice?: (account: FinanceAccount) => void;
+  onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
@@ -940,6 +956,11 @@ function AccountRows({
                 {account.marketStale ? ` · ${t("Rates are stale")}` : ""}
                 {account.marketFetchedMs ? ` · ${fill("Updated {ago}", { ago: priceAgo(account.marketFetchedMs) })}` : ""}
               </p>
+            ) : null}
+            {holding && position.unpriced ? (
+              <button type="button" className="fin-textbtn mt-1 underline" onClick={() => onDiagnose?.(account)}>
+                {t("No price")}
+              </button>
             ) : null}
             {position.unpriced && priceNote ? <p className="mt-1 text-sm leading-5 text-muted-foreground">{t(priceNote)}</p> : null}
             {onRefreshPrice ? (

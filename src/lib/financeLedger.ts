@@ -207,7 +207,13 @@ function parseQty(text: string): string {
 }
 
 function aliasKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[_/-]+/g, " ").replace(/\s+/g, " ");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_/.-]+/g, " ")
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function aliasOf(account: HoldingShape): { symbol: string; kind: string } | null {
@@ -217,6 +223,9 @@ function aliasOf(account: HoldingShape): { symbol: string; kind: string } | null
     if (ALIAS[key]) return ALIAS[key];
     const compact = key.replace(/ /g, "");
     if (ALIAS[compact]) return ALIAS[compact];
+    const tokens = key.split(" ");
+    if (tokens.includes("chain") && !tokens.includes("cash")) continue;
+    if ((tokens.includes("epic") && tokens.includes("cash")) || tokens.includes("epiccash")) return ALIAS["epic cash"];
   }
   if (looksCrypto(account.currency || "")) return { symbol: (account.currency || "").toUpperCase(), kind: "crypto" };
   return null;

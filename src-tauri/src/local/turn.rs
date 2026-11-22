@@ -42,7 +42,7 @@ pub fn system_prompt(custom: &str, memory: &str, local_memory: &str, speech: &st
         let desc = brief_tool(tool["description"].as_str().unwrap_or(""));
         tools.push_str(&format!("- {name}: {desc}\n"));
     }
-    tools.push_str("- log_money: no new card.\n- save_recurring: bill.\n- save_schedule: rent.\n- save_account: holding or color.\n- list_finance: totals.\n- open_finance: holdings.\n- delete_finance: confirmed.\n- move_transactions: move.\n- mark_paid: next date.\n- export_finance_pdf: confirmed.\n");
+    tools.push_str("- log_money: no new card.\n- save_recurring: bill.\n- save_schedule: rent.\n- save_account: holding or color.\n- list_finance: totals. phrase refresh EPIC price fetches now. phrase why has EPIC no price speaks sources, ids, and status.\n- open_finance: holdings.\n- delete_finance: confirmed.\n- move_transactions: move.\n- mark_paid: next date.\n- export_finance_pdf: confirmed.\n");
     let speech_line = if speech == "de" {
         "The user is speaking German. Put the spoken reply in the say field in German. JSON keys and tool names stay in English. This session is not using the English Moonshine model.\n"
     } else if speech == "es" {
