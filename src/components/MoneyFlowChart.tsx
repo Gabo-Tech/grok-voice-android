@@ -9,7 +9,7 @@ import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
-import { buildMoneyFlow, buildSankeyOption, spreadColumn, spreadLevel, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
+import { buildMoneyFlow, buildSankeyOption, flowSlices, leafOffsets, spreadColumn, spreadLevel, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
 import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
@@ -19,6 +19,24 @@ use([SankeyChart, CanvasRenderer, TooltipComponent]);
 
 const COLOR_KEY = "grok-flow-colors";
 const OPTION_KEY = "grok-flow-options";
+const PANEL_KEY = "grok-flow-panel";
+
+const FLOW_PRESETS = [
+  "var(--flow-in-1)",
+  "var(--flow-in-3)",
+  "var(--flow-in-5)",
+  "var(--flow-in-7)",
+  "var(--flow-save)",
+  "var(--flow-invest)",
+  "var(--brand)",
+  "var(--positive)",
+  "var(--flow-out-1)",
+  "var(--flow-out-3)",
+  "var(--flow-out-5)",
+  "var(--flow-out-8)",
+  "var(--flow-short)",
+  "var(--negative)",
+];
 
 type FlowGroupMode = "category" | "entry";
 
@@ -40,6 +58,18 @@ function readColors(): Record<string, string> {
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
+  }
+}
+
+function readPanelOpen(): boolean {
+  if (typeof window === "undefined") return false;
+  const asked = new URLSearchParams(window.location.search).get("options");
+  if (asked === "open") return true;
+  if (asked === "closed") return false;
+  try {
+    return sessionStorage.getItem(PANEL_KEY) === "open";
+  } catch {
+    return false;
   }
 }
 
@@ -75,6 +105,10 @@ export function MoneyFlowPanel({
   onDetach,
   onFollow,
   budgets = [],
+  flowColors = [],
+  flowLayout = "",
+  onPaintNode,
+  onLayout,
 }: {
   transactions: FinanceTransaction[];
   accounts: FinanceAccount[];
@@ -88,6 +122,10 @@ export function MoneyFlowPanel({
   onDetach?: (period: ChartPeriod) => void;
   onFollow?: () => void;
   budgets?: BudgetRecord[];
+  flowColors?: { id: string; color: string }[];
+  flowLayout?: string;
+  onPaintNode?: (id: string, color: string) => void;
+  onLayout?: (layout: PortraitLayout) => void;
 }) {
   const t = useT();
   const own = useChartPeriod("flow");
@@ -99,15 +137,19 @@ export function MoneyFlowPanel({
   const bounds = useMemo(() => boundsOf(period), [period]);
   const [colors, setColors] = useState(readColors);
   const [openOther, setOpenOther] = useState(false);
-  const [full, setFull] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("flow") === "full");
+  const [panelOpen, setPanelOpen] = useState(readPanelOpen);
+  const [colorsOpen, setColorsOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("colors") === "open");
+  const [full, setFull] = useState(() => typeof window !== "undefined" && (new URLSearchParams(window.location.search).get("flow") === "full" || new URLSearchParams(window.location.search).get("full") === "1"));
   const [drill, setDrill] = useState("");
   const [options, setOptions] = useState(() => {
     if (typeof window === "undefined") return readOptions();
-    const flow = new URLSearchParams(window.location.search).get("flow");
-    const layout: PortraitLayout = new URLSearchParams(window.location.search).get("portraitLayout") === "horizontal" ? "horizontal" : "vertical";
+    const params = new URLSearchParams(window.location.search);
+    const flow = params.get("flow");
+    const layout: PortraitLayout = params.get("portraitLayout") === "horizontal" ? "horizontal" : flowLayout === "horizontal" ? "horizontal" : "vertical";
+    const labels = params.get("labels") !== "0";
     if (flow === "plain") return { labels: false, values: false, group: "category" as const, mono: false, planned: false, portraitLayout: layout };
-    if (flow === "entry" || flow === "source") return { labels: true, values: true, group: "entry" as const, mono: false, planned: false, portraitLayout: layout };
-    if (flow === "category") return { labels: true, values: true, group: "category" as const, mono: false, planned: false, portraitLayout: layout };
+    if (flow === "entry" || flow === "source") return { labels, values: true, group: "entry" as const, mono: false, planned: false, portraitLayout: layout };
+    if (flow === "category") return { labels, values: true, group: "category" as const, mono: false, planned: false, portraitLayout: layout };
     if (flow === "planned") return { labels: true, values: true, group: "category" as const, mono: false, planned: true, portraitLayout: layout };
     const saved = readOptions();
     return { ...saved, portraitLayout: new URLSearchParams(window.location.search).has("portraitLayout") ? layout : saved.portraitLayout };
@@ -167,10 +209,34 @@ export function MoneyFlowPanel({
       expandedOther: openOther,
       group: options.group,
       months,
-      nodeColors: { ...Object.fromEntries(categories.filter((row) => row.color).map((row) => [row.name, row.color])), ...colors },
+      nodeColors: {
+        ...Object.fromEntries(categories.filter((row) => row.color).map((row) => [row.name, row.color])),
+        ...Object.fromEntries(flowColors.filter((row) => row.id && row.color).map((row) => [row.id, row.color])),
+        ...colors,
+      },
       labels: flowLabels,
     });
-  }, [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, options.group, options.planned, budgets, months, flowLabels]);
+  }, [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, flowColors, options.group, options.planned, budgets, months, flowLabels]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(PANEL_KEY, panelOpen ? "open" : "closed");
+    } catch {
+      /* The panel still opens for this visit. */
+    }
+  }, [panelOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || new URLSearchParams(window.location.search).has("portraitLayout")) return;
+    try {
+      if (localStorage.getItem(OPTION_KEY)) return;
+    } catch {
+      return;
+    }
+    if (flowLayout === "vertical" || flowLayout === "horizontal") {
+      setOptions((current) => ({ ...current, portraitLayout: flowLayout }));
+    }
+  }, [flowLayout]);
 
   useEffect(() => {
     try {
@@ -182,8 +248,8 @@ export function MoneyFlowPanel({
 
   useEffect(() => {
     const onVoice = (event: Event) => {
-      const detail = (event as CustomEvent<{ chart?: string; action?: string; mode?: string }>).detail || {};
-      if (detail.chart !== "flow") return;
+      const detail = (event as CustomEvent<{ chart?: string; action?: string; mode?: string; name?: string; color?: string; confirmed?: boolean }>).detail || {};
+      if (detail.chart && detail.chart !== "flow") return;
       if (detail.action === "labels") setOptions((current) => ({ ...current, labels: !current.labels }));
       if (detail.action === "values") setOptions((current) => ({ ...current, values: !current.values }));
       if (detail.action === "fullscreen") setFull(true);
@@ -192,10 +258,34 @@ export function MoneyFlowPanel({
       if (mode === "entry" || mode === "source") setOptions((current) => ({ ...current, group: "entry", mono: false }));
       if (mode === "category") setOptions((current) => ({ ...current, group: "category", mono: false }));
       if (mode === "mono") setOptions((current) => ({ ...current, mono: true }));
+      if (mode === "vertical" || mode === "horizontal") {
+        setOptions((current) => ({ ...current, portraitLayout: mode }));
+        onLayout?.(mode);
+      }
+      const action = (detail.action || "").toLowerCase();
+      const name = (detail.name || "").trim();
+      if ((action === "color" || action === "paint") && name && detail.color) {
+        paintColor(name, detail.color, setColors, onPaintNode);
+      }
+      if (action === "reset") {
+        const all = !name || name === "all" || name.toLowerCase() === "colors";
+        if (all && !detail.confirmed) return;
+        if (all) {
+          setColors({});
+          try {
+            localStorage.removeItem(COLOR_KEY);
+          } catch {
+            /* The chart still uses the defaults until reload. */
+          }
+          onPaintNode?.("all", "");
+          return;
+        }
+        paintColor(name, "", setColors, onPaintNode);
+      }
     };
     window.addEventListener("grok-finance-voice", onVoice);
     return () => window.removeEventListener("grok-finance-voice", onVoice);
-  }, []);
+  }, [onLayout, onPaintNode]);
 
   const ready = flow.state === "ready" ? flow : null;
   const view = useMemo(() => (ready ? drilled(ready, drill) : null), [ready, drill]);
@@ -229,10 +319,10 @@ export function MoneyFlowPanel({
       <button type="button" className="fin-chip" aria-pressed={options.group === "entry"} onClick={() => setOptions((current) => ({ ...current, group: "entry", mono: false }))}>
         {t("By entry")}
       </button>
-      <button type="button" className="fin-chip" aria-pressed={options.portraitLayout === "vertical"} onClick={() => setOptions((current) => ({ ...current, portraitLayout: "vertical" }))}>
+      <button type="button" className="fin-chip" aria-pressed={options.portraitLayout === "vertical"} onClick={() => { setOptions((current) => ({ ...current, portraitLayout: "vertical" })); onLayout?.("vertical"); }}>
         {t("Top to bottom")}
       </button>
-      <button type="button" className="fin-chip" aria-pressed={options.portraitLayout === "horizontal"} onClick={() => setOptions((current) => ({ ...current, portraitLayout: "horizontal" }))}>
+      <button type="button" className="fin-chip" aria-pressed={options.portraitLayout === "horizontal"} onClick={() => { setOptions((current) => ({ ...current, portraitLayout: "horizontal" })); onLayout?.("horizontal"); }}>
         {t("Left to right")}
       </button>
       <button type="button" className="fin-chip" aria-pressed={options.mono} onClick={() => setOptions((current) => ({ ...current, mono: !current.mono }))}>
@@ -244,9 +334,6 @@ export function MoneyFlowPanel({
       <button type="button" className="fin-chip" onClick={() => setOpenOther((value) => !value)}>
         {openOther ? t("Group small flows") : t("Show small flows")}
       </button>
-      <button type="button" className="fin-chip" onClick={() => setFull(true)}>
-        {t("Full screen")}
-      </button>
       {detached && onFollow ? (
         <button type="button" className="fin-chip" onClick={onFollow}>
           {t("Use the dashboard period")}
@@ -256,10 +343,43 @@ export function MoneyFlowPanel({
   );
 
   const title = flowTitle(period, bounds, t);
+  const periodName = periodCaption(period, bounds, t);
+  const paint = (id: string, color: string) => {
+    paintColor(id, color, setColors, onPaintNode);
+    if (color && categories.some((row) => row.name === id)) onPaintCategory?.(id, color);
+  };
   return (
     <ChartCard title={title}>
-      <ChartPeriodBar period={period} onChange={setPeriod} />
-      {controls}
+      <div className="mt-2 flex items-center justify-between gap-2" data-swipe-ignore="">
+        <p className="min-w-0 truncate text-[15px] leading-5">{periodName}</p>
+        <div className="flex shrink-0 items-center">
+          <button type="button" className="grid h-11 w-11 place-items-center" aria-expanded={panelOpen} aria-controls="flow-options" aria-label={t("Options")} onClick={() => setPanelOpen((value) => !value)}>
+            <OptionsIcon />
+          </button>
+          <button type="button" className="grid h-11 w-11 place-items-center" aria-expanded={colorsOpen} aria-label={t("Chart colors")} onClick={() => setColorsOpen((value) => !value)}>
+            <PaletteIcon />
+          </button>
+          <button type="button" className="grid h-11 w-11 place-items-center" aria-label={t("Full screen")} onClick={() => setFull(true)}>
+            <ExpandIcon />
+          </button>
+        </div>
+      </div>
+      <div id="flow-options" className={panelOpen ? "flow-panel open" : "flow-panel"}>
+        <div>
+          <ChartPeriodBar period={period} onChange={setPeriod} />
+          {controls}
+        </div>
+      </div>
+      {colorsOpen && ready ? (
+        <ColorSheet
+          nodes={ready.nodes.filter((node) => node.role !== "child")}
+          colors={colors}
+          display={display}
+          onPaint={paint}
+          onResetAll={() => paint("all", "")}
+          onClose={() => setColorsOpen(false)}
+        />
+      ) : null}
       {drill ? (
         <button type="button" className="fin-chip mt-2" onClick={() => setDrill("")}>
           {t("Back")}
@@ -278,22 +398,6 @@ export function MoneyFlowPanel({
           {t("Set a category")}
         </button>
       ) : null}
-      <CategoryColors
-        categories={categories}
-        colors={colors}
-        onChange={(name, color) => {
-          setColors((current) => {
-            const next = { ...current, [name]: color };
-            try {
-              localStorage.setItem(COLOR_KEY, JSON.stringify(next));
-            } catch {
-              /* The color still applies until the page reloads. */
-            }
-            return next;
-          });
-          onPaintCategory?.(name, color);
-        }}
-      />
       {full
         ? createPortal(
             <FullFlow
@@ -318,17 +422,19 @@ export function MoneyFlowPanel({
   );
 }
 
-function flowTitle(period: ChartPeriod, bounds: { start: string; end: string }, t: (english: string) => string): string {
+function periodCaption(period: ChartPeriod, bounds: { start: string; end: string }, t: (english: string) => string): string {
   const locale = activeLocale() === "ca-ES-valencia" ? "ca-ES" : activeLocale();
-  let name = t("This month");
   if ((period.preset === "this" || period.preset === "last") && bounds.start) {
-    name = new Date(`${bounds.start}T12:00:00`).toLocaleDateString(locale, { month: "long", year: "numeric" });
-  } else if (period.preset === "all") {
-    name = t("All");
-  } else if (bounds.start && bounds.end) {
-    name = `${bounds.start} – ${bounds.end}`;
+    return new Date(`${bounds.start}T12:00:00`).toLocaleDateString(locale, { month: "long", year: "numeric" });
   }
-  return fill("Income and spending, {period}", { period: name });
+  if (period.preset === "all") return t("All");
+  if (bounds.start && bounds.end && period.preset === "custom") return `${bounds.start} – ${bounds.end}`;
+  const labels: Record<string, string> = { this: "This month", last: "Last month", "3m": "3M", "6m": "6M", ytd: "YTD", "1y": "1Y", all: "All", custom: "Custom" };
+  return t(labels[period.preset] || "This month");
+}
+
+function flowTitle(period: ChartPeriod, bounds: { start: string; end: string }, t: (english: string) => string): string {
+  return fill("Income and spending, {period}", { period: periodCaption(period, bounds, t) });
 }
 
 function monthNames(locale: string): string[] {
@@ -616,6 +722,81 @@ function measure(el: AuditEl): { x: number; y: number; w: number; h: number } | 
   return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
 }
 
+/** Stack each ribbon on its own slice of the bar so two salaries do not land on one blob. */
+function stackFlowCurves(
+  curves: AuditEl[],
+  links: FlowLink[],
+  placed: Map<number, { localX: number; localY: number; w: number; h: number }>,
+  idIndex: Map<string, number>,
+  axis: "x" | "y",
+) {
+  const outUsed = new Map<number, number>();
+  const inUsed = new Map<number, number>();
+  const outSum = new Map<number, number>();
+  const inSum = new Map<number, number>();
+  for (const link of links) {
+    const source = idIndex.get(link.source);
+    const target = idIndex.get(link.target);
+    if (source == null || target == null) continue;
+    outSum.set(source, (outSum.get(source) || 0) + link.amountMinor);
+    inSum.set(target, (inSum.get(target) || 0) + link.amountMinor);
+  }
+  curves.forEach((curve, index) => {
+    const link = links[index];
+    if (!link) return;
+    const source = idIndex.get(link.source);
+    const target = idIndex.get(link.target);
+    if (source == null || target == null) return;
+    const src = placed.get(source);
+    const dst = placed.get(target);
+    if (!src || !dst) return;
+    const srcSpan = axis === "y" ? src.h : src.w;
+    const dstSpan = axis === "y" ? dst.h : dst.w;
+    const srcSlice = flowSlices([link.amountMinor, Math.max(0, (outSum.get(source) || 0) - link.amountMinor)], srcSpan)[0];
+    const dstSlice = flowSlices([link.amountMinor, Math.max(0, (inSum.get(target) || 0) - link.amountMinor)], dstSpan)[0];
+    const srcExtent = srcSlice?.extent || 1;
+    const dstExtent = dstSlice?.extent || 1;
+    const srcOff = outUsed.get(source) || 0;
+    const dstOff = inUsed.get(target) || 0;
+    outUsed.set(source, srcOff + srcExtent);
+    inUsed.set(target, dstOff + dstExtent);
+    if (axis === "y") {
+      const y1 = src.localY + srcOff;
+      const y2 = dst.localY + dstOff;
+      const x1 = src.localX + src.w;
+      const x2 = dst.localX;
+      curve.setShape?.({
+        x1,
+        x2,
+        y1,
+        y2,
+        cpy1: y1,
+        cpy2: y2,
+        cpx1: x1 + (x2 - x1) * 0.55,
+        cpx2: x1 + (x2 - x1) * 0.32,
+        extent: dstExtent,
+      });
+    } else {
+      const x1 = src.localX + srcOff;
+      const x2 = dst.localX + dstOff;
+      const y1 = src.localY + src.h;
+      const y2 = dst.localY;
+      curve.setShape?.({
+        x1,
+        x2,
+        y1,
+        y2,
+        cpx1: x1,
+        cpx2: x2,
+        cpy1: y1 + (y2 - y1) * 0.55,
+        cpy2: y1 + (y2 - y1) * 0.32,
+        extent: dstExtent,
+      });
+    }
+    curve.dirty?.();
+  });
+}
+
 /** Narrow portrait, left to right. Even rows, hairline tails, labels beside each bar. */
 function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[], links: FlowLink[]) {
   const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] }; refresh: () => void };
@@ -637,69 +818,42 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     else columns.push([item]);
   }
   const plotH = frame.plot;
-  const placed = new Map<number, { localY: number; h: number }>();
-  columns.forEach((column, colIndex) => {
-    const edge = colIndex === 0 || colIndex === columns.length - 1;
+  const plotW = Math.max(40, frame.width - frame.left - frame.right);
+  const labelBand = 3 * frame.lineHeight + 8;
+  const flowTop = labelBand;
+  const flowH = Math.max(44, plotH - labelBand);
+  const placed = new Map<number, { localX: number; localY: number; w: number; h: number }>();
+  columns.forEach((column) => {
+    const hub = column.some((item) => item.node.role === "pool");
+    const source = column.every((item) => item.node.role === "source");
     const ordered = [...column].sort((a, b) => {
-      if (!edge) {
-        const rank = (node: FlowNode) => (node.role === "pool" ? 0 : node.kind === "spending" ? 1 : 2);
-        return rank(a.node) - rank(b.node);
-      }
       if (a.node.italic !== b.node.italic) return a.node.italic ? 1 : -1;
       return b.node.amountMinor - a.node.amountMinor;
     });
-      if (edge) {
+    const localX = hub ? Math.round(plotW * 0.58) : source ? 0 : Math.max(0, plotW - 4);
+    const hubH = Math.min(72, Math.max(28, Math.round(flowH * 0.34)));
+    if (!hub) {
       const count = Math.max(1, ordered.length);
-      const slot = plotH / count;
-      const maxAmt = Math.max(1, ...ordered.map((item) => item.node.amountMinor));
+      const slot = flowH / count;
+      const total = Math.max(1, ordered.reduce((sum, item) => sum + item.node.amountMinor, 0));
       ordered.forEach((item, index) => {
-        const cap = count === 1 ? Math.min(48, plotH * 0.28) : Math.max(8, slot - 16);
-        const h = Math.max(2, Math.min(cap, (item.node.amountMinor / maxAmt) * cap));
-        const y = count === 1 ? (plotH - h) / 2 : index * slot + Math.max(0, (slot - h) / 2);
-        item.el.setShape?.({ y, height: h });
+        const h = Math.max(4, (item.node.amountMinor / total) * hubH);
+        const y = count === 1 ? flowTop + 4 : flowTop + index * slot + Math.max(0, (slot - h) / 2);
+        item.el.setShape?.({ x: localX, y, height: h });
         item.el.dirty?.();
-        placed.set(item.index, { localY: y, h });
+        placed.set(item.index, { localX, localY: y, w: 4, h });
       });
       return;
     }
-    const h = Math.max(8, Math.min(48, plotH * 0.2));
-    const y = Math.max(36, (plotH - h) / 2);
+    const y = flowTop + Math.round((flowH - hubH) / 2);
     ordered.forEach((item) => {
-      item.el.setShape?.({ y, height: h });
+      item.el.setShape?.({ x: localX, y, height: hubH });
       item.el.dirty?.();
-      placed.set(item.index, { localY: y, h });
+      placed.set(item.index, { localX, localY: y, w: 4, h: hubH });
     });
   });
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
-  curves.forEach((curve, index) => {
-    const link = links[index];
-    const shape = curve.shape;
-    if (!link || !shape || shape.y1 == null || shape.y2 == null) return;
-    const source = idIndex.get(link.source);
-    const target = idIndex.get(link.target);
-    if (source == null || target == null) return;
-    const src = placed.get(source);
-    const dst = placed.get(target);
-    const oldSrc = paired[source];
-    const oldDst = paired[target];
-    if (!src || !dst || !oldSrc || !oldDst) return;
-    const sy = oldSrc.old.h > 0 ? (shape.y1 - oldSrc.old.y) / oldSrc.old.h : 0.5;
-    const ty = oldDst.old.h > 0 ? (shape.y2 - oldDst.old.y) / oldDst.old.h : 0.5;
-    const y1 = src.localY + Math.min(1, Math.max(0, sy)) * src.h;
-    const y2 = dst.localY + Math.min(1, Math.max(0, ty)) * dst.h;
-    const x1 = shape.x1 || 0;
-    const x2 = shape.x2 || 0;
-    curve.setShape?.({
-      y1,
-      y2,
-      cpy1: y1,
-      cpy2: y2,
-      cpx1: x1 * 0.55 + x2 * 0.45,
-      cpx2: x1 * 0.45 + x2 * 0.55,
-      extent: Math.max(1, src.h * (link.amountMinor / Math.max(1, oldSrc.node.amountMinor))),
-    });
-    curve.dirty?.();
-  });
+  stackFlowCurves(curves, links, placed, idIndex, "y");
   zr.refresh();
   const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
   const texts = (zr.storage.getDisplayList?.(true) || []).flatMap((el) => {
@@ -735,7 +889,7 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     const box = placed.get(item.index);
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
-    const globalX = (item.el.parent?.x || 0) + (item.el.shape?.x || 0);
+    const globalX = (item.el.parent?.x || 0) + box.localX;
     const globalY = item.originY + box.localY;
     const nodeW = item.el.shape?.width || item.old.w;
     const blockH = lines.length * frame.lineHeight;
@@ -748,12 +902,11 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
       if (!now) continue;
       const amount = line.text.includes("·");
       const fill = amount ? muted : String(item.el.style?.fill || muted);
-      line.el.style = { ...line.el.style, fill, fontSize: amount ? 12 : 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
+      line.el.style = { ...line.el.style, fill, fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
       const painted = measure(line.el) || now;
       let x = middle ? globalX + nodeW / 2 - painted.w / 2 : role === "source" ? globalX - 6 - painted.w : globalX + nodeW + 6;
-      if (middle) x = Math.min(x, frame.width - frame.right - painted.w - 4);
-      if (x < 2) x = 2;
+      if (middle) x = Math.max(2, Math.min(x, frame.width - painted.w - 2));
       line.el.x = (line.el.x || 0) + (x - painted.x);
       line.el.y = (line.el.y || 0) + (cursor - painted.y);
       line.el.dirty?.();
@@ -765,7 +918,7 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
 
 /** Narrow portrait. Rows run across the full width and the ribbons stay about a third of that width. */
 function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[], links: FlowLink[]) {
-  const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] }; refresh: () => void };
+  const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] }; refresh: () => void; add?: (el: AuditEl) => void };
   const list = zr.storage.getDisplayList?.(true) || [];
   const rects = list.filter((el) => el.type === "rect" && el.shape && (el.shape.height || 0) >= 2 && (el.shape.height || 0) <= 12);
   const curves = list.filter((el) => el.shape && el.shape.x1 != null && el.shape.y1 != null);
@@ -778,74 +931,43 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     originY: el.parent?.y || 0,
     old: { x: el.shape?.x || 0, y: el.shape?.y || 0, w: el.shape?.width || 0, h: el.shape?.height || 0 },
   }));
-  const rows: Array<typeof paired> = [];
-  for (const item of [...paired].sort((a, b) => a.old.y - b.old.y || a.old.x - b.old.x)) {
-    const row = rows.find((group) => Math.abs(group[0].old.y - item.old.y) < 8);
-    if (row) row.push(item);
-    else rows.push([item]);
-  }
-  for (const row of rows) row.sort((a, b) => a.old.x - b.old.x);
   const plotW = Math.max(40, frame.width - frame.left - frame.right);
-  const budget = Math.round(plotW * frame.columnFill);
   const rank = (node: FlowNode) => (node.italic ? 1 : 0);
-  const bands: Array<{ where: "top" | "middle" | "bottom"; items: typeof paired }> = rows.map((row, rowIndex) => ({
-    where: (rowIndex === 0 ? "top" : rowIndex === rows.length - 1 ? "bottom" : "middle") as "top" | "middle" | "bottom",
-    items: [...row].sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor),
-  }));
   const barH = 4;
-  const ys = [6, Math.round(frame.plot * 0.48), Math.max(barH + 8, frame.plot - barH - 2)];
-  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; row: "top" | "middle" | "bottom"; indexInRow: number; rowCount: number }>();
-  bands.forEach((band, bandIndex) => {
-    const localY = ys[Math.min(bandIndex, ys.length - 1)];
-    const boxes = spreadLevel(band.items.map((item) => item.node.amountMinor), plotW, Math.min(budget, band.items.length === 1 ? 72 : plotW * 0.42), band.items.length === 1 ? "center" : "slots");
-    band.items.forEach((item, index) => {
-      const next = boxes[index];
-      if (!next) return;
-      item.el.setShape?.({ x: next.x, y: localY, width: next.w, height: barH });
-      item.el.dirty?.();
-      placed.set(item.index, {
-        x: item.originX + next.x,
-        y: item.originY + localY,
-        w: next.w,
-        h: barH,
-        localX: next.x,
-        localY,
-        row: band.where,
-        indexInRow: index,
-        rowCount: band.items.length,
-      });
-    });
+  const sources = paired.filter((item) => item.node.role === "source").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
+  const hubItem = paired.find((item) => item.node.role === "pool");
+  const leaves = paired.filter((item) => item.node.role !== "source" && item.node.role !== "pool").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
+  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; below: boolean }>();
+  const placeBar = (item: (typeof paired)[number], localX: number, localY: number, w: number, below: boolean) => {
+    item.el.setShape?.({ x: localX, y: localY, width: w, height: barH });
+    item.el.dirty?.();
+    placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below });
+  };
+  const sourceBudget = Math.min(plotW * 0.62, sources.length === 1 ? 72 : plotW * 0.5);
+  const sourceBoxes = spreadLevel(sources.map((item) => item.node.amountMinor), plotW, sourceBudget, sources.length === 1 ? "center" : "slots");
+  sources.forEach((item, index) => {
+    const next = sourceBoxes[index];
+    if (next) placeBar(item, next.x, 2, next.w, false);
+  });
+  const hubW = Math.min(72, Math.max(28, Math.round(plotW * 0.24)));
+  const hubY = Math.round(frame.plot * 0.16);
+  if (hubItem) placeBar(hubItem, Math.round((plotW - hubW) / 2), hubY, hubW, false);
+  const labelBlock = frame.lineHeight * 2 + 8;
+  const leafStart = hubY + barH + labelBlock + 8;
+  const step = labelBlock + 8;
+  const leafMax = Math.max(1, ...leaves.map((item) => item.node.amountMinor));
+  const offsets = leafOffsets(leaves.length, leafStart, step, frame.plot - 4, barH);
+  leaves.forEach((item, index) => {
+    const w = Math.max(10, Math.round(Math.min(plotW * 0.34, 96) * Math.max(0.22, item.node.amountMinor / leafMax)));
+    const lane = leaves.length > 4 ? index % 3 : index % Math.max(1, leaves.length);
+    const lanes = leaves.length > 4 ? 3 : Math.max(1, leaves.length);
+    const laneW = plotW / lanes;
+    const localX = Math.max(0, Math.round(lane * laneW + (laneW - w) / 2));
+    const localY = offsets[index] ?? leafStart;
+    placeBar(item, Math.min(localX, Math.max(0, plotW - w)), localY, w, true);
   });
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
-  curves.forEach((curve, index) => {
-    const link = links[index];
-    const shape = curve.shape;
-    if (!link || !shape || shape.x1 == null || shape.x2 == null || shape.y1 == null || shape.y2 == null) return;
-    const source = idIndex.get(link.source);
-    const target = idIndex.get(link.target);
-    if (source == null || target == null) return;
-    const src = placed.get(source);
-    const dst = placed.get(target);
-    const oldSrc = paired[source];
-    const oldDst = paired[target];
-    if (!src || !dst || !oldSrc || !oldDst) return;
-    const sx = oldSrc.old.w > 0 ? (shape.x1 - oldSrc.old.x) / oldSrc.old.w : 0;
-    const tx = oldDst.old.w > 0 ? (shape.x2 - oldDst.old.x) / oldDst.old.w : 0;
-    const x1 = src.localX + Math.min(1, Math.max(0, sx)) * src.w;
-    const x2 = dst.localX + Math.min(1, Math.max(0, tx)) * dst.w;
-    const y1 = src.localY + src.h;
-    const y2 = dst.localY;
-    curve.setShape?.({
-      x1,
-      x2,
-      cpx1: x1,
-      cpx2: x2,
-      cpy1: y1 + (y2 - y1) * 0.45,
-      cpy2: y2 - (y2 - y1) * 0.45,
-      extent: Math.max(2, src.w * (link.amountMinor / Math.max(1, oldSrc.node.amountMinor))),
-    });
-    curve.dirty?.();
-  });
+  stackFlowCurves(curves, links, placed, idIndex, "x");
   zr.refresh();
   const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
   const liveTexts = (zr.storage.getDisplayList?.(true) || []).flatMap((el) => {
@@ -882,9 +1004,7 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
     const blockH = lines.length * frame.lineHeight;
-    const above = box.row !== "bottom";
-    const stagger = box.row === "bottom" && box.rowCount > 4 && box.indexInRow % 2 === 1 ? blockH + 6 : 0;
-    let cursor = above ? box.y - 6 - blockH : box.y + box.h + 6 + stagger;
+    let cursor = box.below ? box.y + box.h + 8 : box.y - 8 - blockH;
     cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
     for (const line of lines) {
       const now = measure(line.el);
@@ -893,7 +1013,7 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
       line.el.x = (line.el.x || 0) + (x - now.x);
       line.el.y = (line.el.y || 0) + (cursor - now.y);
       const amount = line.text.includes("·");
-      line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: amount ? 12 : 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
+      line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
       cursor += frame.lineHeight;
     }
@@ -1256,42 +1376,149 @@ function readLabelAudit(instance: ECharts, width: number, height: number): { ok:
   };
 }
 
-function CategoryColors({
-  categories,
+function paintColor(
+  id: string,
+  color: string,
+  setColors: (update: (current: Record<string, string>) => Record<string, string>) => void,
+  onPaintNode?: (id: string, color: string) => void,
+) {
+  setColors((current) => {
+    const next = { ...current };
+    if (!color) {
+      if (id === "all") {
+        for (const key of Object.keys(next)) delete next[key];
+      } else {
+        delete next[id];
+      }
+    } else {
+      next[id] = color;
+    }
+    try {
+      localStorage.setItem(COLOR_KEY, JSON.stringify(next));
+    } catch {
+      /* The color still applies until the page reloads. */
+    }
+    return next;
+  });
+  onPaintNode?.(id, color);
+}
+
+function cssHex(token: string): string {
+  if (typeof document === "undefined") return "";
+  const probe = document.createElement("span");
+  probe.style.color = token.startsWith("var(") ? token : "var(--brand)";
+  document.body.appendChild(probe);
+  const painted = getComputedStyle(probe).color;
+  probe.remove();
+  const match = painted.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!match) return "";
+  const hex = (part: string) => Number(part).toString(16).padStart(2, "0");
+  return `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
+}
+
+function ColorSheet({
+  nodes,
   colors,
-  onChange,
+  display,
+  onPaint,
+  onResetAll,
+  onClose,
 }: {
-  categories: FinanceCategory[];
+  nodes: FlowNode[];
   colors: Record<string, string>;
-  onChange: (name: string, color: string) => void;
+  display: string;
+  onPaint: (id: string, color: string) => void;
+  onResetAll: () => void;
+  onClose: () => void;
 }) {
   const t = useT();
-  const rows = categories.filter((row) => !row.parent);
-  if (!rows.length) return null;
+  const [confirmAll, setConfirmAll] = useState(false);
+  const rows = nodes.filter((node) => node.amountMinor > 0);
   return (
-    <div className="mt-3" data-swipe-ignore="">
-      <p className="fin-muted text-[13px] leading-4">{t("Category colors")}</p>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-        {rows.map((row) => {
-          const swatch = /^#[0-9A-Fa-f]{6}$/.test(colors[row.name] || row.color) ? colors[row.name] || row.color : "var(--brand)";
+    <div className="flow-sheet mt-2" role="dialog" aria-label={t("Chart colors")} data-swipe-ignore="">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[15px] leading-5">{t("Chart colors")}</h2>
+        <button type="button" className="fin-chip" onClick={onClose}>{t("Close")}</button>
+      </div>
+      <ul className="mt-2 flex flex-col gap-3">
+        {rows.map((node) => {
+          const current = colors[node.id] || colors[node.label] || node.color;
+          const picker = /^#[0-9A-Fa-f]{6}$/.test(current) ? current : cssHex(current || "var(--brand)");
           return (
-            <label key={row.name} className="flex min-h-11 max-w-full items-center gap-2 text-[13px] text-[var(--text-primary)]">
-              <span className="relative h-11 w-11 shrink-0">
-                <span aria-hidden="true" className="absolute inset-3" style={{ background: swatch }} />
+            <li key={node.id} className="flex flex-wrap items-center gap-2">
+              <span className="h-11 w-11 shrink-0" style={{ background: current }} aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] leading-5" style={node.italic ? { fontStyle: "italic" } : undefined}>{node.label}</span>
+                <span className="fin-muted block text-[13px] leading-4">{formatMoney(node.amountMinor, display)}</span>
+              </span>
+              <label className="relative grid h-11 w-11 shrink-0 place-items-center">
+                <span className="h-6 w-6" style={{ background: current }} aria-hidden="true" />
                 <input
                   type="color"
-                  aria-label={fill("{name} color", { name: row.name })}
-                  value={/^#[0-9A-Fa-f]{6}$/.test(swatch) ? swatch : "#7d6b58"}
-                  onChange={(event) => onChange(row.name, event.target.value)}
+                  aria-label={fill("{name} color", { name: node.label })}
+                  value={picker}
+                  onChange={(event) => onPaint(node.id, event.target.value)}
                   className="absolute inset-0 h-11 w-11 cursor-pointer opacity-0"
                 />
-              </span>
-              <span className="min-w-0 truncate">{row.name}</span>
-            </label>
+              </label>
+              <button type="button" className="fin-chip" onClick={() => onPaint(node.id, "")}>{t("Reset to default")}</button>
+              <div className="flex w-full flex-wrap gap-1">
+                {FLOW_PRESETS.map((swatch, index) => (
+                  <button
+                    key={swatch}
+                    type="button"
+                    className="h-11 w-11"
+                    style={{ background: swatch }}
+                    aria-label={fill("Preset {n} for {name}", { n: String(index + 1), name: node.label })}
+                    aria-pressed={current === swatch}
+                    onClick={() => onPaint(node.id, swatch)}
+                  />
+                ))}
+              </div>
+            </li>
           );
         })}
+      </ul>
+      <div className="mt-3">
+        {confirmAll ? (
+          <button type="button" className="h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => { onResetAll(); setConfirmAll(false); }}>
+            {t("Yes, reset all colors")}
+          </button>
+        ) : (
+          <button type="button" className="fin-chip" onClick={() => setConfirmAll(true)}>{t("Reset all colors")}</button>
+        )}
       </div>
     </div>
+  );
+}
+
+function OptionsIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+      <path d="M4 6h14M4 11h14M4 16h14" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="8" cy="6" r="2" fill="var(--surface-0)" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="14" cy="11" r="2" fill="var(--surface-0)" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="9" cy="16" r="2" fill="var(--surface-0)" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function PaletteIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+      <path d="M11 3.5a7.5 7.5 0 1 0 0 15h1.2a1.8 1.8 0 0 0 0-3.6h-.4a1.4 1.4 0 0 1 0-2.8H14a4.5 4.5 0 0 0 4.5-4.5A4.1 4.1 0 0 0 11 3.5Z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="7.5" cy="9" r="1" fill="currentColor" />
+      <circle cx="11" cy="7" r="1" fill="currentColor" />
+      <circle cx="14.5" cy="9" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+      <path d="M8 4H4v4M14 4h4v4M8 18H4v-4M14 18h4v-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 

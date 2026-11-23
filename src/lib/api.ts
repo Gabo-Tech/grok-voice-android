@@ -485,6 +485,8 @@ export interface FinanceSnapshot {
   period: string;
   defaultCurrency: string;
   categories: FinanceCategory[];
+  flowColors?: { id: string; color: string }[];
+  flowLayout?: string;
   fx?: FinanceFx;
   prices?: FinancePrices;
   history?: import("@/lib/portfolio").ValuePoint[];

@@ -301,6 +301,10 @@ export function FinanceOverview({
           detached={flowOwn != null}
           onFollow={() => setFlowOwn(null)}
           onPaintCategory={(name, color) => finance.editCategory({ action: "color", name, color })}
+          flowColors={finance.snapshot.flowColors || []}
+          flowLayout={finance.snapshot.flowLayout || ""}
+          onPaintNode={(id, color) => finance.editCategory({ action: color ? "paint" : "unpaint", name: id, color })}
+          onLayout={(layout) => finance.editCategory({ action: "layout", name: layout })}
           onReassign={onOpenActivity}
           budgets={finance.snapshot.budgets || []}
         />

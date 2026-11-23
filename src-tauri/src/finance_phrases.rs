@@ -233,6 +233,13 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("Say the amount.", "Di el importe."),
     ("No budget for that month.", "No hay presupuesto para ese mes."),
     ("No budget line with that name.", "No hay una línea de presupuesto con ese nombre."),
+    ("{name} is now {color} on the money flow.", "{name} ahora es {color} en el flujo de dinero."),
+    ("{name} is back to its default color on the money flow.", "{name} ha vuelto a su color predeterminado en el flujo de dinero."),
+    ("Reset every money-flow color? Say yes.", "¿Restablecer todos los colores del flujo de dinero? Di que sí."),
+    ("Every money-flow color is back to the default.", "Todos los colores del flujo de dinero han vuelto al predeterminado."),
+    ("The money flow runs from top to bottom.", "El flujo de dinero va de arriba abajo."),
+    ("The money flow runs from left to right.", "El flujo de dinero va de izquierda a derecha."),
+    ("Say the color.", "Di el color."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -470,6 +477,13 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("Say the amount.", "Sag den Betrag."),
     ("No budget for that month.", "Für diesen Monat gibt es kein Budget."),
     ("No budget line with that name.", "Keine Budgetzeile mit diesem Namen."),
+    ("{name} is now {color} on the money flow.", "{name} ist jetzt {color} im Geldfluss."),
+    ("{name} is back to its default color on the money flow.", "{name} hat wieder die Vorgabefarbe im Geldfluss."),
+    ("Reset every money-flow color? Say yes.", "Alle Farben im Geldfluss zurücksetzen? Sag ja."),
+    ("Every money-flow color is back to the default.", "Alle Farben im Geldfluss sind wieder die Vorgabe."),
+    ("The money flow runs from top to bottom.", "Der Geldfluss läuft von oben nach unten."),
+    ("The money flow runs from left to right.", "Der Geldfluss läuft von links nach rechts."),
+    ("Say the color.", "Sag die Farbe."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -707,6 +721,13 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("Say the amount.", "Diz o valor."),
     ("No budget for that month.", "Não há orçamento para esse mês."),
     ("No budget line with that name.", "Não há uma linha de orçamento com esse nome."),
+    ("{name} is now {color} on the money flow.", "{name} agora é {color} no fluxo de dinheiro."),
+    ("{name} is back to its default color on the money flow.", "{name} voltou à cor predefinida no fluxo de dinheiro."),
+    ("Reset every money-flow color? Say yes.", "Repor todas as cores do fluxo de dinheiro? Diz que sim."),
+    ("Every money-flow color is back to the default.", "Todas as cores do fluxo de dinheiro voltaram à predefinição."),
+    ("The money flow runs from top to bottom.", "O fluxo de dinheiro vai de cima para baixo."),
+    ("The money flow runs from left to right.", "O fluxo de dinheiro vai da esquerda para a direita."),
+    ("Say the color.", "Diz a cor."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -944,4 +965,11 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("Say the amount.", "Digues l'import."),
     ("No budget for that month.", "No hi ha pressupost per a eixe mes."),
     ("No budget line with that name.", "No hi ha una línia de pressupost amb eixe nom."),
+    ("{name} is now {color} on the money flow.", "{name} ara és {color} al flux de diners."),
+    ("{name} is back to its default color on the money flow.", "{name} ha tornat al color predeterminat al flux de diners."),
+    ("Reset every money-flow color? Say yes.", "Restablir tots els colors del flux de diners? Digues que sí."),
+    ("Every money-flow color is back to the default.", "Tots els colors del flux de diners han tornat al predeterminat."),
+    ("The money flow runs from top to bottom.", "El flux de diners va de dalt a baix."),
+    ("The money flow runs from left to right.", "El flux de diners va d'esquerra a dreta."),
+    ("Say the color.", "Digues el color."),
 ];

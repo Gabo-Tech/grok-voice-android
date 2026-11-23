@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow, buildSankeyOption, describeFlow, flowAmountLabel, flowConserved, labelsInside, labelsOverlap, layoutSankey, placeFlowLabels, sankeyFrame, sankeyValue, spreadColumn, spreadLevel } from "./moneyFlow.ts";
+import { buildMoneyFlow, buildSankeyOption, describeFlow, flowAmountLabel, flowConserved, flowSlices, labelsInside, labelsOverlap, layoutSankey, leafOffsets, placeFlowLabels, portraitLevels, sankeyFrame, sankeyValue, spreadColumn, spreadLevel } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
 import type { RateBook } from "./financeMath.ts";
@@ -435,5 +435,152 @@ assert.equal(labelsInside(sampleBoxes, { width: 390, height: 460 }), true);
 const lifted = sankeyValue(10, 10_000, phone.floorShare);
 assert.ok(lifted > 10);
 assert.equal(sankeyValue(9_000, 10_000, phone.floorShare), 9_000);
+
+const slices = flowSlices([420, 180, 45], 64);
+assert.equal(slices.length, 3);
+assert.ok(slices[1].start >= slices[0].start + slices[0].extent - 0.01);
+assert.ok(slices[2].start >= slices[1].start + slices[1].extent - 0.01);
+assert.ok(Math.abs(slices.reduce((sum, slice) => sum + slice.extent, 0) - 64) < 1);
+const leaves = leafOffsets(6, 140, 48, 520, 4);
+assert.equal(leaves.length, 6);
+for (let index = 1; index < leaves.length; index += 1) {
+  assert.ok(leaves[index] >= leaves[index - 1] + 40, `leaf ${index} ${leaves[index]}`);
+}
+const landscape = sankeyFrame(844, [4, 1, 8], true, 390, "vertical");
+assert.equal(landscape.portrait, false);
+assert.equal(landscape.vertical, false);
+
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const richRows = [
+  { amountMinor: 420000, currency: "CHF", direction: "income", category: "Salary", date: "2026-11-01" },
+  { amountMinor: 180000, currency: "CHF", direction: "income", category: "Salary", date: "2026-11-15" },
+  { amountMinor: 45000, currency: "CHF", direction: "income", category: "Dividends", date: "2026-11-03" },
+  { amountMinor: 8000, currency: "CHF", direction: "income", category: "Interest", date: "2026-11-04" },
+  { amountMinor: 32000, currency: "CHF", direction: "income", category: "Side project", date: "2026-11-20" },
+  { amountMinor: 140000, currency: "CHF", direction: "expense", category: "Housing", date: "2026-11-02" },
+  { amountMinor: 62000, currency: "CHF", direction: "expense", category: "Food", date: "2026-11-05" },
+  { amountMinor: 28000, currency: "CHF", direction: "expense", category: "Transport", date: "2026-11-06" },
+  { amountMinor: 19000, currency: "CHF", direction: "expense", category: "Subscriptions", date: "2026-11-08" },
+  { amountMinor: 24000, currency: "CHF", direction: "expense", category: "Health", date: "2026-11-09" },
+  { amountMinor: 15000, currency: "CHF", direction: "expense", category: "Dining", date: "2026-11-11" },
+  { amountMinor: 2000, currency: "CHF", direction: "expense", category: "Coffee", date: "2026-11-12" },
+  { amountMinor: 1500, currency: "CHF", direction: "expense", category: "Tips", date: "2026-11-13" },
+  { amountMinor: 80000, currency: "CHF", direction: "expense", category: "Funds", date: "2026-11-18" },
+];
+const richCategories = [
+  { name: "Salary", color: "#3caa68", kind: "income" },
+  { name: "Funds", color: "#6a420c", kind: "investment" },
+];
+const deficitRows = [
+  { amountMinor: 200000, currency: "CHF", direction: "income", category: "Salary", date: "2026-11-01" },
+  { amountMinor: 15000, currency: "CHF", direction: "income", category: "Dividends", date: "2026-11-03" },
+  { amountMinor: 140000, currency: "CHF", direction: "expense", category: "Housing", date: "2026-11-02" },
+  { amountMinor: 80000, currency: "CHF", direction: "expense", category: "Food", date: "2026-11-05" },
+  { amountMinor: 40000, currency: "CHF", direction: "expense", category: "Transport", date: "2026-11-06" },
+  { amountMinor: 30000, currency: "CHF", direction: "expense", category: "Health", date: "2026-11-09" },
+  { amountMinor: 22000, currency: "CHF", direction: "expense", category: "Dining", date: "2026-11-11" },
+  { amountMinor: 25000, currency: "CHF", direction: "expense", category: "Funds", date: "2026-11-18" },
+];
+
+function assertChart(rows: typeof richRows, group: "category" | "entry", layout: "vertical" | "horizontal", labels: boolean) {
+  const builtFlow = buildMoneyFlow(rows, {
+    display: "CHF",
+    book,
+    nowMs: now,
+    start: "2026-11-01",
+    end: "2026-11-30",
+    group,
+    months,
+    categories: richCategories,
+    nodeColors: { Salary: "#3caa68", Funds: "#6a420c" },
+  });
+  assert.equal(builtFlow.state, "ready");
+  if (builtFlow.state !== "ready") return;
+  assert.equal(builtFlow.nodes.some((node) => node.kind === "savings" && node.amountMinor < 0), false);
+  const expenseShares = builtFlow.nodes.filter((node) => node.role === "sink" && node.kind !== "investment").reduce((sum, node) => sum + node.share, 0);
+  assert.ok(Math.abs(expenseShares - 1) < 0.02, `shares ${expenseShares}`);
+  const graph = portraitLevels(builtFlow.nodes, "CHF", "Spending");
+  const hub = graph.nodes.find((node) => node.role === "pool");
+  assert.ok(hub);
+  if (!hub) return;
+  const inbound = graph.links.filter((link) => link.target === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+  const outbound = graph.links.filter((link) => link.source === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+  assert.equal(inbound, outbound);
+  assert.equal(inbound, hub.amountMinor);
+  const option = buildSankeyOption({
+    nodes: builtFlow.nodes,
+    links: builtFlow.links,
+    currency: "CHF",
+    width: 390,
+    height: 844,
+    labels,
+    values: true,
+    colors: Object.fromEntries(builtFlow.nodes.map((node) => [node.id, node.color])),
+    ink: "rgb(240,235,228)",
+    muted: "rgb(168,160,150)",
+    brand: "rgb(196,176,154)",
+    paper: "rgb(23,24,27)",
+    line: "rgb(90,84,76)",
+    mono: false,
+    portraitLayout: layout,
+    spendingLabel: "Spending",
+  });
+  assert.equal(option.frame.vertical, layout === "vertical");
+  assert.equal(option.frame.reference, layout === "horizontal");
+  const rowsOut = (option.option.series as Array<{ data: Array<{ label: { formatter: string; show: boolean } }> }>)[0].data;
+  const texts = rowsOut.map((row) => row.label.formatter);
+  assert.ok(texts.every((line) => !line.includes("…")));
+  if (labels) assert.ok(texts.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("·")));
+  if (!labels) assert.ok(rowsOut.every((row) => row.label.show === false));
+}
+
+for (const group of ["category", "entry"] as const) {
+  for (const layout of ["vertical", "horizontal"] as const) {
+    for (const labels of [true, false]) assertChart(richRows, group, layout, labels);
+  }
+}
+const entryRich = buildMoneyFlow(richRows, {
+  display: "CHF",
+  book,
+  nowMs: now,
+  start: "2026-11-01",
+  end: "2026-11-30",
+  group: "entry",
+  months,
+  categories: richCategories,
+  nodeColors: { Salary: "#3caa68" },
+});
+assert.equal(entryRich.state, "ready");
+if (entryRich.state === "ready") {
+  const salaries = entryRich.nodes.filter((node) => node.label.startsWith("Salary"));
+  assert.equal(salaries.length, 2);
+  assert.equal(salaries[0].color, "#3caa68");
+  assert.equal(salaries[1].color, salaries[0].color);
+}
+const deficitFlow = buildMoneyFlow(deficitRows, {
+  display: "CHF",
+  book,
+  nowMs: now,
+  start: "2026-11-01",
+  end: "2026-11-30",
+  categories: richCategories,
+  nodeColors: { Funds: "#6a420c" },
+});
+assert.equal(deficitFlow.state, "ready");
+if (deficitFlow.state === "ready") {
+  assert.ok(deficitFlow.savingsMinor < 0);
+  assert.equal(deficitFlow.nodes.some((node) => node.kind === "savings"), false);
+  assert.ok(deficitFlow.nodes.some((node) => node.kind === "drawn"));
+  assert.ok(flowConserved(deficitFlow));
+  const graph = portraitLevels(deficitFlow.nodes, "CHF", "Spending");
+  const hub = graph.nodes.find((node) => node.role === "pool");
+  assert.ok(hub);
+  if (hub) {
+    const inbound = graph.links.filter((link) => link.target === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+    const outbound = graph.links.filter((link) => link.source === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+    assert.equal(inbound, outbound);
+    assert.equal(inbound, hub.amountMinor);
+  }
+}
 
 console.log("money flow ok");

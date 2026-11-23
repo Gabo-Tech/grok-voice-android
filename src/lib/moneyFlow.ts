@@ -128,6 +128,8 @@ interface Bucket {
   children: Map<string, Bucket>;
   members?: Bucket[];
   italic?: boolean;
+  /** Category name, so two "Salary 1 Nov" entries share Salary until one is painted. */
+  colorKey?: string;
 }
 
 function remember(bucket: Bucket, converted: number, original: number, currency: string, display: string) {
@@ -215,6 +217,7 @@ export function buildMoneyFlow(
       const name = group === "entry" ? entryLabel(placed.source, tx.date, months) : placed.source;
       const id = group === "entry" ? `in:${fold(name)}:${tx.date}:${seq++}` : `in:${fold(placed.source)}`;
       const bucket = paint(sources, id, name, "income", saved?.order ?? 100);
+      bucket.colorKey = placed.source;
       remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
       continue;
     }
@@ -229,6 +232,7 @@ export function buildMoneyFlow(
           : placed.parent || fallback;
     const id = group === "entry" ? `out:${kind}:${fold(named)}:${tx.date}:${seq++}` : `out:${kind}:${fold(named)}`;
     const bucket = paint(map, id, named, kind, saved?.order ?? 100);
+    bucket.colorKey = placed.parent || fallback;
     remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
     if (group !== "entry" && placed.child && kind !== "investment") {
       const child = paintChild(bucket, placed.child);
@@ -260,17 +264,34 @@ export function buildMoneyFlow(
   let investList = fanInvest ? groupRest([...invests.values()], investmentMinor || 1, threshold, Boolean(opts.expandedOther), "inv:rest", labels.other, "investment") : [];
   spendList = foldUncategorized(spendList, labels, spendingMinor || 1);
 
+  const rampIndex = new Map<string, number>();
   const colorFor = (bucket: Bucket, family: "in" | "out" | "save" | "invest" | "pool" | "spend" | "short", index: number) => {
-    const custom = opts.nodeColors?.[bucket.id] || opts.nodeColors?.[bucket.label];
-    if (custom && (/^#[0-9A-Fa-f]{6}$/.test(custom) || custom.startsWith("var("))) return custom;
+    const custom = [bucket.id, bucket.label, bucket.colorKey]
+      .map((key) => (key ? opts.nodeColors?.[key] : ""))
+      .find((color) => color && (/^#[0-9A-Fa-f]{6}$/.test(color) || color.startsWith("var(")));
+    if (custom) return custom;
     if (family === "pool") return "var(--flow-in)";
     if (family === "spend") return "var(--flow-out)";
     if (family === "save") return "var(--flow-save)";
     if (family === "invest") return "var(--flow-invest)";
     if (family === "short") return "var(--flow-short)";
     const ramp = family === "in" ? INCOME_COLORS : SPEND_COLORS;
-    return ramp[index % ramp.length];
+    const key = `${family}:${fold(bucket.colorKey || bucket.id)}`;
+    const known = rampIndex.get(key);
+    const slot = known == null ? index : known;
+    if (known == null) rampIndex.set(key, slot);
+    return ramp[slot % ramp.length];
   };
+  const plain = (id: string, label: string, kind: string, amount: number): Bucket => ({
+    id,
+    label,
+    kind,
+    amount,
+    originals: new Map(),
+    order: 0,
+    children: new Map(),
+    colorKey: id,
+  });
 
   const toNode = (bucket: Bucket, role: FlowNode["role"], shareBase: number, color: string): FlowNode => ({
     id: bucket.id,
@@ -303,35 +324,35 @@ export function buildMoneyFlow(
   const investNodes = investList.map((row) => toNode(row, "sink", investmentMinor || 1, colorFor(row, "invest", 0)));
   const poolNode = incomeMinor > 0
     ? toNode(
-        { id: "pool", label: labels.totalIncome, kind: "pool", amount: incomeMinor, originals: new Map(), order: 0, children: new Map() },
+        plain("pool", labels.totalIncome, "pool", incomeMinor),
         "pool",
         incomeMinor,
-        "var(--flow-in)",
+        colorFor(plain("pool", labels.totalIncome, "pool", incomeMinor), "pool", 0),
       )
     : null;
   const hubs: FlowNode[] = [];
   if (spendingMinor > 0) {
     hubs.push(toNode(
-      { id: "spend", label: labels.totalSpending, kind: "spending", amount: spendingMinor, originals: new Map(), order: 0, children: new Map() },
+      plain("spend", labels.totalSpending, "spending", spendingMinor),
       "hub",
       inflow || 1,
-      "var(--flow-out)",
+      colorFor(plain("spend", labels.totalSpending, "spending", spendingMinor), "spend", 0),
     ));
   }
   if (investmentMinor > 0) {
     hubs.push(toNode(
-      { id: "invest", label: labels.investments, kind: "investment", amount: investmentMinor, originals: new Map(), order: 1, children: new Map() },
+      plain("invest", labels.investments, "investment", investmentMinor),
       "hub",
       inflow || 1,
-      "var(--flow-invest)",
+      colorFor(plain("invest", labels.investments, "investment", investmentMinor), "invest", 0),
     ));
   }
   if (savingsMinor > 0) {
     hubs.push(toNode(
-      { id: "save", label: labels.savings, kind: "savings", amount: savingsMinor, originals: new Map(), order: 2, children: new Map() },
+      plain("save", labels.savings, "savings", savingsMinor),
       "hub",
       inflow || 1,
-      "var(--flow-save)",
+      colorFor(plain("save", labels.savings, "savings", savingsMinor), "save", 0),
     ));
   }
   const childNodes: FlowNode[] = spendNodes.flatMap((node) =>
@@ -582,6 +603,8 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   let bottom = labels ? (reference ? 12 : portrait ? (vertical ? (busiest > 4 ? 108 : 64) : 88) : 12) : 8;
   let plot = reference
     ? Math.max(48, busiest * 48)
+    : vertical
+    ? Math.round(clamp(busiest * (lineHeight * 2 + 14) + 120, 260, 640))
     : portrait
     ? Math.round(clamp(busiest * (lineHeight * 2 + 18), 260, 440))
     : Math.round(clamp(Math.max(56, busiest * (lineHeight + 4)) / 0.68, 168, 340));
@@ -604,12 +627,13 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     left = labels ? 12 : 8;
     right = labels ? 12 : 8;
   } else if (reference) {
-    let leftG = 96;
-    let rightG = 120;
-    if (leftG + rightG + 110 > width) {
-      const gutters = Math.max(0, width - 110);
-      leftG = Math.round(gutters * (96 / 216));
-      rightG = gutters - leftG;
+    let leftG = labels ? 100 : 8;
+    let rightG = labels ? 176 : 8;
+    const minPlot = 72;
+    if (leftG + rightG + minPlot > width) {
+      const gutters = Math.max(0, width - minPlot);
+      rightG = Math.round(gutters * 0.64);
+      leftG = Math.max(48, gutters - rightG);
     }
     left = leftG;
     right = rightG;
@@ -635,7 +659,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     nodeGap,
     floorShare: 2 / Math.max(40, seriesH),
     layoutIterations: 0,
-    linkOpacity: reference ? 0.35 : 0.3,
+    linkOpacity: 0.3,
     columnFill,
     flowPx,
     portrait,
@@ -863,7 +887,7 @@ export function portraitLevels(nodes: FlowNode[], currency: string, spendingLabe
   const leaves = order([...categories, ...(savings ? [savings] : []), ...(investment ? [investment] : [])]);
   const spendShare = pool.amountMinor > 0 ? (spending?.amountMinor || 0) / pool.amountMinor : 0;
   const caption = spending && spending.amountMinor > 0 ? `${spendingLabel} ${flowAmountLabel(spending.amountMinor, currency, spendShare, true)}` : "";
-  const hub = { ...pool, caption };
+  const hub = { ...pool, amountMinor: pool.amountMinor + (shortfall?.amountMinor || 0), caption };
   return {
     nodes: [...sources, hub, ...leaves],
     links: [
@@ -920,15 +944,14 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   const data = graph.nodes.map((node) => {
     const depth = depthOf(node);
     const rawName = node.label.replace(/[{}|]/g, " ");
-    const name = rawName.includes(" / ")
-      ? rawName.replace(" / ", " /\n")
-      : rawName.length > 16 && rawName.includes(" ")
-        ? rawName.replace(/ ([^ ]+)$/, "\n$1")
-        : rawName;
+    const dated = rawName.match(/^(.*?) (\d{1,2} \S+)$/);
+    const baseName = dated ? dated[1] : rawName;
+    const name = baseName.includes(" / ") ? baseName.replace(" / ", " /\n") : baseName;
     const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact);
+    const valueLine = dated ? `${meta} · ${dated[2]}` : meta;
     const tiny = node.share < 0.03 && !node.italic;
     const small = node.share < 0.05;
-    const showValue = input.values && !small;
+    const showValue = input.values && (!small || Boolean(node.italic));
     return {
       name: safe.get(node.id),
       depth,
@@ -963,7 +986,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
         overflow: "none",
         fontSize: frame.fontSize,
         lineHeight: frame.lineHeight,
-        formatter: [showValue ? `${name}\n${meta}` : name, node.caption || ""].filter(Boolean).join("\n"),
+        formatter: [showValue ? `${name}\n${valueLine}` : name, node.caption || ""].filter(Boolean).join("\n"),
       },
       itemStyle: { color: input.mono ? input.brand : input.colors[node.id] || input.brand, borderWidth: 0 },
     };
@@ -1029,6 +1052,24 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
       ],
     },
   };
+}
+
+/** Each link takes its own slice of a bar. Slices tile the span and do not overlap. */
+export function flowSlices(amounts: number[], span: number): { start: number; extent: number }[] {
+  const total = amounts.reduce((sum, amount) => sum + Math.max(0, amount), 0) || 1;
+  let cursor = 0;
+  return amounts.map((amount) => {
+    const extent = Math.max(1, span * (Math.max(0, amount) / total));
+    const start = cursor;
+    cursor += extent;
+    return { start, extent };
+  });
+}
+
+/** Leaf bars step down so each label can sit under its own node. */
+export function leafOffsets(count: number, start: number, step: number, plot: number, bar: number): number[] {
+  const cap = Math.max(start, plot - bar);
+  return Array.from({ length: count }, (_, index) => Math.min(cap, start + index * step));
 }
 
 /** Keep a tiny flow visible without letting it dominate the column. */

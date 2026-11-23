@@ -223,6 +223,35 @@
   border-bottom-color: transparent;
 }
 
+.finance .flow-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows var(--motion-normal) var(--ease-exit), opacity var(--motion-fast) var(--ease-exit);
+}
+
+.finance .flow-panel > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.finance .flow-panel.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition-timing-function: var(--ease-spring);
+}
+
+.finance .flow-sheet {
+  background: var(--surface-1, var(--surface-0));
+  padding: 12px 0 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finance .flow-panel {
+    transition: none;
+  }
+}
+
 .finance .fin-chip {
   position: relative;
   display: inline-flex;

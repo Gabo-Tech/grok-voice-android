@@ -279,6 +279,9 @@ struct Store {
     categories: Vec<Category>,
     #[serde(default)]
     flow_colors: Vec<NodeColor>,
+    /// Portrait money flow: "vertical" or "horizontal". Empty keeps the phone default.
+    #[serde(default)]
+    flow_layout: String,
     #[serde(default)]
     categories_ready: bool,
     #[serde(default)]
@@ -397,6 +400,8 @@ pub struct Bundle {
     #[serde(default)]
     pub flow_colors: Vec<NodeColor>,
     #[serde(default)]
+    pub flow_layout: String,
+    #[serde(default)]
     pub fx: crate::finance_fx::FxBook,
     #[serde(default)]
     pub prices: crate::finance_prices::PriceBook,
@@ -493,6 +498,8 @@ pub struct Snapshot {
     pub categories: Vec<Category>,
     #[serde(default)]
     pub flow_colors: Vec<NodeColor>,
+    #[serde(default)]
+    pub flow_layout: String,
     pub fx: FxStatus,
     pub prices: crate::finance_prices::PriceBook,
     #[serde(default)]
@@ -760,6 +767,7 @@ impl Finance {
             default_currency: store.default_currency.clone(),
             categories: store.categories.clone(),
             flow_colors: store.flow_colors.clone(),
+            flow_layout: store.flow_layout.clone(),
             fx: store.fx.clone(),
             prices: store.prices.clone(),
             history: store.history.clone(),
@@ -778,6 +786,7 @@ impl Finance {
         store.default_currency = bundle.default_currency;
         store.categories = bundle.categories;
         store.flow_colors = bundle.flow_colors;
+        store.flow_layout = bundle.flow_layout;
         store.fx = bundle.fx;
         store.prices = bundle.prices;
         store.history = bundle.history;
@@ -1314,15 +1323,17 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming, including the budget. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color, fullscreen, planned, or describe. mode category groups income and expenses by type, mode entry gives each transaction its own node, and mode mono is one color. describe speaks income, spending, savings, and the largest categories. planned draws the saved budget. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, fullscreen, planned, or describe. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming, including the budget. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color, reset, fullscreen, planned, or describe. mode category groups income and expenses by type, mode entry gives each transaction its own node, mode mono is one color, mode vertical is top to bottom, and mode horizontal is left to right. action color with name and color paints one graph element: an income source, Total income, Spending, Savings, Investments, Shortfall, an expense category, or Rest. color is a name such as green or blue, or a #hex. action reset with name clears that element's color. action reset with name all asks first with confirmed false, then clears every saved chart color only after confirmed true. describe speaks income, spending, savings, and the largest categories. planned draws the saved budget. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, fullscreen, planned, or describe. Do not invent a rate.",
             json!({
                 "type": "object",
                 "properties": {
                     "view": { "type": "string" },
                     "chart": { "type": "string", "description": "allocation, category, debts, trend, holdings, or portfolio" },
                     "action": { "type": "string", "description": "hide, show, only, reset, labels, values, color, or fullscreen" },
-                    "mode": { "type": "string", "description": "For chart flow: category, entry, or mono" },
-                    "name": { "type": "string", "description": "Holding name, class such as crypto, or a dashboard section" },
+                    "mode": { "type": "string", "description": "For chart flow: category, entry, mono, vertical, or horizontal" },
+                    "name": { "type": "string", "description": "Holding name, dashboard section, or a money-flow element such as Salary, Spending, or Rest" },
+                    "color": { "type": "string", "description": "For chart flow action color: green, blue, red, orange, gray, or #RRGGBB" },
+                    "confirmed": { "type": "boolean", "description": "For resetting every money-flow color: false to ask, true only after a spoken yes" },
                     "period": { "type": "string", "description": "this, last, 3m, 6m, ytd, 1y, all, or custom" },
                     "start": { "type": "string", "description": "Custom range start, YYYY-MM-DD" },
                     "end": { "type": "string", "description": "Custom range end, YYYY-MM-DD" }
@@ -1417,7 +1428,20 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         let start = args["start"].as_str().unwrap_or("").trim().to_string();
         let end = args["end"].as_str().unwrap_or("").trim().to_string();
         let mode = args["mode"].as_str().unwrap_or("").trim().to_string();
-        touch_chart(app, view, &chart, &action, &chart_name, &period, &start, &end, &mode);
+        let color = args["color"].as_str().unwrap_or("").trim().to_string();
+        let confirmed = args["confirmed"].as_bool().unwrap_or(false);
+        let folded_action = fold(&action);
+        let folded_mode = fold(&mode);
+        if chart == "flow" && (matches!(folded_action.as_str(), "color" | "paint" | "reset") || matches!(folded_mode.as_str(), "vertical" | "horizontal")) {
+            let mut store = finance.lock().clone();
+            let (sentence, changed) = apply_flow_voice(&mut store, &folded_action, &chart_name, &color, confirmed, &folded_mode);
+            if changed {
+                finance.commit(app, store.clone())?;
+            }
+            touch_chart(app, view, &chart, &action, &chart_name, &period, &start, &end, &mode, &color, confirmed);
+            return Ok(Some(json!({ "ok": true, "view": view, "detail": sentence, "defaultCurrency": effective_default(&store, &currency_locale(app, &store)) })));
+        }
+        touch_chart(app, view, &chart, &action, &chart_name, &period, &start, &end, &mode, "", false);
         let store = finance.lock().clone();
         let today = Local::now().date_naive();
         let raw_view = fold(args["view"].as_str().unwrap_or(""));
@@ -5549,6 +5573,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
         default_currency: effective_default(store, locale),
         categories: store.categories.clone(),
         flow_colors: store.flow_colors.clone(),
+        flow_layout: store.flow_layout.clone(),
         fx: fx_status(store, today),
         prices: store.prices.clone(),
         history: store.history.clone(),
@@ -6724,12 +6749,80 @@ fn touch(app: &AppHandle) {
 }
 
 fn touch_view(app: &AppHandle, view: &str) {
-    touch_chart(app, view, "", "", "", "", "", "", "");
+    touch_chart(app, view, "", "", "", "", "", "", "", "", false);
 }
 
-fn touch_chart(app: &AppHandle, view: &str, chart: &str, action: &str, name: &str, period: &str, start: &str, end: &str, mode: &str) {
+fn touch_chart(app: &AppHandle, view: &str, chart: &str, action: &str, name: &str, period: &str, start: &str, end: &str, mode: &str, color: &str, confirmed: bool) {
     if let Some(hub) = app.try_state::<std::sync::Arc<crate::diagnostics::Hub>>() {
-        hub.emit("voice://finance", json!({ "view": view, "chart": chart, "action": action, "name": name, "mode": mode, "period": period, "start": start, "end": end }));
+        hub.emit("voice://finance", json!({ "view": view, "chart": chart, "action": action, "name": name, "mode": mode, "period": period, "start": start, "end": end, "color": color, "confirmed": confirmed }));
+    }
+}
+
+fn apply_flow_voice(store: &mut Store, action: &str, name: &str, color: &str, confirmed: bool, mode: &str) -> (String, bool) {
+    if action == "reset" && (name.trim().is_empty() || matches!(fold(name).as_str(), "all" | "colors" | "every")) {
+        if !confirmed {
+            return (spoken("Reset every money-flow color? Say yes.", &[]), false);
+        }
+        store.flow_colors.clear();
+        return (spoken("Every money-flow color is back to the default.", &[]), true);
+    }
+    if action == "reset" {
+        let id = flow_element_id(name);
+        store.flow_colors.retain(|row| fold(&row.id) != fold(&id) && fold(&row.id) != fold(name));
+        return (spoken("{name} is back to its default color on the money flow.", &[("name", name)]), true);
+    }
+    if action == "color" || action == "paint" {
+        let swatch = named_swatch(color);
+        if name.trim().is_empty() || swatch.is_empty() {
+            return (spoken("Say the color.", &[]), false);
+        }
+        let id = flow_element_id(name);
+        if let Some(row) = store.flow_colors.iter_mut().find(|row| fold(&row.id) == fold(&id)) {
+            row.color = swatch;
+        } else {
+            store.flow_colors.push(NodeColor { id, color: swatch });
+        }
+        return (spoken("{name} is now {color} on the money flow.", &[("name", name), ("color", color)]), true);
+    }
+    if mode == "vertical" || mode == "horizontal" {
+        store.flow_layout = mode.to_string();
+        let sentence = if mode == "vertical" {
+            spoken("The money flow runs from top to bottom.", &[])
+        } else {
+            spoken("The money flow runs from left to right.", &[])
+        };
+        return (sentence, true);
+    }
+    (String::new(), false)
+}
+
+fn flow_element_id(name: &str) -> String {
+    match fold(name).as_str() {
+        "total income" | "ingreso total" | "einnahmen gesamt" | "receita total" | "ingres total" | "pool" => "pool".into(),
+        "total spending" | "gasto total" | "ausgaben gesamt" | "despesa total" | "spending" | "spend" => "spend".into(),
+        "savings" | "ahorro" | "sparen" | "poupanca" | "estalvi" | "save" => "save".into(),
+        "investments" | "inversiones" | "anlagen" | "investimentos" | "inversions" | "invest" => "invest".into(),
+        "shortfall" | "falta" | "fehlbetrag" | "from savings" => "in:shortfall".into(),
+        "rest" | "resto" => "out:rest".into(),
+        _ => name.trim().into(),
+    }
+}
+
+fn named_swatch(color: &str) -> String {
+    let trimmed = color.trim();
+    if trimmed.len() == 7 && trimmed.starts_with('#') {
+        return trimmed.to_string();
+    }
+    if trimmed.starts_with("var(") {
+        return trimmed.to_string();
+    }
+    match fold(trimmed).as_str() {
+        "green" | "verde" | "grun" => "var(--flow-in-1)".into(),
+        "blue" | "azul" | "blau" => "var(--flow-save)".into(),
+        "red" | "rojo" | "rot" | "vermelho" | "vermell" => "var(--flow-out-1)".into(),
+        "orange" | "naranja" | "laranja" | "taronja" => "var(--flow-invest)".into(),
+        "gray" | "grey" | "gris" | "grau" | "cinza" | "cinzent" => "var(--text-tertiary)".into(),
+        _ => String::new(),
     }
 }
 
@@ -7607,6 +7700,22 @@ pub fn edit_category_parent(store: &mut Store, action: &str, name: &str, to: &st
                 if fold(&rule.category) == fold(&previous) { rule.category = "Uncategorized".into(); }
             }
             store.categories.retain(|category| fold(&category.name) != fold(&previous) || fold(&previous) == "uncategorized");
+            Ok(())
+        }
+        "layout" => {
+            let layout = fold(name);
+            if layout == "vertical" || layout == "horizontal" {
+                store.flow_layout = layout;
+            }
+            Ok(())
+        }
+        "unpaint" => {
+            if name.is_empty() || matches!(fold(name).as_str(), "all" | "colors") {
+                store.flow_colors.clear();
+            } else {
+                let id = flow_element_id(name);
+                store.flow_colors.retain(|row| fold(&row.id) != fold(&id) && fold(&row.id) != fold(name));
+            }
             Ok(())
         }
         "color" | "kind" | "icon" | "order" | "paint" => {
@@ -9206,6 +9315,15 @@ mod tests {
         assert!(restored.contains("#112233") || restored.contains("Food"));
         let colors = serde_json::to_string(&store.flow_colors).unwrap();
         assert!(colors.contains("#6E8B74"));
+        let (ask, changed) = apply_flow_voice(&mut store, "reset", "all", "", false, "");
+        assert!(!changed);
+        assert!(ask.contains("Say yes") || ask.contains("sí") || ask.contains("yes") || !ask.is_empty());
+        assert_eq!(store.flow_colors.len(), 1);
+        let (_, cleared) = apply_flow_voice(&mut store, "reset", "all", "", true, "");
+        assert!(cleared);
+        assert!(store.flow_colors.is_empty());
+        edit_category(&mut store, "layout", "horizontal", "", "", "", "", 0).unwrap();
+        assert_eq!(store.flow_layout, "horizontal");
     }
 
     #[test]
