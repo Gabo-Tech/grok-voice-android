@@ -506,7 +506,7 @@ function placeCategory(tx: FlowTx, categories: CategoryRecord[], labels: FlowLab
     const owner = categoryOf(categories, record.parent);
     parent = owner?.name || record.parent;
     child = record.name;
-  } else if (record && !record.parent && !looksDescribed(record.name)) {
+  } else if (record && !record.parent) {
     parent = record.name;
   } else if (looksDescribed(named) || (!named && (looksDescribed(sub) || looksDescribed(notes)))) {
     const hint = hintedName(`${named} ${sub} ${notes}`);
@@ -599,10 +599,10 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const compact = width < 640;
   const flowPx = Math.round(clamp(width * 0.055, 16, 48));
 
-  let top = labels ? (reference ? 12 : portrait ? (vertical ? 72 : 96) : Math.round(clamp(reported * 0.1, 56, 84))) : 8;
+  let top = labels ? (reference ? 64 : portrait ? (vertical ? 128 : 96) : Math.round(clamp(reported * 0.1, 56, 84))) : 8;
   let bottom = labels ? (reference ? 12 : portrait ? (vertical ? (busiest > 4 ? 108 : 64) : 88) : 12) : 8;
   let plot = reference
-    ? Math.max(48, busiest * 48)
+    ? Math.max(64, busiest * 64)
     : vertical
     ? Math.round(clamp(busiest * (lineHeight * 2 + 14) + 120, 260, 640))
     : portrait
@@ -627,13 +627,13 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     left = labels ? 12 : 8;
     right = labels ? 12 : 8;
   } else if (reference) {
-    let leftG = labels ? 100 : 8;
-    let rightG = labels ? 176 : 8;
-    const minPlot = 72;
+    let leftG = labels ? 132 : 8;
+    let rightG = labels ? 148 : 8;
+    const minPlot = 56;
     if (leftG + rightG + minPlot > width) {
       const gutters = Math.max(0, width - minPlot);
-      rightG = Math.round(gutters * 0.64);
-      leftG = Math.max(48, gutters - rightG);
+      leftG = Math.round(gutters * 0.48);
+      rightG = Math.max(48, gutters - leftG);
     }
     left = leftG;
     right = rightG;
@@ -885,7 +885,8 @@ export function portraitLevels(nodes: FlowNode[], currency: string, spendingLabe
   }
   const sources = order([...income, ...(shortfall ? [shortfall] : [])]);
   const leaves = order([...categories, ...(savings ? [savings] : []), ...(investment ? [investment] : [])]);
-  const spendShare = pool.amountMinor > 0 ? (spending?.amountMinor || 0) / pool.amountMinor : 0;
+  const shareBase = pool.amountMinor + (shortfall?.amountMinor || 0);
+  const spendShare = shareBase > 0 ? (spending?.amountMinor || 0) / shareBase : 0;
   const caption = spending && spending.amountMinor > 0 ? `${spendingLabel} ${flowAmountLabel(spending.amountMinor, currency, spendShare, true)}` : "";
   const hub = { ...pool, amountMinor: pool.amountMinor + (shortfall?.amountMinor || 0), caption };
   return {
@@ -948,7 +949,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
     const baseName = dated ? dated[1] : rawName;
     const name = baseName.includes(" / ") ? baseName.replace(" / ", " /\n") : baseName;
     const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact);
-    const valueLine = dated ? `${meta} · ${dated[2]}` : meta;
+    const valueLine = dated ? `${meta}\n${dated[2]}` : meta;
     const tiny = node.share < 0.03 && !node.italic;
     const small = node.share < 0.05;
     const showValue = input.values && (!small || Boolean(node.italic));

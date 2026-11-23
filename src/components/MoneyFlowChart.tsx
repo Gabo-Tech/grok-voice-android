@@ -895,18 +895,18 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     const blockH = lines.length * frame.lineHeight;
     const role = item.node.role;
     const middle = role === "pool";
-    let cursor = middle ? globalY - 6 - blockH : globalY + box.h / 2 - blockH / 2;
+    let cursor = middle ? 4 : Math.max(frame.seriesTop + 2, globalY + box.h / 2 - blockH / 2);
     cursor = Math.max(2, cursor);
     for (const line of lines) {
       const now = measure(line.el);
       if (!now) continue;
-      const amount = line.text.includes("·");
+      const amount = line.text.includes("·") || /^\d/.test(line.text.trim());
       const fill = amount ? muted : String(item.el.style?.fill || muted);
       line.el.style = { ...line.el.style, fill, fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
       const painted = measure(line.el) || now;
-      let x = middle ? globalX + nodeW / 2 - painted.w / 2 : role === "source" ? globalX - 6 - painted.w : globalX + nodeW + 6;
-      if (middle) x = Math.max(2, Math.min(x, frame.width - painted.w - 2));
+      let x = middle ? (frame.left + (frame.width - frame.right)) / 2 - painted.w / 2 : role === "source" ? globalX - 6 - painted.w : globalX + nodeW + 6;
+      if (middle) x = Math.max(frame.left, Math.min(x, frame.width - frame.right - painted.w));
       line.el.x = (line.el.x || 0) + (x - painted.x);
       line.el.y = (line.el.y || 0) + (cursor - painted.y);
       line.el.dirty?.();
@@ -937,17 +937,17 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   const sources = paired.filter((item) => item.node.role === "source").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
   const hubItem = paired.find((item) => item.node.role === "pool");
   const leaves = paired.filter((item) => item.node.role !== "source" && item.node.role !== "pool").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
-  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; below: boolean }>();
-  const placeBar = (item: (typeof paired)[number], localX: number, localY: number, w: number, below: boolean) => {
+  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; below: boolean; stack: number }>();
+  const placeBar = (item: (typeof paired)[number], localX: number, localY: number, w: number, below: boolean, stack = 0) => {
     item.el.setShape?.({ x: localX, y: localY, width: w, height: barH });
     item.el.dirty?.();
-    placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below });
+    placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below, stack });
   };
-  const sourceBudget = Math.min(plotW * 0.62, sources.length === 1 ? 72 : plotW * 0.5);
+  const sourceBudget = sources.length === 1 ? Math.min(72, plotW * 0.4) : plotW * 0.92;
   const sourceBoxes = spreadLevel(sources.map((item) => item.node.amountMinor), plotW, sourceBudget, sources.length === 1 ? "center" : "slots");
   sources.forEach((item, index) => {
     const next = sourceBoxes[index];
-    if (next) placeBar(item, next.x, 2, next.w, false);
+    if (next) placeBar(item, next.x, 2, next.w, false, index % 2);
   });
   const hubW = Math.min(72, Math.max(28, Math.round(plotW * 0.24)));
   const hubY = Math.round(frame.plot * 0.16);
@@ -1004,7 +1004,9 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
     const blockH = lines.length * frame.lineHeight;
-    let cursor = box.below ? box.y + box.h + 8 : box.y - 8 - blockH;
+    const stack = box.stack || 0;
+    const band = Math.max(blockH, frame.lineHeight * 3) + 8;
+    let cursor = box.below ? box.y + box.h + 8 : box.y - 8 - band - stack * band;
     cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
     for (const line of lines) {
       const now = measure(line.el);
@@ -1448,7 +1450,7 @@ function ColorSheet({
             <li key={node.id} className="flex flex-wrap items-center gap-2">
               <span className="h-11 w-11 shrink-0" style={{ background: current }} aria-hidden="true" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] leading-5" style={node.italic ? { fontStyle: "italic" } : undefined}>{node.label}</span>
+                <span className="block text-[15px] leading-5" style={node.italic ? { fontStyle: "italic" } : undefined}>{node.label}</span>
                 <span className="fin-muted block text-[13px] leading-4">{formatMoney(node.amountMinor, display)}</span>
               </span>
               <label className="relative grid h-11 w-11 shrink-0 place-items-center">
