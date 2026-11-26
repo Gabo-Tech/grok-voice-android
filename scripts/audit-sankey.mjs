@@ -1,16 +1,19 @@
 import { writeFileSync } from "node:fs";
 
 const port = 9222;
-const shots = [
-  ["sankey-cat-360x780", 360, 780, "flow-full"],
-  ["sankey-cat-390x844", 390, 844, "flow-full"],
-  ["sankey-cat-412x915", 412, 915, "flow-full"],
-  ["sankey-cat-844x390", 844, 390, "flow-full"],
-  ["sankey-entry-360x780", 360, 780, "flow-full&flow=entry"],
-  ["sankey-entry-390x844", 390, 844, "flow-full&flow=entry"],
-  ["sankey-entry-412x915", 412, 915, "flow-full&flow=entry"],
-  ["sankey-entry-844x390", 844, 390, "flow-full&flow=entry"],
+const sizes = [
+  [360, 780],
+  [390, 844],
+  [412, 915],
+  [768, 1024],
+  [844, 390],
 ];
+const modes = [
+  ["cat", "flow-full"],
+  ["entry", "flow-full&flow=entry"],
+  ["empty", "flow-empty"],
+];
+const shots = sizes.flatMap(([width, height]) => modes.map(([mode, query]) => [`sankey-${mode}-${width}x${height}`, width, height, query]));
 
 function send(ws, id, method, params) {
   ws.send(JSON.stringify({ id, method, params }));

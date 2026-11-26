@@ -400,6 +400,18 @@ function applyCategoryEdit(
     if (!categories.some((row) => fold(row.name) === fold(draft.to || ""))) {
       categories.push({ name: draft.to.trim(), color: "#6E8B74", kind: draft.kind || "expense", icon: "", order: categories.length });
     }
+  } else if (draft.action === "paint" && draft.name.trim() && draft.color) {
+    const colors = [...(current.flowColors || [])];
+    const index = colors.findIndex((row) => row.id.toLowerCase() === draft.name.trim().toLowerCase());
+    if (index >= 0) colors[index] = { id: draft.name.trim(), color: draft.color };
+    else colors.push({ id: draft.name.trim(), color: draft.color });
+    return { ...current, flowColors: colors, categories, transactions, rules };
+  } else if (draft.action === "unpaint") {
+    const colors = (current.flowColors || []).filter((row) => draft.name !== "all" && row.id.toLowerCase() !== draft.name.trim().toLowerCase());
+    return { ...current, flowColors: draft.name === "all" || !draft.name.trim() ? [] : colors, categories, transactions, rules };
+  } else if (draft.action === "layout") {
+    const layout = draft.name === "horizontal" ? "horizontal" : "vertical";
+    return { ...current, flowLayout: layout, categories, transactions, rules };
   } else if (draft.action === "delete") {
     retag(draft.name, "Uncategorized");
     if (!categories.some((row) => fold(row.name) === "uncategorized")) {

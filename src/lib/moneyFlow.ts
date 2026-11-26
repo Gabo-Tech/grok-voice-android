@@ -27,6 +27,7 @@ export interface FlowLabels {
   total: string;
   surplus: string;
   other: string;
+  otherIncome: string;
   uncategorized: string;
   debt: string;
   savings: string;
@@ -57,6 +58,8 @@ export interface FlowNode {
   members: Array<{ id: string; label: string; amountMinor: number; originals: FlowOriginal[] }>;
   /** Subcategories. Empty when this category has no split. */
   children: Array<{ id: string; label: string; amountMinor: number; originals: FlowOriginal[] }>;
+  /** Portrait hub only. A gray line under the amount, such as "Spending CHF 2.5k · 42%". */
+  caption?: string;
 }
 
 export interface FlowLink {
@@ -93,6 +96,7 @@ const DEFAULT_LABELS: FlowLabels = {
   total: "Total",
   surplus: "Surplus",
   other: "Rest",
+  otherIncome: "Other income",
   uncategorized: "Uncategorized",
   debt: "Debt payments",
   savings: "Savings",
@@ -126,6 +130,8 @@ interface Bucket {
   children: Map<string, Bucket>;
   members?: Bucket[];
   italic?: boolean;
+  /** Category name, so two "Salary 1 Nov" entries share Salary until one is painted. */
+  colorKey?: string;
 }
 
 function remember(bucket: Bucket, converted: number, original: number, currency: string, display: string) {
@@ -213,6 +219,7 @@ export function buildMoneyFlow(
       const name = group === "entry" ? entryLabel(placed.source, tx.date, months) : placed.source;
       const id = group === "entry" ? `in:${fold(name)}:${tx.date}:${seq++}` : `in:${fold(placed.source)}`;
       const bucket = paint(sources, id, name, "income", saved?.order ?? 100);
+      bucket.colorKey = placed.source;
       remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
       continue;
     }
@@ -227,6 +234,7 @@ export function buildMoneyFlow(
           : placed.parent || fallback;
     const id = group === "entry" ? `out:${kind}:${fold(named)}:${tx.date}:${seq++}` : `out:${kind}:${fold(named)}`;
     const bucket = paint(map, id, named, kind, saved?.order ?? 100);
+    bucket.colorKey = placed.parent || fallback;
     remember(bucket, converted.amountMinor, tx.amountMinor, tx.currency, display);
     if (group !== "entry" && placed.child && kind !== "investment") {
       const child = paintChild(bucket, placed.child);
@@ -249,7 +257,7 @@ export function buildMoneyFlow(
   const inflow = incomeMinor + shortfall;
 
   const base = incomeMinor || 1;
-  let sourceList = groupRest([...sources.values()], base, threshold, Boolean(opts.expandedOther), "in:rest", labels.other, "income");
+  let sourceList = groupRest([...sources.values()], base, threshold, Boolean(opts.expandedOther), "in:rest", labels.otherIncome || labels.other, "income");
   if (shortfall > 0) {
     sourceList.push({ id: "in:shortfall", label: labels.shortfall, kind: "drawn", amount: shortfall, originals: new Map(), order: -1, children: new Map() });
   }
@@ -258,17 +266,34 @@ export function buildMoneyFlow(
   let investList = fanInvest ? groupRest([...invests.values()], investmentMinor || 1, threshold, Boolean(opts.expandedOther), "inv:rest", labels.other, "investment") : [];
   spendList = foldUncategorized(spendList, labels, spendingMinor || 1);
 
+  const rampIndex = new Map<string, number>();
   const colorFor = (bucket: Bucket, family: "in" | "out" | "save" | "invest" | "pool" | "spend" | "short", index: number) => {
-    const custom = opts.nodeColors?.[bucket.id] || opts.nodeColors?.[bucket.label];
-    if (custom && (/^#[0-9A-Fa-f]{6}$/.test(custom) || custom.startsWith("var("))) return custom;
+    const custom = [bucket.id, bucket.label, bucket.colorKey]
+      .map((key) => (key ? opts.nodeColors?.[key] : ""))
+      .find((color) => color && (/^#[0-9A-Fa-f]{6}$/.test(color) || color.startsWith("var(")));
+    if (custom) return custom;
     if (family === "pool") return "var(--flow-in)";
     if (family === "spend") return "var(--flow-out)";
     if (family === "save") return "var(--flow-save)";
     if (family === "invest") return "var(--flow-invest)";
     if (family === "short") return "var(--flow-short)";
     const ramp = family === "in" ? INCOME_COLORS : SPEND_COLORS;
-    return ramp[index % ramp.length];
+    const key = `${family}:${fold(bucket.colorKey || bucket.id)}`;
+    const known = rampIndex.get(key);
+    const slot = known == null ? index : known;
+    if (known == null) rampIndex.set(key, slot);
+    return ramp[slot % ramp.length];
   };
+  const plain = (id: string, label: string, kind: string, amount: number): Bucket => ({
+    id,
+    label,
+    kind,
+    amount,
+    originals: new Map(),
+    order: 0,
+    children: new Map(),
+    colorKey: id,
+  });
 
   const toNode = (bucket: Bucket, role: FlowNode["role"], shareBase: number, color: string): FlowNode => ({
     id: bucket.id,
@@ -290,46 +315,47 @@ export function buildMoneyFlow(
     return kids.map((row) => ({ id: row.id, label: row.label, amountMinor: row.amount, originals: originalsOf(row) }));
   };
 
-  sourceList = sourceList.filter((row) => row.amount > 0).sort((a, b) => a.amount - b.amount || a.label.localeCompare(b.label));
+  sourceList = sourceList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
   spendList = spendList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
   investList = investList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
 
   let inPaint = 0;
   let outPaint = 0;
-  const sourceNodes = sourceList.map((row) => toNode(row, "source", inflow || 1, row.kind === "drawn" ? colorFor(row, "short", 0) : colorFor(row, "in", inPaint++)));
-  const spendNodes = spendList.map((row) => toNode(row, "sink", spendingMinor || 1, colorFor(row, "out", outPaint++)));
-  const investNodes = investList.map((row) => toNode(row, "sink", investmentMinor || 1, colorFor(row, "invest", 0)));
+  const incomeBase = incomeMinor > 0 ? incomeMinor : inflow || 1;
+  const sourceNodes = sourceList.map((row) => toNode(row, "source", incomeBase, row.kind === "drawn" ? colorFor(row, "short", 0) : colorFor(row, "in", inPaint++)));
+  const spendNodes = spendList.map((row) => toNode(row, "sink", incomeBase, colorFor(row, "out", outPaint++)));
+  const investNodes = investList.map((row) => toNode(row, "sink", incomeBase, colorFor(row, "invest", 0)));
   const poolNode = incomeMinor > 0
     ? toNode(
-        { id: "pool", label: labels.totalIncome, kind: "pool", amount: incomeMinor, originals: new Map(), order: 0, children: new Map() },
+        plain("pool", labels.totalIncome, "pool", incomeMinor),
         "pool",
         incomeMinor,
-        "var(--flow-in)",
+        colorFor(plain("pool", labels.totalIncome, "pool", incomeMinor), "pool", 0),
       )
     : null;
   const hubs: FlowNode[] = [];
   if (spendingMinor > 0) {
     hubs.push(toNode(
-      { id: "spend", label: labels.totalSpending, kind: "spending", amount: spendingMinor, originals: new Map(), order: 0, children: new Map() },
+      plain("spend", labels.totalSpending, "spending", spendingMinor),
       "hub",
-      inflow || 1,
-      "var(--flow-out)",
+      incomeBase,
+      colorFor(plain("spend", labels.totalSpending, "spending", spendingMinor), "spend", 0),
     ));
   }
   if (investmentMinor > 0) {
     hubs.push(toNode(
-      { id: "invest", label: labels.investments, kind: "investment", amount: investmentMinor, originals: new Map(), order: 1, children: new Map() },
+      plain("invest", labels.investments, "investment", investmentMinor),
       "hub",
-      inflow || 1,
-      "var(--flow-invest)",
+      incomeBase,
+      colorFor(plain("invest", labels.investments, "investment", investmentMinor), "invest", 0),
     ));
   }
   if (savingsMinor > 0) {
     hubs.push(toNode(
-      { id: "save", label: labels.savings, kind: "savings", amount: savingsMinor, originals: new Map(), order: 2, children: new Map() },
+      plain("save", labels.savings, "savings", savingsMinor),
       "hub",
-      inflow || 1,
-      "var(--flow-save)",
+      incomeBase,
+      colorFor(plain("save", labels.savings, "savings", savingsMinor), "save", 0),
     ));
   }
   const childNodes: FlowNode[] = spendNodes.flatMap((node) =>
@@ -339,7 +365,7 @@ export function buildMoneyFlow(
       role: "child" as const,
       kind: "child",
       amountMinor: child.amountMinor,
-      share: spendingMinor > 0 ? child.amountMinor / spendingMinor : 0,
+      share: incomeBase > 0 ? child.amountMinor / incomeBase : 0,
       color: SPEND_COLORS[(outPaint + index) % SPEND_COLORS.length],
       originals: child.originals,
       members: [],
@@ -483,7 +509,7 @@ function placeCategory(tx: FlowTx, categories: CategoryRecord[], labels: FlowLab
     const owner = categoryOf(categories, record.parent);
     parent = owner?.name || record.parent;
     child = record.name;
-  } else if (record && !record.parent && !looksDescribed(record.name)) {
+  } else if (record && !record.parent) {
     parent = record.name;
   } else if (looksDescribed(named) || (!named && (looksDescribed(sub) || looksDescribed(notes)))) {
     const hint = hintedName(`${named} ${sub} ${notes}`);
@@ -531,41 +557,98 @@ export interface SankeyFrame {
   left: number;
   right: number;
   plot: number;
+  seriesTop: number;
+  seriesBottom: number;
   nodeWidth: number;
   nodeGap: number;
   floorShare: number;
   layoutIterations: number;
   linkOpacity: number;
+  columnFill: number;
+  flowPx: number;
+  portrait: boolean;
+  /** Narrow portrait draws top to bottom so labels use the full width. */
+  vertical: boolean;
+  /** Narrow portrait, left to right, with even rows and labels beside each bar. */
+  reference: boolean;
+  fontSize: number;
+  lineHeight: number;
+  compact: boolean;
+  /** Landscape drops the amount line when a row cannot hold the name and the figure. */
+  amounts: boolean;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 /**
- * Plot box for an ECharts sankey. The chart width is the container width.
- * Node bars stay near 10px on a phone and 14px on a tablet. Height grows with
- * the busiest column so one flow is a ribbon, not a wall.
+ * Landscape keeps the da7d786 proportions: a short plot and a ribbon about
+ * a third of that plot. A wide portrait does the same. A narrow portrait
+ * turns the chart upright so each row can use the full width for labels.
  */
-export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true): SankeyFrame {
+export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true, chartHeight = 0, layout: "vertical" | "horizontal" = "vertical"): SankeyFrame {
   const width = Math.max(280, Math.round(chartWidth || 0));
-  const phone = width < 600;
-  const nodeWidth = phone ? 10 : 14;
-  const nodeGap = 24;
+  const reported = chartHeight >= 160 ? Math.round(chartHeight) : Math.round(clamp(width * 0.85, 300, 560));
+  const portrait = reported > width;
+  const narrow = portrait && width < 520;
+  const vertical = narrow && layout !== "horizontal";
+  const reference = narrow && layout === "horizontal";
+  const phone = width < 700;
+  const nodeWidth = reference || vertical ? 4 : Math.round(clamp(width * 0.011, 3, 8));
   const counts = columnCounts.filter((count) => count > 0);
   const columns = Math.max(1, counts.length);
   const busiest = Math.max(1, ...counts, 1);
-  const minPlotW = nodeWidth * columns + 24 * Math.max(0, columns - 1);
-  let left = labels ? (phone ? 112 : 160) : 12;
-  let right = labels ? (phone ? 136 : 176) : 12;
-  if (left + right + minPlotW > width) {
-    const over = left + right + minPlotW - width;
-    const cut = Math.ceil(over / 2);
-    left = Math.max(labels ? 96 : 8, left - cut);
-    right = Math.max(labels ? 108 : 8, right - cut);
+  const fontSize = Math.round(clamp(width * 0.034, 13, 15));
+  const lineHeight = fontSize + 3;
+  const compact = width < 640 || (!portrait && reported < 480);
+  const flowPx = Math.round(clamp(width * 0.055, 16, 48));
+
+  let top = labels ? (reference ? 16 : portrait ? (vertical ? 112 : 96) : 16) : 8;
+  let bottom = labels ? (reference ? 12 : portrait ? (vertical ? 180 : 88) : 8) : 8;
+  let plot = reference
+    ? Math.max(64, busiest * 64)
+    : vertical
+    ? Math.max(280, reported - top - bottom)
+    : portrait
+    ? Math.round(clamp(busiest * (lineHeight * 2 + 18), 260, 440))
+    : Math.max(140, reported - top - bottom);
+  const height = top + plot + bottom;
+  const columnFill = vertical ? 0.32 : portrait ? flowPx / plot : 1;
+  const seriesH = Math.round(plot * (vertical ? 1 : columnFill));
+  const seriesTop = portrait ? top : top + 2;
+  const seriesBottom = portrait ? bottom : height - seriesTop - seriesH;
+  const gaps = Math.max(0, busiest - 1);
+  let nodeGap = 10;
+  if (gaps > 0) {
+    const room = vertical ? Math.round((width - 24) * 0.68) : portrait ? plot - flowPx : Math.round(seriesH * 0.68) - busiest * 2;
+    nodeGap = Math.max(8, Math.min(vertical ? 72 : phone ? 22 : 28, Math.floor(Math.max(0, room) / gaps)));
   }
-  const plot = Math.max(360, busiest * 44);
-  const top = labels ? 96 : 12;
-  const bottom = labels ? 56 : 12;
-  const height = plot + top + bottom;
-  const usable = Math.max(2, plot - Math.max(0, busiest - 1) * nodeGap);
-  const floorShare = 8 / usable;
+
+  let left = labels ? Math.round(clamp(width * 0.24, 84, 188)) : 8;
+  let right = labels ? Math.round(clamp(width * 0.28, 96, 210)) : 8;
+  if (vertical) {
+    left = labels ? 12 : 8;
+    right = labels ? 12 : 8;
+  } else if (reference) {
+    let leftG = labels ? 132 : 8;
+    let rightG = labels ? 148 : 8;
+    const minPlot = 56;
+    if (leftG + rightG + minPlot > width) {
+      const gutters = Math.max(0, width - minPlot);
+      leftG = Math.round(gutters * 0.48);
+      rightG = Math.max(48, gutters - leftG);
+    }
+    left = leftG;
+    right = rightG;
+  }
+  const minPlotW = nodeWidth * columns + 12 * Math.max(0, columns - 1);
+  if (!vertical && !reference && left + right + minPlotW > width - 4) {
+    const gutters = Math.max(0, width - 4 - minPlotW);
+    right = Math.max(48, Math.round(gutters * 0.56));
+    left = Math.max(40, gutters - right);
+  }
+
   return {
     width,
     height,
@@ -574,12 +657,90 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     left,
     right,
     plot,
+    seriesTop,
+    seriesBottom,
     nodeWidth,
     nodeGap,
-    floorShare,
+    floorShare: 2 / Math.max(40, seriesH),
     layoutIterations: 0,
-    linkOpacity: 0.4,
-    };
+    linkOpacity: 0.45,
+    columnFill,
+    flowPx,
+    portrait,
+    vertical,
+    reference,
+    fontSize,
+    lineHeight,
+    compact,
+    amounts: vertical || reference || portrait || busiest * (lineHeight * 2 + 6) <= plot,
+  };
+}
+
+export interface SpreadBox {
+  y: number;
+  h: number;
+}
+
+/** Bar heights stay proportional and sum to flowH. Several nodes share equal slots, in order. A single node stays at the top. */
+export function spreadColumn(values: number[], plotTop: number, plotH: number, flowH: number): SpreadBox[] {
+  const count = values.length;
+  if (!count || plotH <= 0) return [];
+  const total = values.reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+  const budget = Math.max(count * 4, Math.min(flowH, plotH));
+  const bars = values.map((value) => Math.max(4, (Math.max(0, value) / total) * budget));
+  if (count === 1) return [{ y: plotTop, h: Math.min(bars[0], plotH) }];
+  if (count === 2) {
+    const topBar = Math.min(bars[0], plotH * 0.22);
+    const bottomBar = Math.min(bars[1], plotH * 0.22);
+    return [
+      { y: plotTop, h: topBar },
+      { y: plotTop + plotH * 0.58, h: bottomBar },
+    ];
+  }
+  const slot = plotH / count;
+  return bars.map((bar, index) => {
+    const h = Math.min(bar, Math.max(4, slot - 12));
+    return { y: plotTop + index * slot + Math.max(0, (slot - h) / 2), h };
+  });
+}
+
+export interface LevelBox {
+  x: number;
+  w: number;
+}
+
+/**
+ * One upright row. The bars together stay within `budget` (about a third of the width).
+ * A single bar sits on the right when `side` is set, so its label can use the left.
+ * Two bars sit at the ends. Several bars share equal slots.
+ */
+export function spreadLevel(weights: number[], plotWidth: number, budget: number, mode: "center" | "right" | "ends" | "slots"): LevelBox[] {
+  const count = weights.length;
+  if (!count || plotWidth <= 0) return [];
+  const total = weights.reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+  const room = Math.max(count * 4, Math.min(budget, plotWidth));
+  const bars = weights.map((value) => Math.max(4, (Math.max(0, value) / total) * room));
+  if (count === 1 || mode === "center" || mode === "right") {
+    const w = Math.min(bars[0], room);
+    const x = mode === "right" ? Math.max(0, plotWidth - w) : Math.max(0, (plotWidth - w) / 2);
+    return [{ x, w }];
+  }
+  if (mode === "ends") {
+    const leftW = Math.min(bars[0], plotWidth * 0.2);
+    const rightW = Math.min(bars[bars.length - 1], plotWidth * 0.2);
+    const gap = Math.max(8, plotWidth - leftW - rightW);
+    return weights.map((_, index) => {
+      if (index === 0) return { x: 0, w: leftW };
+      if (index === count - 1) return { x: leftW + gap, w: rightW };
+      const mid = plotWidth / 2 - bars[index] / 2;
+      return { x: Math.max(leftW + 4, Math.min(mid, plotWidth - rightW - bars[index] - 4)), w: Math.min(bars[index], plotWidth * 0.2) };
+    });
+  }
+  const slot = plotWidth / count;
+  return bars.map((bar, index) => {
+    const w = Math.min(bar, Math.max(4, slot - 8));
+    return { x: index * slot + Math.max(0, (slot - w) / 2), w };
+  });
 }
 
 /** Phone: "CHF 1.4k · 56%". Wider screens: "CHF 6,000.00 · 100%". The code is the caller's currency. */
@@ -696,6 +857,51 @@ export function labelsInside(boxes: LabelBox[], canvas: { width: number; height:
   return boxes.every((box) => box.x >= -1 && box.y >= -1 && box.x + box.w <= canvas.width + 1 && box.y + box.h <= canvas.height + 1);
 }
 
+function leafRank(node: FlowNode): number {
+  if (node.italic) return 1;
+  return 0;
+}
+
+/** Portrait only. Three levels: sources, one hub, then savings, investments, and each spending category. */
+export function portraitLevels(nodes: FlowNode[], currency: string, spendingLabel: string): { nodes: FlowNode[]; links: FlowLink[] } {
+  const live = nodes.filter((node) => node.amountMinor > 0 && node.role !== "child");
+  const income = live.filter((node) => node.role === "source" && node.kind !== "drawn");
+  const shortfall = live.find((node) => node.kind === "drawn");
+  const pool = live.find((node) => node.role === "pool");
+  const spending = live.find((node) => node.kind === "spending");
+  const savings = live.find((node) => node.kind === "savings");
+  const investment = live.find((node) => node.kind === "investment" && node.role === "hub");
+  const categories = live.filter((node) => node.role === "sink" && node.kind !== "investment");
+  const order = (rows: FlowNode[]) => [...rows].sort((a, b) => leafRank(a) - leafRank(b) || b.amountMinor - a.amountMinor || a.label.localeCompare(b.label));
+  if (!pool) {
+    const hub = spending
+      ? { ...spending, role: "pool" as const, label: spendingLabel || spending.label }
+      : null;
+    const source = shortfall;
+    const leaves = order(categories);
+    if (!hub || !source) return { nodes: live, links: [] };
+    return {
+      nodes: [source, hub, ...leaves],
+      links: [
+        { source: source.id, target: hub.id, amountMinor: source.amountMinor },
+        ...leaves.map((leaf) => ({ source: hub.id, target: leaf.id, amountMinor: leaf.amountMinor })),
+      ],
+    };
+  }
+  const sources = order([...income, ...(shortfall ? [shortfall] : [])]);
+  const leaves = order([...categories, ...(savings ? [savings] : []), ...(investment ? [investment] : [])]);
+  const spendShare = pool.amountMinor > 0 ? (spending?.amountMinor || 0) / pool.amountMinor : 0;
+  const caption = spending && spending.amountMinor > 0 ? `${spendingLabel} ${flowAmountLabel(spending.amountMinor, currency, spendShare, true)}` : "";
+  const hub = { ...pool, amountMinor: pool.amountMinor + (shortfall?.amountMinor || 0), caption };
+  return {
+    nodes: [...sources, hub, ...leaves],
+    links: [
+      ...sources.map((source) => ({ source: source.id, target: hub.id, amountMinor: source.amountMinor })),
+      ...leaves.map((leaf) => ({ source: hub.id, target: leaf.id, amountMinor: leaf.amountMinor })),
+    ],
+  };
+}
+
 export function flowDepth(role: FlowNode["role"], present: { pool: boolean; hub: boolean; sink: boolean }): number {
   if (role === "source") return 0;
   if (role === "pool") return 1;
@@ -709,6 +915,7 @@ export interface SankeyOptionInput {
   links: FlowLink[];
   currency: string;
   width: number;
+  height?: number;
   labels: boolean;
   values: boolean;
   colors: Record<string, string>;
@@ -718,59 +925,85 @@ export interface SankeyOptionInput {
   paper: string;
   line: string;
   mono: boolean;
+  portraitLayout?: "vertical" | "horizontal";
+  spendingLabel?: string;
 }
 
 /** ECharts option. Width is the container. Labels keep a line break between the name and the amount. */
-export function buildSankeyOption(input: SankeyOptionInput): { option: Record<string, unknown>; frame: SankeyFrame } {
+export function buildSankeyOption(input: SankeyOptionInput): { option: Record<string, unknown>; frame: SankeyFrame; ids: string[]; nodes: FlowNode[]; links: FlowLink[] } {
+  const narrow = (input.height || 0) > input.width && input.width < 520;
+  const graph = narrow ? portraitLevels(input.nodes, input.currency, input.spendingLabel || "Spending") : { nodes: input.nodes, links: input.links };
   const present = {
-    pool: input.nodes.some((node) => node.role === "pool"),
-    hub: input.nodes.some((node) => node.role === "hub"),
-    sink: input.nodes.some((node) => node.role === "sink" || node.role === "child"),
+    pool: graph.nodes.some((node) => node.role === "pool"),
+    hub: graph.nodes.some((node) => node.role === "hub"),
+    sink: graph.nodes.some((node) => node.role === "sink" || node.role === "child"),
   };
-  const depthOf = (node: FlowNode) => flowDepth(node.role, present);
-  const counts = [0, 1, 2, 3, 4].map((depth) => input.nodes.filter((node) => depthOf(node) === depth).length);
-  const frame = sankeyFrame(input.width, counts, input.labels);
-  const total = Math.max(1, ...input.nodes.map((node) => node.amountMinor));
-  const safe = new Map(input.nodes.map((node, index) => [node.id, `n${index}`]));
-  const compact = input.width < 600;
+  const depthOf = (node: FlowNode) => (narrow ? (node.role === "source" ? 0 : node.role === "pool" ? 1 : 2) : flowDepth(node.role, present));
+  const counts = [0, 1, 2, 3, 4].map((depth) => graph.nodes.filter((node) => depthOf(node) === depth).length);
+  const frame = sankeyFrame(input.width, counts, input.labels, input.height || 0, input.portraitLayout || "vertical");
+  const safe = new Map(graph.nodes.map((node, index) => [node.id, `n${index}`]));
+  const compact = frame.compact;
   const labelWidth = Math.max(108, Math.max(frame.left, frame.right) - 8);
   const seen = new Map<number, { x: number; y: number; width: number; height: number }>();
-  const data = input.nodes.map((node) => {
+  const data = graph.nodes.map((node) => {
     const depth = depthOf(node);
-    const name = node.label.replace(/[{}|]/g, " ");
+    const rawName = node.label.replace(/[{}|]/g, " ");
+    const dated = rawName.match(/^(.*?) (\d{1,2} \S+)$/);
+    const baseName = dated ? dated[1] : rawName;
+    const name = baseName.includes(" / ") ? baseName.replace(" / ", " /\n") : baseName;
     const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact);
-    const tiny = node.share < 0.03;
-    const small = node.share < 0.05;
-    const showValue = input.values && !small;
+    const valueLine = dated ? `${meta}\n${dated[2]}` : meta;
+    const showValue = input.values && frame.amounts;
     return {
       name: safe.get(node.id),
       depth,
       raw: node.amountMinor,
       role: node.role,
       kind: node.kind,
-      value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
+      value: node.amountMinor,
       label: {
-        show: input.labels && !tiny,
+        show: input.labels,
         color: input.ink,
-        position: node.role === "source" ? "left" : node.role === "sink" || node.role === "child" ? "right" : node.role === "hub" && node.kind !== "spending" ? "bottom" : "top",
+        position: frame.reference
+          ? node.role === "source"
+            ? "left"
+            : node.role === "sink" || node.role === "child"
+              ? "right"
+              : "top"
+          : frame.vertical
+          ? node.role === "source"
+            ? "top"
+            : node.role === "sink" || node.role === "child"
+              ? "bottom"
+              : "left"
+          : node.role === "source"
+            ? "left"
+            : node.role === "sink" || node.role === "child"
+              ? "right"
+              : node.role === "hub" && node.kind !== "spending"
+                ? "bottom"
+                : "top",
         distance: 8,
-        offset: node.role === "pool" ? [0, -40] : [0, 0],
+        offset: !frame.vertical && !frame.reference && node.role === "pool" ? [0, -40] : [0, 0],
         overflow: "none",
-        fontSize: 13,
-        lineHeight: 16,
-        formatter: showValue ? `${name}\n${meta}` : name,
+        fontSize: frame.fontSize,
+        lineHeight: frame.lineHeight,
+        formatter: [showValue ? `${name}\n${valueLine}` : name, node.caption || ""].filter(Boolean).join("\n"),
       },
       itemStyle: { color: input.mono ? input.brand : input.colors[node.id] || input.brand, borderWidth: 0 },
     };
   });
   return {
     frame,
+    ids: graph.nodes.map((node) => node.id),
+    nodes: graph.nodes,
+    links: graph.links,
     option: {
       backgroundColor: input.paper,
       series: [
         {
           type: "sankey",
-          orient: "horizontal",
+          orient: frame.vertical ? "vertical" : "horizontal",
           nodeAlign: "justify",
           layoutIterations: frame.layoutIterations,
           draggable: false,
@@ -778,10 +1011,10 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
           nodeGap: frame.nodeGap,
           left: frame.left,
           right: frame.right,
-          top: frame.top,
-          bottom: frame.bottom,
+          top: frame.seriesTop,
+          bottom: frame.seriesBottom,
           emphasis: { focus: "adjacency" },
-          lineStyle: { color: input.mono ? input.brand : "gradient", curveness: 0.5, opacity: frame.linkOpacity },
+          lineStyle: { curveness: 0.5, opacity: frame.linkOpacity },
           label: { show: input.labels },
           labelLayout: (params: { dataType?: string; dataIndex?: number; rect?: { x: number; y: number; width: number; height: number } }) => {
             if (params.dataType !== "node" || params.dataIndex == null || !params.rect) return {};
@@ -792,7 +1025,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
             const items = [...seen.entries()]
               .sort((a, b) => a[0] - b[0])
               .map(([index, rect]) => {
-                const node = input.nodes[index];
+                const node = graph.nodes[index];
                 const row = data[index];
                 const text = row?.label.show ? String(row.label.formatter) : "";
                 return {
@@ -803,7 +1036,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
                   rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
                 };
               });
-            const box = placeFlowLabels(items, { width: frame.width, height: frame.height }, labelWidth).find((row) => row.id === input.nodes[current]?.id);
+            const box = placeFlowLabels(items, { width: frame.width, height: frame.height }, labelWidth).find((row) => row.id === graph.nodes[current]?.id);
             return box ? { x: box.x, y: box.y, align: "left" as const, verticalAlign: "top" as const } : { hideOverlap: true };
             } catch (error) {
               (globalThis as { __labelError?: string }).__labelError = error instanceof Error ? error.message : "label";
@@ -811,16 +1044,57 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
             }
           },
           data,
-          links: input.links.map((link) => ({
-            source: safe.get(link.source),
-            target: safe.get(link.target),
-            raw: link.amountMinor,
-            value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)),
-          })),
+          links: graph.links.map((link) => {
+            const sourceNode = graph.nodes.find((node) => node.id === link.source);
+            const targetNode = graph.nodes.find((node) => node.id === link.target);
+            const colored = targetNode && (targetNode.role === "sink" || targetNode.role === "child" || targetNode.role === "hub") ? targetNode : sourceNode;
+            const color = input.mono ? input.brand : input.colors[colored?.id || ""] || input.brand;
+            return {
+              source: safe.get(link.source),
+              target: safe.get(link.target),
+              raw: link.amountMinor,
+              value: link.amountMinor,
+              lineStyle: { color, opacity: frame.linkOpacity },
+            };
+          }),
         },
       ],
     },
   };
+}
+
+/**
+ * One px-per-value for every row. The row with the most gaps sets the scale so
+ * node lengths plus the gaps between them fit in `avail`. Nodes are never
+ * shrunk on their own.
+ */
+export function fitValueScale(rows: number[][], gap: number, avail: number): number {
+  let scale = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    const sum = row.reduce((total, value) => total + Math.max(0, value), 0);
+    if (sum <= 0) continue;
+    const gaps = gap * Math.max(0, row.length - 1);
+    scale = Math.min(scale, Math.max(0, avail - gaps) / sum);
+  }
+  return Number.isFinite(scale) ? scale : 0;
+}
+
+/** Each link takes its own slice of a bar. Slices tile the span and do not overlap. */
+export function flowSlices(amounts: number[], span: number): { start: number; extent: number }[] {
+  const total = amounts.reduce((sum, amount) => sum + Math.max(0, amount), 0) || 1;
+  let cursor = 0;
+  return amounts.map((amount, index) => {
+    const start = cursor;
+    const extent = index === amounts.length - 1 ? span - cursor : (span * Math.max(0, amount)) / total;
+    cursor += extent;
+    return { start, extent };
+  });
+}
+
+/** Leaf bars step down so each label can sit under its own node. */
+export function leafOffsets(count: number, start: number, step: number, plot: number, bar: number): number[] {
+  const cap = Math.max(start, plot - bar);
+  return Array.from({ length: count }, (_, index) => Math.min(cap, start + index * step));
 }
 
 /** Keep a tiny flow visible without letting it dominate the column. */

@@ -55,25 +55,92 @@ function rule(partial: Pick<FinanceRule, "id" | "name" | "amountMinor" | "nextDa
 
 const categories: FinanceCategory[] = [
   { name: "Salary", color: "#3caa68", kind: "income" },
+  { name: "Dividends", color: "#1a7340", kind: "income" },
+  { name: "Interest", color: "#0f5c34", kind: "income" },
+  { name: "Side project", color: "#125a36", kind: "income" },
   { name: "Housing", color: "#4C78D8", kind: "expense" },
   { name: "Food", color: "#e07a74", kind: "expense" },
   { name: "Transport", color: "#e0b15a", kind: "expense" },
   { name: "Subscriptions", color: "#6aa8e0", kind: "expense" },
+  { name: "Health", color: "#8e332d", kind: "expense" },
+  { name: "Dining", color: "#94362f", kind: "expense" },
+  { name: "Coffee", color: "#c4a484", kind: "expense" },
+  { name: "Tips", color: "#d7a3c4", kind: "expense" },
+  { name: "Funds", color: "#6a420c", kind: "investment" },
 ];
 
 function flowTransactions(empty: boolean): FinanceTransaction[] {
   const month = todayIso().slice(0, 7);
+  const asked = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("data") || "";
+  if (asked === "d1") return richMonth(month);
+  if (asked === "d2") return deficitMonth(month);
+  if (asked === "d3") return simpleMonth(month);
+  if (asked === "d4") return emptyIncome(month);
   const expenses = [
     tx({ id: "housing", amountMinor: 140000, direction: "expense", category: "Housing", date: `${month}-02` }),
     tx({ id: "food", amountMinor: 62000, direction: "expense", category: "Food", date: `${month}-04` }),
     tx({ id: "transport", amountMinor: 28000, direction: "expense", category: "Transport", date: `${month}-06` }),
     tx({ id: "subs", amountMinor: 19000, direction: "expense", category: "Subscriptions", date: `${month}-08` }),
+    tx({ id: "coffee", amountMinor: 2000, direction: "expense", category: "Coffee", date: `${month}-09` }),
+    tx({ id: "tips", amountMinor: 1500, direction: "expense", category: "Tips", date: `${month}-10` }),
   ];
   if (empty) return expenses;
   return [
     tx({ id: "salary-1", amountMinor: 420000, direction: "income", category: "Salary", date: `${month}-01` }),
     tx({ id: "salary-2", amountMinor: 180000, direction: "income", category: "Salary", date: `${month}-15` }),
     ...expenses,
+  ];
+}
+
+/** Surplus month: two salaries, more income, eight expense types, an investment, and savings. */
+function richMonth(month: string): FinanceTransaction[] {
+  return [
+    tx({ id: "salary-1", amountMinor: 420000, direction: "income", category: "Salary", date: `${month}-01` }),
+    tx({ id: "salary-2", amountMinor: 180000, direction: "income", category: "Salary", date: `${month}-15` }),
+    tx({ id: "div", amountMinor: 45000, direction: "income", category: "Dividends", date: `${month}-03` }),
+    tx({ id: "interest", amountMinor: 8000, direction: "income", category: "Interest", date: `${month}-04` }),
+    tx({ id: "side", amountMinor: 32000, direction: "income", category: "Side project", date: `${month}-20` }),
+    tx({ id: "housing", amountMinor: 140000, direction: "expense", category: "Housing", date: `${month}-02` }),
+    tx({ id: "food", amountMinor: 62000, direction: "expense", category: "Food", date: `${month}-05` }),
+    tx({ id: "transport", amountMinor: 28000, direction: "expense", category: "Transport", date: `${month}-06` }),
+    tx({ id: "subs", amountMinor: 19000, direction: "expense", category: "Subscriptions", date: `${month}-08` }),
+    tx({ id: "health", amountMinor: 24000, direction: "expense", category: "Health", date: `${month}-09` }),
+    tx({ id: "dining", amountMinor: 15000, direction: "expense", category: "Dining", date: `${month}-11` }),
+    tx({ id: "coffee", amountMinor: 2000, direction: "expense", category: "Coffee", date: `${month}-12` }),
+    tx({ id: "tips", amountMinor: 1500, direction: "expense", category: "Tips", date: `${month}-13` }),
+    tx({ id: "funds", amountMinor: 80000, direction: "expense", category: "Funds", date: `${month}-18` }),
+  ];
+}
+
+/** Spending and an investment are larger than income, so the chart draws a shortfall and no negative savings. */
+function deficitMonth(month: string): FinanceTransaction[] {
+  return [
+    tx({ id: "salary", amountMinor: 200000, direction: "income", category: "Salary", date: `${month}-01` }),
+    tx({ id: "div", amountMinor: 15000, direction: "income", category: "Dividends", date: `${month}-03` }),
+    tx({ id: "housing", amountMinor: 140000, direction: "expense", category: "Housing", date: `${month}-02` }),
+    tx({ id: "food", amountMinor: 80000, direction: "expense", category: "Food", date: `${month}-05` }),
+    tx({ id: "transport", amountMinor: 40000, direction: "expense", category: "Transport", date: `${month}-06` }),
+    tx({ id: "health", amountMinor: 30000, direction: "expense", category: "Health", date: `${month}-09` }),
+    tx({ id: "dining", amountMinor: 22000, direction: "expense", category: "Dining", date: `${month}-11` }),
+    tx({ id: "funds", amountMinor: 25000, direction: "expense", category: "Funds", date: `${month}-18` }),
+  ];
+}
+
+function simpleMonth(month: string): FinanceTransaction[] {
+  return [
+    tx({ id: "salary", amountMinor: 420000, direction: "income", category: "Salary", date: `${month}-01` }),
+    tx({ id: "housing", amountMinor: 140000, direction: "expense", category: "Housing", date: `${month}-02` }),
+    tx({ id: "food", amountMinor: 62000, direction: "expense", category: "Food", date: `${month}-04` }),
+    tx({ id: "transport", amountMinor: 28000, direction: "expense", category: "Transport", date: `${month}-06` }),
+  ];
+}
+
+function emptyIncome(month: string): FinanceTransaction[] {
+  return [
+    tx({ id: "housing", amountMinor: 140000, direction: "expense", category: "Housing", date: `${month}-02` }),
+    tx({ id: "food", amountMinor: 62000, direction: "expense", category: "Food", date: `${month}-04` }),
+    tx({ id: "transport", amountMinor: 28000, direction: "expense", category: "Transport", date: `${month}-06` }),
+    tx({ id: "subs", amountMinor: 19000, direction: "expense", category: "Subscriptions", date: `${month}-08` }),
   ];
 }
 

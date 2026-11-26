@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow, buildSankeyOption, describeFlow, flowAmountLabel, flowConserved, labelsInside, labelsOverlap, layoutSankey, placeFlowLabels, sankeyFrame, sankeyValue } from "./moneyFlow.ts";
+import { buildMoneyFlow, buildSankeyOption, describeFlow, fitValueScale, flowAmountLabel, flowConserved, flowSlices, labelsInside, labelsOverlap, layoutSankey, leafOffsets, placeFlowLabels, portraitLevels, sankeyFrame, sankeyValue, spreadColumn, spreadLevel } from "./moneyFlow.ts";
+import type { FlowLink, FlowNode, MoneyFlow } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
 import type { RateBook } from "./financeMath.ts";
@@ -329,20 +330,67 @@ if (unlinked.state === "ready") {
   assert.ok(flowConserved(unlinked));
 }
 
-const phone = sankeyFrame(390, [2, 1, 1, 6], true);
-assert.equal(phone.nodeWidth, 10);
-assert.ok(phone.nodeGap >= 12);
-assert.ok(phone.plot >= 360);
-assert.ok(phone.linkOpacity >= 0.35 && phone.linkOpacity <= 0.5);
+const phone = sankeyFrame(390, [2, 1, 1, 6], true, 720);
+assert.equal(phone.nodeWidth, Math.round(Math.min(8, Math.max(3, 390 * 0.011))));
+assert.ok(phone.nodeWidth >= 3 && phone.nodeWidth <= 5, `bar ${phone.nodeWidth}`);
+assert.ok(phone.nodeGap >= 8, `gap ${phone.nodeGap}`);
+assert.equal(phone.linkOpacity, 0.45);
+assert.equal(phone.portrait, true);
+assert.equal(phone.vertical, true);
+assert.equal(phone.columnFill, 0.32);
+assert.ok(phone.left <= 16 && phone.right <= 16, `gutters ${phone.left}/${phone.right}`);
+assert.equal(phone.flowPx, Math.round(Math.min(48, Math.max(16, 390 * 0.055))));
+assert.ok(phone.flowPx < phone.plot * 0.2, `ribbon ${phone.flowPx} plot ${phone.plot}`);
 assert.equal(phone.layoutIterations, 0);
-assert.ok(phone.width - phone.left - phone.right >= 100);
+assert.equal(phone.compact, true);
+assert.equal(phone.fontSize, 13);
+assert.ok(phone.width - phone.left - phone.right >= 60);
 assert.equal(phone.width, 390);
-const tablet = sankeyFrame(800, [2, 1, 1, 6], true);
-assert.equal(tablet.nodeWidth, 14);
-const narrow = sankeyFrame(360, [1, 1, 1, 4], true);
-assert.ok(narrow.width - narrow.left - narrow.right >= 80, `plot ${narrow.width - narrow.left - narrow.right}`);
-const many = sankeyFrame(390, [1, 1, 8], true);
-assert.ok(many.plot >= 8 * 44);
+assert.ok(phone.plot >= 400, `plot ${phone.plot}`);
+assert.ok(phone.height <= 720, `height ${phone.height}`);
+const wide = sankeyFrame(900, [2, 1, 1, 6], true, 500);
+assert.equal(wide.portrait, false);
+assert.equal(wide.vertical, false);
+assert.equal(wide.columnFill, 1);
+assert.equal(wide.compact, false);
+const landPhone = sankeyFrame(844, [4, 1, 1, 8], true, 390);
+assert.equal(landPhone.portrait, false);
+assert.equal(landPhone.columnFill, 1);
+assert.equal(landPhone.compact, true);
+assert.ok(landPhone.height <= 390, `height ${landPhone.height}`);
+assert.ok(landPhone.plot >= 140, `plot ${landPhone.plot}`);
+assert.equal(wide.nodeWidth, 8);
+assert.equal(wide.compact, false);
+const narrow = sankeyFrame(360, [1, 1, 1, 4], true, 700);
+assert.ok(narrow.portrait);
+assert.ok(narrow.flowPx <= phone.flowPx, `narrow ribbon ${narrow.flowPx}`);
+assert.ok(narrow.nodeWidth >= 3 && narrow.nodeWidth <= 5, `width ${narrow.nodeWidth}`);
+assert.ok(narrow.plot >= 260);
+const many = sankeyFrame(390, [1, 1, 8], true, 844);
+assert.ok(many.plot > phone.plot, "more leaves get a taller plot");
+assert.ok(many.nodeGap >= 8);
+const spread = spreadColumn([420, 180], 88, 380, 122);
+assert.equal(spread.length, 2);
+assert.ok(spread[1].y > spread[0].y + spread[0].h, "slots stay in order");
+assert.ok(spread[0].h + spread[1].h <= 130);
+const one = spreadColumn([600], 88, 380, 122);
+assert.equal(one[0].y, 88);
+assert.ok(one[0].h <= 122);
+const level = spreadLevel([6000, 2500, 1400], 300, 96, "slots");
+assert.equal(level.length, 3);
+assert.ok(level[1].x > level[0].x + level[0].w);
+assert.ok(level.reduce((sum, box) => sum + box.w, 0) <= 100);
+const single = spreadLevel([6000], 300, 96, "right");
+assert.ok(single[0].x + single[0].w <= 300);
+assert.ok(single[0].w <= 96);
+assert.ok(single[0].x > 150);
+const side = sankeyFrame(390, [2, 1, 1, 6], true, 720, "horizontal");
+assert.equal(side.reference, true);
+assert.equal(side.vertical, false);
+assert.ok(side.width - side.left - side.right >= 90, `plot ${side.width - side.left - side.right}`);
+const tablet = sankeyFrame(768, [2, 1, 1, 6], true, 1024);
+assert.equal(tablet.portrait, true);
+assert.equal(tablet.vertical, false);
 assert.equal(flowAmountLabel(600000, "CHF", 1, true), "CHF 6k · 100%");
 assert.equal(flowAmountLabel(140000, "CHF", 0.562, true), "CHF 1.4k · 56%");
 assert.equal(flowAmountLabel(600000, "CHF", 1, false), "CHF 6,000.00 · 100%");
@@ -355,6 +403,7 @@ if (describedEmpty.state === "ready") {
     links: describedEmpty.links,
     currency: "CHF",
     width: 390,
+    height: 720,
     labels: true,
     values: true,
     colors: {},
@@ -366,8 +415,8 @@ if (describedEmpty.state === "ready") {
     mono: false,
   });
   const series = (built.option.series as Array<Record<string, unknown>>)[0];
-  assert.equal(series.nodeWidth, 10);
-  assert.ok(Number(series.nodeGap) >= 12);
+  assert.equal(series.nodeWidth, phone.nodeWidth);
+  assert.ok(Number(series.nodeGap) >= 8);
   assert.equal((series.lineStyle as { opacity: number }).opacity, built.frame.linkOpacity);
   const labels = (series.data as Array<{ label: { formatter: string; show: boolean } }>).map((row) => row.label.formatter);
   assert.ok(labels.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("·")));
@@ -395,5 +444,292 @@ assert.equal(labelsInside(sampleBoxes, { width: 390, height: 460 }), true);
 const lifted = sankeyValue(10, 10_000, phone.floorShare);
 assert.ok(lifted > 10);
 assert.equal(sankeyValue(9_000, 10_000, phone.floorShare), 9_000);
+
+const slices = flowSlices([420, 180, 45], 64);
+assert.equal(slices.length, 3);
+assert.ok(slices[1].start >= slices[0].start + slices[0].extent - 0.01);
+assert.ok(slices[2].start >= slices[1].start + slices[1].extent - 0.01);
+assert.ok(Math.abs(slices.reduce((sum, slice) => sum + slice.extent, 0) - 64) < 1);
+const leaves = leafOffsets(6, 140, 48, 520, 4);
+assert.equal(leaves.length, 6);
+for (let index = 1; index < leaves.length; index += 1) {
+  assert.ok(leaves[index] >= leaves[index - 1] + 40, `leaf ${index} ${leaves[index]}`);
+}
+const landscape = sankeyFrame(844, [4, 1, 8], true, 390, "vertical");
+assert.equal(landscape.portrait, false);
+assert.equal(landscape.vertical, false);
+
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const richRows = [
+  { amountMinor: 420000, currency: "CHF", direction: "income", category: "Salary", date: "2026-11-01" },
+  { amountMinor: 180000, currency: "CHF", direction: "income", category: "Salary", date: "2026-11-15" },
+  { amountMinor: 45000, currency: "CHF", direction: "income", category: "Dividends", date: "2026-11-03" },
+  { amountMinor: 8000, currency: "CHF", direction: "income", category: "Interest", date: "2026-11-04" },
+  { amountMinor: 32000, currency: "CHF", direction: "income", category: "Side project", date: "2026-11-20" },
+  { amountMinor: 140000, currency: "CHF", direction: "expense", category: "Housing", date: "2026-11-02" },
+  { amountMinor: 62000, currency: "CHF", direction: "expense", category: "Food", date: "2026-11-05" },
+  { amountMinor: 28000, currency: "CHF", direction: "expense", category: "Transport", date: "2026-11-06" },
+  { amountMinor: 19000, currency: "CHF", direction: "expense", category: "Subscriptions", date: "2026-11-08" },
+  { amountMinor: 24000, currency: "CHF", direction: "expense", category: "Health", date: "2026-11-09" },
+  { amountMinor: 15000, currency: "CHF", direction: "expense", category: "Dining", date: "2026-11-11" },
+  { amountMinor: 2000, currency: "CHF", direction: "expense", category: "Coffee", date: "2026-11-12" },
+  { amountMinor: 1500, currency: "CHF", direction: "expense", category: "Tips", date: "2026-11-13" },
+  { amountMinor: 80000, currency: "CHF", direction: "expense", category: "Funds", date: "2026-11-18" },
+];
+const richCategories = [
+  { name: "Salary", color: "#3caa68", kind: "income" },
+  { name: "Side project", color: "#125a36", kind: "income" },
+  { name: "Funds", color: "#6a420c", kind: "investment" },
+];
+const deficitRows = [
+  { amountMinor: 200000, currency: "CHF", direction: "income", category: "Salary", date: "2026-11-01" },
+  { amountMinor: 15000, currency: "CHF", direction: "income", category: "Dividends", date: "2026-11-03" },
+  { amountMinor: 140000, currency: "CHF", direction: "expense", category: "Housing", date: "2026-11-02" },
+  { amountMinor: 80000, currency: "CHF", direction: "expense", category: "Food", date: "2026-11-05" },
+  { amountMinor: 40000, currency: "CHF", direction: "expense", category: "Transport", date: "2026-11-06" },
+  { amountMinor: 30000, currency: "CHF", direction: "expense", category: "Health", date: "2026-11-09" },
+  { amountMinor: 22000, currency: "CHF", direction: "expense", category: "Dining", date: "2026-11-11" },
+  { amountMinor: 25000, currency: "CHF", direction: "expense", category: "Funds", date: "2026-11-18" },
+];
+
+function assertChart(rows: typeof richRows, group: "category" | "entry", layout: "vertical" | "horizontal", labels: boolean) {
+  const builtFlow = buildMoneyFlow(rows, {
+    display: "CHF",
+    book,
+    nowMs: now,
+    start: "2026-11-01",
+    end: "2026-11-30",
+    group,
+    months,
+    categories: richCategories,
+    nodeColors: { Salary: "#3caa68", Funds: "#6a420c" },
+  });
+  assert.equal(builtFlow.state, "ready");
+  if (builtFlow.state !== "ready") return;
+  assert.equal(builtFlow.nodes.some((node) => node.kind === "savings" && node.amountMinor < 0), false);
+  const expenseShares = builtFlow.nodes.filter((node) => node.role === "sink" && node.kind !== "investment").reduce((sum, node) => sum + node.share, 0);
+  const incomeBase = builtFlow.incomeMinor || 1;
+  assert.ok(Math.abs(expenseShares - builtFlow.spendingMinor / incomeBase) < 0.02, `shares ${expenseShares}`);
+  const graph = portraitLevels(builtFlow.nodes, "CHF", "Spending");
+  const hub = graph.nodes.find((node) => node.role === "pool");
+  assert.ok(hub);
+  if (!hub) return;
+  const inbound = graph.links.filter((link) => link.target === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+  const outbound = graph.links.filter((link) => link.source === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+  assert.equal(inbound, outbound);
+  assert.equal(inbound, hub.amountMinor);
+  const option = buildSankeyOption({
+    nodes: builtFlow.nodes,
+    links: builtFlow.links,
+    currency: "CHF",
+    width: 390,
+    height: 844,
+    labels,
+    values: true,
+    colors: Object.fromEntries(builtFlow.nodes.map((node) => [node.id, node.color])),
+    ink: "rgb(240,235,228)",
+    muted: "rgb(168,160,150)",
+    brand: "rgb(196,176,154)",
+    paper: "rgb(23,24,27)",
+    line: "rgb(90,84,76)",
+    mono: false,
+    portraitLayout: layout,
+    spendingLabel: "Spending",
+  });
+  assert.equal(option.frame.vertical, layout === "vertical");
+  assert.equal(option.frame.reference, layout === "horizontal");
+  const rowsOut = (option.option.series as Array<{ data: Array<{ label: { formatter: string; show: boolean } }> }>)[0].data;
+  const texts = rowsOut.map((row) => row.label.formatter);
+  assert.ok(texts.every((line) => !line.includes("…")));
+  if (labels) assert.ok(texts.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("·")));
+  if (labels && group === "category") {
+    assert.ok(texts.some((line) => line.includes("Side project") && line.includes("CHF ")));
+    assert.ok(texts.some((line) => line.includes("Other income")));
+  }
+  if (!labels) assert.ok(rowsOut.every((row) => row.label.show === false));
+}
+
+for (const group of ["category", "entry"] as const) {
+  for (const layout of ["vertical", "horizontal"] as const) {
+    for (const labels of [true, false]) assertChart(richRows, group, layout, labels);
+  }
+}
+const entryRich = buildMoneyFlow(richRows, {
+  display: "CHF",
+  book,
+  nowMs: now,
+  start: "2026-11-01",
+  end: "2026-11-30",
+  group: "entry",
+  months,
+  categories: richCategories,
+  nodeColors: { Salary: "#3caa68" },
+});
+assert.equal(entryRich.state, "ready");
+if (entryRich.state === "ready") {
+  const salaries = entryRich.nodes.filter((node) => node.label.startsWith("Salary"));
+  assert.equal(salaries.length, 2);
+  assert.equal(salaries[0].color, "#3caa68");
+  assert.equal(salaries[1].color, salaries[0].color);
+}
+const deficitFlow = buildMoneyFlow(deficitRows, {
+  display: "CHF",
+  book,
+  nowMs: now,
+  start: "2026-11-01",
+  end: "2026-11-30",
+  categories: richCategories,
+  nodeColors: { Funds: "#6a420c" },
+});
+assert.equal(deficitFlow.state, "ready");
+if (deficitFlow.state === "ready") {
+  assert.ok(deficitFlow.savingsMinor < 0);
+  assert.equal(deficitFlow.nodes.some((node) => node.kind === "savings"), false);
+  assert.ok(deficitFlow.nodes.some((node) => node.kind === "drawn"));
+  assert.ok(flowConserved(deficitFlow));
+  const graph = portraitLevels(deficitFlow.nodes, "CHF", "Spending");
+  const hub = graph.nodes.find((node) => node.role === "pool");
+  assert.ok(hub);
+  if (hub) {
+    const inbound = graph.links.filter((link) => link.target === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+    const outbound = graph.links.filter((link) => link.source === hub.id).reduce((sum, link) => sum + link.amountMinor, 0);
+    assert.equal(inbound, outbound);
+    assert.equal(inbound, hub.amountMinor);
+  }
+}
+
+const shotCategories = [
+  { name: "Salary", color: "#3caa68", kind: "income" },
+  { name: "Dividends", color: "#1a7340", kind: "income" },
+  { name: "Interest", color: "#0f5c34", kind: "income" },
+  { name: "Side project", color: "#125a36", kind: "income" },
+  { name: "Housing", color: "#4C78D8", kind: "expense" },
+  { name: "Food", color: "#e07a74", kind: "expense" },
+  { name: "Transport", color: "#e0b15a", kind: "expense" },
+  { name: "Subscriptions", color: "#6aa8e0", kind: "expense" },
+  { name: "Health", color: "#8e332d", kind: "expense" },
+  { name: "Dining", color: "#94362f", kind: "expense" },
+  { name: "Coffee", color: "#c4a484", kind: "expense" },
+  { name: "Tips", color: "#d7a3c4", kind: "expense" },
+  { name: "Funds", color: "#6a420c", kind: "investment" },
+];
+
+function balanceErrors(nodes: FlowNode[], links: FlowLink[]): string[] {
+  const errors: string[] = [];
+  for (const node of nodes) {
+    const inn = links.filter((link) => link.target === node.id).reduce((sum, link) => sum + link.amountMinor, 0);
+    const out = links.filter((link) => link.source === node.id).reduce((sum, link) => sum + link.amountMinor, 0);
+    if (node.role === "source") {
+      if (inn !== 0 || out !== node.amountMinor) errors.push(`${node.id} source in ${inn} out ${out} value ${node.amountMinor}`);
+      continue;
+    }
+    if (out === 0) {
+      if (inn !== node.amountMinor) errors.push(`${node.id} terminal in ${inn} value ${node.amountMinor}`);
+      continue;
+    }
+    if (inn !== node.amountMinor || out !== node.amountMinor) errors.push(`${node.id} in ${inn} out ${out} value ${node.amountMinor}`);
+  }
+  return errors;
+}
+
+function readyFlow(rows: Array<{ amountMinor: number; direction: string; category: string; date: string }>): MoneyFlow {
+  const flow = buildMoneyFlow(
+    rows.map((row, index) => ({ ...row, currency: "CHF", id: `d-${index}` })),
+    { display: "CHF", book, nowMs: now, start: "2026-11-01", end: "2026-11-30", categories: shotCategories },
+  );
+  assert.equal(flow.state, "ready");
+  return flow;
+}
+
+const datasets = {
+  d1: [
+    { amountMinor: 420000, direction: "income", category: "Salary", date: "2026-11-01" },
+    { amountMinor: 180000, direction: "income", category: "Salary", date: "2026-11-15" },
+    { amountMinor: 45000, direction: "income", category: "Dividends", date: "2026-11-03" },
+    { amountMinor: 8000, direction: "income", category: "Interest", date: "2026-11-04" },
+    { amountMinor: 32000, direction: "income", category: "Side project", date: "2026-11-20" },
+    { amountMinor: 140000, direction: "expense", category: "Housing", date: "2026-11-02" },
+    { amountMinor: 62000, direction: "expense", category: "Food", date: "2026-11-05" },
+    { amountMinor: 28000, direction: "expense", category: "Transport", date: "2026-11-06" },
+    { amountMinor: 19000, direction: "expense", category: "Subscriptions", date: "2026-11-08" },
+    { amountMinor: 24000, direction: "expense", category: "Health", date: "2026-11-09" },
+    { amountMinor: 15000, direction: "expense", category: "Dining", date: "2026-11-11" },
+    { amountMinor: 2000, direction: "expense", category: "Coffee", date: "2026-11-12" },
+    { amountMinor: 1500, direction: "expense", category: "Tips", date: "2026-11-13" },
+    { amountMinor: 80000, direction: "expense", category: "Funds", date: "2026-11-18" },
+  ],
+  d2: [
+    { amountMinor: 200000, direction: "income", category: "Salary", date: "2026-11-01" },
+    { amountMinor: 15000, direction: "income", category: "Dividends", date: "2026-11-03" },
+    { amountMinor: 140000, direction: "expense", category: "Housing", date: "2026-11-02" },
+    { amountMinor: 80000, direction: "expense", category: "Food", date: "2026-11-05" },
+    { amountMinor: 40000, direction: "expense", category: "Transport", date: "2026-11-06" },
+    { amountMinor: 30000, direction: "expense", category: "Health", date: "2026-11-09" },
+    { amountMinor: 22000, direction: "expense", category: "Dining", date: "2026-11-11" },
+    { amountMinor: 25000, direction: "expense", category: "Funds", date: "2026-11-18" },
+  ],
+  d3: [
+    { amountMinor: 420000, direction: "income", category: "Salary", date: "2026-11-01" },
+    { amountMinor: 140000, direction: "expense", category: "Housing", date: "2026-11-02" },
+    { amountMinor: 62000, direction: "expense", category: "Food", date: "2026-11-04" },
+    { amountMinor: 28000, direction: "expense", category: "Transport", date: "2026-11-06" },
+  ],
+  d4: [
+    { amountMinor: 140000, direction: "expense", category: "Housing", date: "2026-11-02" },
+    { amountMinor: 62000, direction: "expense", category: "Food", date: "2026-11-04" },
+    { amountMinor: 28000, direction: "expense", category: "Transport", date: "2026-11-06" },
+    { amountMinor: 19000, direction: "expense", category: "Subscriptions", date: "2026-11-08" },
+  ],
+};
+
+for (const [name, rows] of Object.entries(datasets)) {
+  const built = readyFlow(rows);
+  if (built.state !== "ready") continue;
+  const expectedSavings = built.incomeMinor - built.spendingMinor - built.investmentMinor;
+  assert.equal(built.savingsMinor, expectedSavings, name);
+  if (expectedSavings > 0) {
+    assert.equal(built.nodes.find((node) => node.kind === "savings")?.amountMinor, expectedSavings, name);
+    assert.equal(built.nodes.some((node) => node.kind === "drawn"), false, name);
+  } else if (expectedSavings < 0) {
+    assert.equal(built.nodes.some((node) => node.kind === "savings"), false, name);
+    assert.equal(built.nodes.find((node) => node.kind === "drawn")?.amountMinor, -expectedSavings, name);
+  }
+  assert.deepEqual(balanceErrors(built.nodes, built.links), [], name);
+  const portrait = portraitLevels(built.nodes, "CHF", "Spending");
+  assert.deepEqual(balanceErrors(portrait.nodes, portrait.links), [], `${name} portrait`);
+  for (const [width, height] of [[390, 844], [844, 390]] as const) {
+    const option = buildSankeyOption({
+      nodes: built.nodes,
+      links: built.links,
+      currency: "CHF",
+      width,
+      height,
+      labels: true,
+      values: true,
+      colors: {},
+      ink: "rgb(240,235,228)",
+      muted: "rgb(168,160,150)",
+      brand: "rgb(196,176,154)",
+      paper: "rgb(23,24,27)",
+      line: "rgb(90,84,76)",
+      mono: false,
+      spendingLabel: "Spending",
+    });
+    assert.deepEqual(balanceErrors(option.nodes, option.links), [], `${name} ${width}x${height}`);
+    const series = (option.option.series as Array<{ data: Array<{ value: number }>; links: Array<{ value: number }> }>)[0];
+    assert.deepEqual(series.data.map((node) => node.value), option.nodes.map((node) => node.amountMinor), `${name} node scale`);
+    assert.deepEqual(series.links.map((link) => link.value), option.links.map((link) => link.amountMinor), `${name} link scale`);
+  }
+}
+
+const d1Scale = fitValueScale([[600000, 45000, 32000, 8000], [313500, 140000, 80000, 62000, 28000, 24000, 19000, 15000, 3500]], 4, 390);
+const d1Hub = 685000 * d1Scale;
+for (const row of [[600000, 45000, 32000, 8000], [313500, 140000, 80000, 62000, 28000, 24000, 19000, 15000, 3500]]) {
+  const widths = row.reduce((sum, amount) => sum + amount * d1Scale, 0);
+  assert.ok(Math.abs(widths - d1Hub) < 0.01);
+  assert.ok(widths + 4 * (row.length - 1) <= 390 + 0.01);
+}
+const tiled = flowSlices([313500, 140000, 80000], d1Hub);
+assert.ok(Math.abs(tiled.reduce((sum, slice) => sum + slice.extent, 0) - d1Hub) < 0.001);
 
 console.log("money flow ok");
