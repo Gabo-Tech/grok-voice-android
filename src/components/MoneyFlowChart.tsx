@@ -414,7 +414,6 @@ export function MoneyFlowPanel({
               }}
             >
               {chart}
-              {controls}
             </FullFlow>,
             document.body,
           )
@@ -556,9 +555,24 @@ function FlowChart({
       const parent = node.parentElement;
       const width = Math.floor((stage || parent)?.clientWidth || node.clientWidth || window.innerWidth);
       const stageHeight = stage && stage.clientHeight > 160 ? stage.clientHeight : 0;
-      const fromViewport = window.innerHeight - node.getBoundingClientRect().top - 8;
-      const height = Math.floor(stageHeight || fromViewport);
-      const next = { w: Math.max(280, width), h: Math.max(240, height) };
+      let below = 8;
+      if (!stage) {
+        let ancestor = node.parentElement;
+        while (ancestor && ancestor !== document.body) {
+          const style = getComputedStyle(ancestor);
+          below += parseFloat(style.paddingBottom) || 0;
+          below += parseFloat(style.borderBottomWidth) || 0;
+          ancestor = ancestor.parentElement;
+        }
+        below += 16;
+      }
+      const fromViewport = window.innerHeight - node.getBoundingClientRect().top - below;
+      let height = Math.floor(stageHeight || fromViewport);
+      if (!stage) {
+        const extra = document.documentElement.scrollHeight - window.innerHeight;
+        if (extra > 2) height -= extra + 2;
+      }
+      const next = { w: Math.max(280, width), h: Math.max(160, height) };
       setBox((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
     };
     measure();
@@ -582,7 +596,7 @@ function FlowChart({
 
   useEffect(() => {
     const instance = chart.current;
-    if (!instance || !flow || flow.state !== "ready" || box.w < 280 || box.h < 240) return;
+    if (!instance || !flow || flow.state !== "ready" || box.w < 280 || box.h < 160) return;
     const ink = usedColor("var(--text-primary)", "rgb(58, 52, 44)");
     const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
     const brand = usedColor("var(--brand)", "rgb(125, 107, 88)");
@@ -675,7 +689,16 @@ function FlowChart({
     instance.on("finished", publish);
   }, [flow, currency, labelsOn, valuesOn, mono, tall, box, portraitLayout, spendingLabel]);
 
-  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: drawn }} />;
+  useEffect(() => {
+    if (tall) return;
+    const frame = requestAnimationFrame(() => {
+      const extra = document.documentElement.scrollHeight - window.innerHeight;
+      if (extra > 2 && box.h > 160) setBox((prev) => ({ ...prev, h: Math.max(160, prev.h - extra - 2) }));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [drawn, tall, box.h]);
+
+  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : drawn }} />;
 }
 
 interface AuditEl {
@@ -946,34 +969,39 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   const sources = paired.filter((item) => item.node.role === "source").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
   const hubItem = paired.find((item) => item.node.role === "pool");
   const leaves = paired.filter((item) => item.node.role !== "source" && item.node.role !== "pool").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
-  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; below: boolean; stack: number }>();
-  const placeBar = (item: (typeof paired)[number], localX: number, localY: number, w: number, below: boolean, stack = 0) => {
+  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; below: boolean; stack: number; align: "left" | "right" | "above" }>();
+  const placeBar = (item: (typeof paired)[number], localX: number, localY: number, w: number, align: "left" | "right" | "above", stack = 0) => {
     item.el.setShape?.({ x: localX, y: localY, width: w, height: barH });
     item.el.dirty?.();
-    placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below, stack });
+    placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below: align !== "above", stack, align });
   };
   const sourceBudget = sources.length === 1 ? Math.min(72, plotW * 0.4) : plotW * 0.92;
   const sourceBoxes = spreadLevel(sources.map((item) => item.node.amountMinor), plotW, sourceBudget, sources.length === 1 ? "center" : "slots");
   sources.forEach((item, index) => {
     const next = sourceBoxes[index];
-    if (next) placeBar(item, next.x, 2, next.w, false, index % 2);
+    if (next) placeBar(item, next.x, 2, next.w, "above", index % 2);
   });
-  const hubW = Math.min(72, Math.max(28, Math.round(plotW * 0.24)));
-  const hubY = Math.round(frame.plot * 0.16);
-  if (hubItem) placeBar(hubItem, Math.round((plotW - hubW) / 2), hubY, hubW, false);
+  const hubW = Math.min(72, Math.max(28, Math.round(plotW * 0.22)));
+  const hubX = Math.round(plotW * 0.28);
+  const hubY = Math.max(28, Math.round(frame.plot * 0.12));
+  if (hubItem) placeBar(hubItem, hubX, hubY, hubW, "right");
   const labelBlock = frame.lineHeight * 2 + 8;
-  const leafStart = hubY + barH + labelBlock + 8;
-  const step = labelBlock + 8;
   const leafMax = Math.max(1, ...leaves.map((item) => item.node.amountMinor));
   const lanes = leaves.length > 4 ? 3 : Math.max(1, leaves.length);
+  const rows = Math.max(1, Math.ceil(leaves.length / lanes));
+  const leafTop = hubY + barH + labelBlock + 16;
+  const leafBottom = frame.plot - barH - 8;
+  const step = rows <= 1 ? 0 : (leafBottom - leafTop) / (rows - 1);
   leaves.forEach((item, index) => {
-    const w = Math.max(10, Math.round(Math.min(plotW * 0.28, 72) * Math.max(0.35, item.node.amountMinor / leafMax)));
     const lane = index % lanes;
     const row = Math.floor(index / lanes);
     const laneW = plotW / lanes;
-    const localX = Math.max(0, Math.round(lane * laneW + (laneW - w) / 2));
-    const localY = Math.min(frame.plot - barH - 4, leafStart + row * step + lane * frame.lineHeight);
-    placeBar(item, Math.min(localX, Math.max(0, plotW - w)), localY, w, true);
+    const w = Math.max(8, Math.min(Math.round(laneW * 0.22), Math.round(28 * Math.max(0.45, item.node.amountMinor / leafMax))));
+    const laneX = lane * laneW;
+    const localX = lane === 0 ? Math.round(laneX + laneW - w - 4) : Math.round(laneX + 4);
+    const stagger = (lane - 1) * Math.round(Math.min(step * 0.22, frame.lineHeight));
+    const localY = Math.min(leafBottom, Math.max(leafTop, Math.round(leafTop + row * step + stagger)));
+    placeBar(item, Math.min(Math.max(0, localX), plotW - w), localY, w, lane === 0 ? "left" : "right");
   });
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
   stackFlowCurves(curves, links, placed, idIndex, "x");
@@ -1015,16 +1043,33 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     const blockH = lines.length * frame.lineHeight;
     const stack = box.stack || 0;
     const band = Math.max(blockH, frame.lineHeight * 3) + 8;
-    let cursor = box.below ? box.y + box.h + 8 : box.y - 8 - band - stack * band;
+    const beside = box.align === "left" || box.align === "right";
+    let cursor = beside ? box.y + box.h / 2 - blockH / 2 : box.y - 8 - band - stack * band;
     cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
+    const paper = usedColor("var(--surface-0)", "rgb(23, 24, 27)");
     for (const line of lines) {
       const now = measure(line.el);
       if (!now) continue;
-      const x = Math.max(2, Math.min(box.x + box.w / 2 - now.w / 2, frame.width - now.w - 2));
-      line.el.x = (line.el.x || 0) + (x - now.x);
-      line.el.y = (line.el.y || 0) + (cursor - now.y);
       const amount = line.text.includes("·");
       line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
+      line.el.dirty?.();
+      const painted = measure(line.el) || now;
+      const x = box.align === "left"
+        ? Math.max(2, box.x - 8 - painted.w)
+        : box.align === "right"
+          ? Math.min(box.x + box.w + 8, frame.width - painted.w - 2)
+          : Math.max(2, Math.min(box.x + box.w / 2 - painted.w / 2, frame.width - painted.w - 2));
+      if (beside && item.node.role === "pool") {
+        const back = new (item.el.constructor as new (opts: unknown) => AuditEl)({
+          shape: { x: x - 4, y: cursor - 2, width: painted.w + 8, height: frame.lineHeight },
+          style: { fill: paper },
+          silent: true,
+          z2: 3,
+        });
+        zr.add?.(back);
+      }
+      line.el.x = (line.el.x || 0) + (x - painted.x);
+      line.el.y = (line.el.y || 0) + (cursor - painted.y);
       line.el.dirty?.();
       cursor += frame.lineHeight;
     }
@@ -1326,8 +1371,7 @@ function nudgeLabels(instance: ECharts, width: number, height: number) {
         if (!boxesHit(clusters[i], clusters[j])) continue;
         const lower = clusters[i].y <= clusters[j].y ? clusters[j] : clusters[i];
         const upper = lower === clusters[i] ? clusters[j] : clusters[i];
-        const gap = Math.max(upper.h, lower.h);
-        move(lower, 0, upper.y + upper.h + gap - lower.y);
+        move(lower, 0, upper.y + upper.h + 8 - lower.y);
         moved = true;
       }
       const cluster = clusters[i];

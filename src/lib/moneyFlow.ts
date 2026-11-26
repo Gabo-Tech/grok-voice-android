@@ -574,6 +574,8 @@ export interface SankeyFrame {
   fontSize: number;
   lineHeight: number;
   compact: boolean;
+  /** Landscape drops the amount line when a row cannot hold the name and the figure. */
+  amounts: boolean;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -587,7 +589,7 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function sankeyFrame(chartWidth: number, columnCounts: number[], labels = true, chartHeight = 0, layout: "vertical" | "horizontal" = "vertical"): SankeyFrame {
   const width = Math.max(280, Math.round(chartWidth || 0));
-  const reported = chartHeight >= 240 ? Math.round(chartHeight) : Math.round(clamp(width * 0.85, 300, 560));
+  const reported = chartHeight >= 160 ? Math.round(chartHeight) : Math.round(clamp(width * 0.85, 300, 560));
   const portrait = reported > width;
   const narrow = portrait && width < 520;
   const vertical = narrow && layout !== "horizontal";
@@ -602,15 +604,15 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const compact = width < 640 || (!portrait && reported < 480);
   const flowPx = Math.round(clamp(width * 0.055, 16, 48));
 
-  let top = labels ? (reference ? 16 : portrait ? (vertical ? 128 : 96) : Math.round(clamp(reported * 0.08, 28, 48))) : 8;
-  let bottom = labels ? (reference ? 12 : portrait ? (vertical ? (busiest > 4 ? 108 : 64) : 88) : 12) : 8;
+  let top = labels ? (reference ? 16 : portrait ? (vertical ? 112 : 96) : 16) : 8;
+  let bottom = labels ? (reference ? 12 : portrait ? (vertical ? 20 : 88) : 8) : 8;
   let plot = reference
     ? Math.max(64, busiest * 64)
     : vertical
-    ? Math.round(clamp(busiest * (lineHeight * 2 + 14) + 120, 260, 640))
+    ? Math.max(280, reported - top - bottom)
     : portrait
     ? Math.round(clamp(busiest * (lineHeight * 2 + 18), 260, 440))
-    : Math.max(220, busiest * (lineHeight * 3 + 8));
+    : Math.max(140, reported - top - bottom);
   const height = top + plot + bottom;
   const columnFill = vertical ? 0.32 : portrait ? flowPx / plot : 1;
   const seriesH = Math.round(plot * (vertical ? 1 : columnFill));
@@ -670,6 +672,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     fontSize,
     lineHeight,
     compact,
+    amounts: vertical || reference || portrait || busiest * (lineHeight * 2 + 6) <= plot,
   };
 }
 
@@ -951,7 +954,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
     const name = baseName.includes(" / ") ? baseName.replace(" / ", " /\n") : baseName;
     const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact);
     const valueLine = dated ? `${meta}\n${dated[2]}` : meta;
-    const showValue = input.values;
+    const showValue = input.values && frame.amounts;
     return {
       name: safe.get(node.id),
       depth,
