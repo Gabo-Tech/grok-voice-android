@@ -1,4 +1,4 @@
-import { PALETTE } from "./financeView.ts";
+import { defaultToken, shownColor } from "./entityColor.ts";
 
 export type CategoryKind = "income" | "expense" | "savings" | "investment" | "debt";
 
@@ -66,7 +66,7 @@ export function migrateCategories(categories: CategoryRecord[], uses: CategoryUs
     const parent = (category.parent || "").trim();
     next.push({
       name,
-      color: /^#[0-9A-Fa-f]{6}$/.test(category.color || "") ? category.color : PALETTE[index % PALETTE.length],
+      color: shownColor(name, category.color || ""),
       kind: category.kind || kindOf(name, uses),
       icon: category.icon || SUGGESTED_CATEGORIES.find((row) => fold(row.name) === fold(name))?.icon || "",
       order: category.order ?? index,
@@ -77,7 +77,7 @@ export function migrateCategories(categories: CategoryRecord[], uses: CategoryUs
   if (blanks && !seen.has(fold(UNCATEGORIZED))) {
     next.push({
       name: UNCATEGORIZED,
-      color: PALETTE[next.length % PALETTE.length],
+      color: defaultToken(UNCATEGORIZED),
       kind: "expense",
       icon: "wallet",
       order: next.length,
@@ -95,7 +95,7 @@ export function withSuggested(categories: CategoryRecord[]): CategoryRecord[] {
     if (seen.has(fold(suggestion.name))) continue;
     next.push({
       name: suggestion.name,
-      color: PALETTE[next.length % PALETTE.length],
+      color: defaultToken(suggestion.name),
       kind: suggestion.kind,
       icon: suggestion.icon,
       order: next.length,

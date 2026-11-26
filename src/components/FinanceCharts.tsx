@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
-import type { FinanceAccount, FinanceFx, FinancePrices, FinanceRule, FinanceTransaction } from "@/lib/api";
+import type { FinanceAccount, FinanceCategory, FinanceFx, FinancePrices, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { todayIso } from "@/components/FinanceDashboard";
 import { ChartCard, Donut, Legend, LineChart, monthName, useChartVisibility, type LegendRow } from "@/components/ChartKit";
+import { ChartColorMenu } from "@/components/ColorSheet";
+import { resolveColor, type EntityColor } from "@/lib/entityColor";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { inBounds, monthsIn } from "@/lib/chartPeriod";
 import { selectDebt } from "@/lib/financeDebt";
@@ -9,12 +11,8 @@ import { debtRatio, netOfVisible, worthBuckets } from "@/lib/financeLedger";
 import { plannedHits } from "@/lib/financeMath";
 import { bookFromStatus, headlineOf, type MoneyPart, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
-import { displayColor, isDebt } from "@/lib/financeView";
+import { isDebt } from "@/lib/financeView";
 import { activeLocale, fill, useT } from "@/lib/i18n";
-
-const SAGE = "var(--sage)";
-const ROSE = "var(--rose)";
-const GOLD = "var(--gold)";
 
 export interface ChartPick {
   accountId?: string;
@@ -34,6 +32,9 @@ export function FinanceCarousel({
   busy = false,
   onOpenSettings,
   onPick,
+  categories = [],
+  entityColors = [],
+  onPaint,
 }: {
   accounts: FinanceAccount[];
   transactions: FinanceTransaction[];
@@ -44,6 +45,9 @@ export function FinanceCarousel({
   busy?: boolean;
   onOpenSettings?: () => void;
   onPick: (pick: ChartPick) => void;
+  categories?: FinanceCategory[];
+  entityColors?: EntityColor[];
+  onPaint?: (kind: string, id: string, color: string) => void;
 }) {
   const t = useT();
   const allocationPeriod = useChartPeriod("allocation");
@@ -85,25 +89,24 @@ export function FinanceCarousel({
   }, [accounts, rules, transactions, code, book, nowMs, today]);
   const ringRows = useMemo(() => {
     const labels = { money: t("Money"), debt: t("Debts"), investment: t("Investments"), credit: t("Card credit") };
-    const colors = { money: "var(--brand)", debt: "var(--negative)", investment: "var(--text-tertiary)", credit: "var(--text-tertiary)" };
     return buckets.buckets
       .filter((bucket) => bucket.id !== "debt" && bucket.amountMinor > 0)
       .map((bucket) => ({
         id: bucket.id,
         label: labels[bucket.id],
-        color: colors[bucket.id],
+        color: resolveColor(entityColors, "series", `allocation:${bucket.id}`, ""),
         amountMinor: bucket.amountMinor,
         currency: code,
         className: bucket.id,
         original: bucket.natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · "),
         note: bucket.unpriced.length ? fill("No price for {name}", { name: bucket.unpriced.join(", ") }) : "",
       }));
-  }, [buckets, code, t]);
+  }, [buckets, code, t, entityColors]);
   const categoryRows = useMemo(
-    () => categoryLegend(transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end),
-    [transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end],
+    () => categoryLegend(transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end, categories, entityColors),
+    [transactions, code, book, nowMs, categoryPeriod.bounds.start, categoryPeriod.bounds.end, categories, entityColors],
   );
-  const debtRows = useMemo(() => debtLegend(accounts, code, book, nowMs), [accounts, code, book, nowMs]);
+  const debtRows = useMemo(() => debtLegend(accounts, code, book, nowMs, entityColors), [accounts, code, book, nowMs, entityColors]);
   const trend = useMemo(
     () => trendPoints(transactions, code, book, nowMs, trendPeriod.bounds.start, trendPeriod.bounds.end),
     [transactions, code, book, nowMs, trendPeriod.bounds.start, trendPeriod.bounds.end],
@@ -133,6 +136,7 @@ export function FinanceCarousel({
               />
               <DebtAgainstAssets owed={debt.amountMinor} assets={netOfVisible(buckets.buckets, ringVis.hidden).assets} currency={code} original={debt.natives.map((row) => formatMoney(row.amountMinor, row.currency)).join(" · ") || ""} />
               <Legend rows={ringRows} hidden={ringVis.hidden} currency={code} onToggle={ringVis.toggle} onShowAll={ringVis.showAll} anyHidden={ringVis.anyHidden} />
+              {onPaint ? <ChartColorMenu series={ringRows} currency={code} onPaint={(id, color) => onPaint("series", `allocation:${id}`, color)} /> : null}
             </ChartCard>
           ),
         }
@@ -144,6 +148,7 @@ export function FinanceCarousel({
             <ChartCard title={t("By category")}>
               <ChartPeriodBar period={categoryPeriod.period} onChange={categoryPeriod.setPeriod} />
               <Legend rows={categoryRows} hidden={categoryVis.hidden} currency={code} onToggle={categoryVis.toggle} onShowAll={categoryVis.showAll} anyHidden={categoryVis.anyHidden} />
+              {onPaint ? <ChartColorMenu series={categoryRows} currency={code} onPaint={(id, color) => onPaint(categories.find((row) => row.name === id)?.kind === "income" ? "income" : "category", id, color)} /> : null}
             </ChartCard>
           ),
         }
@@ -157,6 +162,7 @@ export function FinanceCarousel({
               <ChartPeriodBar period={debtPeriod.period} onChange={debtPeriod.setPeriod} />
               <Donut rows={debtRows} hidden={debtVis.hidden} caption={t("Owed")} center={formatMoney(visibleTotal(debtRows, debtVis.hidden), code)} />
               <Legend rows={debtRows} hidden={debtVis.hidden} currency={code} onToggle={debtVis.toggle} onShowAll={debtVis.showAll} anyHidden={debtVis.anyHidden} />
+              {onPaint ? <ChartColorMenu series={debtRows} currency={code} onPaint={(id, color) => onPaint("account", id, color)} /> : null}
             </ChartCard>
           ),
         }
@@ -178,6 +184,8 @@ export function FinanceCarousel({
               anyHidden={trendVis.anyHidden}
               onPick={(month) => onPick({ month })}
               period={<ChartPeriodBar period={trendPeriod.period} onChange={trendPeriod.setPeriod} />}
+              entityColors={entityColors}
+              onPaint={onPaint}
             />
           ),
         }
@@ -246,7 +254,7 @@ function DebtAgainstAssets({ owed, assets, currency, original }: { owed: number;
   );
 }
 
-function categoryLegend(txs: FinanceTransaction[], display: string, book: RateBook | null, nowMs: number, start: string, end: string): LegendRow[] {
+function categoryLegend(txs: FinanceTransaction[], display: string, book: RateBook | null, nowMs: number, start: string, end: string, categories: FinanceCategory[], entityColors: EntityColor[]): LegendRow[] {
   const by = new Map<string, { name: string; parts: MoneyPart[] }>();
   for (const tx of txs) {
     if (tx.direction !== "expense" || !inBounds(tx.date, start, end) || !tx.currency || !tx.amountMinor) continue;
@@ -255,7 +263,7 @@ function categoryLegend(txs: FinanceTransaction[], display: string, book: RateBo
     row.parts.push({ amountMinor: tx.amountMinor, currency: tx.currency });
     by.set(name, row);
   }
-  return [...by.values()].flatMap((row, index) => {
+  return [...by.values()].flatMap((row) => {
     const head = headlineOf(row.parts, display, book, nowMs);
     if (head.state !== "ready" || head.amountMinor === 0) return [];
     const natives = new Map<string, number>();
@@ -267,7 +275,7 @@ function categoryLegend(txs: FinanceTransaction[], display: string, book: RateBo
     return [{
       id: row.name,
       label: row.name,
-      color: displayColor("", index),
+      color: resolveColor(entityColors, categories.find((category) => category.name === row.name)?.kind === "income" ? "income" : "category", row.name, categories.find((category) => category.name === row.name)?.color || ""),
       amountMinor: head.amountMinor,
       currency: display,
       className: row.name,
@@ -276,8 +284,8 @@ function categoryLegend(txs: FinanceTransaction[], display: string, book: RateBo
   });
 }
 
-function debtLegend(accounts: FinanceAccount[], display: string, book: RateBook | null, nowMs: number): LegendRow[] {
-  return accounts.flatMap((account, index) => {
+function debtLegend(accounts: FinanceAccount[], display: string, book: RateBook | null, nowMs: number, entityColors: EntityColor[]): LegendRow[] {
+  return accounts.flatMap((account) => {
     if (!isDebt(account.kind) || account.shownBalanceMinor == null || account.shownBalanceMinor <= 0) return [];
     const head = headlineOf([{ amountMinor: account.shownBalanceMinor, currency: account.currency }], display, book, nowMs);
     if (head.state !== "ready") return [];
@@ -285,7 +293,7 @@ function debtLegend(accounts: FinanceAccount[], display: string, book: RateBook 
     return [{
       id: account.id,
       label: account.name,
-      color: displayColor(account.color, index),
+      color: resolveColor(entityColors, "account", account.id, account.color),
       amountMinor: head.amountMinor,
       currency: display,
       className: account.kind,
@@ -329,6 +337,8 @@ function TrendCard({
   anyHidden,
   onPick,
   period,
+  entityColors = [],
+  onPaint,
 }: {
   title: string;
   points: Array<{ key: string; income: number; expense: number; net: number }>;
@@ -342,6 +352,8 @@ function TrendCard({
   onShowAll: () => void;
   anyHidden: boolean;
   onPick: (month: string) => void;
+  entityColors?: EntityColor[];
+  onPaint?: (kind: string, id: string, color: string) => void;
 }) {
   const t = useT();
   const locale = activeLocale();
@@ -349,9 +361,9 @@ function TrendCard({
   const current = points[points.length - 1]?.key || "";
   const chosen = points.find((point) => point.key === focus) || points[points.length - 1];
   const rows: LegendRow[] = [
-    { id: "income", label: t("Income"), color: SAGE, amountMinor: chosen?.income || 0, currency, className: "income" },
-    { id: "expense", label: t("Expenses"), color: ROSE, amountMinor: chosen?.expense || 0, currency, className: "expense" },
-    { id: "net", label: t("Result"), color: GOLD, amountMinor: chosen?.net || 0, currency, className: "result" },
+    { id: "income", label: t("Income"), color: resolveColor(entityColors, "series", "trend:income", ""), amountMinor: chosen?.income || 0, currency, className: "income" },
+    { id: "expense", label: t("Expenses"), color: resolveColor(entityColors, "series", "trend:expense", ""), amountMinor: chosen?.expense || 0, currency, className: "expense" },
+    { id: "net", label: t("Result"), color: resolveColor(entityColors, "series", "trend:net", ""), amountMinor: chosen?.net || 0, currency, className: "result" },
   ];
   if (missing.length) {
     return (
@@ -365,9 +377,9 @@ function TrendCard({
     );
   }
   const series = [
-    { id: "income", color: SAGE, points: points.map((point) => ({ date: point.key, valueMinor: point.income })) },
-    { id: "expense", color: ROSE, points: points.map((point) => ({ date: point.key, valueMinor: point.expense })) },
-    { id: "net", color: GOLD, points: points.map((point) => ({ date: point.key, valueMinor: point.net })) },
+    { id: "income", color: resolveColor(entityColors, "series", "trend:income", ""), points: points.map((point) => ({ date: point.key, valueMinor: point.income })) },
+    { id: "expense", color: resolveColor(entityColors, "series", "trend:expense", ""), points: points.map((point) => ({ date: point.key, valueMinor: point.expense })) },
+    { id: "net", color: resolveColor(entityColors, "series", "trend:net", ""), points: points.map((point) => ({ date: point.key, valueMinor: point.net })) },
   ].filter((row) => !hidden.has(row.id));
   return (
     <ChartCard title={title}>
@@ -382,6 +394,7 @@ function TrendCard({
         </p>
       ) : null}
       <Legend rows={rows} hidden={hidden} currency={currency} onToggle={onToggle} onShowAll={onShowAll} anyHidden={anyHidden} />
+      {onPaint ? <ChartColorMenu series={rows} currency={currency} onPaint={(id, color) => onPaint("series", `trend:${id}`, color)} /> : null}
     </ChartCard>
   );
 }

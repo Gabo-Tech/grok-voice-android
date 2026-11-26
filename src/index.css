@@ -72,6 +72,19 @@
     --tap-scale: 0.98;
     --text-mix: #f3f1ec;
     --elevation: none;
+    /* Chart series. Same hues on every theme: each stays at least 3:1 on the darkest and lightest canvas. */
+    --series-1: #0072b2;
+    --series-2: #9a5c00;
+    --series-3: #0b7a5a;
+    --series-4: #a84b86;
+    --series-5: #c44e00;
+    --series-6: #2e6a8a;
+    --series-7: #b85a78;
+    --series-8: #1f7a6e;
+    --series-9: #9a5aaa;
+    --series-10: #267a46;
+    --series-11: #7a68c0;
+    --series-12: #a3522a;
 }
 
 /* Graphite is the default. Other themes replace semantic tokens only. */

@@ -14,7 +14,9 @@ import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { formatQuantity, isHoldingAccount, originalHolding, positionOf } from "@/lib/financeLedger";
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
-import { displayColor, filterTransactions, groupOf, isDebt, PALETTE, periodBounds, type PeriodId } from "@/lib/financeView";
+import { filterTransactions, groupOf, isDebt, periodBounds, type PeriodId } from "@/lib/financeView";
+import { resolveColor, shownColor } from "@/lib/entityColor";
+import { ColorEditor, ColorSheet } from "@/components/ColorSheet";
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
 import { bookFromStatus, cardDisplayMinor, cardDueDate, cardPosture, debtPayoff, headlineOf, nextDue, plannedHits, utilization } from "@/lib/financeMath";
 import { FinanceDashboard, todayIso, useFinanceRateWatch, type WorthFocus } from "@/components/FinanceDashboard";
@@ -75,6 +77,7 @@ export function FinancePage({
   const rateDay = useRef(todayIso());
   const [tab, setTab] = useState<FinanceTab>(() => readFinanceTab(readStoredTab()));
   const [sheet, setSheet] = useState<SheetKind | null>(null);
+  const [colorAccount, setColorAccount] = useState<FinanceAccount | null>(null);
   const [priceAccount, setPriceAccount] = useState<FinanceAccount | null>(null);
   const [priceFlash, setPriceFlash] = useState<Record<string, string>>({});
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
@@ -477,6 +480,9 @@ export function FinancePage({
                 busy={finance.busy}
                 onOpenSettings={onOpenCurrency}
                 onPick={pickChart}
+                categories={finance.snapshot.categories}
+                entityColors={finance.snapshot.entityColors}
+                onPaint={finance.paintColor}
               />
             </div>
           </div>
@@ -527,6 +533,8 @@ export function FinancePage({
               display={finance.snapshot.defaultCurrency}
               fx={finance.snapshot.fx}
               quotes={finance.snapshot.prices?.quotes || []}
+              onColor={setColorAccount}
+              entityColors={finance.snapshot.entityColors}
             />
           </div>
           <div ref={(node) => { pageRefs.current[3] = node; }} role="tabpanel" id="finance-panel-holdings" aria-labelledby="finance-tab-holdings" data-finance-tabpanel="holdings" className="fin-swipe-page" inert={tab === "holdings" ? undefined : true}>
@@ -550,6 +558,8 @@ export function FinancePage({
               display={finance.snapshot.defaultCurrency}
               fx={finance.snapshot.fx}
               quotes={finance.snapshot.prices?.quotes || []}
+              onColor={setColorAccount}
+              entityColors={finance.snapshot.entityColors}
             />
             <div className="mt-6" data-shot="holdings-chart">
               <HoldingsChart
@@ -558,7 +568,9 @@ export function FinancePage({
                 fx={finance.snapshot.fx}
                 prices={finance.snapshot.prices}
                 history={finance.snapshot.history || []}
-                onRecolor={(account, color) => finance.saveAccount({ id: account.id, name: account.name, kind: account.kind, color })}
+                onRecolor={(account, color) => finance.paintColor("account", account.id, color)}
+                onPaint={finance.paintColor}
+                entityColors={finance.snapshot.entityColors}
                 onUnpriced={setPriceAccount}
               />
             </div>
@@ -640,6 +652,15 @@ export function FinancePage({
       />
       <PayCardSheet open={sheet === "pay"} finance={finance} card={paying} onClose={() => setSheet(null)} />
       <CategorySheet open={categorySheet} finance={finance} onClose={() => setCategorySheet(false)} />
+      {colorAccount ? (
+        <ColorSheet
+          series={[{ id: colorAccount.id, label: colorAccount.name, color: resolveColor(finance.snapshot.entityColors, "account", colorAccount.id, colorAccount.color) }]}
+          currency={finance.snapshot.defaultCurrency}
+          initialId={colorAccount.id}
+          onPaint={(_id, color) => finance.paintColor("account", colorAccount.id, color)}
+          onClose={() => setColorAccount(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -922,6 +943,8 @@ function AccountList({
   display = "",
   fx,
   quotes = [],
+  onColor,
+  entityColors = [],
 }: {
   rows: FinanceAccount[];
   transactions: FinanceTransaction[];
@@ -941,9 +964,11 @@ function AccountList({
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
+  onColor?: (account: FinanceAccount) => void;
+  entityColors?: { kind: string; id: string; color: string }[];
 }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} onDiagnose={onDiagnose} priceNote={priceNote} priceFlash={priceFlash} attempts={attempts} display={display} fx={fx} quotes={quotes} />;
+  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} onDiagnose={onDiagnose} priceNote={priceNote} priceFlash={priceFlash} attempts={attempts} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />;
 }
 
 function AccountRows({
@@ -961,6 +986,8 @@ function AccountRows({
   display = "",
   fx,
   quotes = [],
+  onColor,
+  entityColors = [],
 }: {
   rows: FinanceAccount[];
   onOpen: (account: FinanceAccount) => void;
@@ -976,11 +1003,13 @@ function AccountRows({
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes?: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
+  onColor?: (account: FinanceAccount) => void;
+  entityColors?: { kind: string; id: string; color: string }[];
 }) {
   const t = useT();
   return (
     <div className="space-y-3">
-      {rows.map((account, index) => {
+      {rows.map((account) => {
         const posture = cardPosture(account.kind === "credit_card" ? account.shownBalanceMinor : null);
         const displayMinor = account.kind === "credit_card" ? cardDisplayMinor(account.shownBalanceMinor) : account.shownBalanceMinor;
         const position = positionOf(account, display, bookFromStatus(fx), quotes, Date.now());
@@ -1011,8 +1040,11 @@ function AccountRows({
         const billDue = owed && due && !(card && (posture === "credit" || posture === "paid"));
         return (
           <div key={account.id} className="border border-border px-3 py-3">
-            <RowButton onClick={() => onOpen(account)} className="px-0 py-0">
-              <span className="fin-swatch" style={{ background: displayColor(account.color, index) }} />
+            <div className="flex items-start">
+            <button type="button" className="fin-icon shrink-0" aria-label={fill("Color for {name}", { name: account.name })} onClick={() => onColor?.(account)}>
+              <span className="fin-swatch" style={{ background: resolveColor(entityColors, "account", account.id, account.color) }} />
+            </button>
+            <RowButton onClick={() => onOpen(account)} className="min-w-0 flex-1 px-0 py-0">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base">{account.name}</p>
                 <p className="text-sm text-muted-foreground">
@@ -1029,6 +1061,7 @@ function AccountRows({
                 {nativeLine ? <span className="fin-muted block text-[13px] leading-4">{nativeLine}</span> : null}
               </span>
             </RowButton>
+            </div>
             {account.marketPrice != null ? (
               <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
                 {account.marketEstimated
@@ -1335,7 +1368,7 @@ function AccountSheet({
   const [contributionCadence, setContributionCadence] = useState("");
   const [contributionDate, setContributionDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [color, setColor] = useState(PALETTE[0]);
+  const [color, setColor] = useState("");
   const [investmentType, setInvestmentType] = useState("custom");
   const [valueMode, setValueMode] = useState("stated");
   const [units, setUnits] = useState("");
@@ -1368,7 +1401,7 @@ function AccountSheet({
     setContributionCadence(editing?.contributionCadence || "");
     setContributionDate(editing?.contributionDate || "");
     setNotes(editing?.notes || "");
-    setColor(editing?.color || PALETTE[0]);
+    setColor(shownColor(editing?.id || "", editing?.color || ""));
     setInvestmentType(editing?.investmentType || "custom");
     setValueMode(editing?.units ? "units" : "stated");
     setUnits(editing?.units || "");
@@ -1583,7 +1616,7 @@ function AccountSheet({
             )}
           </>
         )}
-        <ColorField color={color} onChange={setColor} />
+        <ColorEditor name={name || t("Color")} color={color} onChange={setColor} />
         <Field label={t("Remind me")}>
           <div className="chip-scroller">
             {LEADS.map((days) => (
@@ -1708,6 +1741,8 @@ function AccountsBoard({
   display = "",
   fx,
   quotes = [],
+  onColor,
+  entityColors = [],
 }: {
   accounts: FinanceAccount[];
   focus: WorthFocus | "all";
@@ -1723,6 +1758,8 @@ function AccountsBoard({
   onAddDebt: () => void;
   onAddLoan: () => void;
   onPay: (account: FinanceAccount) => void;
+  onColor?: (account: FinanceAccount) => void;
+  entityColors?: { kind: string; id: string; color: string }[];
 }) {
   const t = useT();
   const bank = accounts.filter((account) => account.kind === "bank");
@@ -1738,7 +1775,7 @@ function AccountsBoard({
   const block = (title: string, rows: FinanceAccount[], emptyTitle: string, emptyBody: string, action: string, onAdd: () => void, pay = false) => (
     <section key={title}>
       <h2 className="fin-kicker mb-2">{title}</h2>
-      <AccountList rows={rows} transactions={transactions} rules={rules} onPaid={onPaid} emptyTitle={emptyTitle} emptyBody={emptyBody} action={action} onAdd={onAdd} onOpen={onOpen} onPay={pay ? onPay : undefined} display={display} fx={fx} quotes={quotes} />
+      <AccountList rows={rows} transactions={transactions} rules={rules} onPaid={onPaid} emptyTitle={emptyTitle} emptyBody={emptyBody} action={action} onAdd={onAdd} onOpen={onOpen} onPay={pay ? onPay : undefined} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />
     </section>
   );
   return (
@@ -1756,20 +1793,6 @@ function AccountsBoard({
         ? block(t("Loans and other debts"), loans, t("No debts saved"), t("A loan. Payments reduce what you owe."), t("Add account"), onAddLoan)
         : null}
     </div>
-  );
-}
-
-function ColorField({ color, onChange }: { color: string; onChange: (color: string) => void }) {
-  const t = useT();
-  return (
-    <Field label={t("Color")}>
-      <div className="flex flex-wrap gap-2">
-        {PALETTE.map((swatch) => (
-          <button key={swatch} type="button" aria-label={swatch} className="fin-swatch h-11 w-11" style={{ background: swatch, outline: color === swatch ? "2px solid var(--fin-gold)" : undefined }} onClick={() => onChange(swatch)} />
-        ))}
-        <Input aria-label={t("Custom color")} value={color} onChange={(event) => onChange(event.target.value)} className="w-28" />
-      </div>
-    </Field>
   );
 }
 
@@ -1810,17 +1833,11 @@ function CategorySheet({ open, finance, onClose }: { open: boolean; finance: Fin
         {rows.map((category, index) => (
           <div key={category.name} className="border border-[var(--fin-line)] p-2">
             <div className="flex gap-2">
-              <span className="fin-swatch mt-2 shrink-0" style={{ background: category.color || "#6E8B74" }} />
+              <span className="fin-swatch mt-2 shrink-0" style={{ background: resolveColor(finance.snapshot.entityColors, category.kind === "income" ? "income" : "category", category.name, category.color) }} />
               <Input value={drafts[category.name] ?? category.name} onChange={(event) => setDrafts((current) => ({ ...current, [category.name]: event.target.value }))} />
               <Button type="button" onClick={() => finance.editCategory({ action: "rename", name: category.name, to: drafts[category.name] ?? category.name })}>{t("Rename")}</Button>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {PALETTE.map((swatch) => (
-                <button key={swatch} type="button" className="fin-icon" aria-label={swatch} onClick={() => finance.editCategory({ action: "color", name: category.name, color: swatch })}>
-                  <span className="fin-swatch" style={{ background: swatch }} />
-                </button>
-              ))}
-            </div>
+            <ColorEditor name={category.name} color={resolveColor(finance.snapshot.entityColors, category.kind === "income" ? "income" : "category", category.name, category.color)} onChange={(swatch) => finance.paintColor(category.kind === "income" ? "income" : "category", category.name, swatch)} />
             <div className="mt-2 flex flex-wrap gap-1">
               {kinds.map((item) => (
                 <button key={item} type="button" className="fin-chip" aria-pressed={(category.kind || "expense") === item} onClick={() => finance.editCategory({ action: "kind", name: category.name, kind: item })}>{t(categoryKindLabel(item))}</button>

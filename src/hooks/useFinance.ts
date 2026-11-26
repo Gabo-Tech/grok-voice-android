@@ -13,6 +13,7 @@ import {
   type FinancePdfRequest,
   type FinanceTransactionDraft,
 } from "@/lib/api";
+import { paintColors } from "@/lib/entityColor";
 import { financeSample } from "@/lib/financeSample";
 import { fill, useT } from "@/lib/i18n";
 import { emptyFinance, minorExponent, withShown } from "@/lib/money";
@@ -164,6 +165,15 @@ export function useFinance() {
         return;
       }
       void run(() => api.setFinanceDefaultCurrency(currency));
+    },
+    [inApp, run],
+  );
+
+  const paintColor = useCallback(
+    (kind: string, id: string, color: string) => {
+      setSnapshot((current) => applyPaint(current, kind, id, color));
+      if (!inApp) return;
+      void run(() => api.setFinanceColor(kind, id, color));
     },
     [inApp, run],
   );
@@ -360,6 +370,7 @@ export function useFinance() {
     setDefaultCurrency,
     renameCategory,
     editCategory,
+    paintColor,
     markPaid,
     scheduleAction,
     refreshRates,
@@ -374,6 +385,26 @@ export function useFinance() {
 }
 
 export type FinanceState = ReturnType<typeof useFinance>;
+
+function applyPaint(current: FinanceSnapshot, kind: string, id: string, color: string): FinanceSnapshot {
+  const entityColors = paintColors(current.entityColors, kind, id, color);
+  const fold = (value: string) => value.trim().toLowerCase();
+  let accounts = current.accounts;
+  let categories = current.categories;
+  let flowColors = current.flowColors || [];
+  if (kind === "account") {
+    accounts = accounts.map((account) => (account.id === id || fold(account.name) === fold(id) || fold(account.ticker || "") === fold(id) ? { ...account, color } : account));
+  }
+  if (kind === "category" || kind === "income") {
+    categories = categories.map((category) => (fold(category.name) === fold(id) ? { ...category, color: color || category.color, kind: kind === "income" ? "income" : category.kind } : category));
+  }
+  if (kind === "node") {
+    flowColors = color
+      ? [...flowColors.filter((row) => fold(row.id) !== fold(id)), { id, color }]
+      : flowColors.filter((row) => fold(row.id) !== fold(id));
+  }
+  return { ...current, accounts, categories, flowColors, entityColors };
+}
 
 function applyCategoryEdit(
   current: FinanceSnapshot,

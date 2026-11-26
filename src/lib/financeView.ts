@@ -1,11 +1,12 @@
 import type { FinanceAccount, FinanceTransaction } from "@/lib/api";
+import { SERIES_HEX, shownColor } from "./entityColor.ts";
 
-export const PALETTE = ["#4C78D8", "#6E8B74", "#A56B66", "#C4B5A0", "#7A6A58", "#3E6B73", "#8C6A3F", "#B8A48A", "#5C6B58", "#9A7B6A"];
+export const PALETTE = [...SERIES_HEX];
 
 export type PeriodId = "this" | "last" | "six" | "year" | "all";
 
 export function displayColor(color: string, index: number): string {
-  return /^#[0-9A-Fa-f]{6}$/.test(color || "") ? color : PALETTE[index % PALETTE.length];
+  return shownColor(`slot-${index}`, color);
 }
 
 export function isDebt(kind: string): boolean {

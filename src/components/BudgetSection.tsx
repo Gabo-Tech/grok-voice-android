@@ -8,6 +8,8 @@ import { overBudget, resolveBudget, shiftMonth, summarizeBudget, type BudgetReco
 import { bookFromStatus, plannedHits } from "@/lib/financeMath";
 import { formatMoney, minorExponent, moneyParts } from "@/lib/money";
 import { activeLocale, fill, useT } from "@/lib/i18n";
+import { ChartColorMenu } from "@/components/ColorSheet";
+import { resolveColor } from "@/lib/entityColor";
 import { todayIso } from "@/components/FinanceDashboard";
 
 const ROLES: BudgetRole[] = ["income", "expense", "savings", "investment"];
@@ -34,6 +36,7 @@ function BudgetLineRow({
   over,
   onOpen,
   onSwipe,
+  color = "",
 }: {
   name: string;
   actual: string;
@@ -43,6 +46,7 @@ function BudgetLineRow({
   over: boolean;
   onOpen: () => void;
   onSwipe: () => void;
+  color?: string;
 }) {
   const drag = useRef<{ x: number; y: number } | null>(null);
   return (
@@ -61,11 +65,11 @@ function BudgetLineRow({
       }}
     >
       <button type="button" className="flex min-h-11 w-full items-baseline justify-between gap-3 text-left" onClick={onOpen}>
-        <span className="min-w-0 truncate text-[15px]">{name}</span>
+        <span className="flex min-w-0 items-center gap-2 truncate text-[15px]">{color ? <span className="fin-swatch" style={{ background: color }} aria-hidden="true" /> : null}{name}</span>
         <span className="fin-num shrink-0 text-[13px]">{actual} / {planned}</span>
       </button>
       <div className="budget-bar" data-warn={warn ? "true" : "false"} data-over={over ? "true" : "false"}>
-        <span style={{ width: `${Math.min(100, Math.round(ratio * 100))}%` }} />
+        <span style={{ width: `${Math.min(100, Math.round(ratio * 100))}%`, background: color || undefined }} />
       </div>
     </div>
   );
@@ -253,10 +257,14 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
             </div>
           ) : null}
           <div className="mt-1">
-            {summary.rows.map((row) => (
+            {summary.rows.map((row) => {
+              const category = finance.snapshot.categories.find((item) => item.name === row.name);
+              const color = resolveColor(finance.snapshot.entityColors, category?.kind === "income" ? "income" : "category", row.name, category?.color || "");
+              return (
               <BudgetLineRow
                 key={row.id || row.name}
                 name={row.name}
+                color={color}
                 actual={formatMoney(row.actualMinor, display)}
                 planned={formatMoney(row.plannedMinor, display)}
                 ratio={Number.isFinite(row.ratio) ? row.ratio : 1}
@@ -285,7 +293,19 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
                   setOpen(true);
                 }}
               />
-            ))}
+              );
+            })}
+            <ChartColorMenu
+              series={summary.rows.map((row) => {
+                const category = finance.snapshot.categories.find((item) => item.name === row.name);
+                return { id: row.name, label: row.name, color: resolveColor(finance.snapshot.entityColors, category?.kind === "income" ? "income" : "category", row.name, category?.color || "") };
+              })}
+              currency={display}
+              onPaint={(id, color) => {
+                const category = finance.snapshot.categories.find((item) => item.name === id);
+                finance.paintColor(category?.kind === "income" ? "income" : "category", id, color);
+              }}
+            />
           </div>
         </>
       )}

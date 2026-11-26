@@ -279,6 +279,9 @@ struct Store {
     categories: Vec<Category>,
     #[serde(default)]
     flow_colors: Vec<NodeColor>,
+    /// One color per account, category, income type, Sankey node, class, or chart series.
+    #[serde(default)]
+    entity_colors: Vec<EntityColor>,
     /// Portrait money flow: "vertical" or "horizontal". Empty keeps the phone default.
     #[serde(default)]
     flow_layout: String,
@@ -321,6 +324,16 @@ pub struct Category {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeColor {
+    pub id: String,
+    #[serde(default)]
+    pub color: String,
+}
+
+/// Saved chart color. `kind` is account, category, income, node, class, or series.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityColor {
+    pub kind: String,
     pub id: String,
     #[serde(default)]
     pub color: String,
@@ -401,6 +414,8 @@ pub struct Bundle {
     pub flow_colors: Vec<NodeColor>,
     #[serde(default)]
     pub flow_layout: String,
+    #[serde(default)]
+    pub entity_colors: Vec<EntityColor>,
     #[serde(default)]
     pub fx: crate::finance_fx::FxBook,
     #[serde(default)]
@@ -500,6 +515,8 @@ pub struct Snapshot {
     pub flow_colors: Vec<NodeColor>,
     #[serde(default)]
     pub flow_layout: String,
+    #[serde(default)]
+    pub entity_colors: Vec<EntityColor>,
     pub fx: FxStatus,
     pub prices: crate::finance_prices::PriceBook,
     #[serde(default)]
@@ -768,6 +785,7 @@ impl Finance {
             categories: store.categories.clone(),
             flow_colors: store.flow_colors.clone(),
             flow_layout: store.flow_layout.clone(),
+            entity_colors: store.entity_colors.clone(),
             fx: store.fx.clone(),
             prices: store.prices.clone(),
             history: store.history.clone(),
@@ -787,6 +805,7 @@ impl Finance {
         store.categories = bundle.categories;
         store.flow_colors = bundle.flow_colors;
         store.flow_layout = bundle.flow_layout;
+        store.entity_colors = bundle.entity_colors;
         store.fx = bundle.fx;
         store.prices = bundle.prices;
         store.history = bundle.history;
@@ -868,6 +887,12 @@ impl Finance {
     pub fn edit_category_on(&self, app: &AppHandle, action: &str, name: &str, to: &str, color: &str, kind: &str, icon: &str, order: i32, parent: &str) -> Result<Snapshot, String> {
         let mut store = self.lock().clone();
         edit_category_parent(&mut store, action, name, to, color, kind, icon, order, parent)?;
+        self.commit(app, store)
+    }
+
+    pub fn set_color_on(&self, app: &AppHandle, kind: &str, id: &str, color: &str) -> Result<Snapshot, String> {
+        let mut store = self.lock().clone();
+        paint_entity(&mut store, kind, id, color)?;
         self.commit(app, store)
     }
 
@@ -1252,7 +1277,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "list_finance",
-            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's rates and holding prices and does not wait until tomorrow. When they say refresh price of a holding, such as refresh price of EPIC Cash or refresh EPIC price, set refresh true and account to that name. phrase may be that whole sentence. When they ask why a holding has no price, such as why has EPIC no price, set phrase to that sentence. Speak the sources, the ids, and the status of each source. Speak a holding's market worth and its source when the detail includes them, and say when the price is an AI estimate. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result. view activity, transactions, or search returns each transaction id, date, amount, currency, category, and account. amount, date, query, and account filter that list. transactionCount on an account is how many transactions are attached. Do not say there are none unless that count is zero or transactions is empty.",
+            "Read Finance saved on this phone, without guessing amounts or exchange rates. view is summary, accounts, activity, upcoming, or investments. month is YYYY-MM. kind is bank, cash, credit_card, loan, other_debt, or investment. account is a nickname. Speak the detail, including upcoming payments with their dates. view coming, or upcoming, is only the next 30 days: bills from cash or a bank, and the card payment that is due, not each card charge. Also speak balances, net worth, this month's result without card-bill payments, card debt or credit, utilization when a limit is saved, and the next card payment. If the owed balance is negative, say the credit, not a remaining limit, and do not say a payment is due. Utilization is zero when the card is in credit or paid off. A debt above the limit can be over 100 percent. base and quote, such as BTC and EUR, quote a saved rate and never invent one. refresh true fetches today's rates and holding prices and does not wait until tomorrow. When they say refresh price of a holding, such as refresh price of EPIC Cash or refresh EPIC price, set refresh true and account to that name. phrase may be that whole sentence. When they ask why a holding has no price, such as why has EPIC no price, set phrase to that sentence. Speak the sources, the ids, and the status of each source. Speak a holding's market worth and its source when the detail includes them, and say when the price is an AI estimate. If the rate is missing, say so. Do not invent a balance or a rate that is not in the result. view activity, transactions, or search returns each transaction id, date, amount, currency, category, and account. amount, date, query, and account filter that list. transactionCount on an account is how many transactions are attached. Do not say there are none unless that count is zero or transactions is empty. phrase what color is X reads a saved color. phrase make X green sets it. phrase reset the color for X clears it. Do not create an account when they only ask the color.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1323,7 +1348,7 @@ pub fn tool_definitions() -> Value {
         ),
         fn_tool(
             "open_finance",
-            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming, including the budget. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color, reset, fullscreen, planned, or describe. mode category groups income and expenses by type, mode entry gives each transaction its own node, mode mono is one color, mode vertical is top to bottom, and mode horizontal is left to right. action color with name and color paints one graph element: an income source, Total income, Spending, Savings, Investments, Shortfall, an expense category, or Rest. color is a name such as green or blue, or a #hex. action reset with name clears that element's color. action reset with name all asks first with confirmed false, then clears every saved chart color only after confirmed true. describe speaks income, spending, savings, and the largest categories. planned draws the saved budget. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, fullscreen, planned, or describe. Do not invent a rate.",
+            "Open a Finance screen on this phone and answer with the same numbers the screen shows, in the user's main currency. view is overview, activity, accounts, holdings, plan, portfolio, or charts. overview leads with net worth, income, and expenses for the dashboard period. period on overview is this, last, 3m, ytd, 1y, or custom. action hide or show with name hero, result, change, next, debt, categories, flow, pace, or attention. Hide top categories uses name categories. activity is transactions. accounts is banks, cash, cards, and loans, not investments. holdings is investments, crypto, metals, and manual assets. portfolio says how the saved history changed. plan is what is coming, including the budget. chart is flow, allocation, category, debts, trend, holdings, or portfolio. flow uses action labels, values, color, reset, fullscreen, planned, or describe. mode category groups income and expenses by type, mode entry gives each transaction its own node, mode mono is one color, mode vertical is top to bottom, and mode horizontal is left to right. action color with name and color paints one saved item and every chart that shows it: a holding, account, category, income type, or money-flow node. color is a name such as green or blue, or a #hex. action reset with name clears that color. Ask what color is X to read it. action reset with name all asks first with confirmed false, then clears every saved chart color only after confirmed true. describe speaks income, spending, savings, and the largest categories. planned draws the saved budget. period is this, last, 3m, 6m, ytd, 1y, all, or custom. action is hide, show, only, reset, labels, values, color, fullscreen, planned, or describe. Do not invent a rate.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1432,6 +1457,22 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         let confirmed = args["confirmed"].as_bool().unwrap_or(false);
         let folded_action = fold(&action);
         let folded_mode = fold(&mode);
+        if chart != "flow" && matches!(folded_action.as_str(), "color" | "paint" | "reset") {
+            let mut store = finance.lock().clone();
+            let (sentence, changed) = if folded_action == "reset" {
+                reset_saved_color(&mut store, &chart_name)
+            } else {
+                match paint_saved_color(&mut store, &chart_name, &color)? {
+                    (sentence, true) => (sentence, true),
+                    _ => (spoken("No saved item named {name}.", &[("name", &chart_name)]), false),
+                }
+            };
+            if changed {
+                finance.commit(app, store.clone())?;
+            }
+            touch_chart(app, view, &chart, &action, &chart_name, &period, &start, &end, &mode, &color, confirmed);
+            return Ok(Some(json!({ "ok": true, "view": view, "detail": sentence, "defaultCurrency": effective_default(&store, &currency_locale(app, &store)) })));
+        }
         if chart == "flow" && (matches!(folded_action.as_str(), "color" | "paint" | "reset") || matches!(folded_mode.as_str(), "vertical" | "horizontal")) {
             let mut store = finance.lock().clone();
             let (sentence, changed) = apply_flow_voice(&mut store, &folded_action, &chart_name, &color, confirmed, &folded_mode);
@@ -1474,6 +1515,17 @@ fn try_tool_inner(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Va
         return Ok(Some(json!({ "ok": true, "view": view, "detail": detail, "defaultCurrency": effective_default(&store, &currency_locale(app, &store)) })));
     }
     if name == "list_finance" {
+        let color_phrase = args["phrase"].as_str().or_else(|| args["query"].as_str()).unwrap_or("").trim();
+        if !color_phrase.is_empty() {
+            let mut store = finance.lock().clone();
+            if let Some((sentence, changed)) = spoken_color_phrase(&mut store, color_phrase)? {
+                let code = effective_default(&store, &currency_locale(app, &store));
+                if changed {
+                    finance.commit(app, store)?;
+                }
+                return Ok(Some(json!({ "ok": true, "detail": sentence, "defaultCurrency": code })));
+            }
+        }
         let phrase_name = ["phrase", "query", "account"].iter().find_map(|key| args[*key].as_str().and_then(parse_refresh_phrase));
         let why_name = ["phrase", "query", "account"].iter().find_map(|key| args[*key].as_str().and_then(parse_why_price));
         if let Some(name) = why_name {
@@ -2238,6 +2290,187 @@ fn color_command(phrase: &str) -> Option<(String, String)> {
         return None;
     }
     Some((name, (*hit.1).to_string()))
+}
+
+fn color_question(phrase: &str) -> Option<String> {
+    let folded = fold(phrase);
+    let marks = [
+        "what color is ",
+        "what colour is ",
+        "what's the color of ",
+        "what is the color of ",
+        "which color is ",
+        "que color es ",
+        "que color tiene ",
+        "de que color es ",
+        "cual es el color de ",
+        "welche farbe hat ",
+        "welche farbe ist ",
+        "qual a cor de ",
+        "qual a cor do ",
+        "qual e a cor de ",
+        "qual e a cor do ",
+        "quin color te ",
+        "quin color es ",
+        "quin color te el ",
+    ];
+    let mark = marks.iter().find(|mark| folded.contains(*mark))?;
+    let index = folded.find(mark)?;
+    let raw = phrase.get(index + mark.len()..)?.trim().trim_matches(|ch: char| ch == '?' || ch == '.' || ch == '!');
+    let name = raw.trim();
+    if name.is_empty() { None } else { Some(name.to_string()) }
+}
+
+fn color_reset_name(phrase: &str) -> Option<String> {
+    let folded = fold(phrase);
+    if matches!(folded.as_str(), "reset all colors" | "reset every color" | "reset all colours" | "restablece todos los colores" | "restablecer todos los colores" | "alle farben zurucksetzen" | "repoe todas as cores" | "repor todas as cores" | "restableix tots els colors") {
+        return Some(String::new());
+    }
+    let marks = [
+        "reset the color for ",
+        "reset the color of ",
+        "reset color for ",
+        "reset color of ",
+        "clear the color for ",
+        "clear the color of ",
+        "restablece el color de ",
+        "restablecer el color de ",
+        "quita el color de ",
+        "setze die farbe von ",
+        "setze die farbe fur ",
+        "farbe von ",
+        "repoe a cor de ",
+        "repor a cor de ",
+        "limpa a cor de ",
+        "restableix el color de ",
+        "treu el color de ",
+    ];
+    let mark = marks.iter().find(|mark| folded.contains(*mark))?;
+    let index = folded.find(mark)?;
+    let raw = phrase.get(index + mark.len()..)?.trim().trim_matches(|ch: char| ch == '?' || ch == '.' || ch == '!');
+    let name = raw.split_whitespace().next().unwrap_or("").trim();
+    if name.is_empty() { None } else { Some(name.to_string()) }
+}
+
+fn speak_saved_color(store: &Store, name: &str) -> String {
+    if let Some(found) = locate_color_name(store, name) {
+        let (label, color) = match found {
+            ColorHit::Account(index) => {
+                let account = &store.accounts[index];
+                let saved = store.entity_colors.iter().find(|row| row.kind == "account" && row.id == account.id).map(|row| row.color.as_str()).unwrap_or(account.color.as_str());
+                (account.name.clone(), shown_swatch(&account.id, saved))
+            }
+            ColorHit::Category(index) => {
+                let category = &store.categories[index];
+                let kind = if category.kind == "income" { "income" } else { "category" };
+                let saved = store.entity_colors.iter().find(|row| row.kind == kind && fold(&row.id) == fold(&category.name)).map(|row| row.color.as_str()).unwrap_or(category.color.as_str());
+                (category.name.clone(), shown_swatch(&category.name, saved))
+            }
+        };
+        return spoken("{name} is {color}.", &[("name", &label), ("color", &color_word(&color))]);
+    }
+    spoken("No saved item named {name}.", &[("name", name)])
+}
+
+enum ColorHit {
+    Account(usize),
+    Category(usize),
+}
+
+fn locate_color_name(store: &Store, name: &str) -> Option<ColorHit> {
+    if let Ok(Some(found)) = locate_account(store, "", name, "") {
+        return Some(ColorHit::Account(found.index));
+    }
+    let query = fold(name);
+    let ticker: Vec<usize> = store.accounts.iter().enumerate().filter(|(_, account)| !account.ticker.is_empty() && fold(&account.ticker) == query).map(|(index, _)| index).collect();
+    if ticker.len() == 1 {
+        return Some(ColorHit::Account(ticker[0]));
+    }
+    let coins: Vec<usize> = store
+        .accounts
+        .iter()
+        .enumerate()
+        .filter(|(_, account)| fold(&account.currency) == query && (account.kind == "investment" || account.kind == "other"))
+        .map(|(index, _)| index)
+        .collect();
+    if coins.len() == 1 {
+        return Some(ColorHit::Account(coins[0]));
+    }
+    store.categories.iter().position(|category| fold(&category.name) == query).map(ColorHit::Category)
+}
+
+fn reset_saved_color(store: &mut Store, name: &str) -> (String, bool) {
+    if name.trim().is_empty() {
+        return (spoken("Reset every money-flow color? Say yes.", &[]), false);
+    }
+    let Some(found) = locate_color_name(store, name) else {
+        return (spoken("No saved item named {name}.", &[("name", name)]), false);
+    };
+    match found {
+        ColorHit::Account(index) => {
+            let id = store.accounts[index].id.clone();
+            let label = store.accounts[index].name.clone();
+            let swatch = default_swatch(&id);
+            store.accounts[index].color = swatch.clone();
+            remember_entity(store, "account", &id, &swatch);
+            (spoken("{name} is back to its default color.", &[("name", &label)]), true)
+        }
+        ColorHit::Category(index) => {
+            let label = store.categories[index].name.clone();
+            let kind = if store.categories[index].kind == "income" { "income" } else { "category" };
+            let swatch = default_swatch(&label);
+            store.categories[index].color = swatch.clone();
+            remember_entity(store, kind, &label, &swatch);
+            (spoken("{name} is back to its default color.", &[("name", &label)]), true)
+        }
+    }
+}
+
+fn paint_saved_color(store: &mut Store, name: &str, color: &str) -> Result<(String, bool), String> {
+    let swatch = normalize_swatch(color)?;
+    if swatch.is_empty() {
+        return Ok((spoken("Say the color.", &[]), false));
+    }
+    let Some(found) = locate_color_name(store, name) else {
+        return Ok((String::new(), false));
+    };
+    match found {
+        ColorHit::Account(index) => {
+            let id = store.accounts[index].id.clone();
+            let label = store.accounts[index].name.clone();
+            store.accounts[index].color = swatch.clone();
+            remember_entity(store, "account", &id, &swatch);
+            Ok((spoken("{name} is {color}.", &[("name", &label), ("color", &color_word(&swatch))]), true))
+        }
+        ColorHit::Category(index) => {
+            let label = store.categories[index].name.clone();
+            let kind = if store.categories[index].kind == "income" { "income" } else { "category" };
+            store.categories[index].color = swatch.clone();
+            remember_entity(store, kind, &label, &swatch);
+            Ok((spoken("{name} is {color}.", &[("name", &label), ("color", &color_word(&swatch))]), true))
+        }
+    }
+}
+
+/// Read, set, or reset a saved color. A set for an unknown name returns None so account creation can continue.
+fn spoken_color_phrase(store: &mut Store, phrase: &str) -> Result<Option<(String, bool)>, String> {
+    if phrase.trim().is_empty() {
+        return Ok(None);
+    }
+    if let Some(name) = color_question(phrase) {
+        return Ok(Some((speak_saved_color(store, &name), false)));
+    }
+    if let Some(name) = color_reset_name(phrase) {
+        return Ok(Some(reset_saved_color(store, &name)));
+    }
+    if let Some((name, swatch)) = color_command(phrase) {
+        let (sentence, changed) = paint_saved_color(store, &name, &swatch)?;
+        if sentence.is_empty() {
+            return Ok(None);
+        }
+        return Ok(Some((sentence, changed)));
+    }
+    Ok(None)
 }
 
 #[derive(Debug)]
@@ -3053,6 +3286,9 @@ fn account_from_tool(store: &mut Store, args: &Value, clock: &Clock) -> Result<S
         }
     }
     let phrase = args.get("phrase").and_then(|value| value.as_str()).unwrap_or("");
+    if let Some((sentence, _)) = spoken_color_phrase(store, phrase)? {
+        return Ok(sentence);
+    }
     let physical = parse_physical(phrase);
     let painted = color_command(phrase);
     let hinted = crate::finance_prices::parse_holding_phrase(phrase);
@@ -3346,10 +3582,10 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
         account.currency = canonical_currency(&draft.currency)?;
     }
     if mask.color || !draft.color.trim().is_empty() {
-        account.color = if draft.color.trim().is_empty() { account.color.clone() } else { normalize_color(&draft.color)? };
+        account.color = if draft.color.trim().is_empty() { default_swatch(&account.id) } else { normalize_color(&draft.color)? };
     }
     if account.color.is_empty() {
-        account.color = next_color(store);
+        account.color = default_swatch(&account.id);
     }
     if account.kind == "investment" && (mask.investment_type || account.investment_type.is_empty()) {
         let chosen = if draft.investment_type.trim().is_empty() { account.investment_type.clone() } else { normalize_investment_type(&draft.investment_type) };
@@ -3498,6 +3734,7 @@ fn apply_account_fields(store: &mut Store, draft: &AccountDraft, clock: &Clock, 
     account.updated_ms = clock.ms;
     let id = account.id.clone();
     let detail = account_detail(&account);
+    remember_entity(store, "account", &account.id, &account.color);
     if let Some(existing) = store.accounts.iter_mut().find(|row| row.id == id) {
         *existing = account.clone();
     } else {
@@ -4525,7 +4762,7 @@ fn resolve_account(store: &mut Store, id: &str, name: &str, kind: &str, currency
     account.name = name;
     account.kind = kind;
     account.currency = if currency.is_empty() { clock.default_currency.clone() } else { currency.to_string() };
-    account.color = next_color(store);
+    account.color = default_swatch(&id);
     account.updated_ms = clock.ms;
     if account.kind == "investment" {
         account.investment_type = infer_investment_type(&account.name, "");
@@ -5574,6 +5811,7 @@ fn snapshot_of(store: &Store, locale: &str, today: NaiveDate) -> Snapshot {
         categories: store.categories.clone(),
         flow_colors: store.flow_colors.clone(),
         flow_layout: store.flow_layout.clone(),
+        entity_colors: store.entity_colors.clone(),
         fx: fx_status(store, today),
         prices: store.prices.clone(),
         history: store.history.clone(),
@@ -6766,11 +7004,13 @@ fn apply_flow_voice(store: &mut Store, action: &str, name: &str, color: &str, co
             return (spoken("Reset every money-flow color? Say yes.", &[]), false);
         }
         store.flow_colors.clear();
+        store.entity_colors.retain(|row| row.kind != "node");
         return (spoken("Every money-flow color is back to the default.", &[]), true);
     }
     if action == "reset" {
         let id = flow_element_id(name);
         store.flow_colors.retain(|row| fold(&row.id) != fold(&id) && fold(&row.id) != fold(name));
+        store.entity_colors.retain(|row| !(row.kind == "node" && (fold(&row.id) == fold(&id) || fold(&row.id) == fold(name))));
         return (spoken("{name} is back to its default color on the money flow.", &[("name", name)]), true);
     }
     if action == "color" || action == "paint" {
@@ -6780,10 +7020,11 @@ fn apply_flow_voice(store: &mut Store, action: &str, name: &str, color: &str, co
         }
         let id = flow_element_id(name);
         if let Some(row) = store.flow_colors.iter_mut().find(|row| fold(&row.id) == fold(&id)) {
-            row.color = swatch;
+            row.color = swatch.clone();
         } else {
-            store.flow_colors.push(NodeColor { id, color: swatch });
+            store.flow_colors.push(NodeColor { id: id.clone(), color: swatch.clone() });
         }
+        remember_entity(store, "node", &id, &swatch);
         return (spoken("{name} is now {color} on the money flow.", &[("name", name), ("color", color)]), true);
     }
     if mode == "vertical" || mode == "horizontal" {
@@ -7379,22 +7620,168 @@ fn money_for(amount: &str, currency_arg: &str, account_currency: &str, default_c
 }
 
 fn normalize_color(value: &str) -> Result<String, String> {
+    normalize_swatch(value)
+}
+
+const SERIES_HEX: [&str; 12] = ["#0072B2", "#9A5C00", "#0B7A5A", "#A84B86", "#C44E00", "#2E6A8A", "#B85A78", "#1F7A6E", "#9A5AAA", "#267A46", "#7A68C0", "#A3522A"];
+const SERIES_HUE: [&str; 12] = ["blue", "amber", "green", "pink", "red", "steel", "rose", "teal", "purple", "forest", "indigo", "rust"];
+const LEGACY_HEX: [&str; 10] = ["#4C78D8", "#6E8B74", "#A56B66", "#C4B5A0", "#7A6A58", "#3E6B73", "#8C6A3F", "#B8A48A", "#5C6B58", "#9A7B6A"];
+
+fn palette_index(id: &str) -> usize {
+    let mut hash: u32 = 0;
+    for ch in id.chars() {
+        hash = hash.wrapping_mul(33).wrapping_add(ch as u32);
+    }
+    hash as usize % SERIES_HEX.len()
+}
+
+fn default_swatch(id: &str) -> String {
+    format!("var(--series-{})", palette_index(id) + 1)
+}
+
+fn normalize_swatch(value: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Ok(String::new());
+    }
+    if trimmed.starts_with("var(--series-") {
+        let n: usize = trimmed.trim_start_matches("var(--series-").trim_end_matches(')').parse().unwrap_or(0);
+        if (1..=SERIES_HEX.len()).contains(&n) {
+            return Ok(format!("var(--series-{n})"));
+        }
+    }
+    if trimmed.starts_with("var(--flow-") || trimmed.starts_with("var(--brand") || trimmed.starts_with("var(--positive") || trimmed.starts_with("var(--negative") {
+        if trimmed.ends_with(')') && trimmed.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '(' | ')')) {
+            return Ok(trimmed.to_string());
+        }
     }
     let hex = trimmed.trim_start_matches('#');
     if hex.len() == 6 && hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
         return Ok(format!("#{}", hex.to_ascii_uppercase()));
     }
+    if let Some(named) = named_hex(trimmed) {
+        return Ok(named);
+    }
     Err("Use a color like #E25B45.".into())
 }
 
-const PALETTE: [&str; 10] = ["#4C78D8", "#6E8B74", "#A56B66", "#C4B5A0", "#7A6A58", "#3E6B73", "#8C6A3F", "#B8A48A", "#5C6B58", "#9A7B6A"];
+fn named_hex(color: &str) -> Option<String> {
+    let token = fold(color);
+    let hex = match token.as_str() {
+        "green" | "verde" | "grun" => "#009E73",
+        "blue" | "azul" | "blau" => "#0072B2",
+        "red" | "rojo" | "rot" | "vermelho" | "roig" | "vermell" => "#C44E00",
+        "orange" | "naranja" | "laranja" | "taronja" => "#E69F00",
+        "gray" | "grey" | "gris" | "grau" | "cinza" | "cinzent" | "grisa" => "#8A8A8A",
+        "pink" | "rosa" => "#A84B86",
+        "purple" | "morado" | "lila" | "roxo" | "morat" => "#9A5AAA",
+        "teal" | "turquesa" | "petrol" => "#1F7A6E",
+        "amber" | "ambar" => "#9A5C00",
+        _ => return None,
+    };
+    Some(hex.to_string())
+}
 
-fn next_color(store: &Store) -> String {
-    let used: HashSet<&str> = store.accounts.iter().map(|account| account.color.as_str()).collect();
-    PALETTE.into_iter().find(|color| !used.contains(color)).unwrap_or(PALETTE[store.accounts.len() % PALETTE.len()]).to_string()
+fn is_legacy_color(color: &str) -> bool {
+    let hex = color.trim().to_ascii_uppercase();
+    LEGACY_HEX.iter().any(|row| *row == hex)
+}
+
+fn shown_swatch(id: &str, saved: &str) -> String {
+    let trimmed = saved.trim();
+    if trimmed.starts_with("var(--") {
+        return trimmed.to_string();
+    }
+    if let Ok(hex) = normalize_swatch(trimmed) {
+        if !hex.is_empty() && !is_legacy_color(&hex) {
+            return hex;
+        }
+    }
+    default_swatch(id)
+}
+
+fn color_word(color: &str) -> String {
+    let hex = if let Some(rest) = color.trim().strip_prefix("var(--series-") {
+        let n: usize = rest.trim_end_matches(')').parse().unwrap_or(0);
+        SERIES_HEX.get(n.saturating_sub(1)).copied().unwrap_or(SERIES_HEX[0]).to_string()
+    } else {
+        normalize_swatch(color).unwrap_or_default()
+    };
+    if let Some(index) = SERIES_HEX.iter().position(|row| *row == hex) {
+        return spoken(SERIES_HUE[index], &[]);
+    }
+    match hex.as_str() {
+        "#009E73" => spoken("green", &[]),
+        "#0072B2" => spoken("blue", &[]),
+        "#8A8A8A" => spoken("gray", &[]),
+        "#E69F00" => spoken("orange", &[]),
+        "#C44E00" => spoken("red", &[]),
+        _ => hex,
+    }
+}
+
+fn remember_entity(store: &mut Store, kind: &str, id: &str, color: &str) {
+    let id = id.trim();
+    if id.is_empty() {
+        return;
+    }
+    let color = color.trim();
+    store.entity_colors.retain(|row| !(row.kind == kind && fold(&row.id) == fold(id)));
+    if color.is_empty() {
+        return;
+    }
+    store.entity_colors.push(EntityColor { kind: kind.to_string(), id: id.to_string(), color: color.to_string() });
+}
+
+fn paint_entity(store: &mut Store, kind: &str, id: &str, color: &str) -> Result<(), String> {
+    let kind = kind.trim();
+    let id = id.trim();
+    if kind.is_empty() || id.is_empty() {
+        return Err("Say the color.".into());
+    }
+    let swatch = if color.trim().is_empty() { String::new() } else { normalize_swatch(color)? };
+    match kind {
+        "account" => {
+            let Some(account) = store.accounts.iter_mut().find(|account| account.id == id || fold(&account.name) == fold(id) || fold(&account.ticker) == fold(id)) else {
+                return Err(spoken("No saved item named {name}.", &[("name", id)]));
+            };
+            let account_id = account.id.clone();
+            account.color = if swatch.is_empty() { default_swatch(&account_id) } else { swatch.clone() };
+            let saved = account.color.clone();
+            remember_entity(store, "account", &account_id, &saved);
+        }
+        "category" | "income" => {
+            let Some(category) = store.categories.iter_mut().find(|category| fold(&category.name) == fold(id)) else {
+                return Err(spoken("No saved item named {name}.", &[("name", id)]));
+            };
+            let name = category.name.clone();
+            let saved_kind = if category.kind == "income" || kind == "income" { "income" } else { "category" };
+            category.color = if swatch.is_empty() { default_swatch(&name) } else { swatch.clone() };
+            if kind == "income" {
+                category.kind = "income".into();
+            }
+            let saved = category.color.clone();
+            remember_entity(store, saved_kind, &name, &saved);
+        }
+        "node" => {
+            if swatch.is_empty() {
+                store.flow_colors.retain(|row| fold(&row.id) != fold(id));
+                remember_entity(store, "node", id, "");
+            } else {
+                if let Some(row) = store.flow_colors.iter_mut().find(|row| fold(&row.id) == fold(id)) {
+                    row.color = swatch.clone();
+                } else {
+                    store.flow_colors.push(NodeColor { id: id.to_string(), color: swatch.clone() });
+                }
+                remember_entity(store, "node", id, &swatch);
+            }
+        }
+        "class" | "series" => {
+            remember_entity(store, kind, id, &swatch);
+        }
+        _ => return Err("Say the color.".into()),
+    }
+    Ok(())
 }
 
 fn normalize_investment_type(value: &str) -> String {
@@ -7476,7 +7863,7 @@ fn remember_child(store: &mut Store, name: &str, parent: &str) {
         }
         return;
     }
-    let color = PALETTE[store.categories.len() % PALETTE.len()].to_string();
+    let color = default_swatch(name);
     let kind = if fold(name) == "uncategorized" { "expense".into() } else { String::new() };
     store.categories.push(Category {
         name: name.to_string(),
@@ -7649,26 +8036,33 @@ pub fn edit_category_parent(store: &mut Store, action: &str, name: &str, to: &st
             if label.is_empty() {
                 return Err("A category needs a name.".into());
             }
-            if let Some(category) = store.categories.iter_mut().find(|category| fold(&category.name) == fold(&label)) {
-                if !color.is_empty() { category.color = color.to_string(); }
-                if !kind.is_empty() { category.kind = kind.to_string(); }
-                if !icon.is_empty() { category.icon = icon.to_string(); }
-                if !parent.trim().is_empty() { category.parent = parent.trim().to_string(); }
+            if store.categories.iter().any(|category| fold(&category.name) == fold(&label)) {
+                let saved = {
+                    let category = store.categories.iter_mut().find(|category| fold(&category.name) == fold(&label)).unwrap();
+                    if !color.is_empty() { category.color = normalize_swatch(color)?; }
+                    if !kind.is_empty() { category.kind = kind.to_string(); }
+                    if !icon.is_empty() { category.icon = icon.to_string(); }
+                    if !parent.trim().is_empty() { category.parent = parent.trim().to_string(); }
+                    (category.kind.clone(), category.name.clone(), category.color.clone())
+                };
+                remember_entity(store, if saved.0 == "income" { "income" } else { "category" }, &saved.1, &saved.2);
                 return Ok(());
             }
-            let swatch = if color.trim().is_empty() { PALETTE[store.categories.len() % PALETTE.len()].to_string() } else { color.trim().to_string() };
+            let swatch = if color.trim().is_empty() { default_swatch(&label) } else { normalize_swatch(color)? };
             let parent = parent.trim();
             if !parent.is_empty() && !store.categories.iter().any(|category| fold(&category.name) == fold(parent) && category.parent.is_empty()) {
                 return Err("No category with that name.".into());
             }
+            let saved_kind = kind.trim().to_string();
             store.categories.push(Category {
-                name: label,
-                color: swatch,
-                kind: kind.trim().to_string(),
+                name: label.clone(),
+                color: swatch.clone(),
+                kind: saved_kind.clone(),
                 icon: icon.trim().to_string(),
                 order,
                 parent: parent.to_string(),
             });
+            remember_entity(store, if saved_kind == "income" { "income" } else { "category" }, &label, &swatch);
             Ok(())
         }
         "rename" => rename_category(store, name, to),
@@ -7714,9 +8108,11 @@ pub fn edit_category_parent(store: &mut Store, action: &str, name: &str, to: &st
         "unpaint" => {
             if name.is_empty() || matches!(fold(name).as_str(), "all" | "colors") {
                 store.flow_colors.clear();
+                store.entity_colors.retain(|row| row.kind != "node");
             } else {
                 let id = flow_element_id(name);
                 store.flow_colors.retain(|row| fold(&row.id) != fold(&id) && fold(&row.id) != fold(name));
+                store.entity_colors.retain(|row| !(row.kind == "node" && (fold(&row.id) == fold(&id) || fold(&row.id) == fold(name))));
             }
             Ok(())
         }
@@ -7726,20 +8122,28 @@ pub fn edit_category_parent(store: &mut Store, action: &str, name: &str, to: &st
                 if id.is_empty() || color.trim().is_empty() {
                     return Err("A category needs a name.".into());
                 }
+                let swatch = normalize_swatch(color)?;
                 if let Some(row) = store.flow_colors.iter_mut().find(|row| row.id == id) {
-                    row.color = color.trim().to_string();
+                    row.color = swatch.clone();
                 } else {
-                    store.flow_colors.push(NodeColor { id, color: color.trim().to_string() });
+                    store.flow_colors.push(NodeColor { id: id.clone(), color: swatch.clone() });
                 }
+                remember_entity(store, "node", &id, &swatch);
                 return Ok(());
             }
-            let Some(category) = store.categories.iter_mut().find(|category| fold(&category.name) == fold(name)) else {
-                return Err("No category with that name.".into());
+            let saved = {
+                let Some(category) = store.categories.iter_mut().find(|category| fold(&category.name) == fold(name)) else {
+                    return Err("No category with that name.".into());
+                };
+                if action == "color" { category.color = normalize_swatch(color)?; }
+                if action == "kind" { category.kind = kind.trim().to_string(); }
+                if action == "icon" { category.icon = icon.trim().to_string(); }
+                if action == "order" { category.order = order; }
+                (category.kind.clone(), category.name.clone(), category.color.clone())
             };
-            if action == "color" { category.color = color.trim().to_string(); }
-            if action == "kind" { category.kind = kind.trim().to_string(); }
-            if action == "icon" { category.icon = icon.trim().to_string(); }
-            if action == "order" { category.order = order; }
+            if action == "color" {
+                remember_entity(store, if saved.0 == "income" { "income" } else { "category" }, &saved.1, &saved.2);
+            }
             Ok(())
         }
         _ => Err("A category needs a name.".into()),
@@ -8665,7 +9069,15 @@ fn publish_board(path: &std::path::Path, store: &Store) {
 }
 
 fn color_or(color: &str) -> String {
-    if color.trim().is_empty() { "#C4B5A0".into() } else { color.to_string() }
+    let trimmed = color.trim();
+    if let Some(rest) = trimmed.strip_prefix("var(--series-") {
+        let n: usize = rest.trim_end_matches(')').parse().unwrap_or(1);
+        return SERIES_HEX.get(n.saturating_sub(1)).copied().unwrap_or(SERIES_HEX[0]).to_string();
+    }
+    if trimmed.is_empty() {
+        return SERIES_HEX[0].to_string();
+    }
+    trimmed.to_string()
 }
 
 fn fetched_clock(ms: i64) -> String {
@@ -9326,6 +9738,39 @@ mod tests {
         assert!(store.flow_colors.is_empty());
         edit_category(&mut store, "layout", "horizontal", "", "", "", "", 0).unwrap();
         assert_eq!(store.flow_layout, "horizontal");
+    }
+
+    #[test]
+    fn one_color_record_is_read_set_reset_and_kept_in_backup() {
+        let mut store = Store::default();
+        let clock = clock(NaiveDate::from_ymd_opt(2026, 11, 21).unwrap());
+        account_from_tool(&mut store, &json!({"name": "Quanloop", "kind": "investment", "balance": "10", "currency": "EUR"}), &clock).unwrap();
+        account_from_tool(&mut store, &json!({"name": "XMR", "kind": "investment", "currency": "XMR", "ticker": "XMR"}), &clock).unwrap();
+        account_from_tool(&mut store, &json!({"name": "Silver", "kind": "investment", "currency": "CHF"}), &clock).unwrap();
+        assert_eq!(palette_index("quanloop"), 11);
+        assert_eq!(palette_index("xmr"), 3);
+        assert_ne!(default_swatch("quanloop"), default_swatch("xmr"));
+        let before = store.accounts.len();
+        account_from_tool(&mut store, &json!({"phrase": "make Quanloop green"}), &clock).unwrap();
+        let quanloop = store.accounts.iter().find(|account| account.name == "Quanloop").unwrap();
+        assert_eq!(quanloop.color, "#009E73");
+        assert_eq!(store.entity_colors.iter().find(|row| row.kind == "account" && row.id == quanloop.id).unwrap().color, "#009E73");
+        let (read, changed) = spoken_color_phrase(&mut store, "what color is XMR").unwrap().unwrap();
+        assert!(!changed);
+        assert!(read.contains("XMR"), "{read}");
+        let (reset, cleared) = spoken_color_phrase(&mut store, "reset the color for silver").unwrap().unwrap();
+        assert!(cleared, "{reset}");
+        let silver = store.accounts.iter().find(|account| account.name == "Silver").unwrap();
+        assert!(silver.color.starts_with("var(--series-"), "{}", silver.color);
+        let (missing, _) = spoken_color_phrase(&mut store, "what color is Missingcoin").unwrap().unwrap();
+        assert!(missing.to_lowercase().contains("missingcoin"), "{missing}");
+        assert_eq!(store.accounts.len(), before);
+        let backed = serde_json::to_string(&store.entity_colors).unwrap();
+        let restored: Vec<EntityColor> = serde_json::from_str(&backed).unwrap();
+        assert!(restored.iter().any(|row| row.color == "#009E73"));
+        let _guard = push_locale("es");
+        let (spanish, _) = spoken_color_phrase(&mut store, "que color tiene Quanloop").unwrap().unwrap();
+        assert!(spanish.contains("verde"), "{spanish}");
     }
 
     #[test]
