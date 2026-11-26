@@ -2,16 +2,18 @@
 
 **Website:** [gabo-tech.github.io/grok-voice-android](https://gabo-tech.github.io/grok-voice-android/)
 
-A voice assistant for Android. A new install talks on the phone in English: Moonshine, SmolLM2, and Phonon 31m, with no account and no token. The screen can use another language. Spanish, German, Piper, and gated Phonon models can be added later in Settings. An [xAI](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) or OpenAI key is optional and is tried only if you add one. The wake word stays on the device.
+A voice assistant for Android. A new install talks on the phone in English: Moonshine, SmolLM2, and Phonon 31m, with no account and no token. The screen can use another language. Spanish, German, Piper, and gated Phonon models can be added later in Settings. An [xAI](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech), OpenAI, or 1min.ai key is optional and is tried only if you add one. The wake word stays on the device.
 
-The current sideload build is [Grok Voice 0.1.60](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading.
+The current sideload build is [Grok Voice 0.1.61](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading. versionCode is 1061.
+
+0.1.61 adds optional offline packs: Qwen3.5 0.8B Q8_0, Qwen3.5 2B IQ4_NL, Atomic Chat Qwen3.5 4B Q4_K_M, and Gemma 4 E2B QAT Q4. The phone recommends the strongest model that fits its RAM and free storage, and SmolLM2 stays the default until you switch. 1min.ai is a text provider in the same order as xAI and OpenAI. Settings has a model picker for each provider and a choice of which one answers. When Talk uses a local pack or 1min.ai, speech to text and the voice stay on the phone.
 
 ## Install
 
-Download `GrokVoice-0.1.60.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
+Download `GrokVoice-0.1.61.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
 
 ```bash
-adb install -r GrokVoice-0.1.60.apk
+adb install -r GrokVoice-0.1.61.apk
 ```
 
 Allow installs from unknown sources if Android asks. This package is signed with a debug key so it can be installed by hand. It is not a Play Store upload.
@@ -25,7 +27,7 @@ A new install opens a setup tour and downloads the English offline pack: Moonshi
 3. **Voice preview.** Play the voice. The microphone can be allowed here. Hey Grok can be trained later.
 4. **Cloud key.** Optional. Paste an xAI key from [console.x.ai](https://console.x.ai/team/default/api-keys) or an OpenAI key, or skip it.
 
-**Settings → Voice and AI** is the one screen for hearing, the model, the voice, and the order Talk tries. The offline voice starts as English. Spanish, German, Piper, the Android voice, and Phonon models that need a token can be added there later. xAI and OpenAI sit in the same list. A key is entered on that provider, and the Hugging Face token is entered with the Phonon models. The list is the fallback order. Downloaded, key set, and offline-ready show at the top. Spend limits, the quiet gap, and Hey Grok stay on their own rows.
+**Settings → Voice and AI** is the one screen for hearing, the model, the voice, and the order Talk tries. The offline voice starts as English. Spanish, German, Piper, the Android voice, and Phonon models that need a token can be added there later. xAI, OpenAI, and 1min.ai sit in the same list. Settings → Model picks the model for each one, and which provider answers. A key is entered on that provider, and the Hugging Face token is entered with the Phonon models. The list is the fallback order. Downloaded, key set, and offline-ready show at the top. Spend limits, the quiet gap, and Hey Grok stay on their own rows.
 
 You can replay the tour from **Voice and AI**, or from **Debug → Replay setup tour**.
 
