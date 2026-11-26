@@ -539,7 +539,10 @@ function assertChart(rows: typeof richRows, group: "category" | "entry", layout:
   const texts = rowsOut.map((row) => row.label.formatter);
   assert.ok(texts.every((line) => !line.includes("…")));
   if (labels) assert.ok(texts.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("·")));
-  if (labels && group === "category") assert.ok(texts.some((line) => line.includes("Side project") && line.includes("CHF ")));
+  if (labels && group === "category") {
+    assert.ok(texts.some((line) => line.includes("Side project") && line.includes("CHF ")));
+    assert.ok(texts.some((line) => line.includes("Other income")));
+  }
   if (!labels) assert.ok(rowsOut.every((row) => row.label.show === false));
 }
 

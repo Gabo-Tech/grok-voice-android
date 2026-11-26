@@ -27,6 +27,7 @@ export interface FlowLabels {
   total: string;
   surplus: string;
   other: string;
+  otherIncome: string;
   uncategorized: string;
   debt: string;
   savings: string;
@@ -95,6 +96,7 @@ const DEFAULT_LABELS: FlowLabels = {
   total: "Total",
   surplus: "Surplus",
   other: "Rest",
+  otherIncome: "Other income",
   uncategorized: "Uncategorized",
   debt: "Debt payments",
   savings: "Savings",
@@ -255,7 +257,7 @@ export function buildMoneyFlow(
   const inflow = incomeMinor + shortfall;
 
   const base = incomeMinor || 1;
-  let sourceList = groupRest([...sources.values()], base, threshold, Boolean(opts.expandedOther), "in:rest", labels.other, "income");
+  let sourceList = groupRest([...sources.values()], base, threshold, Boolean(opts.expandedOther), "in:rest", labels.otherIncome || labels.other, "income");
   if (shortfall > 0) {
     sourceList.push({ id: "in:shortfall", label: labels.shortfall, kind: "drawn", amount: shortfall, originals: new Map(), order: -1, children: new Map() });
   }

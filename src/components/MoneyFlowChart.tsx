@@ -171,6 +171,7 @@ export function MoneyFlowPanel({
       total: t("Total"),
       surplus: t("Surplus"),
       other: t("Rest"),
+      otherIncome: t("Other income"),
       uncategorized: t("Uncategorized"),
       debt: t("Debt payments"),
       savings: t("Savings"),
