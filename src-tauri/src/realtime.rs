@@ -65,7 +65,7 @@ impl Cloud {
     fn model_name(self, settings: &Settings) -> String {
         match self {
             Cloud::Xai => settings.model.clone(),
-            Cloud::OpenAi => OPENAI_MODEL.into(),
+            Cloud::OpenAi => crate::settings::safe_provider_model(&settings.openai_model, OPENAI_MODEL),
         }
     }
 }
@@ -246,6 +246,16 @@ impl Session<'_> {
                 )
             })
             .unwrap_or(false);
+        let speech_ready = crate::local::model_dir(self.app)
+            .map(|dir| {
+                crate::local::speech::speech_ready(
+                    &dir,
+                    &self.settings.local_speech,
+                    &self.settings.speech_engines,
+                    &self.settings.phonon_models,
+                )
+            })
+            .unwrap_or(false);
         let providers: Vec<&str> = accounts.iter().map(|account| account.provider.as_str()).collect();
         let order = crate::local::attempt_order(&providers, self.settings.prefer_local_on_wake, ready);
         let http = http_client();
@@ -256,6 +266,53 @@ impl Session<'_> {
             let label = crate::local::provider_label(&account.provider);
             if !self.active.load(Ordering::Acquire) {
                 return Ok("ended by user".into());
+            }
+            if account.provider == "onemin" {
+                match crate::local::route_onemin(speech_ready) {
+                    crate::local::Route::OneMin => {
+                        tried.push(label.into());
+                        self.app.state::<crate::usage::UsageStore>().note_provider(&account.provider);
+                        self.announce(label);
+                        let model = if self.settings.onemin_model.trim().is_empty() {
+                            crate::onemin::DEFAULT_MODEL.to_string()
+                        } else {
+                            self.settings.onemin_model.clone()
+                        };
+                        self.hub.info(format!("using 1min.ai {model} with on-device speech"));
+                        match crate::local::run_onemin_session(
+                            self.app,
+                            mic,
+                            self.player,
+                            self.active,
+                            self.settings,
+                            self.hub,
+                            account.secret.clone(),
+                            model,
+                        )
+                        .await
+                        {
+                            Ok(reason) => return Ok(reason),
+                            Err(err) if err.starts_with("onemin-keep:") => {
+                                let message = err.trim_start_matches("onemin-keep:").trim().to_string();
+                                self.hub.error(message.clone());
+                                self.speak_failure(&message).await;
+                                return Err(msg(message));
+                            }
+                            Err(err) => {
+                                last_error = err.trim_start_matches("onemin-failover:").trim().to_string();
+                                self.hub.warn(format!("1min.ai failed, trying the next key: {last_error}"));
+                            }
+                        }
+                    }
+                    crate::local::Route::Skip(reason) => {
+                        self.hub.warn(format!("{label} skipped: {reason}"));
+                        if tried.is_empty() {
+                            last_error = reason;
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
             }
             match crate::local::route(&account.provider, ready) {
                 crate::local::Route::Local => {
@@ -301,6 +358,7 @@ impl Session<'_> {
                         }
                     }
                 }
+                crate::local::Route::OneMin => {}
                 crate::local::Route::Skip(reason) => {
                     self.hub.warn(format!("{label} skipped: {reason}"));
                     if tried.is_empty() {

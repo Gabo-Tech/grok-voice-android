@@ -16,6 +16,28 @@ pub struct DeviceFacts {
     pub avail_mb: u64,
     pub low_memory: bool,
     pub online: bool,
+    /// ActivityManager.MemoryInfo.totalMem, in bytes. 0 when the probe is missing.
+    #[serde(default)]
+    pub total_mem: u64,
+    /// ActivityManager.MemoryInfo.availMem, in bytes.
+    #[serde(default)]
+    pub avail_mem: u64,
+    /// StatFs available bytes on app storage.
+    #[serde(default)]
+    pub free_storage: u64,
+}
+
+impl Default for DeviceFacts {
+    fn default() -> Self {
+        Self {
+            avail_mb: 0,
+            low_memory: false,
+            online: true,
+            total_mem: 0,
+            avail_mem: 0,
+            free_storage: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -889,7 +911,7 @@ mod imp {
         }
 
         pub fn device_facts(&self) -> Result<DeviceFacts> {
-            Ok(DeviceFacts { avail_mb: 0, low_memory: false, online: true })
+            Ok(DeviceFacts::default())
         }
 
         pub fn speak_fallback(&self, _text: &str) -> Result<()> {

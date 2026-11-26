@@ -106,6 +106,8 @@ export function MorePage({
             model: "grok-voice-latest",
             voice: "eve",
             openaiVoice: "marin",
+            openaiModel: "gpt-realtime",
+            oneminModel: "gpt-4.1-mini",
             instructions: "",
             echoGuard: true,
             wakeThreshold: 0.5,
@@ -327,7 +329,7 @@ export function MorePage({
             </div>
             {usage && (
               <p className="text-sm text-foreground">
-                xAI {usage.xaiMinutes} · OpenAI {usage.openaiMinutes} · {t("On device")} {usage.localMinutes}
+                xAI {usage.xaiMinutes} · OpenAI {usage.openaiMinutes} · 1min.ai {usage.oneminMinutes ?? 0} · {t("On device")} {usage.localMinutes}
                 {usage.monthMinutes ? ` · ${usage.month} ${usage.monthMinutes}` : ""}
               </p>
             )}

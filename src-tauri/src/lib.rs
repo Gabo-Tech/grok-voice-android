@@ -23,6 +23,7 @@ mod i18n;
 mod inbox;
 mod local;
 mod local_memory;
+mod onemin;
 mod memory;
 mod music;
 mod native;
@@ -206,6 +207,7 @@ pub fn run() {
             commands::import_contact_birthday,
             commands::import_contact_dates,
             commands::local_pack_status,
+            commands::onemin_models,
             commands::download_local_pack,
             commands::delete_local_pack,
             commands::select_local_model,

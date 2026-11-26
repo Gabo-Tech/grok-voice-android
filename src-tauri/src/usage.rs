@@ -20,7 +20,7 @@ pub struct Usage {
     pub stopped: bool,
     #[serde(default)]
     pub open_since_ms: Option<i64>,
-    /// Provider of the open session: `xai`, `openai`, or `local`.
+    /// Provider of the open session: `xai`, `openai`, `local`, or `onemin`.
     #[serde(default)]
     pub open_provider: String,
     #[serde(default)]
@@ -29,6 +29,8 @@ pub struct Usage {
     pub openai_ms: i64,
     #[serde(default)]
     pub local_ms: i64,
+    #[serde(default)]
+    pub onemin_ms: i64,
     #[serde(default)]
     pub month: String,
     #[serde(default)]
@@ -39,6 +41,8 @@ pub struct Usage {
     pub month_openai_ms: i64,
     #[serde(default)]
     pub month_local_ms: i64,
+    #[serde(default)]
+    pub month_onemin_ms: i64,
     #[serde(default)]
     pub month_warned: bool,
     #[serde(default)]
@@ -58,11 +62,13 @@ impl Default for Usage {
             xai_ms: 0,
             openai_ms: 0,
             local_ms: 0,
+            onemin_ms: 0,
             month: local_month(Local::now()),
             month_ms: 0,
             month_xai_ms: 0,
             month_openai_ms: 0,
             month_local_ms: 0,
+            month_onemin_ms: 0,
             month_warned: false,
             month_stopped: false,
         }
@@ -99,11 +105,13 @@ pub struct UsageStatus {
     pub xai_minutes: u32,
     pub openai_minutes: u32,
     pub local_minutes: u32,
+    pub onemin_minutes: u32,
     pub month: String,
     pub month_minutes: u32,
     pub month_xai_minutes: u32,
     pub month_openai_minutes: u32,
     pub month_local_minutes: u32,
+    pub month_onemin_minutes: u32,
     pub monthly_budget_minutes: u32,
     pub monthly_hard_stop: bool,
     pub open_since_ms: Option<i64>,
@@ -175,7 +183,7 @@ impl UsageStore {
     /// Attribute the open slice to a provider. The first provider also gets the time since begin.
     pub fn note_provider(&self, provider: &str) {
         let provider = match provider {
-            "xai" | "openai" | "local" => provider,
+            "xai" | "openai" | "local" | "onemin" => provider,
             _ => return,
         };
         let now = Local::now();
@@ -230,11 +238,13 @@ fn status_of(usage: &Usage, caps: Caps, guard: Guard, now: DateTime<Local>) -> U
         xai_minutes: provider_minutes(usage, "xai", now),
         openai_minutes: provider_minutes(usage, "openai", now),
         local_minutes: provider_minutes(usage, "local", now),
+        onemin_minutes: provider_minutes(usage, "onemin", now),
         month: if usage.month.is_empty() { local_month(now) } else { usage.month.clone() },
         month_minutes: guard.month_minutes,
         month_xai_minutes: month_provider_minutes(usage, "xai", now),
         month_openai_minutes: month_provider_minutes(usage, "openai", now),
         month_local_minutes: month_provider_minutes(usage, "local", now),
+        month_onemin_minutes: month_provider_minutes(usage, "onemin", now),
         monthly_budget_minutes: caps.monthly_minutes,
         monthly_hard_stop: caps.monthly_hard_stop,
         open_since_ms: usage.open_since_ms,
@@ -329,6 +339,7 @@ fn provider_ms(usage: &Usage, provider: &str) -> i64 {
         "xai" => usage.xai_ms,
         "openai" => usage.openai_ms,
         "local" => usage.local_ms,
+        "onemin" => usage.onemin_ms,
         _ => 0,
     }
 }
@@ -338,6 +349,7 @@ fn month_provider_ms(usage: &Usage, provider: &str) -> i64 {
         "xai" => usage.month_xai_ms,
         "openai" => usage.month_openai_ms,
         "local" => usage.month_local_ms,
+        "onemin" => usage.month_onemin_ms,
         _ => 0,
     }
 }
@@ -355,6 +367,10 @@ fn add_provider(usage: &mut Usage, provider: &str, elapsed: i64) {
         "local" => {
             usage.local_ms += elapsed;
             usage.month_local_ms += elapsed;
+        }
+        "onemin" => {
+            usage.onemin_ms += elapsed;
+            usage.month_onemin_ms += elapsed;
         }
         _ => {}
     }
@@ -395,6 +411,7 @@ fn roll(usage: &mut Usage, now: DateTime<Local>) {
     let mut month_xai_ms = usage.month_xai_ms;
     let mut month_openai_ms = usage.month_openai_ms;
     let mut month_local_ms = usage.month_local_ms;
+    let mut month_onemin_ms = usage.month_onemin_ms;
     let mut month_warned = usage.month_warned;
     let mut month_stopped = usage.month_stopped;
     if usage.month != month {
@@ -402,6 +419,7 @@ fn roll(usage: &mut Usage, now: DateTime<Local>) {
         month_xai_ms = 0;
         month_openai_ms = 0;
         month_local_ms = 0;
+        month_onemin_ms = 0;
         month_warned = false;
         month_stopped = false;
     }
@@ -417,11 +435,13 @@ fn roll(usage: &mut Usage, now: DateTime<Local>) {
             xai_ms: 0,
             openai_ms: 0,
             local_ms: 0,
+            onemin_ms: 0,
             month,
             month_ms,
             month_xai_ms,
             month_openai_ms,
             month_local_ms,
+            month_onemin_ms,
             month_warned,
             month_stopped,
         };
@@ -432,6 +452,7 @@ fn roll(usage: &mut Usage, now: DateTime<Local>) {
     usage.month_xai_ms = month_xai_ms;
     usage.month_openai_ms = month_openai_ms;
     usage.month_local_ms = month_local_ms;
+    usage.month_onemin_ms = month_onemin_ms;
     usage.month_warned = month_warned;
     usage.month_stopped = month_stopped;
 }

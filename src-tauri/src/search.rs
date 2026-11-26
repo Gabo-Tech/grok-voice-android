@@ -154,6 +154,60 @@ fn chat_tools() -> Value {
     json!(tools)
 }
 
+fn answer_with_onemin(app: &AppHandle, text: &str) -> Result<Option<String>, String> {
+    let settings = app.state::<crate::settings::SettingsStore>().get();
+    let Ok(accounts) = app.state::<Vault>().accounts(&app.state::<NativeBridge>()) else {
+        return Ok(None);
+    };
+    let providers: Vec<&str> = accounts.iter().map(|account| account.provider.as_str()).collect();
+    let dir_ready = crate::local::model_dir(app);
+    let speech_ready = dir_ready
+        .as_ref()
+        .map(|dir| {
+            crate::local::speech::speech_ready(
+                dir,
+                &settings.local_speech,
+                &settings.speech_engines,
+                &settings.phonon_models,
+            )
+        })
+        .unwrap_or(false);
+    let talk_ready = dir_ready
+        .as_ref()
+        .map(|dir| {
+            crate::local::talk_ready(dir, &settings.local_speech, &settings.speech_engines, &settings.phonon_models)
+        })
+        .unwrap_or(false);
+    let order = crate::local::attempt_order(&providers, settings.prefer_local_on_wake, talk_ready);
+    let Some(index) = order.first().copied() else {
+        return Ok(None);
+    };
+    if providers[index] != "onemin" || !speech_ready {
+        return Ok(None);
+    }
+    let model = if settings.onemin_model.trim().is_empty() {
+        crate::onemin::DEFAULT_MODEL
+    } else {
+        settings.onemin_model.as_str()
+    };
+    match crate::local::answer_onemin(app, text, &accounts[index].secret, model) {
+        Ok(answer) => {
+            app.state::<crate::memory::Memory>().remember("assistant", &answer);
+            let id = format!("text-a-{}", crate::diagnostics::now_ms());
+            app.state::<std::sync::Arc<Hub>>().emit(
+                "voice://transcript",
+                json!({ "id": id, "role": "assistant", "text": answer, "delta": null, "isFinal": true }),
+            );
+            Ok(Some(answer))
+        }
+        Err(err) if err.starts_with("onemin-keep:") => Err(err.trim_start_matches("onemin-keep:").trim().to_string()),
+        Err(err) => {
+            app.state::<std::sync::Arc<Hub>>().warn(format!("1min.ai failed, trying the next key: {err}"));
+            Ok(None)
+        }
+    }
+}
+
 fn text_uses_local(app: &AppHandle) -> bool {
     let settings = app.state::<crate::settings::SettingsStore>().get();
     let ready = crate::local::model_dir(app)
@@ -219,6 +273,10 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
         return Ok("sent to the on-device session".into());
     }
     remember_for_voice(format!("user: {outbound}"));
+    if let Some(answer) = answer_with_onemin(app, &outbound)? {
+        hub.emit("voice://busy", "");
+        return Ok(answer);
+    }
     if text_uses_local(app) {
         hub.emit("voice://busy", "On this phone…");
         match crate::local::answer_text(app, &outbound) {

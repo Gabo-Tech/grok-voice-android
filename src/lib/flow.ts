@@ -6,6 +6,7 @@ export function providerLabel(id: string): string {
   if (id === "local" || id === "Local") return "On device";
   if (id === "xai" || id === "xAI") return "xAI";
   if (id === "openai" || id === "OpenAI") return "OpenAI";
+  if (id === "onemin" || id === "1min.ai") return "1min.ai";
   return id || "Voice";
 }
 
@@ -63,7 +64,7 @@ export function recoveryFor(message: string): { hint: string; go?: SettingsDesti
   }
   if (/no voice key|add a voice key|add one in setup|voice key first/.test(text)) {
     return {
-      hint: "Add xAI, OpenAI, or On device. The first one in the list is the one Talk tries.",
+      hint: "Add xAI, OpenAI, 1min.ai, or On device. The first one in the list is the one Talk tries.",
       go: "voice",
     };
   }

@@ -24,6 +24,10 @@ pub struct SettingsEdit {
     /// i18n key. The change is not applied until the user confirms.
     pub pending: Option<&'static str>,
     pub detail: String,
+    /// On-device pack id chosen by Talk.
+    pub local_model: Option<String>,
+    /// Existing provider to try first. This does not create a cloud key.
+    pub focus_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +38,12 @@ pub struct Settings {
     pub voice: String,
     /// OpenAI Realtime voice. Unknown stored values become `marin`. Never an xAI id.
     pub openai_voice: String,
+    /// OpenAI Realtime model. Empty becomes `gpt-realtime`.
+    #[serde(default = "default_openai_model")]
+    pub openai_model: String,
+    /// 1min.ai chat model. Empty becomes `gpt-4.1-mini`.
+    #[serde(default = "default_onemin_model")]
+    pub onemin_model: String,
     pub instructions: String,
     /// Mute the mic uplink while assistant audio is playing so a loudspeaker
     /// doesn't make Grok answer itself. Disables barge-in.
@@ -118,6 +128,14 @@ fn default_on() -> bool {
     true
 }
 
+fn default_openai_model() -> String {
+    "gpt-realtime".into()
+}
+
+fn default_onemin_model() -> String {
+    crate::onemin::DEFAULT_MODEL.into()
+}
+
 fn stored_message_apps(raw: &str) -> String {
     raw.split(',')
         .map(str::trim)
@@ -134,6 +152,8 @@ impl Default for Settings {
             model: "grok-voice-latest".into(),
             voice: crate::voices::XAI_DEFAULT.into(),
             openai_voice: crate::voices::OPENAI_DEFAULT.into(),
+            openai_model: default_openai_model(),
+            onemin_model: default_onemin_model(),
             instructions: "You are Grok, a witty, concise voice assistant running on the user's \
                            Android phone. Answer in one to three short spoken sentences unless \
                            asked for more detail."
@@ -170,6 +190,20 @@ impl Default for Settings {
 }
 
 /// Query values that are placed on the realtime URL. Letters, digits, and ._- only.
+/// A provider model id. Slashes stay so a 1min.ai id such as `moonshotai/kimi-k2.6` survives.
+pub fn safe_provider_model(model: &str, fallback: &str) -> String {
+    let cleaned: String = model
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))
+        .take(80)
+        .collect();
+    if cleaned.is_empty() || cleaned.contains("..") || cleaned.starts_with('/') || cleaned.ends_with('/') {
+        fallback.to_string()
+    } else {
+        cleaned
+    }
+}
+
 pub fn safe_model_name(model: &str) -> String {
     let cleaned: String = model
         .chars()
@@ -223,6 +257,8 @@ impl SettingsStore {
             crate::i18n::normalize(&s.locale).to_string()
         };
         s.model = safe_model_name(&s.model);
+        s.openai_model = safe_provider_model(&s.openai_model, "gpt-realtime");
+        s.onemin_model = safe_provider_model(&s.onemin_model, crate::onemin::DEFAULT_MODEL);
         s.voice = crate::voices::xai_voice(&s.voice);
         s.openai_voice = crate::voices::openai_voice(&s.openai_voice);
         if s.notification_delivery.trim().is_empty() {
@@ -592,6 +628,22 @@ mod tests {
         let text = described.to_string();
         assert!(text.contains("\"voice\":\"rex\""));
         assert!(text.contains("\"openaiVoice\":\"coral\""));
+        let qwen = edit_settings(&store.get(), &json!({"modelChoice": "use Qwen 2B"})).unwrap();
+        assert_eq!(qwen.local_model.as_deref(), Some("llm-qwen35-2b"));
+        assert_eq!(qwen.focus_provider.as_deref(), Some("local"));
+        assert!(qwen.settings.unwrap().prefer_local_on_wake);
+        let onemin = edit_settings(
+            &store.get(),
+            &json!({"modelChoice": "switch to 1min GPT-4.1 mini"}),
+        )
+        .unwrap();
+        assert_eq!(onemin.focus_provider.as_deref(), Some("onemin"));
+        assert_eq!(onemin.settings.unwrap().onemin_model, "gpt-4.1-mini");
+        let ask = edit_settings(&store.get(), &json!({"clearModels": true})).unwrap();
+        assert_eq!(ask.pending, Some("models-clear-ask"));
+        let cleared = edit_settings(&store.get(), &json!({"clearModels": true, "confirmed": true})).unwrap();
+        assert_eq!(cleared.local_model.as_deref(), Some("llm"));
+        assert!(describe_settings(&store.get(), &[]).to_string().contains("1min.ai model"));
         assert!(text.contains("Grok voice is rex"));
         let _ = fs::remove_file(&path);
     }
@@ -684,8 +736,8 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
     let messages = if settings.message_triage { "on" } else { "off" };
     let announce = if settings.announce_messages { "on" } else { "off" };
     let detail = format!(
-        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Message reading is {messages}. Announcing new messages is {announce}. Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. Default music player is {player}. Grok voice is {}. OpenAI voice is {}. {order} Days before a birthday stay on that person.",
-        settings.idle_timeout_secs, settings.voice, settings.openai_voice
+        "Language is {language}. Local speech is {speech}. Prefer on device is {prefer}. Listen is {listen}. Notifications are {alerts}. {named} Message reading is {messages}. Announcing new messages is {announce}. Quiet gap is {} seconds. Daily voice budget is {daily}. Monthly voice budget is {monthly}. Default music player is {player}. Grok voice is {}. OpenAI voice is {}. xAI model is {}. OpenAI model is {}. 1min.ai model is {}. {order} Days before a birthday stay on that person.",
+        settings.idle_timeout_secs, settings.voice, settings.openai_voice, settings.model, settings.openai_model, settings.onemin_model
     );
     json!({
         "ok": true,
@@ -702,6 +754,8 @@ pub fn describe_settings(settings: &Settings, voice_order: &[String]) -> Value {
         "voice": settings.voice,
         "openaiVoice": settings.openai_voice,
         "model": settings.model,
+        "openaiModel": settings.openai_model,
+        "oneminModel": settings.onemin_model,
         "echoGuard": settings.echo_guard,
         "wakeThreshold": settings.wake_threshold,
         "instructions": clip_text(&settings.instructions, 280),
@@ -761,12 +815,16 @@ pub fn edit_settings(
             wipe_memory: false,
             pending: Some("wipe-ask"),
             detail: String::new(),
+            local_model: None,
+            focus_provider: None,
         });
     }
 
     let mut next = current.clone();
     let mut changed = false;
     let mut notes = Vec::new();
+    let mut local_model = None;
+    let mut focus_provider = None;
 
     if let Some(language) = first_string(args, &["language", "locale"]) {
         next.locale = parse_locale(&language)?;
@@ -857,9 +915,94 @@ pub fn edit_settings(
         notes.push(format!("OpenAI voice is {}.", next.openai_voice));
     }
     if let Some(model) = arg_string(args.get("model")) {
-        next.model = model;
+        next.model = safe_model_name(&model);
         changed = true;
-        notes.push(format!("Model is {}.", next.model));
+        notes.push(format!("xAI model is {}.", next.model));
+    }
+    if let Some(model) = first_string(args, &["openaiModel"]) {
+        next.openai_model = safe_provider_model(&model, "gpt-realtime");
+        changed = true;
+        notes.push(format!("OpenAI model is {}.", next.openai_model));
+    }
+    if let Some(model) = first_string(args, &["oneminModel", "oneMinModel"]) {
+        next.onemin_model = safe_provider_model(&model, crate::onemin::DEFAULT_MODEL);
+        changed = true;
+        notes.push(format!("1min.ai model is {}.", next.onemin_model));
+        if !crate::onemin::supports_tools(&next.onemin_model) {
+            notes.push(format!(
+                "{} does not run tools on 1min.ai.",
+                next.onemin_model
+            ));
+        }
+    }
+    if let Some(raw) = first_string(args, &["localModel"]) {
+        match canonical_local_model(&raw) {
+            Some(id) => {
+                notes.push(format!("On-device model is {id}."));
+                local_model = Some(id);
+            }
+            None => return Err("That on-device model is not in the list.".into()),
+        }
+    }
+    if let Some(provider) = first_string(args, &["focusProvider"]) {
+        focus_provider = Some(canonical_provider(&provider)?);
+        notes.push(format!("Talk will try {} first when that key is saved.", focus_provider.as_deref().unwrap_or("")));
+    }
+    if let Some(phrase) = first_string(args, &["modelChoice"]) {
+        let choice = model_choice(&phrase);
+        if let Some(id) = choice.local_model {
+            local_model = Some(id.to_string());
+            notes.push(format!("On-device model is {id}."));
+        }
+        if let Some(model) = choice.onemin_model {
+            next.onemin_model = model.into();
+            changed = true;
+            notes.push(format!("1min.ai model is {}.", next.onemin_model));
+        }
+        if let Some(model) = choice.openai_model {
+            next.openai_model = model.into();
+            changed = true;
+            notes.push(format!("OpenAI model is {}.", next.openai_model));
+        }
+        if let Some(model) = choice.xai_model {
+            next.model = safe_model_name(model);
+            changed = true;
+            notes.push(format!("xAI model is {}.", next.model));
+        }
+        if let Some(provider) = choice.focus {
+            focus_provider = Some(provider.into());
+            if provider == "local" {
+                next.prefer_local_on_wake = true;
+                changed = true;
+            }
+            if provider == "onemin" {
+                next.prefer_local_on_wake = false;
+                changed = true;
+            }
+        }
+        if choice.local_model.is_none() && choice.focus.is_none() && choice.onemin_model.is_none() {
+            return Err("Say which model to use, such as Qwen 2B or 1min GPT-4.1 mini.".into());
+        }
+    }
+    if arg_bool(args.get("clearModels")) == Some(true) {
+        if !confirmed {
+            return Ok(SettingsEdit {
+                settings: None,
+                listen: None,
+                person_lead: None,
+                wipe_memory: false,
+                pending: Some("models-clear-ask"),
+                detail: String::new(),
+                local_model: None,
+                focus_provider: None,
+            });
+        }
+        next.model = Settings::default().model;
+        next.openai_model = default_openai_model();
+        next.onemin_model = default_onemin_model();
+        local_model = Some("llm".into());
+        changed = true;
+        notes.push("The models are back to the defaults. On this phone that is SmolLM2.".into());
     }
     if let Some(instructions) = arg_string(args.get("instructions")) {
         next.instructions = clip_text(&instructions, 2000);
@@ -954,7 +1097,7 @@ pub fn edit_settings(
     {
         notes.clear();
     }
-    if !changed && pending.is_none() && person_lead.is_none() && !wipe && notes.is_empty() {
+    if !changed && pending.is_none() && person_lead.is_none() && !wipe && notes.is_empty() && local_model.is_none() && focus_provider.is_none() {
         return Err("Say which setting to change.".into());
     }
     Ok(SettingsEdit {
@@ -964,6 +1107,8 @@ pub fn edit_settings(
         wipe_memory: wipe && confirmed,
         pending,
         detail: notes.join(" "),
+        local_model,
+        focus_provider,
     })
 }
 
@@ -1016,6 +1161,119 @@ fn person_lead_from(args: &Value) -> std::result::Result<Option<PersonLead>, Str
     Ok(Some(PersonLead { label, days }))
 }
 
+struct ModelChoice<'a> {
+    local_model: Option<&'a str>,
+    onemin_model: Option<&'a str>,
+    openai_model: Option<&'a str>,
+    xai_model: Option<&'a str>,
+    focus: Option<&'a str>,
+}
+
+fn fold_phrase(raw: &str) -> String {
+    raw.to_ascii_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn canonical_provider(raw: &str) -> std::result::Result<String, String> {
+    let folded = fold_phrase(raw);
+    let id = if folded.contains("1min") || folded.contains("onemin") || folded.contains("one min") {
+        "onemin"
+    } else if folded.contains("openai") {
+        "openai"
+    } else if folded.contains("xai") || folded == "grok" || folded.contains("grok voice") {
+        "xai"
+    } else if folded.contains("local") || folded.contains("device") || folded.contains("phone") {
+        "local"
+    } else {
+        return Err("That provider is not available yet.".into());
+    };
+    Ok(id.to_string())
+}
+
+pub fn canonical_local_model(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if matches!(
+        trimmed,
+        "llm"
+            | "llm-custom"
+            | "llm-gemma3-1b"
+            | "llm-qwen25-05b"
+            | "llm-llama32-1b"
+            | "llm-lfm25-350m"
+            | "llm-qwen35-08b"
+            | "llm-qwen35-2b"
+            | "llm-qwen35-4b"
+            | "llm-gemma4-e2b"
+    ) {
+        return Some(trimmed.to_string());
+    }
+    model_choice(trimmed).local_model.map(|id| id.to_string())
+}
+
+fn model_choice(phrase: &str) -> ModelChoice<'static> {
+    let folded = fold_phrase(phrase);
+    let mut choice = ModelChoice {
+        local_model: None,
+        onemin_model: None,
+        openai_model: None,
+        xai_model: None,
+        focus: None,
+    };
+    if folded.contains("1min") || folded.contains("onemin") || folded.contains("one min") {
+        choice.focus = Some("onemin");
+        if folded.contains("4 1") || folded.contains("gpt 4 1") {
+            choice.onemin_model = Some(crate::onemin::DEFAULT_MODEL);
+        }
+    }
+    choice.local_model = local_phrase(&folded);
+    if choice.local_model.is_some() && choice.focus.is_none() {
+        choice.focus = Some("local");
+    }
+    if choice.focus.is_none() && folded.contains("openai") {
+        choice.focus = Some("openai");
+        if folded.contains("realtime") {
+            choice.openai_model = Some("gpt-realtime");
+        }
+    }
+    choice
+}
+
+fn local_phrase(folded: &str) -> Option<&'static str> {
+    if folded.contains("atomic") || (folded.contains("qwen") && (folded.contains("4b") || folded.contains("4 b"))) {
+        return Some("llm-qwen35-4b");
+    }
+    if folded.contains("gemma") && folded.contains('4') {
+        return Some("llm-gemma4-e2b");
+    }
+    if folded.contains("qwen") && (folded.contains("2b") || folded.contains("2 b")) {
+        return Some("llm-qwen35-2b");
+    }
+    if folded.contains("qwen") && (folded.contains("0 8") || folded.contains("08b")) {
+        return Some("llm-qwen35-08b");
+    }
+    if folded.contains("smol") {
+        return Some("llm");
+    }
+    if folded.contains("llama") {
+        return Some("llm-llama32-1b");
+    }
+    if folded.contains("lfm") {
+        return Some("llm-lfm25-350m");
+    }
+    if folded.contains("gemma") {
+        return Some("llm-gemma3-1b");
+    }
+    if folded.contains("qwen") && (folded.contains("0 5") || folded.contains("qwen2")) {
+        return Some("llm-qwen25-05b");
+    }
+    None
+}
+
 fn known_setting(key: &str) -> bool {
     matches!(
         key,
@@ -1043,6 +1301,13 @@ fn known_setting(key: &str) -> bool {
             | "voice"
             | "openaiVoice"
             | "model"
+            | "openaiModel"
+            | "oneminModel"
+            | "oneMinModel"
+            | "localModel"
+            | "focusProvider"
+            | "modelChoice"
+            | "clearModels"
             | "instructions"
             | "echoGuard"
             | "wakeThreshold"
@@ -1087,6 +1352,8 @@ fn is_secret_key(key: &str) -> bool {
             | "voicekey"
             | "openaikey"
             | "xaikey"
+            | "oneminkey"
+            | "minaikey"
             | "credentials"
     ) || key.contains("apikey")
         || key.contains("password")

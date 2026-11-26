@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.StatFs
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -640,6 +641,10 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
     ret.put("availMb", info.availMem / (1024 * 1024))
     ret.put("lowMemory", info.lowMemory)
     ret.put("online", online())
+    ret.put("totalMem", info.totalMem)
+    ret.put("availMem", info.availMem)
+    val stat = StatFs(activity.filesDir.absolutePath)
+    ret.put("freeStorage", stat.availableBlocksLong * stat.blockSizeLong)
     invoke.resolve(ret)
   }
 

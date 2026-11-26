@@ -7,7 +7,7 @@ import { VoiceOrder } from "@/components/VoiceOrder";
 import { VoicePicker } from "@/components/VoicePicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api, errorText, type AuthStatus, type LocalPack, type Settings, type VoiceSetupStatus } from "@/lib/api";
+import { api, errorText, type AuthStatus, type LocalPack, type OneMinModel, type Settings, type VoiceSetupStatus } from "@/lib/api";
 import { attemptOrder, packsReadyForTalk, providerLabel } from "@/lib/flow";
 import { useT } from "@/lib/i18n";
 import { OPENAI_VOICES, XAI_VOICES, voiceLabel } from "@/lib/voices";
@@ -41,20 +41,23 @@ export function VoiceHome({
   onOpenTour: () => void;
 }) {
   const t = useT();
-  const [open, setOpen] = useState<"hearing" | "brain" | "voice" | "order" | "advanced" | null>(null);
+  const [open, setOpen] = useState<"hearing" | "brain" | "voice" | "order" | "advanced" | null>(askedSection());
   const [packs, setPacks] = useState<LocalPack[]>([]);
   const [voiceStatus, setVoiceStatus] = useState<VoiceSetupStatus | null>(null);
-  const [provider, setProvider] = useState<"xai" | "openai" | "local">("xai");
+  const [provider, setProvider] = useState<"xai" | "openai" | "local" | "onemin">(askedProvider);
   const [secret, setSecret] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [modelsOpen, setModelsOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(askedSection() === "brain");
+  const [oneminModels, setOneminModels] = useState<OneMinModel[]>(askedSection() ? previewOneminModels() : []);
+  const [modelWarn, setModelWarn] = useState(false);
 
   useEffect(() => {
     if (!isTauri()) return;
     void api.localPacks().then(setPacks).catch(() => {});
     void api.onDeviceVoice().then(setVoiceStatus).catch(() => {});
+    void api.oneminModels(false).then(setOneminModels).catch(() => setOneminModels([]));
   }, [settings.speechEngines, settings.phononModels, settings.localSpeech, settings.locale]);
 
   const accounts = auth.accounts ?? [];
@@ -89,7 +92,8 @@ export function VoiceHome({
   const voiceReady = Boolean(langStatus?.phononReady || langStatus?.piperReady || engine === "android");
   const offlineReady = primary === "local" ? sttReady && llmReady && voiceReady && engine !== "android" : sttReady && llmReady && voiceReady;
   const downloaded = sttReady && llmReady && (engine === "android" || voiceReady);
-  const cloudKey = accounts.some((account) => account.provider === "xai" || account.provider === "openai");
+  const cloudKey = accounts.some((account) => account.provider === "xai" || account.provider === "openai" || account.provider === "onemin");
+  const textBrain = primary === "local" || primary === "onemin";
   const unfinished = settings.setupStep === "skipped" || settings.setupStep === "language" || settings.setupStep === "packs" || settings.setupStep === "packs-run";
 
   const toggle = (id: typeof open) => setOpen((current) => (current === id ? null : id));
@@ -140,7 +144,7 @@ export function VoiceHome({
     }
   };
 
-  const focusCloud = async (id: "xai" | "openai") => {
+  const focusCloud = async (id: "xai" | "openai" | "onemin") => {
     setProvider(id);
     setOpen("order");
     if (!isTauri()) {
@@ -201,9 +205,56 @@ export function VoiceHome({
   };
 
   const hearingValue =
-    primary === "local" ? `${t(hearingHow)} · ${t(speech === "de" ? "German" : speech === "es" ? "Spanish" : "English")}` : t(providerLabel(primary));
-  const brainValue = primary === "openai" ? "gpt-realtime" : primary === "xai" ? settings.model || "grok-voice-latest" : t(brainName === "SmolLM2 135M Instruct" ? "SmolLM2" : brainName);
+    textBrain ? `${t(hearingHow)} · ${t(speech === "de" ? "German" : speech === "es" ? "Spanish" : "English")}` : t(providerLabel(primary));
+  const brainValue = primary === "onemin"
+    ? settings.oneminModel || "gpt-4.1-mini"
+    : primary === "openai"
+      ? settings.openaiModel || "gpt-realtime"
+      : primary === "xai"
+        ? settings.model || "grok-voice-latest"
+        : t(brainName === "SmolLM2 135M Instruct" ? "SmolLM2" : brainName);
   const voiceValue = t(voiceName);
+  const shot = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("view") || "";
+  if (import.meta.env.DEV && shot === "packs") {
+    return (
+      <div className="bg-background px-4 py-4 text-foreground">
+        <LocalPacks showHeading={false} part="models" />
+      </div>
+    );
+  }
+  if (import.meta.env.DEV && shot === "onemin") {
+    return (
+      <div className="min-h-screen bg-background px-4 py-6 text-foreground">
+        <h2 className="text-2xl font-medium tracking-tight">{t("1min.ai")}</h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{t("Paste the 1min.ai key")}</p>
+        <Input className="mt-3" type="password" value="" placeholder="sk-…" readOnly />
+        <div className="mt-4">
+          <OneminModels models={previewOneminModels()} value={settings.oneminModel || "gpt-4.1-mini"} onPick={(id) => save({ oneminModel: id })} onRefresh={() => undefined} />
+        </div>
+      </div>
+    );
+  }
+  if (import.meta.env.DEV && shot === "picker") {
+    return (
+      <div className="min-h-screen bg-background px-4 py-6 text-foreground">
+        <h2 className="text-2xl font-medium tracking-tight">{t("Model")}</h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{t("A text model still hears you and speaks on this phone.")}</p>
+        <label className="mt-4 block">
+          <span className="mb-2 block text-sm text-muted-foreground">{t("xAI model")}</span>
+          <Input value={settings.model} onChange={(event) => save({ model: event.target.value })} />
+        </label>
+        <label className="mt-3 block">
+          <span className="mb-2 block text-sm text-muted-foreground">{t("OpenAI model")}</span>
+          <Input value={settings.openaiModel || "gpt-realtime"} onChange={(event) => save({ openaiModel: event.target.value })} />
+        </label>
+        <div className="mt-3">
+          <p className="mb-2 text-sm text-muted-foreground">{t("1min.ai model")}</p>
+          <OneminModels models={previewOneminModels()} value={settings.oneminModel || "gpt-4.1-mini"} onPick={(id) => save({ oneminModel: id })} onRefresh={() => undefined} />
+        </div>
+        <p className="mt-4 text-sm text-muted-foreground">{t("On device")}: {t(brainName === "SmolLM2 135M Instruct" ? "SmolLM2" : brainName)}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 pb-8">
@@ -237,6 +288,9 @@ export function VoiceHome({
           <button type="button" className={cn("min-h-12 border px-3 text-left text-sm", primary === "local" && "border-foreground")} onClick={() => void focusLocal()}>
             {t("Hear on this phone")}
           </button>
+          <button type="button" className={cn("min-h-12 border px-3 text-left text-sm", primary === "onemin" && "border-foreground")} onClick={() => void focusCloud("onemin")}>
+            {t("Use 1min.ai")}
+          </button>
           <button type="button" className={cn("min-h-12 border px-3 text-left text-sm", primary === "xai" && "border-foreground")} onClick={() => void focusCloud("xai")}>
             {t("Use xAI")}
           </button>
@@ -244,7 +298,7 @@ export function VoiceHome({
             {t("Use OpenAI")}
           </button>
         </div>
-        {primary === "local" ? (
+        {textBrain ? (
           <>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {HEARING.map((choice) => (
@@ -276,22 +330,48 @@ export function VoiceHome({
       </Section>
 
       <Section title={t("Brain")} value={brainValue} open={open === "brain"} onToggle={() => toggle("brain")}>
-        {primary === "xai" ? (
-          <label className="block">
-            <span className="mb-2 block text-sm text-muted-foreground">{t("Model")}</span>
-            <Input value={settings.model} onChange={(event) => save({ model: event.target.value })} />
-          </label>
-        ) : primary === "openai" ? (
-          <p className="text-sm leading-6 text-muted-foreground">gpt-realtime</p>
-        ) : (
-          <>
-            <p className="text-sm leading-6 text-muted-foreground">{t("SmolLM2")}</p>
-            <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => setModelsOpen((value) => !value)}>
-              {modelsOpen ? t("Hide the other models") : t("Show the other models")}
-            </Button>
-            {modelsOpen ? <LocalPacks showHeading={false} part="models" onChanged={() => void api.localPacks().then(setPacks).catch(() => {})} /> : null}
-          </>
-        )}
+        <p className="text-sm leading-6 text-muted-foreground">
+          {t("A text model still hears you and speaks on this phone.")}
+        </p>
+        <label className="mt-3 block">
+          <span className="mb-2 block text-sm text-muted-foreground">{t("xAI model")}</span>
+          <Input value={settings.model} onChange={(event) => save({ model: event.target.value })} />
+        </label>
+        <label className="mt-3 block">
+          <span className="mb-2 block text-sm text-muted-foreground">{t("OpenAI model")}</span>
+          <Input value={settings.openaiModel || "gpt-realtime"} onChange={(event) => save({ openaiModel: event.target.value })} />
+        </label>
+        <div className="mt-3">
+          <p className="mb-2 text-sm text-muted-foreground">{t("1min.ai model")}</p>
+          <OneminModels
+            models={oneminModels}
+            value={settings.oneminModel || "gpt-4.1-mini"}
+            onPick={(id) => save({ oneminModel: id })}
+            onRefresh={() => {
+              void api.oneminModels(true).then(setOneminModels).catch((err) => setError(errorText(err)));
+            }}
+          />
+        </div>
+        <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => setModelsOpen((value) => !value)}>
+          {modelsOpen ? t("Hide the other models") : t("Show the other models")}
+        </Button>
+        {modelsOpen ? <LocalPacks showHeading={false} part="models" onChanged={() => void api.localPacks().then(setPacks).catch(() => {})} /> : null}
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-3 w-full"
+          onClick={() => {
+            if (!modelWarn) {
+              setModelWarn(true);
+              return;
+            }
+            setModelWarn(false);
+            save({ model: "grok-voice-latest", openaiModel: "gpt-realtime", oneminModel: "gpt-4.1-mini" });
+            void api.selectLocalModel("llm").then(setPacks).catch(() => {});
+          }}
+        >
+          {modelWarn ? t("Tap again to put the models back to the defaults.") : t("Use the defaults")}
+        </Button>
       </Section>
 
       <Section title={t("Voice")} value={voiceValue} open={open === "voice"} onToggle={() => toggle("voice")}>
@@ -313,8 +393,8 @@ export function VoiceHome({
         <p className="text-sm leading-6 text-muted-foreground">
           {t("Talk tries the top row first. On this phone hears you, thinks, and speaks without a network. A cloud row does all three with its key.")}
         </p>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {(["local", "xai", "openai"] as const).map((id) => (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {(["local", "onemin", "xai", "openai"] as const).map((id) => (
             <button
               key={id}
               type="button"
@@ -333,13 +413,26 @@ export function VoiceHome({
           <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("No key. Talk uses this phone when the packs below are ready. If a pack is missing or the model cannot load, the next key is used.")}</p>
         ) : (
           <label className="mt-3 block">
-            <span className="mb-2 block text-sm text-muted-foreground">{provider === "xai" ? t("Paste the xAI key") : t("Paste the OpenAI key")}</span>
+            <span className="mb-2 block text-sm text-muted-foreground">{provider === "xai" ? t("Paste the xAI key") : provider === "onemin" ? t("Paste the 1min.ai key") : t("Paste the OpenAI key")}</span>
             <Input type="password" autoComplete="off" value={secret} placeholder={editing ? t("Leave blank to keep the saved key") : provider === "xai" ? "xai-…" : "sk-…"} onChange={(event) => setSecret(event.target.value)} />
           </label>
         )}
         <Button type="button" className="mt-3 w-full" disabled={busy || (provider !== "local" && secret.trim().length < 12 && !editing)} onClick={() => void saveKey()}>
           {provider === "local" ? t("Use on device") : t("Save this key")}
         </Button>
+        {provider === "onemin" ? (
+          <div className="mt-4">
+            <p className="mb-2 text-sm text-muted-foreground">{t("1min.ai model")}</p>
+            <OneminModels
+              models={oneminModels}
+              value={settings.oneminModel || "gpt-4.1-mini"}
+              onPick={(id) => save({ oneminModel: id })}
+              onRefresh={() => {
+                void api.oneminModels(true).then(setOneminModels).catch((err) => setError(errorText(err)));
+              }}
+            />
+          </div>
+        ) : null}
         <div className="mt-4">
           <VoiceOrder
             accounts={accounts}
@@ -413,4 +506,63 @@ function Section({
       {open ? <div className="border-t border-border px-3 py-3">{children}</div> : null}
     </section>
   );
+}
+
+function OneminModels({
+  models,
+  value,
+  onPick,
+  onRefresh,
+}: {
+  models: OneMinModel[];
+  value: string;
+  onPick: (id: string) => void;
+  onRefresh: () => void;
+}) {
+  const t = useT();
+  const shown = models;
+  return (
+    <div>
+      <div className="flex flex-col gap-2">
+        {shown.map((model) => (
+          <button
+            key={model.id}
+            type="button"
+            onClick={() => onPick(model.id)}
+            className={cn("flex min-h-12 items-center justify-between gap-3 border px-3 text-left text-sm", value === model.id ? "border-foreground text-foreground" : "border-border text-muted-foreground")}
+          >
+            <span>{model.id}</span>
+            {model.tools ? null : <span>{t("No tools")}</span>}
+          </button>
+        ))}
+      </div>
+      <button type="button" className="mt-3 min-h-11 text-sm text-foreground underline" onClick={onRefresh}>
+        {t("Refresh models")}
+      </button>
+    </div>
+  );
+}
+
+function askedSection(): "hearing" | "brain" | "voice" | "order" | "advanced" | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("open");
+  if (value === "hearing" || value === "brain" || value === "voice" || value === "order" || value === "advanced") return value;
+  return null;
+}
+
+function askedProvider(): "xai" | "openai" | "local" | "onemin" {
+  if (typeof window === "undefined") return "xai";
+  const value = new URLSearchParams(window.location.search).get("provider");
+  if (value === "openai" || value === "local" || value === "onemin" || value === "xai") return value;
+  return "xai";
+}
+
+function previewOneminModels(): OneMinModel[] {
+  return [
+    { id: "gpt-4.1-mini", ownedBy: "openai", tools: true },
+    { id: "gpt-4.1", ownedBy: "openai", tools: true },
+    { id: "gpt-6.1-sol", ownedBy: "openai", tools: false },
+    { id: "gpt-6.2-astra", ownedBy: "openai", tools: false },
+    { id: "gpt-6.2-sol", ownedBy: "openai", tools: false },
+  ];
 }

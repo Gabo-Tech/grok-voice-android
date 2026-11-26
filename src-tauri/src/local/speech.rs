@@ -488,14 +488,21 @@ pub fn status(
     }
 }
 
-/// Local Talk can start when speech recognition, the language model, and either
-/// Piper or a Phonon model for that language are on the phone.
+/// Hearing and a voice, without a language-model file. 1min.ai uses this.
+pub fn speech_ready(root: &Path, speech: &str, engines: &str, models: &str) -> bool {
+    hearing_and_voice(root, speech, engines, models, false)
+}
+
 pub fn talk_ready(root: &Path, speech: &str, engines: &str, models: &str) -> bool {
+    hearing_and_voice(root, speech, engines, models, true)
+}
+
+fn hearing_and_voice(root: &Path, speech: &str, engines: &str, models: &str, need_llm: bool) -> bool {
     let lang = speech_lang(speech);
     if !matches!(lang, "en" | "es" | "de") {
         return false;
     }
-    if !super::packs::llm_ready(root) {
+    if need_llm && !super::packs::llm_ready(root) {
         return false;
     }
     let heard = match lang {

@@ -158,7 +158,7 @@ fn find_cxx_shared(ndk: &std::path::Path) -> Result<std::path::PathBuf, String> 
 }
 
 const SHERPA_TAG: &str = "v1.13.8";
-const LLAMA_TAG: &str = "b12140";
+const LLAMA_TAG: &str = "b12774";
 
 /// Official Phonon CPU library, built from the v0.7.1 tag in its own Cargo
 /// project. It is not a dependency of this crate: its `half` version would

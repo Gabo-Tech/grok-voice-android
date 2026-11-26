@@ -27,15 +27,24 @@ unsafe impl Send for Engines {}
 
 impl Engines {
     pub fn load(paths: &ModelPaths, threads: i32) -> Result<Self, String> {
+        Self::load_parts(paths, threads, true)
+    }
+
+    /// Speech and voice only. 1min.ai writes the reply, so llama.cpp stays unloaded.
+    pub fn load_speech(paths: &ModelPaths, threads: i32) -> Result<Self, String> {
+        Self::load_parts(paths, threads, false)
+    }
+
+    fn load_parts(paths: &ModelPaths, threads: i32, with_llm: bool) -> Result<Self, String> {
         #[cfg(target_os = "android")]
         {
             Ok(Self {
-                inner: Native::load(paths, threads)?,
+                inner: Native::load(paths, threads, with_llm)?,
             })
         }
         #[cfg(not(target_os = "android"))]
         {
-            let _ = (paths, threads);
+            let _ = (paths, threads, with_llm);
             Err("On-device speech runs in the Android app.".into())
         }
     }
@@ -154,7 +163,7 @@ mod ffi {
 
 #[cfg(target_os = "android")]
 impl Native {
-    fn load(paths: &ModelPaths, threads: i32) -> Result<Self, String> {
+    fn load(paths: &ModelPaths, threads: i32, with_llm: bool) -> Result<Self, String> {
         use ffi::*;
         use std::os::raw::c_int;
 
@@ -222,17 +231,21 @@ impl Native {
             } else {
                 std::ptr::null_mut()
             };
-        let llm_path = c_path(&paths.llm)?;
-        let llm = unsafe {
-            gv_llm_load(
-                llm_path.as_ptr(),
-                LLM_N_CTX,
-                threads,
-                err.as_mut_ptr(),
-                err.len() as c_int,
-            )
+        let llm = if with_llm {
+            let llm_path = c_path(&paths.llm)?;
+            unsafe {
+                gv_llm_load(
+                    llm_path.as_ptr(),
+                    LLM_N_CTX,
+                    threads,
+                    err.as_mut_ptr(),
+                    err.len() as c_int,
+                )
+            }
+        } else {
+            std::ptr::null_mut()
         };
-        if llm.is_null() {
+        if with_llm && llm.is_null() {
             unsafe {
                 gv_tts_free(tts);
                 gv_asr_free(asr);
@@ -271,6 +284,9 @@ impl Native {
         use ffi::*;
         use std::ffi::CString;
         use std::os::raw::c_int;
+        if self.llm.is_null() {
+            return Err("language model is not loaded".into());
+        }
         let prompt = CString::new(prompt).map_err(|_| "prompt contained a null".to_string())?;
         let grammar = CString::new(grammar).map_err(|_| "grammar contained a null".to_string())?;
         let mut out = text_buf(8192);

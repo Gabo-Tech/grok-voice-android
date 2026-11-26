@@ -3,7 +3,9 @@
 //! The phone tools stay on `actions::run`.
 
 mod engine;
+mod fit;
 pub use engine::preview_piper;
+pub use fit::{DownloadGate, Fit, download_gate, gate_message};
 #[cfg(target_os = "android")]
 pub(crate) use engine::{notice_sample_rate, set_notice_rate, synthesize_notice};
 mod gguf;
@@ -20,10 +22,14 @@ mod web;
 pub use mode::public_search_enabled;
 #[allow(unused_imports)]
 pub use packs::{
-    PackInfo, PackProgress, delete_pack, download_custom_model, download_pack, import_custom_file,
-    model_dir, pack_status, packs_ready, select_model,
+    PackInfo, PackProgress, apply_fit, delete_pack, download_custom_model, download_pack,
+    import_custom_file, model_dir, pack_status, packs_ready, select_model,
 };
-pub use session::{answer_text, run_session};
+
+pub fn active_model_name(root: &std::path::Path) -> String {
+    packs::active_model(root).name
+}
+pub use session::{answer_onemin, answer_text, run_onemin_session, run_session};
 pub use speech::talk_ready;
 pub use web::lookup as public_search;
 pub use web::{OFFLINE, network_block};
@@ -32,6 +38,8 @@ pub use web::{OFFLINE, network_block};
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Local,
+    /// On-device speech and voice, with the reply written by 1min.ai.
+    OneMin,
     Xai,
     OpenAi,
     Skip(String),
@@ -52,9 +60,22 @@ pub fn route(provider: &str, packs_ready: bool) -> Route {
 }
 
 /// Talk badge label. Secrets never appear here.
+/// 1min.ai writes the reply. Hearing and the voice stay on the phone, so the
+/// language-model pack is not required.
+pub fn route_onemin(speech_ready: bool) -> Route {
+    if speech_ready {
+        Route::OneMin
+    } else {
+        Route::Skip(
+            "On-device speech packs are not downloaded yet. 1min.ai still hears and speaks on this phone. Download speech to text and the voice in Settings.".into(),
+        )
+    }
+}
+
 pub fn provider_label(provider: &str) -> &'static str {
     match provider {
         "local" => "Local",
+        "onemin" => "1min.ai",
         "xai" => "xAI",
         "openai" => "OpenAI",
         _ => "Voice",

@@ -127,7 +127,7 @@ pub async fn add_voice_account(
 ) -> Result<AuthStatus> {
     let provider = provider.trim().to_string();
     let secret = Zeroizing::new(secret.trim().to_string());
-    if !matches!(provider.as_str(), "xai" | "openai" | "local") {
+    if !matches!(provider.as_str(), "xai" | "openai" | "local" | "onemin") {
         return Err(msg("That provider is not available yet."));
     }
     if provider == "local" {
@@ -146,6 +146,8 @@ pub async fn add_voice_account(
         mint_ephemeral(&http_client(), &secret).await?;
     } else if provider == "openai" {
         mint_openai(&http_client(), &secret).await?;
+    } else if provider == "onemin" {
+        crate::onemin::post_models(&crate::onemin::client(), &secret).map_err(|err| msg(err.message))?;
     }
     blocking(app, move |app| {
         app.state::<Vault>()
@@ -163,7 +165,7 @@ pub async fn update_voice_account(
     secret: Option<String>,
 ) -> Result<AuthStatus> {
     let provider = provider.trim().to_string();
-    if !matches!(provider.as_str(), "xai" | "openai" | "local") {
+    if !matches!(provider.as_str(), "xai" | "openai" | "local" | "onemin") {
         return Err(msg("That provider is not available yet."));
     }
     let replacement = secret.unwrap_or_default();
@@ -174,8 +176,10 @@ pub async fn update_voice_account(
         }
         if provider == "xai" {
             mint_ephemeral(&http_client(), &replacement).await?;
-        } else {
+        } else if provider == "openai" {
             mint_openai(&http_client(), &replacement).await?;
+        } else if provider == "onemin" {
+            crate::onemin::post_models(&crate::onemin::client(), &replacement).map_err(|err| msg(err.message))?;
         }
     }
     let secret = Zeroizing::new(if provider == "local" {
@@ -1238,20 +1242,80 @@ pub fn import_contact_dates(app: AppHandle, id: String) -> Result<crate::people:
     Ok(saved)
 }
 
+fn annotated_packs(app: &AppHandle) -> Result<Vec<crate::local::PackInfo>> {
+    let dir = crate::local::model_dir(app).map_err(msg)?;
+    let mut packs = crate::local::pack_status(&dir);
+    let facts = app.state::<NativeBridge>().device_facts().unwrap_or_default();
+    crate::local::apply_fit(&mut packs, facts.total_mem, facts.free_storage);
+    Ok(packs)
+}
+
 #[tauri::command]
 pub async fn local_pack_status(app: AppHandle) -> Result<Vec<crate::local::PackInfo>> {
-    blocking(app, |app| {
-        let dir = crate::local::model_dir(&app).map_err(msg)?;
-        Ok(crate::local::pack_status(&dir))
+    blocking(app, |app| annotated_packs(&app)).await
+}
+
+#[tauri::command]
+pub async fn onemin_models(app: AppHandle, refresh: Option<bool>) -> Result<Vec<crate::onemin::ListedModel>> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| msg(err.to_string()))?
+        .join("onemin-models.json");
+    let cached = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Vec<crate::onemin::ListedModel>>(&bytes).ok())
+        .unwrap_or_default();
+    if refresh != Some(true) && !cached.is_empty() {
+        return Ok(cached);
+    }
+    let key = blocking(app.clone(), |app| {
+        let accounts = app.state::<Vault>().accounts(&app.state::<NativeBridge>())?;
+        accounts
+            .into_iter()
+            .find(|account| account.provider == "onemin")
+            .map(|account| account.secret)
+            .ok_or_else(|| msg("Add a 1min.ai key in Settings first."))
     })
-    .await
+    .await?;
+    let models = tokio::task::spawn_blocking(move || crate::onemin::post_models(&crate::onemin::client(), &key))
+        .await
+        .map_err(|err| msg(err.to_string()))?
+        .map_err(|err| msg(err.message))?;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(bytes) = serde_json::to_vec(&models) {
+        let _ = crate::files::write_private(&path, &bytes);
+    }
+    Ok(models)
 }
 
 #[tauri::command]
 pub async fn download_local_pack(
     app: AppHandle,
     id: String,
+    confirm: Option<bool>,
 ) -> Result<Vec<crate::local::PackInfo>> {
+    let packs = annotated_packs(&app)?;
+    if let Some(pack) = packs.iter().find(|pack| pack.id == id) {
+        let facts = app.state::<NativeBridge>().device_facts().unwrap_or_default();
+        let fit = match pack.fit.as_str() {
+            "fits" => crate::local::Fit::Fits,
+            "tight" => crate::local::Fit::Tight,
+            "no" => crate::local::Fit::No,
+            _ => crate::local::Fit::Unknown,
+        };
+        let gate = crate::local::download_gate(fit, facts.free_storage, pack.download_bytes);
+        if matches!(gate, crate::local::DownloadGate::Warn) && confirm != Some(true) {
+            return Err(msg(crate::local::gate_message(gate).unwrap_or("This model is tight on this phone. Download only if you want to try it.")));
+        }
+        if let Some(message) = crate::local::gate_message(gate) {
+            if !matches!(gate, crate::local::DownloadGate::Warn) {
+                return Err(msg(message));
+            }
+        }
+    }
     let hub = app.state::<Arc<Hub>>().inner().clone();
     let dir = crate::local::model_dir(&app).map_err(msg)?;
     tokio::task::spawn_blocking(move || {
@@ -1268,7 +1332,7 @@ pub async fn delete_local_pack(app: AppHandle, id: String) -> Result<Vec<crate::
     blocking(app, move |app| {
         let dir = crate::local::model_dir(&app).map_err(msg)?;
         crate::local::delete_pack(&dir, &id).map_err(msg)?;
-        Ok(crate::local::pack_status(&dir))
+        annotated_packs(&app)
     })
     .await
 }
@@ -1497,7 +1561,7 @@ pub async fn select_local_model(app: AppHandle, id: String) -> Result<Vec<crate:
         let dir = crate::local::model_dir(&app).map_err(msg)?;
         crate::local::select_model(&dir, &id).map_err(msg)?;
         use_local_for_talk(&app);
-        Ok(crate::local::pack_status(&dir))
+        annotated_packs(&app)
     })
     .await
 }
@@ -1521,7 +1585,7 @@ pub async fn import_local_model(
         crate::local::import_custom_file(&dir, std::path::Path::new(&picked), &name, &family)
             .map_err(msg)?;
         use_local_for_talk(&app);
-        Ok(crate::local::pack_status(&dir))
+        annotated_packs(&app)
     })
     .await
 }
