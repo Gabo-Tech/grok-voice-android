@@ -1068,9 +1068,9 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
 export function flowSlices(amounts: number[], span: number): { start: number; extent: number }[] {
   const total = amounts.reduce((sum, amount) => sum + Math.max(0, amount), 0) || 1;
   let cursor = 0;
-  return amounts.map((amount) => {
-    const extent = Math.max(1, span * (Math.max(0, amount) / total));
+  return amounts.map((amount, index) => {
     const start = cursor;
+    const extent = index === amounts.length - 1 ? span - cursor : (span * Math.max(0, amount)) / total;
     cursor += extent;
     return { start, extent };
   });

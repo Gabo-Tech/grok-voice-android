@@ -711,7 +711,7 @@ interface AuditEl {
   rotation?: number;
   originX?: number;
   originY?: number;
-  shape?: { x?: number; y?: number; width?: number; height?: number; x1?: number; y1?: number; x2?: number; y2?: number; cpx1?: number; cpy1?: number; cpx2?: number; cpy2?: number; extent?: number };
+  shape?: { x?: number; y?: number; width?: number; height?: number; x1?: number; y1?: number; x2?: number; y2?: number; cpx1?: number; cpy1?: number; cpx2?: number; cpy2?: number; extent?: number; orient?: "vertical" | "horizontal" };
   setShape?: (shape: AuditEl["shape"]) => void;
   dirty?: () => void;
   transform?: number[];
@@ -808,13 +808,14 @@ function stackFlowCurves(
     const src = placed.get(source);
     const dst = placed.get(target);
     if (!src || !dst) return;
-    const extent = Math.max(1, Math.min(outExtent.get(index) || src.h, inExtent.get(index) || dst.h));
+    const extent = Math.max(0, outExtent.get(index) || (axis === "y" ? src.h : src.w));
     if (axis === "y") {
       const y1 = src.localY + (outStart.get(index) || 0);
       const y2 = dst.localY + (inStart.get(index) || 0);
       const x1 = src.localX + src.w;
       const x2 = dst.localX;
       curve.setShape?.({
+        orient: "horizontal",
         x1,
         x2,
         y1,
@@ -831,6 +832,7 @@ function stackFlowCurves(
       const y1 = src.localY + src.h;
       const y2 = dst.localY;
       curve.setShape?.({
+        orient: "vertical",
         x1,
         x2,
         y1,
