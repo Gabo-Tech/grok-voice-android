@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { api, errorText, type LocalPack, type PackProgress } from "@/lib/api";
 import { classify, fitLabel, recommend, type FitCandidate } from "@/lib/fit";
-import { useT } from "@/lib/i18n";
+import { fill, useT } from "@/lib/i18n";
 
 function formatBytes(bytes: number) {
   const mb = bytes / (1024 * 1024);
@@ -60,7 +60,7 @@ export function LocalPacks({
 
   useEffect(() => {
     if (!isTauri()) {
-      if (import.meta.env.DEV) setPacks(previewPacks());
+      if (import.meta.env.DEV) setPacks(previewModelPacks());
       return;
     }
     refresh();
@@ -240,11 +240,34 @@ export function LocalPacks({
         </p>
       </div>
       <ul className="divide-y divide-border border-y border-border">
-        {models.find((pack) => pack.recommended) ? (
-          <p className="text-sm leading-6 text-foreground">
-            {t("Recommended for your phone")}: {t(models.find((pack) => pack.recommended)?.label || "")}
-          </p>
-        ) : null}
+        {(() => {
+          const recommended = models.find((pack) => pack.recommended);
+          const current = models.find((pack) => pack.selected);
+          if (!recommended) return null;
+          return (
+            <li className="py-2">
+              <button
+                type="button"
+                className="flex min-h-11 w-full items-center text-left text-sm text-foreground"
+                onClick={() => {
+                  document.getElementById(`pack-${recommended.id}`)?.scrollIntoView({ block: "nearest" });
+                  if (!recommended.ready) void download(recommended.id);
+                  else if (!recommended.selected) void useModel(recommended.id);
+                }}
+              >
+                {t("Recommended for your phone")}: {t(recommended.label)}
+              </button>
+              {current && current.id !== recommended.id ? (
+                <p className="text-sm leading-5 text-muted-foreground">
+                  {fill("{recommended} is recommended. {current} is in use.", {
+                    recommended: t(recommended.label),
+                    current: t(current.label),
+                  })}
+                </p>
+              ) : null}
+            </li>
+          );
+        })()}
         {models.map((pack) => (
           <PackRow
             key={pack.id}
@@ -344,7 +367,7 @@ function shownError(err: unknown, t: (english: string) => string) {
 
 const PREVIEW_PHONE = 8 * 1024 * 1024 * 1024;
 
-function previewPacks(): LocalPack[] {
+export function previewModelPacks(): LocalPack[] {
   const rows: Array<LocalPack & { strength: number }> = [
     row("stt", "Speech to text", "Moonshine Base English, int8", "speech", 250_807_309, true, false, "", 0, 0),
     row("tts", "Voice", "Piper en_US lessac, low", "speech", 67_097_098, true, false, "", 0, 0),
@@ -356,7 +379,7 @@ function previewPacks(): LocalPack[] {
     row("llm-gemma3-1b", "Gemma 3 1B Instruct", "Q4_K_M. Gemma 3 chat model for talk and tools.", "llm", 806_058_240, false, false, "Gemma", 3, 6),
     row("llm-qwen35-2b", "Qwen3.5 2B", "IQ4_NL. Qwen3.5 chat model. Minimum 3 GB of memory.", "llm", 1_213_300_992, false, false, "Apache-2.0", 3, 7),
     row("llm-gemma4-e2b", "Gemma 4 E2B", "QAT Q4. Gemma 4 chat model. Minimum 8 GB of memory.", "llm", 2_620_370_976, false, false, "Apache-2.0", 8, 8),
-    row("llm-qwen35-4b", "Qwen3.5 4B", "Q4_K_M. Qwen3.5 chat model. Minimum 8 GB of memory.", "llm", 2_708_804_608, false, false, "Apache-2.0", 8, 9),
+    row("llm-qwen35-4b", "Qwen3.5 4B", "Q4_K_M. Qwen3.5 chat model. Minimum 8 GB of memory.", "llm", 2_708_804_608, true, false, "Apache-2.0", 8, 9),
   ];
   const candidates: FitCandidate[] = rows.filter((item) => item.kind === "llm").map((item) => ({
     id: item.id,
@@ -411,7 +434,7 @@ function PackRow({
   const size = packBytes(pack);
   const label = pack.kind === "custom" && pack.label !== "Custom model" ? pack.label : t(pack.label);
   return (
-    <li className="space-y-3 py-3">
+    <li id={`pack-${pack.id}`} className="space-y-3 py-3">
       <div className="min-w-0">
         <p className="text-base text-foreground">{label}</p>
         <p className="text-sm leading-5 text-muted-foreground">
@@ -432,9 +455,9 @@ function PackRow({
           </Button>
         ) : null}
         {pack.ready && onDownload ? (
-          <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null} onClick={() => void onDownload(pack.id)}>
+          <button type="button" className="flex min-h-11 w-full items-center text-left text-sm text-foreground" disabled={busy !== null} onClick={() => void onDownload(pack.id)}>
             {busy === pack.id ? t("Downloading") : t("Download again")}
-          </Button>
+          </button>
         ) : null}
         {!pack.ready && onDownload ? (
           <Button type="button" className="w-full whitespace-normal" disabled={busy !== null || pack.gate === "block"} onClick={() => void onDownload(pack.id, warn)}>
@@ -442,9 +465,9 @@ function PackRow({
           </Button>
         ) : null}
         {pack.ready ? (
-          <Button type="button" variant="outline" className="w-full whitespace-normal" disabled={busy !== null} onClick={() => void onRemove(pack.id)}>
+          <button type="button" className="flex min-h-11 w-full items-center text-left text-sm text-foreground" disabled={busy !== null} onClick={() => void onRemove(pack.id)}>
             {t("Delete")}
-          </Button>
+          </button>
         ) : null}
       </div>
       {ratio !== null && <Progress value={ratio} className="mt-2" />}

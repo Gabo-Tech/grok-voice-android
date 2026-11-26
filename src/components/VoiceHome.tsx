@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { ChevronDown } from "lucide-react";
-import { LocalPacks } from "@/components/LocalPacks";
+import { LocalPacks, previewModelPacks } from "@/components/LocalPacks";
 import { OnDeviceVoice } from "@/components/OnDeviceVoice";
 import { VoiceOrder } from "@/components/VoiceOrder";
 import { VoicePicker } from "@/components/VoicePicker";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, errorText, type AuthStatus, type LocalPack, type OneMinModel, type Settings, type VoiceSetupStatus } from "@/lib/api";
 import { attemptOrder, packsReadyForTalk, providerLabel } from "@/lib/flow";
+import { fitLabel } from "@/lib/fit";
 import { useT } from "@/lib/i18n";
 import { OPENAI_VOICES, XAI_VOICES, voiceLabel } from "@/lib/voices";
 import { cn } from "@/lib/utils";
@@ -42,7 +43,7 @@ export function VoiceHome({
 }) {
   const t = useT();
   const [open, setOpen] = useState<"hearing" | "brain" | "voice" | "order" | "advanced" | null>(askedSection());
-  const [packs, setPacks] = useState<LocalPack[]>([]);
+  const [packs, setPacks] = useState<LocalPack[]>(() => (!isTauri() && import.meta.env.DEV ? previewModelPacks() : []));
   const [voiceStatus, setVoiceStatus] = useState<VoiceSetupStatus | null>(null);
   const [provider, setProvider] = useState<"xai" | "openai" | "local" | "onemin">(askedProvider);
   const [secret, setSecret] = useState("");
@@ -224,34 +225,36 @@ export function VoiceHome({
   }
   if (import.meta.env.DEV && shot === "onemin") {
     return (
-      <div className="min-h-screen bg-background px-4 py-6 text-foreground">
+      <div className="bg-background px-4 py-4 text-foreground">
         <h2 className="text-2xl font-medium tracking-tight">{t("1min.ai")}</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{t("Paste the 1min.ai key")}</p>
-        <Input className="mt-3" type="password" value="" placeholder="sk-…" readOnly />
+        <Input className="mt-3" type="password" autoComplete="off" value="saved-on-this-phone" readOnly />
         <div className="mt-4">
-          <OneminModels models={previewOneminModels()} value={settings.oneminModel || "gpt-4.1-mini"} onPick={(id) => save({ oneminModel: id })} onRefresh={() => undefined} />
+          <OneminModels hint models={previewOneminModels()} value={settings.oneminModel || "gpt-4.1-mini"} onPick={(id) => save({ oneminModel: id })} onRefresh={() => undefined} />
         </div>
       </div>
     );
   }
   if (import.meta.env.DEV && shot === "picker") {
     return (
-      <div className="min-h-screen bg-background px-4 py-6 text-foreground">
+      <div className="bg-background px-4 py-4 text-foreground">
         <h2 className="text-2xl font-medium tracking-tight">{t("Model")}</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">{t("A text model still hears you and speaks on this phone.")}</p>
-        <label className="mt-4 block">
-          <span className="mb-2 block text-sm text-muted-foreground">{t("xAI model")}</span>
-          <Input value={settings.model} onChange={(event) => save({ model: event.target.value })} />
-        </label>
-        <label className="mt-3 block">
-          <span className="mb-2 block text-sm text-muted-foreground">{t("OpenAI model")}</span>
-          <Input value={settings.openaiModel || "gpt-realtime"} onChange={(event) => save({ openaiModel: event.target.value })} />
-        </label>
-        <div className="mt-3">
-          <p className="mb-2 text-sm text-muted-foreground">{t("1min.ai model")}</p>
-          <OneminModels models={previewOneminModels()} value={settings.oneminModel || "gpt-4.1-mini"} onPick={(id) => save({ oneminModel: id })} onRefresh={() => undefined} />
-        </div>
-        <p className="mt-4 text-sm text-muted-foreground">{t("On device")}: {t(brainName === "SmolLM2 135M Instruct" ? "SmolLM2" : brainName)}</p>
+        <ModelChoices
+          settings={settings}
+          packs={packs}
+          primary={primary}
+          onSettings={save}
+          onFocus={(id) => {
+            if (id === "local") void focusLocal();
+            else void focusCloud(id);
+          }}
+          onUsePack={(id) => {
+            setPacks((current) => current.map((pack) => ({ ...pack, selected: pack.id === id })));
+            if (isTauri()) void api.selectLocalModel(id).then(setPacks).catch((err) => setError(errorText(err)));
+          }}
+          oneminModels={oneminModels.length > 0 ? oneminModels : previewOneminModels()}
+          onRefreshModels={() => undefined}
+        />
       </div>
     );
   }
@@ -330,28 +333,27 @@ export function VoiceHome({
       </Section>
 
       <Section title={t("Brain")} value={brainValue} open={open === "brain"} onToggle={() => toggle("brain")}>
-        <p className="text-sm leading-6 text-muted-foreground">
-          {t("A text model still hears you and speaks on this phone.")}
-        </p>
-        <label className="mt-3 block">
-          <span className="mb-2 block text-sm text-muted-foreground">{t("xAI model")}</span>
-          <Input value={settings.model} onChange={(event) => save({ model: event.target.value })} />
-        </label>
-        <label className="mt-3 block">
-          <span className="mb-2 block text-sm text-muted-foreground">{t("OpenAI model")}</span>
-          <Input value={settings.openaiModel || "gpt-realtime"} onChange={(event) => save({ openaiModel: event.target.value })} />
-        </label>
-        <div className="mt-3">
-          <p className="mb-2 text-sm text-muted-foreground">{t("1min.ai model")}</p>
-          <OneminModels
-            models={oneminModels}
-            value={settings.oneminModel || "gpt-4.1-mini"}
-            onPick={(id) => save({ oneminModel: id })}
-            onRefresh={() => {
-              void api.oneminModels(true).then(setOneminModels).catch((err) => setError(errorText(err)));
-            }}
-          />
-        </div>
+        <ModelChoices
+          settings={settings}
+          packs={packs}
+          primary={primary}
+          onSettings={save}
+          onFocus={(id) => {
+            if (id === "local") void focusLocal();
+            else void focusCloud(id);
+          }}
+          onUsePack={(id) => {
+            if (!isTauri()) {
+              setPacks((current) => current.map((pack) => ({ ...pack, selected: pack.id === id })));
+              return;
+            }
+            void api.selectLocalModel(id).then(setPacks).catch((err) => setError(errorText(err)));
+          }}
+          oneminModels={oneminModels}
+          onRefreshModels={() => {
+            void api.oneminModels(true).then(setOneminModels).catch((err) => setError(errorText(err)));
+          }}
+        />
         <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => setModelsOpen((value) => !value)}>
           {modelsOpen ? t("Hide the other models") : t("Show the other models")}
         </Button>
@@ -424,6 +426,7 @@ export function VoiceHome({
           <div className="mt-4">
             <p className="mb-2 text-sm text-muted-foreground">{t("1min.ai model")}</p>
             <OneminModels
+              hint
               models={oneminModels}
               value={settings.oneminModel || "gpt-4.1-mini"}
               onPick={(id) => save({ oneminModel: id })}
@@ -508,21 +511,100 @@ function Section({
   );
 }
 
+function ModelChoices({
+  settings,
+  packs,
+  primary,
+  onSettings,
+  onFocus,
+  onUsePack,
+  oneminModels,
+  onRefreshModels,
+}: {
+  settings: Settings;
+  packs: LocalPack[];
+  primary: string;
+  onSettings: (patch: Partial<Settings>) => void;
+  onFocus: (id: "local" | "onemin" | "xai" | "openai") => void;
+  onUsePack: (id: string) => void;
+  oneminModels: OneMinModel[];
+  onRefreshModels: () => void;
+}) {
+  const t = useT();
+  const downloaded = packs.filter((pack) => (pack.kind === "llm" || pack.kind === "custom") && pack.ready);
+  const brains = [
+    ["local", "On this phone"],
+    ["onemin", "1min.ai"],
+    ["xai", "xAI"],
+    ["openai", "OpenAI"],
+  ] as const;
+  return (
+    <div>
+      <p className="text-sm leading-6 text-muted-foreground">{t("A text model still hears you and speaks on this phone.")}</p>
+      <p className="mb-2 mt-3 text-sm text-muted-foreground">{t("Talk answers with")}</p>
+      <div className="grid grid-cols-2 gap-2 min-[700px]:grid-cols-4">
+        {brains.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onFocus(id)}
+            className={cn("min-h-11 border px-3 text-left text-sm", primary === id ? "border-foreground text-foreground" : "border-border text-muted-foreground")}
+          >
+            {t(label)}
+          </button>
+        ))}
+      </div>
+      <p className="mb-2 mt-4 text-sm text-muted-foreground">{t("On this phone")}</p>
+      <div className="flex flex-col gap-2">
+        {downloaded.length === 0 ? <p className="text-sm leading-6 text-muted-foreground">{t("No language model is on this phone yet.")}</p> : null}
+        {downloaded.map((pack) => (
+          <button
+            key={pack.id}
+            type="button"
+            onClick={() => onUsePack(pack.id)}
+            className={cn("flex min-h-11 w-full flex-col items-start justify-center border px-3 py-2 text-left text-sm", pack.selected ? "border-foreground text-foreground" : "border-border text-muted-foreground")}
+          >
+            <span>{t(pack.label)}</span>
+            <span>
+              {[pack.selected ? t("In use") : "", pack.recommended ? t("Recommended for your phone") : "", pack.fit ? t(fitLabel(pack.fit)) : ""].filter(Boolean).join(" · ")}
+            </span>
+          </button>
+        ))}
+      </div>
+      <label className="mt-4 block">
+        <span className="mb-2 block text-sm text-muted-foreground">{t("xAI model")}</span>
+        <Input value={settings.model} onChange={(event) => onSettings({ model: event.target.value })} />
+      </label>
+      <label className="mt-3 block">
+        <span className="mb-2 block text-sm text-muted-foreground">{t("OpenAI model")}</span>
+        <Input value={settings.openaiModel || "gpt-realtime"} onChange={(event) => onSettings({ openaiModel: event.target.value })} />
+      </label>
+      <div className="mt-3">
+        <p className="mb-2 text-sm text-muted-foreground">{t("1min.ai model")}</p>
+        <OneminModels hint models={oneminModels} value={settings.oneminModel || "gpt-4.1-mini"} onPick={(id) => onSettings({ oneminModel: id })} onRefresh={onRefreshModels} />
+      </div>
+    </div>
+  );
+}
+
 function OneminModels({
   models,
   value,
   onPick,
   onRefresh,
+  hint = false,
 }: {
   models: OneMinModel[];
   value: string;
   onPick: (id: string) => void;
   onRefresh: () => void;
+  hint?: boolean;
 }) {
   const t = useT();
-  const shown = models;
+  const shown = models.length > 0 ? models : previewOneminModels();
   return (
     <div>
+      {hint || models.length === 0 ? <p className="mb-2 text-sm leading-6 text-muted-foreground">{t("The model list loads after a key is saved.")}</p> : null}
       <div className="flex flex-col gap-2">
         {shown.map((model) => (
           <button

@@ -1275,6 +1275,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "LFM1.0": "LFM1.0",
     "Use 1min.ai": "Usar 1min.ai",
     "Add a 1min.ai key in Settings first.": "Añade primero una clave de 1min.ai en Ajustes.",
+    "Talk answers with": "Talk responde con",
+    "The model list loads after a key is saved.": "La lista de modelos se carga cuando guardas una clave.",
+    "{recommended} is recommended. {current} is in use.": "{recommended} es el recomendado. {current} está en uso.",
+    "No language model is on this phone yet.": "Aún no hay un modelo de lenguaje en este teléfono.",
   },
   de: {
     Talk: "Sprechen",
@@ -2545,6 +2549,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "LFM1.0": "LFM1.0",
     "Use 1min.ai": "1min.ai nutzen",
     "Add a 1min.ai key in Settings first.": "Füge zuerst einen 1min.ai-Schlüssel in den Einstellungen hinzu.",
+    "Talk answers with": "Talk antwortet mit",
+    "The model list loads after a key is saved.": "Die Modellliste lädt, nachdem ein Schlüssel gespeichert ist.",
+    "{recommended} is recommended. {current} is in use.": "{recommended} ist empfohlen. {current} ist in Gebrauch.",
+    "No language model is on this phone yet.": "Auf diesem Telefon liegt noch kein Sprachmodell.",
   },
   pt: {
     Talk: "Falar",
@@ -3815,6 +3823,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "LFM1.0": "LFM1.0",
     "Use 1min.ai": "Usar 1min.ai",
     "Add a 1min.ai key in Settings first.": "Adicione primeiro uma chave da 1min.ai em Ajustes.",
+    "Talk answers with": "Talk responde com",
+    "The model list loads after a key is saved.": "A lista de modelos carrega depois de guardar uma chave.",
+    "{recommended} is recommended. {current} is in use.": "{recommended} é o recomendado. {current} está em uso.",
+    "No language model is on this phone yet.": "Ainda não há um modelo de linguagem neste telefone.",
   },
   "ca-ES-valencia": {
     Talk: "Parlar",
@@ -5085,6 +5097,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "LFM1.0": "LFM1.0",
     "Use 1min.ai": "Utilitza 1min.ai",
     "Add a 1min.ai key in Settings first.": "Afig primer una clau d'1min.ai en Ajusts.",
+    "Talk answers with": "Talk respon amb",
+    "The model list loads after a key is saved.": "La llista de models es carrega quan guardes una clau.",
+    "{recommended} is recommended. {current} is in use.": "{recommended} és el recomanat. {current} està en ús.",
+    "No language model is on this phone yet.": "Encara no hi ha un model de llengua en este telèfon.",
   },
 };
 
