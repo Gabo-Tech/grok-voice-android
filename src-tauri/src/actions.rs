@@ -53,6 +53,18 @@ pub struct Item {
     /// Last moment the series may fire. 0 means it does not end.
     #[serde(default)]
     pub until_ms: i64,
+    /// 1 repeats every unit. Larger values are every N days, weeks, months, or years.
+    #[serde(default = "default_interval")]
+    pub interval: u32,
+    /// Fires left, including the next one. 0 means the series does not count down.
+    #[serde(default)]
+    pub end_count: u32,
+    /// First fire of an every-N series. 0 means the next clock time.
+    #[serde(default)]
+    pub anchor_ms: i64,
+    /// `spoken`, `normal`, or empty to follow Settings.
+    #[serde(default)]
+    pub delivery: String,
     /// `file` or `youtube`. Empty uses the phone's alarm sound.
     #[serde(default)]
     pub sound_kind: String,
@@ -80,6 +92,10 @@ impl Item {
             person_id: String::new(),
             person_reminder_id: String::new(),
             until_ms: 0,
+            interval: 1,
+            end_count: 0,
+            anchor_ms: 0,
+            delivery: String::new(),
             sound_kind: String::new(),
             sound_ref: String::new(),
             sound_label: String::new(),
@@ -97,6 +113,23 @@ pub struct ScheduleMeta {
     pub person_id: String,
     pub person_reminder_id: String,
     pub until_ms: Option<i64>,
+    pub interval: Option<u32>,
+    pub end_count: Option<u32>,
+    pub delivery: Option<String>,
+    /// The form replaced the series, so the every-N anchor starts over.
+    pub reset_anchor: bool,
+}
+
+fn default_interval() -> u32 {
+    1
+}
+
+fn normalize_delivery(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "spoken" | "speak" | "aloud" | "out loud" | "outloud" => "spoken".into(),
+        "normal" | "silent" | "quiet" | "notification" | "notify" => "normal".into(),
+        _ => String::new(),
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -197,7 +230,7 @@ pub fn tool_definitions() -> Value {
             "properties": { "id": { "type": "string" } },
             "required": ["id"]
         })),
-        fn_tool("set_alarm", "Save an alarm in this app's Time list with youtubeUrl or soundFile. Hour is 0-23 and minute is 0-59, for the next time that clock time occurs. A delay such as in 5 minutes is set_reminder with inMinutes, or set_timer with seconds. It is not the phone Clock. youtubeUrl is a YouTube video link. soundFile is an audio file already picked in the alarm form, by its file name. sound default clears a custom sound. The sound plays in this app. Do not download the video.", json!({
+        fn_tool("set_alarm", "Save an alarm in this app's Time list with youtubeUrl or soundFile. Hour is 0-23 and minute is 0-59, for the next time that clock time occurs. A delay such as in 5 minutes is set_reminder with inMinutes, or set_timer with seconds. It is not the phone Clock. youtubeUrl is a YouTube video link. soundFile is an audio file already picked in the alarm form, by its file name. sound default clears a custom sound. The sound plays in this app. Do not download the video. recurrence is daily, weekly, monthly, yearly, every_n_days, every_n_weeks, every_n_months, or every_n_years. interval is N, at least 1. endCount stops after that many rings. until is the last date. delivery is spoken or normal. Omit delivery to follow Settings.", json!({
             "type": "object",
             "properties": {
                 "hour": { "type": "integer" },
@@ -206,21 +239,28 @@ pub fn tool_definitions() -> Value {
                 "youtubeUrl": { "type": "string" },
                 "soundUrl": { "type": "string" },
                 "soundFile": { "type": "string" },
-                "sound": { "type": "string" }
+                "sound": { "type": "string" },
+                "recurrence": { "type": "string" },
+                "interval": { "type": "integer" },
+                "endCount": { "type": "integer" },
+                "until": { "type": "string" },
+                "weekdays": { "type": "array", "items": { "type": "string" } },
+                "delivery": { "type": "string" }
             },
             "required": ["hour", "minute"]
         })),
-        fn_tool("set_timer", "Start in-app countdown in Time. seconds is the length, such as 300 for five minutes. inMinutes and inHours work too. label or title is what it is for, such as Check EURUSD price. It shows on the Time list under Countdowns and in list_reminders, and this app notifies when it finishes. A request to remind them uses set_reminder with inMinutes.", json!({
+        fn_tool("set_timer", "Start in-app countdown in Time. seconds is the length, such as 300 for five minutes. inMinutes and inHours work too. label or title is what it is for, such as Check EURUSD price. It shows on the Time list under Countdowns and in list_reminders, and this app notifies when it finishes. A request to remind them uses set_reminder with inMinutes. delivery is spoken or normal. Omit delivery to follow Settings.", json!({
             "type": "object",
             "properties": {
                 "seconds": { "type": "integer" },
                 "inMinutes": { "type": "integer" },
                 "inHours": { "type": "integer" },
                 "label": { "type": "string" },
-                "title": { "type": "string" }
+                "title": { "type": "string" },
+                "delivery": { "type": "string" }
             }
         })),
-        fn_tool("set_reminder", "Save a reminder, including inMinutes. For 'in 5 minutes' or 'in 2 hours', pass inMinutes or inHours and omit at. The app computes the fire time. A clock time uses at as YYYY-MM-DDTHH:MM, 7pm, or tomorrow at 9. The reminder shows on the Time screen and in list_reminders until it fires, and this app posts the notification. For a repeating reminder, recurrence is daily or weekly, time is HH:MM, and weekdays is mon,wed,fri. Omit recurrence for a one-off.", json!({
+        fn_tool("set_reminder", "Save a reminder, including inMinutes. For 'in 5 minutes' or 'in 2 hours', pass inMinutes or inHours and omit at. The app computes the fire time. A clock time uses at as YYYY-MM-DDTHH:MM, 7pm, or tomorrow at 9. The reminder shows on the Time screen and in list_reminders until it fires, and this app posts the notification. For a repeating reminder, recurrence is daily, weekly, monthly, yearly, every_n_days, every_n_weeks, every_n_months, or every_n_years. interval is N, at least 1, such as 3 with every_n_days. time is HH:MM, and weekdays is mon,wed,fri. endCount stops after that many times. until is the last date, YYYY-MM-DD. delivery is spoken or normal. Omit delivery to follow Settings. Omit recurrence for a one-off.", json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string" },
@@ -233,7 +273,12 @@ pub fn tool_definitions() -> Value {
                 "note": { "type": "string" },
                 "recurrence": { "type": "string" },
                 "time": { "type": "string" },
-                "weekdays": { "type": "array", "items": { "type": "string" } }
+                "date": { "type": "string" },
+                "weekdays": { "type": "array", "items": { "type": "string" } },
+                "interval": { "type": "integer" },
+                "endCount": { "type": "integer" },
+                "until": { "type": "string" },
+                "delivery": { "type": "string" }
             },
             "required": ["title"]
         })),
@@ -257,13 +302,21 @@ pub fn tool_definitions() -> Value {
                 "recurring": { "type": "boolean" }
             }
         })),
-        fn_tool("update_reminder", "Change a reminder's title, note, time, or alarm sound. id from list_reminders. at is YYYY-MM-DDTHH:MM. For an alarm, youtubeUrl or soundFile sets its sound, and sound default clears it. Custom sound is only for alarms.", json!({
+        fn_tool("update_reminder", "Change a reminder's title, note, time, or alarm sound. id from list_reminders. at is YYYY-MM-DDTHH:MM. recurrence, interval, endCount, until, time, weekdays, and delivery also change an alarm or countdown. delivery is spoken or normal. For an alarm, youtubeUrl or soundFile sets its sound, and sound default clears it. Custom sound is only for alarms.", json!({
             "type": "object",
             "properties": {
                 "id": { "type": "integer" },
                 "title": { "type": "string" },
                 "at": { "type": "string" },
                 "note": { "type": "string" },
+                "recurrence": { "type": "string" },
+                "time": { "type": "string" },
+                "date": { "type": "string" },
+                "weekdays": { "type": "array", "items": { "type": "string" } },
+                "interval": { "type": "integer" },
+                "endCount": { "type": "integer" },
+                "until": { "type": "string" },
+                "delivery": { "type": "string" },
                 "youtubeUrl": { "type": "string" },
                 "soundUrl": { "type": "string" },
                 "soundFile": { "type": "string" },
@@ -271,10 +324,13 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["id"]
         })),
-        fn_tool("cancel_reminder", "Cancel one scheduled reminder, alarm, or timer by id from list_reminders.", json!({
+        fn_tool("cancel_reminder", "Cancel one scheduled reminder, alarm, or timer by id from list_reminders. Pass confirmed true only after a clear yes. Call first with confirmed false. That does not delete. Say the title, wait for yes, then call again with confirmed true.", json!({
             "type": "object",
-            "properties": { "id": { "type": "integer" } },
-            "required": ["id"]
+            "properties": {
+                "id": { "type": "integer" },
+                "confirmed": { "type": "boolean" }
+            },
+            "required": ["id", "confirmed"]
         })),
         fn_tool("list_calendar_events", "List events for a day, week, month, or date range in one call. Recurring events expand into each occurrence in that range. month is YYYY-MM. span is week, month, or upcoming. from and to are inclusive YYYY-MM-DD. day is one YYYY-MM-DD; omit every date argument for today. recurring true with no dates lists each repeating series once. query matches title or location. Do not call this once per day. Each event has an id.", json!({
             "type": "object",
@@ -611,7 +667,7 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " play_music uses the default music player immediately, with no confirmation. The default is files on this phone until Settings changes it to Musify, YouTube Music, YouTube, or ask each time. play_local_music is only for files already on this phone. Do not use play_music or play_local_music when they say YouTube or on YouTube. That stays on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not download anything. A search does not start playing by itself. If play_music or play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. media_control pause, play, stop, next, previous, and shuffle act immediately. Shuffle only works when a player session is already open. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. Paying more than a card owes is allowed and leaves a credit. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, investment, or custom asset the user described, and can set the amount owed at any time, including zero or a credit as a negative balance. Currency can be euros or a coin such as Bitcoin. That edit is not a payment and does not move another account. list_finance answers how much they spent, cash on hand, a card balance or credit, net worth, utilization, and coming expenses or income for the next 30 days. A card in credit or at zero has nothing due. log_money can edit an amount, charge a card even when it is already in credit, or pay a card from an account, including more than the current debt. save_schedule changes a plan's amount for future unpaid occurrences only. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, exchange rate, or account number. save_account can set a color, an investment type, units and a price, or the default currency used when they do not name one. Do not turn a credit card into a bank because the names overlap. A payment or payday with a date is reminded in this app, two days before and again on the day, unless they name another lead. mark_paid logs that payment and moves a repeating date forward. export_finance_pdf writes a summary PDF on this phone. Call it with confirmed false, then with confirmed true to open the share sheet. Nothing is uploaded. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it. save_schedule programs a course, open-ended rent, a subscription, planned income, or an investment payout. Pass phrase as their sentence. Do not mark it paid until they say it was paid or received. Do not invent an exchange rate or a price for the holding. Keep each currency in its own total."
+    " play_music uses the default music player immediately, with no confirmation. The default is files on this phone until Settings changes it to Musify, YouTube Music, YouTube, or ask each time. play_local_music is only for files already on this phone. Do not use play_music or play_local_music when they say YouTube or on YouTube. That stays on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not download anything. A search does not start playing by itself. If play_music or play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. media_control pause, play, stop, next, previous, and shuffle act immediately. Shuffle only works when a player session is already open. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. cancel_reminder removes a reminder, alarm, or countdown only after a clear yes. Call it first with confirmed false, say the title, and call again with confirmed true. A repeat can be daily, weekly, monthly, yearly, or every N days, weeks, months, or years with interval. endCount stops it after N times. until is the last date. delivery spoken reads that one out loud. delivery normal stays a notification. Omit delivery to follow Settings. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. Paying more than a card owes is allowed and leaves a credit. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, investment, or custom asset the user described, and can set the amount owed at any time, including zero or a credit as a negative balance. Currency can be euros or a coin such as Bitcoin. That edit is not a payment and does not move another account. list_finance answers how much they spent, cash on hand, a card balance or credit, net worth, utilization, and coming expenses or income for the next 30 days. A card in credit or at zero has nothing due. log_money can edit an amount, charge a card even when it is already in credit, or pay a card from an account, including more than the current debt. save_schedule changes a plan's amount for future unpaid occurrences only. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, exchange rate, or account number. save_account can set a color, an investment type, units and a price, or the default currency used when they do not name one. Do not turn a credit card into a bank because the names overlap. A payment or payday with a date is reminded in this app, two days before and again on the day, unless they name another lead. mark_paid logs that payment and moves a repeating date forward. export_finance_pdf writes a summary PDF on this phone. Call it with confirmed false, then with confirmed true to open the share sheet. Nothing is uploaded. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it. save_schedule programs a course, open-ended rent, a subscription, planned income, or an investment payout. Pass phrase as their sentence. Do not mark it paid until they say it was paid or received. Do not invent an exchange rate or a price for the holding. Keep each currency in its own total."
 }
 
 impl Agenda {
@@ -772,6 +828,11 @@ impl Agenda {
                 time: item.time.clone(),
                 date: item.date.clone(),
                 lead_days: item.lead_days,
+                until_ms: Some(item.until_ms),
+                interval: Some(item.interval.max(1)),
+                end_count: Some(item.end_count),
+                delivery: Some(item.delivery.clone()),
+                reset_anchor: false,
                 ..ScheduleMeta::default()
             };
             apply_schedule(&mut item, &kept, at_ms)?;
@@ -885,6 +946,20 @@ impl Agenda {
         Ok(())
     }
 
+    pub fn set_delivery(&self, app: &AppHandle, id: i32, delivery: &str) -> Result<(), String> {
+        let mut store = self.lock();
+        let Some(item) = store.items.iter_mut().find(|item| item.id == id) else {
+            return Err("Nothing scheduled with that id.".into());
+        };
+        item.delivery = normalize_delivery(delivery);
+        let item = item.clone();
+        Self::persist(&self.path, &store)?;
+        drop(store);
+        arm_item(app, &item);
+        touch(app);
+        Ok(())
+    }
+
     pub fn complete(&self, app: &AppHandle, id: i32) -> Result<String, String> {
         let Some(item) = self.item(id) else {
             return Err("Nothing scheduled with that id.".into());
@@ -893,24 +968,26 @@ impl Agenda {
             self.cancel(app, id)?;
             return Ok(format!("Done with {}.", item.title));
         }
-        let spec = spec_from_item(&item)?;
-        let after = DateTime::from_timestamp_millis(item.at_ms)
-            .map(|t| t.with_timezone(&Local))
-            .unwrap_or_else(Local::now);
-        let Some(next) = recurrence::next_after(&spec, after) else {
+        let Some(next) = after_fire(&item, Local::now()) else {
             self.cancel(app, id)?;
             return Ok("That was the last one.".into());
         };
-        self.retarget(app, id, next.timestamp_millis())?;
-        Ok(format!("Next {} is {}.", item.title, next.format("%a %-d %b %-H:%M")))
+        let when = DateTime::from_timestamp_millis(next.at_ms).map(|t| t.with_timezone(&Local));
+        self.retarget(app, &next)?;
+        Ok(format!(
+            "Next {} is {}.",
+            next.title,
+            when.map(|value| value.format("%a %-d %b %-H:%M").to_string()).unwrap_or_default()
+        ))
     }
 
-    fn retarget(&self, app: &AppHandle, id: i32, at_ms: i64) -> Result<(), String> {
+    fn retarget(&self, app: &AppHandle, next: &Item) -> Result<(), String> {
         let mut store = self.lock();
-        let Some(item) = store.items.iter_mut().find(|i| i.id == id) else {
+        let Some(item) = store.items.iter_mut().find(|i| i.id == next.id) else {
             return Err("Nothing scheduled with that id.".into());
         };
-        item.at_ms = at_ms;
+        item.at_ms = next.at_ms;
+        item.end_count = next.end_count;
         let item = item.clone();
         store.items.sort_by_key(|i| i.at_ms);
         Self::persist(&self.path, &store)?;
@@ -980,7 +1057,7 @@ impl Agenda {
         let mut arm = Vec::new();
         let mut kept = Vec::new();
         let mut recent: Option<RecentFire> = None;
-        for mut item in store.items.drain(..) {
+        for item in store.items.drain(..) {
             if item.at_ms + 60_000 >= now_ms {
                 kept.push(item);
                 continue;
@@ -1003,10 +1080,9 @@ impl Agenda {
                 recent = Some(fire);
             }
             if recurrence::is_repeating(&item.recurrence) {
-                if let Some(next) = spec_from_item(&item).ok().and_then(|spec| recurrence::next_after(&spec, now)) {
-                    item.at_ms = next.timestamp_millis();
-                    arm.push(item.clone());
-                    kept.push(item);
+                if let Some(next) = after_fire(&item, now) {
+                    arm.push(next.clone());
+                    kept.push(next);
                     continue;
                 }
             }
@@ -1240,6 +1316,21 @@ fn locale_of(app: &AppHandle) -> String {
 fn confirm_local(app: &AppHandle, draft: &HandoffDraft) -> Option<Result<Value, String>> {
     match draft.kind.as_str() {
         "delete_person" => Some(commit_people(app, crate::people::delete_from_tool(&app.state::<crate::people::People>(), &json!({"id": draft.query, "confirmed": true})))),
+        "cancel_scheduled" => {
+            let id = draft.query.parse::<i32>().unwrap_or(0);
+            if id <= 0 {
+                return Some(Err("Nothing scheduled with that id.".into()));
+            }
+            let agenda = app.state::<Agenda>();
+            let title = agenda.item(id).map(|item| item.title).unwrap_or_default();
+            Some(agenda.cancel(app, id).map(|_| {
+                json!({
+                    "ok": true,
+                    "cancelled": true,
+                    "detail": crate::i18n::fill(&locale_of(app), "time-cancelled", &[("title", &title)])
+                })
+            }))
+        }
         "listen_off" => Some(apply_settings(app, &json!({"listen": false, "confirmed": true}))),
         "wipe_memory" => Some(apply_settings(app, &json!({"wipeMemory": true, "confirmed": true}))),
         _ => None,
@@ -1981,6 +2072,31 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             }
             let sound = crate::alarm_sound::from_tool(args, &agenda.sounds_dir())?;
             let label = label_or(args, "label", "Alarm");
+            let repeating = arg_text(args, "recurrence").is_some()
+                || args.get("interval").is_some()
+                || args.get("endCount").is_some()
+                || arg_text(args, "until").is_some();
+            if repeating {
+                let mut schedule = schedule_from_args(args)?;
+                if schedule.time.is_empty() {
+                    schedule.time = format!("{hour:02}:{minute:02}");
+                }
+                if schedule.recurrence.is_empty() {
+                    schedule.recurrence = "daily".into();
+                }
+                let at_ms = reminder_anchor_ms(args, &schedule).unwrap_or_else(|_| Local::now().timestamp_millis() + 120_000);
+                let item = agenda.upsert_item(app, None, "alarm", &label, "", at_ms, Some(schedule), sound)?;
+                let when = DateTime::from_timestamp_millis(item.at_ms)
+                    .map(|t| t.with_timezone(&Local).format("%a %-d %b %-H:%M").to_string())
+                    .unwrap_or_default();
+                let pattern = recurrence_phrase(&item);
+                return Ok(json!({
+                    "ok": true,
+                    "id": item.id,
+                    "kind": "alarm",
+                    "detail": format!("Alarm saved in this app's Time list for {when}: {label}.{pattern}")
+                }));
+            }
             let when = next_occurrence(hour, minute)?;
             let id = agenda.take_id()?;
             let raw = app
@@ -1994,6 +2110,9 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                     if let Some(detail) = done["detail"].as_str() {
                         done["detail"] = json!(format!("{detail}{}", crate::alarm_sound::detail(&choice)));
                     }
+                }
+                if let Some(delivery) = arg_text(args, "delivery") {
+                    agenda.set_delivery(app, id, delivery)?;
                 }
             }
             Ok(done)
@@ -2010,7 +2129,13 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                 .state::<NativeBridge>()
                 .set_timer(seconds, &label, id, when.timestamp_millis())
                 .map_err(|e| e.to_string())?;
-            finish_schedule(app, &agenda, id, "timer", &label, "", when, &raw)
+            let done = finish_schedule(app, &agenda, id, "timer", &label, "", when, &raw)?;
+            if done["ok"] == true {
+                if let Some(delivery) = arg_text(args, "delivery") {
+                    agenda.set_delivery(app, id, delivery)?;
+                }
+            }
+            Ok(done)
         }
         "set_reminder" => {
             let title = request_title(args);
@@ -2067,7 +2192,10 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                 Some(s) => parse_local_when(s)?.timestamp_millis(),
                 None => existing.at_ms,
             };
-            let schedule = if args.get("recurrence").is_some() || args.get("weekdays").is_some() || args.get("time").is_some() {
+            let schedule = if ["recurrence", "weekdays", "time", "date", "interval", "endCount", "occurrences", "until", "delivery", "leadDays"]
+                .iter()
+                .any(|key| args.get(*key).is_some())
+            {
                 Some(schedule_from_args(args)?)
             } else {
                 None
@@ -2083,17 +2211,42 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
                 .unwrap_or_default();
             Ok(json!({ "ok": true, "id": item.id, "detail": format!("Updated: {} at {when}.{sound_detail}", item.title) }))
         }
-        "cancel_reminder" => {
-            let id = args["id"].as_i64().ok_or("id from list_reminders is required")? as i32;
-            agenda.cancel(app, id)?;
-            Ok(json!({ "ok": true, "detail": "Cancelled." }))
-        }
+        "cancel_reminder" => cancel_from_tool(app, &agenda, args),
         "list_calendar_events" => list_calendar_events(app, &agenda, args),
         "create_calendar_event" => create_or_local(app, &agenda, args),
         "update_calendar_event" => update_event(app, &agenda, args),
         "delete_calendar_event" => delete_event(app, &agenda, args),
         _ => Err(format!("Unknown tool {name}")),
     }
+}
+
+fn cancel_from_tool(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value, String> {
+    let id = args["id"].as_i64().ok_or("id from list_reminders is required")? as i32;
+    let existing = agenda.item(id).ok_or("Nothing scheduled with that id.")?;
+    if !flag(args, "confirmed") {
+        let key = match existing.kind.as_str() {
+            "alarm" => "time-cancel-alarm",
+            "timer" | "countdown" => "time-cancel-countdown",
+            _ => "time-cancel-reminder",
+        };
+        let detail = crate::i18n::fill(&locale_of(app), key, &[("title", existing.title.as_str())]);
+        stage_confirm(app, "cancel_scheduled", &detail, &id.to_string());
+        return Ok(json!({
+            "ok": true,
+            "needsConfirm": true,
+            "cancelled": false,
+            "id": id,
+            "detail": detail
+        }));
+    }
+    clear_handoff(app);
+    let title = existing.title.clone();
+    agenda.cancel(app, id)?;
+    Ok(json!({
+        "ok": true,
+        "cancelled": true,
+        "detail": crate::i18n::fill(&locale_of(app), "time-cancelled", &[("title", title.as_str())])
+    }))
 }
 
 fn create_or_local(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Value, String> {
@@ -2381,6 +2534,8 @@ fn event_spec(event: &CalEvent) -> Option<recurrence::Spec> {
         year: Some(start.year()),
         lead_days: 0,
         until,
+        interval: 1,
+        anchor: None,
     })
 }
 
@@ -2705,6 +2860,10 @@ fn reminder_row(item: &Item, at_ms: i64) -> Value {
         "personId": item.person_id,
         "soundKind": item.sound_kind,
         "soundLabel": item.sound_label,
+        "interval": item.interval.max(1),
+        "endCount": item.end_count,
+        "untilMs": item.until_ms,
+        "delivery": item.delivery,
     })
 }
 
@@ -2993,8 +3152,25 @@ fn apply_schedule(item: &mut Item, meta: &ScheduleMeta, requested_at: i64) -> Re
     if let Some(until) = meta.until_ms {
         item.until_ms = until.max(0);
     }
-    if item.kind == "alarm" || item.kind == "timer" {
+    if let Some(interval) = meta.interval {
+        item.interval = interval.max(1);
+    } else if item.interval == 0 {
+        item.interval = 1;
+    }
+    if let Some(end_count) = meta.end_count {
+        item.end_count = end_count;
+    }
+    if let Some(delivery) = &meta.delivery {
+        item.delivery = normalize_delivery(delivery);
+    }
+    if meta.reset_anchor {
+        item.anchor_ms = 0;
+    }
+    if item.kind == "timer" {
         item.recurrence.clear();
+        item.interval = 1;
+        item.end_count = 0;
+        item.anchor_ms = 0;
         item.at_ms = requested_at;
         return Ok(());
     }
@@ -3004,12 +3180,18 @@ fn apply_schedule(item: &mut Item, meta: &ScheduleMeta, requested_at: i64) -> Re
         let spec = spec_from_item(item)?;
         let next = recurrence::next_after(&spec, Local::now()).ok_or_else(|| "That date has no upcoming time.".to_string())?;
         item.at_ms = next.timestamp_millis();
+        if item.anchor_ms <= 0 {
+            item.anchor_ms = item.at_ms;
+        }
         if item.time.is_empty() {
             item.time = format!("{:02}:{:02}", spec.hour, spec.minute);
         }
         return Ok(());
     }
     item.recurrence.clear();
+    item.interval = 1;
+    item.end_count = 0;
+    item.anchor_ms = 0;
     item.at_ms = requested_at;
     Ok(())
 }
@@ -3028,16 +3210,78 @@ fn spec_from_item(item: &Item) -> Result<recurrence::Spec, String> {
     };
     let kind = if item.recurrence.is_empty() { "none".into() } else { item.recurrence.clone() };
     let until = (item.until_ms > 0).then(|| DateTime::from_timestamp_millis(item.until_ms).map(|t| t.with_timezone(&Local).date_naive())).flatten();
-    Ok(recurrence::Spec { kind, weekdays: item.weekdays.clone(), hour, minute, month, day, year, lead_days: item.lead_days, until })
+    let anchor = (item.anchor_ms > 0)
+        .then(|| DateTime::from_timestamp_millis(item.anchor_ms).map(|when| when.with_timezone(&Local).date_naive()))
+        .flatten();
+    Ok(recurrence::Spec {
+        kind,
+        weekdays: item.weekdays.clone(),
+        hour,
+        minute,
+        month,
+        day,
+        year,
+        lead_days: item.lead_days,
+        until,
+        interval: item.interval.max(1),
+        anchor,
+    })
+}
+
+/// The occurrence stored on `item` has fired or was marked done.
+/// Returns the next one, or nothing when the count or the end date is finished.
+fn after_fire(item: &Item, now: DateTime<Local>) -> Option<Item> {
+    if !recurrence::is_repeating(&item.recurrence) {
+        return None;
+    }
+    let spec = spec_from_item(item).ok()?;
+    let mut remaining = item.end_count;
+    let mut cursor = DateTime::from_timestamp_millis(item.at_ms).map(|when| when.with_timezone(&Local)).unwrap_or(now);
+    for _ in 0..400 {
+        if remaining == 1 {
+            return None;
+        }
+        let next = recurrence::next_after(&spec, cursor)?;
+        if remaining > 1 {
+            remaining -= 1;
+        }
+        if next > now {
+            let mut out = item.clone();
+            out.at_ms = next.timestamp_millis();
+            out.end_count = remaining;
+            return Some(out);
+        }
+        cursor = next;
+    }
+    None
 }
 
 fn schedule_from_args(args: &Value) -> Result<ScheduleMeta, String> {
     let raw = args["recurrence"].as_str().unwrap_or("").trim();
-    let mut recurrence = if raw.is_empty() { String::new() } else { recurrence::normalize_kind(raw) };
+    let phrase = recurrence::every_phrase(raw);
+    let mut recurrence = if let Some((kind, _)) = &phrase {
+        kind.clone()
+    } else if raw.is_empty() {
+        String::new()
+    } else {
+        recurrence::normalize_kind(raw)
+    };
     let weekdays = weekday_args(args);
     if recurrence.is_empty() && !weekdays.is_empty() {
         recurrence = "weekly".into();
     }
+    let interval = args
+        .get("interval")
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u32)
+        .or(phrase.map(|(_, count)| count))
+        .map(|value| value.max(1));
+    let end_count = args
+        .get("endCount")
+        .and_then(|value| value.as_u64())
+        .or_else(|| args.get("occurrences").and_then(|value| value.as_u64()))
+        .map(|value| value as u32);
+    let delivery = args.get("delivery").and_then(|value| value.as_str()).map(str::to_string);
     Ok(ScheduleMeta {
         recurrence,
         weekdays,
@@ -3045,6 +3289,10 @@ fn schedule_from_args(args: &Value) -> Result<ScheduleMeta, String> {
         date: args["date"].as_str().unwrap_or("").trim().to_string(),
         lead_days: args["leadDays"].as_u64().unwrap_or(0) as u32,
         until_ms: args.get("until").and_then(|value| value.as_str()).map(str::trim).filter(|value| !value.is_empty()).and_then(|value| recurrence::parse_month_day(value).map(|(_, _, _)| value.to_string())).map(|value| until_end_ms(&value)).or_else(|| args.get("untilMs").and_then(|value| value.as_i64())),
+        interval,
+        end_count,
+        delivery,
+        reset_anchor: true,
         ..ScheduleMeta::default()
     })
 }
@@ -3337,6 +3585,7 @@ fn arm_item(app: &AppHandle, item: &Item) {
         &item.sound_kind,
         &item.sound_ref,
         &item.sound_label,
+        &item.delivery,
     );
 }
 
@@ -3347,7 +3596,7 @@ fn arm_local_event(app: &AppHandle, event: &CalEvent) {
     let bridge = app.state::<NativeBridge>();
     match event_alarm_at(event, Local::now()) {
         Some(at) => {
-            let _ = bridge.schedule_item(event.alarm_id, "event", &event.title, &event.location, at, "", "", "");
+            let _ = bridge.schedule_item(event.alarm_id, "event", &event.title, &event.location, at, "", "", "", "");
         }
         None => {
             let _ = bridge.cancel_item(event.alarm_id);
@@ -3377,7 +3626,8 @@ fn rearm_events(app: &AppHandle) {
 }
 
 fn recurrence_phrase(item: &Item) -> String {
-    match recurrence::normalize_kind(&item.recurrence).as_str() {
+    let interval = item.interval.max(1);
+    let pattern = match recurrence::normalize_kind(&item.recurrence).as_str() {
         "daily" => format!(" Repeats daily at {}.", display_clock(&item.time)),
         "weekly" => {
             let days = item.weekdays.iter().map(|d| recurrence::weekday_label(*d)).filter(|s| !s.is_empty()).collect::<Vec<_>>();
@@ -3389,8 +3639,28 @@ fn recurrence_phrase(item: &Item) -> String {
         }
         "monthly" => " Repeats every month.".into(),
         "yearly" => " Repeats every year.".into(),
+        "every_n_days" => format!(" Repeats every {interval} days at {}.", display_clock(&item.time)),
+        "every_n_weeks" => format!(" Repeats every {interval} weeks at {}.", display_clock(&item.time)),
+        "every_n_months" => format!(" Repeats every {interval} months.",),
+        "every_n_years" => format!(" Repeats every {interval} years.",),
         _ => String::new(),
+    };
+    if pattern.is_empty() && item.delivery.is_empty() {
+        return String::new();
     }
+    let limit = if item.end_count > 0 {
+        format!(" Ends after {} times.", item.end_count)
+    } else if item.until_ms > 0 {
+        format!(" Ends {}.", date_of(item.until_ms))
+    } else {
+        String::new()
+    };
+    let voice = match item.delivery.as_str() {
+        "spoken" => " Spoken alert.",
+        "normal" => " Notification only.",
+        _ => "",
+    };
+    format!("{pattern}{limit}{voice}")
 }
 
 fn display_clock(time: &str) -> String {
@@ -3478,7 +3748,9 @@ fn snooze_reminder(app: &AppHandle, agenda: &Agenda, args: &Value) -> Result<Val
         if repeating {
             if item.at_ms <= now.timestamp_millis() + 60_000 {
                 if let Some(next) = spec_from_item(&item).ok().and_then(|spec| recurrence::next_after(&spec, now)) {
-                    agenda.retarget(app, item.id, next.timestamp_millis())?;
+                    let mut moved = item.clone();
+                    moved.at_ms = next.timestamp_millis();
+                    agenda.retarget(app, &moved)?;
                 }
             }
             let snoozed = agenda.upsert_item(
@@ -3869,6 +4141,34 @@ mod tests {
         assert!(kinds.contains(&"reminder".into()));
         assert!(kinds.contains(&"alarm".into()));
         assert!(kinds.contains(&"timer".into()));
+    }
+
+    #[test]
+    fn counted_repeats_stop_and_every_n_keeps_its_step() {
+        let start = recurrence::local_on(2026, 3, 1, 8, 0);
+        let mut daily = Item::basic(1, "reminder", "Meds", "", start.timestamp_millis());
+        daily.recurrence = "daily".into();
+        daily.time = "08:00".into();
+        daily.end_count = 2;
+        daily.anchor_ms = start.timestamp_millis();
+        let next = after_fire(&daily, recurrence::local_on(2026, 3, 1, 8, 1)).unwrap();
+        assert_eq!(next.end_count, 1);
+        assert!(after_fire(&next, recurrence::local_on(2026, 3, 2, 8, 1)).is_none());
+
+        let mut paced = Item::basic(2, "reminder", "Pills", "", start.timestamp_millis());
+        paced.recurrence = "every_n_days".into();
+        paced.interval = 3;
+        paced.time = "08:00".into();
+        paced.anchor_ms = start.timestamp_millis();
+        let third = after_fire(&paced, recurrence::local_on(2026, 3, 1, 8, 1)).unwrap();
+        assert_eq!(third.at_ms, recurrence::local_on(2026, 3, 4, 8, 0).timestamp_millis());
+        assert_eq!(third.anchor_ms, start.timestamp_millis());
+
+        let tools = tool_definitions().to_string();
+        assert!(tools.contains("confirmed false"));
+        assert!(tools.contains("every_n_days"));
+        assert!(tools.contains("endCount"));
+        assert!(lookup_hint().contains("clear yes"));
     }
 
     #[test]

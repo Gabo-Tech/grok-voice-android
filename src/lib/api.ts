@@ -108,6 +108,14 @@ export interface ScheduledItem {
   personId?: string;
   personReminderId?: string;
   untilMs?: number;
+  /** 1 repeats every unit. Larger values are every N. */
+  interval?: number;
+  /** Fires left, including the next one. 0 means it does not count down. */
+  endCount?: number;
+  /** First fire of an every-N series. */
+  anchorMs?: number;
+  /** `spoken`, `normal`, or empty to follow Settings. */
+  delivery?: string;
   /** `file`, `youtube`, or empty for the phone's alarm sound. */
   soundKind?: string;
   /** Private file path or a YouTube video id. */
@@ -832,6 +840,9 @@ export const api = {
     date?: string;
     leadDays?: number;
     untilMs?: number;
+    interval?: number;
+    endCount?: number;
+    delivery?: string;
     soundKind?: string;
     soundRef?: string;
     soundLabel?: string;
@@ -848,6 +859,9 @@ export const api = {
       date: args.date ?? null,
       leadDays: args.leadDays ?? null,
       untilMs: args.untilMs ?? null,
+      interval: args.interval ?? null,
+      endCount: args.endCount ?? null,
+      delivery: args.delivery ?? null,
       soundKind: args.soundKind ?? null,
       soundRef: args.soundRef ?? null,
       soundLabel: args.soundLabel ?? null,

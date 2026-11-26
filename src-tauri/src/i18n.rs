@@ -205,6 +205,10 @@ const EN: &[(&str, &str, &str)] = &[
     ("model-stays", "", "Speech to text and the voice stay on this phone."),
     ("model-clear-ask", "", "Put the chosen models back to the defaults? On this phone that is SmolLM2. Say yes."),
     ("model-no-key", "", "{provider} has no key on this phone. Add it in Settings. Nothing was created."),
+    ("time-cancel-reminder", "", "Cancel the reminder {title}? Say yes to remove it."),
+    ("time-cancel-alarm", "", "Cancel the alarm {title}? Say yes to remove it."),
+    ("time-cancel-countdown", "", "Cancel the countdown {title}? Say yes to remove it."),
+    ("time-cancelled", "", "Cancelled {title}."),
 ];
 
 const ES: &[(&str, &str, &str)] = &[
@@ -350,6 +354,10 @@ const ES: &[(&str, &str, &str)] = &[
     ("model-stays", "", "El habla a texto y la voz siguen en este teléfono."),
     ("model-clear-ask", "", "¿Vuelvo los modelos elegidos a los predeterminados? En este teléfono es SmolLM2. Di que sí."),
     ("model-no-key", "", "{provider} no tiene clave en este teléfono. Añádela en Ajustes. No se ha creado nada."),
+    ("time-cancel-reminder", "", "¿Cancelo el recordatorio {title}? Di que sí para quitarlo."),
+    ("time-cancel-alarm", "", "¿Cancelo la alarma {title}? Di que sí para quitarla."),
+    ("time-cancel-countdown", "", "¿Cancelo la cuenta atrás {title}? Di que sí para quitarla."),
+    ("time-cancelled", "", "Cancelado: {title}."),
 ];
 
 const DE: &[(&str, &str, &str)] = &[
@@ -495,6 +503,10 @@ const DE: &[(&str, &str, &str)] = &[
     ("model-stays", "", "Sprache zu Text und die Stimme bleiben auf diesem Telefon."),
     ("model-clear-ask", "", "Die gewählten Modelle auf die Vorgaben zurücksetzen? Auf diesem Telefon ist das SmolLM2. Sag ja."),
     ("model-no-key", "", "{provider} hat keinen Schlüssel auf diesem Telefon. Füge ihn in den Einstellungen hinzu. Nichts wurde angelegt."),
+    ("time-cancel-reminder", "", "Die Erinnerung {title} abbrechen? Sag ja, um sie zu entfernen."),
+    ("time-cancel-alarm", "", "Den Wecker {title} abbrechen? Sag ja, um ihn zu entfernen."),
+    ("time-cancel-countdown", "", "Den Timer {title} abbrechen? Sag ja, um ihn zu entfernen."),
+    ("time-cancelled", "", "{title} ist abgebrochen."),
 ];
 
 const PT: &[(&str, &str, &str)] = &[
@@ -640,6 +652,10 @@ const PT: &[(&str, &str, &str)] = &[
     ("model-stays", "", "A fala para texto e a voz ficam neste telefone."),
     ("model-clear-ask", "", "Voltar os modelos escolhidos para o padrão? Neste telefone é o SmolLM2. Diga sim."),
     ("model-no-key", "", "{provider} não tem chave neste telefone. Adicione em Ajustes. Nada foi criado."),
+    ("time-cancel-reminder", "", "Cancelar o lembrete {title}? Diga sim para o remover."),
+    ("time-cancel-alarm", "", "Cancelar o alarme {title}? Diga sim para o remover."),
+    ("time-cancel-countdown", "", "Cancelar a contagem {title}? Diga sim para a remover."),
+    ("time-cancelled", "", "Cancelado: {title}."),
 ];
 
 const CA: &[(&str, &str, &str)] = &[
@@ -785,6 +801,10 @@ const CA: &[(&str, &str, &str)] = &[
     ("model-stays", "", "La parla a text i la veu es queden en este telèfon."),
     ("model-clear-ask", "", "Torne els models triats als valors inicials? En este telèfon és SmolLM2. Digues que sí."),
     ("model-no-key", "", "{provider} no té clau en este telèfon. Afig-la en Ajusts. No s'ha creat res."),
+    ("time-cancel-reminder", "", "Cancel·le el recordatori {title}? Digues que sí per llevar-lo."),
+    ("time-cancel-alarm", "", "Cancel·le l'alarma {title}? Digues que sí per llevar-la."),
+    ("time-cancel-countdown", "", "Cancel·le el compte enrere {title}? Digues que sí per llevar-lo."),
+    ("time-cancelled", "", "Cancel·lat: {title}."),
 ];
 
 include!("finance_phrases.rs");

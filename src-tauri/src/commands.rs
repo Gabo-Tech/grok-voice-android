@@ -584,6 +584,9 @@ pub fn save_scheduled(
     date: Option<String>,
     lead_days: Option<u32>,
     until_ms: Option<i64>,
+    interval: Option<u32>,
+    end_count: Option<u32>,
+    delivery: Option<String>,
     sound_kind: Option<String>,
     sound_ref: Option<String>,
     sound_label: Option<String>,
@@ -595,12 +598,19 @@ pub fn save_scheduled(
         date: date.unwrap_or_default(),
         lead_days: lead_days.unwrap_or(0),
         until_ms,
+        interval,
+        end_count,
+        delivery,
+        reset_anchor: true,
         ..actions::ScheduleMeta::default()
     };
     let has_schedule = !schedule.recurrence.is_empty()
         || !schedule.weekdays.is_empty()
         || !schedule.time.is_empty()
-        || !schedule.date.is_empty();
+        || !schedule.date.is_empty()
+        || schedule.interval.is_some()
+        || schedule.end_count.is_some()
+        || schedule.delivery.is_some();
     let kind = kind.unwrap_or_else(|| "reminder".into());
     let agenda = app.state::<Agenda>();
     let sound = match sound_kind {
