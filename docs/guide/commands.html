@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="graphite">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Voice commands</title>
+    <meta name="description" content="Every Talk tool in Grok Voice, with an example in English, Spanish, German, Portuguese, and Valencian." />
+    <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/guide/commands.html" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="../index.html">Grok Voice</a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <ul id="site-nav">
+          <li><a href="./index.html">Guide</a></li>
+          <li><a href="./commands.html" aria-current="page">Commands</a></li>
+          <li><a href="../develop.html">Develop</a></li>
+          <li><a href="https://github.com/Gabo-Tech/grok-voice-android">Source</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="content">
+      <section class="hero">
+        <div class="wrap narrow">
+          <p class="chapter">Commands</p>
+          <h1>What Talk can do.</h1>
+          <p>Each block is one tool from <code>actions::tool_definitions</code>, <code>finance::tool_definitions</code>, or, where marked, the on-device memory tools. Say it in your own words. The line in each language is one example, not a required script. <code>ca</code> is ca-ES-valencia. A block marked “waits for yes” calls the tool first with <code>confirmed</code> false.</p>
+          <p>The same material as continuous speech, one language per page: <a href="../voice/en.html">English</a>, <a href="../voice/es.html">Español</a>, <a href="../voice/de.html">Deutsch</a>, <a href="../voice/pt.html">Português</a>, <a href="../voice/ca.html">Valencià</a>.</p>
+          <ul class="toc">
+            <li><a href="#notes">Notes</a></li>
+            <li><a href="#time">Time</a></li>
+            <li><a href="#calendar">Calendar</a></li>
+            <li><a href="#people">People</a></li>
+            <li><a href="#messages-and-calls">Messages and calls</a></li>
+            <li><a href="#music">Music</a></li>
+            <li><a href="#finance">Finance</a></li>
+            <li><a href="#colors">Colors</a></li>
+            <li><a href="#settings">Settings</a></li>
+            <li><a href="#phone-and-search">Phone and search</a></li>
+            <li><a href="#on-this-phone-only">On this phone only</a></li>
+          </ul>
+        <h2 id="notes">Notes</h2>
+        <div>
+          <article class="cmd" id="create_note-notes">
+            <h3><code>create_note</code></h3>
+            <p>Save a note on this phone. The title is a short name. The text may be Markdown.</p>
+            <ul class="phrases">
+              <li><span>en</span> Make a note: buy milk.</li>
+              <li><span>es</span> Crea una nota: comprar leche.</li>
+              <li><span>de</span> Mach eine Notiz: Milch kaufen.</li>
+              <li><span>pt</span> Crie uma nota: comprar leite.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Crea una nota: compra llet.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="list_notes-notes">
+            <h3><code>list_notes</code></h3>
+            <p>Read or search notes saved on this phone. A query matches the title or the text. An id returns one note.</p>
+            <ul class="phrases">
+              <li><span>en</span> What notes do I have about milk?</li>
+              <li><span>es</span> ¿Qué notas tengo sobre la leche?</li>
+              <li><span>de</span> Welche Notizen habe ich zu Milch?</li>
+              <li><span>pt</span> Que notas eu tenho sobre leite?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Quines notes tinc sobre la llet?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="update_note-notes">
+            <h3><code>update_note</code></h3>
+            <p>Change a note. The id comes from list_notes. Pass a title, text, or both.</p>
+            <ul class="phrases">
+              <li><span>en</span> Change that note.</li>
+              <li><span>es</span> Cambia esa nota.</li>
+              <li><span>de</span> Ändere diese Notiz.</li>
+              <li><span>pt</span> Mude essa nota.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Canvia eixa nota.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="delete_note-notes">
+            <h3><code>delete_note</code></h3>
+            <p>Delete one saved note by id from list_notes. This tool does not take a confirmed flag.</p>
+            <ul class="phrases">
+              <li><span>en</span> Delete the milk note.</li>
+              <li><span>es</span> Borra la nota de la leche.</li>
+              <li><span>de</span> Lösche die Milch-Notiz.</li>
+              <li><span>pt</span> Apague a nota do leite.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Esborra la nota de la llet.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="time">Time</h2>
+        <div>
+          <article class="cmd" id="set_alarm-time">
+            <h3><code>set_alarm</code></h3>
+            <p>Save an alarm on this app’s Time list for the next time that hour and minute occurs. A delay such as in 5 minutes is a reminder or a countdown, not an alarm. A YouTube link or a sound file already picked in the form can be the sound. The app does not download the video. Recurrence can be daily, weekly, monthly, yearly, or every N days, weeks, months, or years. endCount or until can stop it. delivery is spoken or normal. Omit delivery to follow Settings.</p>
+            <ul class="phrases">
+              <li><span>en</span> Set an alarm for 7:30.</li>
+              <li><span>es</span> Pon una alarma a las 7:30.</li>
+              <li><span>de</span> Stelle einen Wecker auf 7:30.</li>
+              <li><span>pt</span> Coloque um alarme para 7:30.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa una alarma a les 7:30.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="set_timer-time">
+            <h3><code>set_timer</code></h3>
+            <p>Start a countdown on Time. seconds, inMinutes, or inHours is the length. A label is what it is for. A request to remind you uses set_reminder instead.</p>
+            <ul class="phrases">
+              <li><span>en</span> Set a timer for 10 minutes.</li>
+              <li><span>es</span> Pon un temporizador de 10 minutos.</li>
+              <li><span>de</span> Stelle einen Timer auf 10 Minuten.</li>
+              <li><span>pt</span> Coloque um timer de 10 minutos.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa un compte enrere de 10 minuts.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="set_reminder-time">
+            <h3><code>set_reminder</code></h3>
+            <p>Save a reminder on Time. inMinutes or inHours is a delay, and the app computes the fire time. A clock time uses at. Repeats use the same recurrence fields as an alarm.</p>
+            <ul class="phrases">
+              <li><span>en</span> Remind me in 5 minutes to check the oven.</li>
+              <li><span>es</span> Recuérdame en 5 minutos que mire el horno.</li>
+              <li><span>de</span> Erinnere mich in 5 Minuten, den Ofen zu prüfen.</li>
+              <li><span>pt</span> Lembre-me em 5 minutos de ver o forno.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Recorda’m d’ací a 5 minuts que mire el forn.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="snooze_reminder-time">
+            <h3><code>snooze_reminder</code></h3>
+            <p>Snooze a reminder by minutes or until a clock time. With no id, it snoozes the one that is ringing. If the result says to ask, it asks which one.</p>
+            <ul class="phrases">
+              <li><span>en</span> Snooze that 10 minutes.</li>
+              <li><span>es</span> Pospón eso 10 minutos.</li>
+              <li><span>de</span> Schlummere das 10 Minuten.</li>
+              <li><span>pt</span> Adie isso 10 minutos.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Ajorna-ho 10 minuts.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="list_reminders-time">
+            <h3><code>list_reminders</code></h3>
+            <p>List reminders, alarms, and timers, including repeats. Person dates appear only inside their notify window.</p>
+            <ul class="phrases">
+              <li><span>en</span> What reminders do I have?</li>
+              <li><span>es</span> ¿Qué recordatorios tengo?</li>
+              <li><span>de</span> Welche Erinnerungen habe ich?</li>
+              <li><span>pt</span> Que lembretes eu tenho?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Quins recordatoris tinc?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="update_reminder-time">
+            <h3><code>update_reminder</code></h3>
+            <p>Change a reminder’s title, note, time, repeat, or an alarm sound. Custom sound is only for alarms.</p>
+            <ul class="phrases">
+              <li><span>en</span> Move my reminder to 5.</li>
+              <li><span>es</span> Mueve mi recordatorio a las 5.</li>
+              <li><span>de</span> Verschiebe meine Erinnerung auf 5.</li>
+              <li><span>pt</span> Mude o meu lembrete para as 5.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Mou el meu recordatori a les 5.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="cancel_reminder-time">
+            <h3><code>cancel_reminder</code></h3>
+            <p>Cancel one reminder, alarm, or countdown. The first call uses confirmed false and does not delete. Say the title, wait for yes, then call again with confirmed true. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Cancel the oven reminder.</li>
+              <li><span>es</span> Cancela el recordatorio del horno.</li>
+              <li><span>de</span> Brich die Ofen-Erinnerung ab.</li>
+              <li><span>pt</span> Cancele o lembrete do forno.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Cancel·la el recordatori del forn.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="calendar">Calendar</h2>
+        <div>
+          <article class="cmd" id="list_calendar_events-calendar">
+            <h3><code>list_calendar_events</code></h3>
+            <p>List events for a day, week, month, or range in one call. Recurring events expand into each occurrence. Omit every date argument for today.</p>
+            <ul class="phrases">
+              <li><span>en</span> What’s on my calendar today?</li>
+              <li><span>es</span> ¿Qué tengo en el calendario hoy?</li>
+              <li><span>de</span> Was steht heute im Kalender?</li>
+              <li><span>pt</span> O que tenho na agenda hoje?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Què tinc hui al calendari?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="create_calendar_event-calendar">
+            <h3><code>create_calendar_event</code></h3>
+            <p>Save an event on this app’s Calendar. start and end are local. If end is omitted, it lasts one hour. Recurrence is daily, weekly, monthly, or yearly.</p>
+            <ul class="phrases">
+              <li><span>en</span> Add lunch with Ana tomorrow at 1.</li>
+              <li><span>es</span> Añade una comida con Ana mañana a la 1.</li>
+              <li><span>de</span> Trag ein Mittagessen mit Ana morgen um 1 ein.</li>
+              <li><span>pt</span> Adicione um almoço com a Ana amanhã à 1.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Afig un dinar amb Ana demà a la 1.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="update_calendar_event-calendar">
+            <h3><code>update_calendar_event</code></h3>
+            <p>Change a calendar event. The id comes from list_calendar_events. Pass only the fields that change.</p>
+            <ul class="phrases">
+              <li><span>en</span> Move lunch to 2.</li>
+              <li><span>es</span> Mueve la comida a las 2.</li>
+              <li><span>de</span> Verschiebe das Mittagessen auf 2.</li>
+              <li><span>pt</span> Mude o almoço para as 2.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Mou el dinar a les 2.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="delete_calendar_event-calendar">
+            <h3><code>delete_calendar_event</code></h3>
+            <p>Delete a calendar event by id from list_calendar_events. This tool does not take a confirmed flag.</p>
+            <ul class="phrases">
+              <li><span>en</span> Delete the lunch event.</li>
+              <li><span>es</span> Borra el evento de la comida.</li>
+              <li><span>de</span> Lösche den Mittagessen-Termin.</li>
+              <li><span>pt</span> Apague o evento do almoço.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Esborra l’esdeveniment del dinar.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="people">People</h2>
+        <div>
+          <article class="cmd" id="find_contact-people">
+            <h3><code>find_contact</code></h3>
+            <p>Look up a person when you want to call, text, or open WhatsApp, Signal, or email. It checks People, then phone contacts. It speaks the match and waits for a clear yes before opening anything. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Call Mom.</li>
+              <li><span>es</span> Llama a mamá.</li>
+              <li><span>de</span> Ruf Mama an.</li>
+              <li><span>pt</span> Ligue para a mãe.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Truca a ma mare.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="get_person-people">
+            <h3><code>get_person</code></h3>
+            <p>Answer a question about a preferred channel, birthday, note, nickname, or favorite. It does not open another app.</p>
+            <ul class="phrases">
+              <li><span>en</span> What’s Ana’s preferred channel?</li>
+              <li><span>es</span> ¿Cuál es el canal preferido de Ana?</li>
+              <li><span>de</span> Was ist Anas bevorzugter Kanal?</li>
+              <li><span>pt</span> Qual é o canal preferido da Ana?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Quin és el canal preferit d’Ana?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="list_people-people">
+            <h3><code>list_people</code></h3>
+            <p>List people saved in this app, with birthdays and other dates. Dates stay on the person all year.</p>
+            <ul class="phrases">
+              <li><span>en</span> Who is saved in People?</li>
+              <li><span>es</span> ¿Quién está guardado en Personas?</li>
+              <li><span>de</span> Wer ist unter Personen gespeichert?</li>
+              <li><span>pt</span> Quem está salvo em Pessoas?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Qui hi ha guardat a Persones?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="create_person-people">
+            <h3><code>create_person</code></h3>
+            <p>Add a person in this app, with a nickname, note, channel, or a date. It does not write the phone address book.</p>
+            <ul class="phrases">
+              <li><span>en</span> Add a person named Ana, birthday June 15.</li>
+              <li><span>es</span> Añade una persona llamada Ana, cumpleaños el 15 de junio.</li>
+              <li><span>de</span> Füge eine Person namens Ana hinzu, Geburtstag 15. Juni.</li>
+              <li><span>pt</span> Adicione uma pessoa chamada Ana, aniversário 15 de junho.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Afig una persona que es diu Ana, aniversari el 15 de juny.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="set_person_reminder-people">
+            <h3><code>set_person_reminder</code></h3>
+            <p>Add or change a birthday, anniversary, or custom date on a person. It creates the person in this app when they are not saved yet.</p>
+            <ul class="phrases">
+              <li><span>en</span> Remind me every year for Mom’s birthday on March 3.</li>
+              <li><span>es</span> Recuérdame cada año el cumpleaños de mamá el 3 de marzo.</li>
+              <li><span>de</span> Erinnere mich jedes Jahr an Mamas Geburtstag am 3. März.</li>
+              <li><span>pt</span> Lembre-me todo ano do aniversário da mãe em 3 de março.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Recorda’m cada any l’aniversari de ma mare el 3 de març.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="update_person-people">
+            <h3><code>update_person</code></h3>
+            <p>Change a saved name, note, channel, or date. It does not write the phone address book.</p>
+            <ul class="phrases">
+              <li><span>en</span> Ana’s note is that she lives in Zurich.</li>
+              <li><span>es</span> La nota de Ana es que vive en Zúrich.</li>
+              <li><span>de</span> Anas Notiz ist, dass sie in Zürich wohnt.</li>
+              <li><span>pt</span> A nota da Ana é que ela mora em Zurique.</li>
+              <li><span lang="ca-ES-valencia">ca</span> La nota d’Ana és que viu a Zúric.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="delete_person-people">
+            <h3><code>delete_person</code></h3>
+            <p>Delete one saved person. Say who, call first with confirmed false, then again after a yes. The phone address book is unchanged. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Delete Ana.</li>
+              <li><span>es</span> Borra a Ana.</li>
+              <li><span>de</span> Lösche Ana.</li>
+              <li><span>pt</span> Apague a Ana.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Esborra Ana.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="messages-and-calls">Messages and calls</h2>
+        <div>
+          <article class="cmd" id="read_notifications-messages-and-calls">
+            <h3><code>read_notifications</code></h3>
+            <p>Read relevant messages. People you saved come first, then direct messages. Promos and system notices are skipped. Message reading stays off until Settings, Phone access, is on.</p>
+            <ul class="phrases">
+              <li><span>en</span> Read my notifications.</li>
+              <li><span>es</span> Lee mis notificaciones.</li>
+              <li><span>de</span> Lies meine Benachrichtigungen.</li>
+              <li><span>pt</span> Leia as minhas notificações.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Llig les notificacions.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="reply_message-messages-and-calls">
+            <h3><code>reply_message</code></h3>
+            <p>Read the exact reply and the app aloud. The first call uses confirmed false. It sends only after a yes, and only when that app has a reply action. Otherwise a draft opens and you tap Send. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Tell Mom next Saturday.</li>
+              <li><span>es</span> Dile a mamá el sábado que viene.</li>
+              <li><span>de</span> Sag Mama nächsten Samstag.</li>
+              <li><span>pt</span> Diga à mãe sábado que vem.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Digues-li a ma mare dissabte que ve.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="place_call-messages-and-calls">
+            <h3><code>place_call</code></h3>
+            <p>Say the number, then dial after a yes. The first call uses confirmed false and does not dial. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Place a call to Mom.</li>
+              <li><span>es</span> Haz la llamada a mamá.</li>
+              <li><span>de</span> Wähl Mama an.</li>
+              <li><span>pt</span> Faça a ligação para a mãe.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Fes la trucada a ma mare.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="answer_call-messages-and-calls">
+            <h3><code>answer_call</code></h3>
+            <p>Answer the ringing call only when you say so. Pass confirmed true. It does not ask twice. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Answer it.</li>
+              <li><span>es</span> Contesta.</li>
+              <li><span>de</span> Geh ran.</li>
+              <li><span>pt</span> Atenda.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Contesta.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="decline_call-messages-and-calls">
+            <h3><code>decline_call</code></h3>
+            <p>Decline only when you say so. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Decline the call.</li>
+              <li><span>es</span> Rechaza la llamada.</li>
+              <li><span>de</span> Lehn den Anruf ab.</li>
+              <li><span>pt</span> Recuse a chamada.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Rebutja la trucada.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="end_call-messages-and-calls">
+            <h3><code>end_call</code></h3>
+            <p>Hang up only when you say so. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Hang up.</li>
+              <li><span>es</span> Cuelga.</li>
+              <li><span>de</span> Leg auf.</li>
+              <li><span>pt</span> Desligue.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Penja.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_call-messages-and-calls">
+            <h3><code>open_call</code></h3>
+            <p>Open the dialer with a number filled in, after a yes. The call is not placed until you tap Call. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Open the dialer for Mom.</li>
+              <li><span>es</span> Abre el marcador para mamá.</li>
+              <li><span>de</span> Öffne die Telefon-App für Mama.</li>
+              <li><span>pt</span> Abra o discador para a mãe.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Obri el marcador per a ma mare.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_sms-messages-and-calls">
+            <h3><code>open_sms</code></h3>
+            <p>Open the text app with a draft, after a yes. Nothing is sent until you tap Send. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Text Sam that I’m late.</li>
+              <li><span>es</span> Escribe a Sam que llego tarde.</li>
+              <li><span>de</span> Schreib Sam, dass ich später komme.</li>
+              <li><span>pt</span> Mande uma mensagem ao Sam dizendo que vou atrasar.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Envia un missatge a Sam: arribaré tard.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_whatsapp-messages-and-calls">
+            <h3><code>open_whatsapp</code></h3>
+            <p>Open a WhatsApp draft, after a yes. You tap Send in WhatsApp. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Message Ana on WhatsApp.</li>
+              <li><span>es</span> Escribe a Ana por WhatsApp.</li>
+              <li><span>de</span> Schreib Ana auf WhatsApp.</li>
+              <li><span>pt</span> Mande uma mensagem à Ana no WhatsApp.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Envia un WhatsApp a Ana.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_signal-messages-and-calls">
+            <h3><code>open_signal</code></h3>
+            <p>Open a Signal chat for a phone number, after a yes. You send it in Signal. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Message Ana on Signal.</li>
+              <li><span>es</span> Escribe a Ana por Signal.</li>
+              <li><span>de</span> Schreib Ana auf Signal.</li>
+              <li><span>pt</span> Mande uma mensagem à Ana no Signal.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Envia un Signal a Ana.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_email-messages-and-calls">
+            <h3><code>open_email</code></h3>
+            <p>Open an email draft, after a yes. You tap Send in the mail app. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Email Ana that I’ll be late.</li>
+              <li><span>es</span> Envía un correo a Ana diciendo que llegaré tarde.</li>
+              <li><span>de</span> Schick Ana eine Mail, dass ich später komme.</li>
+              <li><span>pt</span> Envie um e-mail à Ana dizendo que vou atrasar.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Envia un correu a Ana dient que arribaré tard.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="share_item-messages-and-calls">
+            <h3><code>share_item</code></h3>
+            <p>Share a note, reminder, or calendar event as text. Speak the text and wait for a yes. Nothing is sent until you confirm in the other app. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Share the milk note.</li>
+              <li><span>es</span> Comparte la nota de la leche.</li>
+              <li><span>de</span> Teile die Milch-Notiz.</li>
+              <li><span>pt</span> Compartilhe a nota do leite.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Comparteix la nota de la llet.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="music">Music</h2>
+        <div>
+          <article class="cmd" id="play_music-music">
+            <h3><code>play_music</code></h3>
+            <p>Play with the default music player immediately. No confirmation. Files on this phone, Musify, YouTube Music, YouTube, or ask each time. If you say YouTube, this tool is not used. open_youtube waits for a yes and does not download.</p>
+            <ul class="phrases">
+              <li><span>en</span> Play some music.</li>
+              <li><span>es</span> Pon música.</li>
+              <li><span>de</span> Spiel Musik.</li>
+              <li><span>pt</span> Toque uma música.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa música.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="play_local_music-music">
+            <h3><code>play_local_music</code></h3>
+            <p>Play files or a playlist already on this phone. Use it only when you ask for local music. If nothing matches, it says so.</p>
+            <ul class="phrases">
+              <li><span>en</span> Play local music.</li>
+              <li><span>es</span> Pon la música de este teléfono.</li>
+              <li><span>de</span> Spiel die Musik auf diesem Telefon.</li>
+              <li><span>pt</span> Toque a música deste telefone.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa la música d’este telèfon.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="media_control-music">
+            <h3><code>media_control</code></h3>
+            <p>Play, pause, resume, stop, next, previous, shuffle, or unshuffle whatever is already playing. No confirmation. The on-phone file player cannot shuffle.</p>
+            <ul class="phrases">
+              <li><span>en</span> Pause.</li>
+              <li><span>es</span> Pausa.</li>
+              <li><span>de</span> Pause.</li>
+              <li><span>pt</span> Pause.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Pausa.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="set_volume-music">
+            <h3><code>set_volume</code></h3>
+            <p>Raise or lower the music volume. direction is up or down. steps is 1 to 5. It runs immediately.</p>
+            <ul class="phrases">
+              <li><span>en</span> Volume up.</li>
+              <li><span>es</span> Sube el volumen.</li>
+              <li><span>de</span> Lauter.</li>
+              <li><span>pt</span> Aumente o volume.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Puja el volum.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_youtube-music">
+            <h3><code>open_youtube</code></h3>
+            <p>Open YouTube on a search or a link, after a yes. A search does not start playing unless the url is a video link. Nothing is downloaded. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Play this on YouTube.</li>
+              <li><span>es</span> Pon esto en YouTube.</li>
+              <li><span>de</span> Spiel das auf YouTube.</li>
+              <li><span>pt</span> Toque isto no YouTube.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa açò a YouTube.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="finance">Finance</h2>
+        <div>
+          <article class="cmd" id="log_money-finance">
+            <h3><code>log_money</code></h3>
+            <p>Log an expense, income, or a payment toward a card or debt. Logging never creates an account or a card. Several expenses can be one request. A correction in the same sentence saves only the corrected amount. Charging a card is an expense and does not move the bank. Paying a card is not an expense. A missing exchange rate is refused.</p>
+            <ul class="phrases">
+              <li><span>en</span> I spent 12 euros on coffee.</li>
+              <li><span>es</span> He gastado 12 euros en café.</li>
+              <li><span>de</span> Ich habe 12 Euro für Kaffee ausgegeben.</li>
+              <li><span>pt</span> Gastei 12 euros no café.</li>
+              <li><span lang="ca-ES-valencia">ca</span> He gastat 12 euros en café.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="save_account-finance">
+            <h3><code>save_account</code></h3>
+            <p>Save or update a bank, cash wallet, card, loan, other debt, or investment you described. A new one is created only when no saved name matches. Never store a full card number, account number, or PIN. Last four only. color is a hex color on that nickname.</p>
+            <ul class="phrases">
+              <li><span>en</span> Add a bank called Checking with 500 euros.</li>
+              <li><span>es</span> Añade un banco llamado Checking con 500 euros.</li>
+              <li><span>de</span> Füge eine Bank namens Checking mit 500 Euro hinzu.</li>
+              <li><span>pt</span> Adicione um banco chamado Checking com 500 euros.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Afig un banc que es diu Checking amb 500 euros.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="list_finance-finance">
+            <h3><code>list_finance</code></h3>
+            <p>Read what is saved: summary, accounts, activity, the next 30 days, or investments. It does not guess amounts or rates. refresh true fetches today’s rates and holding prices. A color question reads, sets, or clears one saved color and does not create an account.</p>
+            <ul class="phrases">
+              <li><span>en</span> What’s my net worth?</li>
+              <li><span>es</span> ¿Cuál es mi patrimonio neto?</li>
+              <li><span>de</span> Wie hoch ist mein Nettovermögen?</li>
+              <li><span>pt</span> Qual é o meu patrimônio líquido?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Quin és el meu patrimoni net?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="move_transactions-finance">
+            <h3><code>move_transactions</code></h3>
+            <p>Move saved transactions onto another bank, cash wallet, or card that already exists. It does not copy them and does not log a new expense.</p>
+            <ul class="phrases">
+              <li><span>en</span> Move those expenses from Swiss card to Cash.</li>
+              <li><span>es</span> Mueve esos gastos de la tarjeta suiza a Efectivo.</li>
+              <li><span>de</span> Verschiebe diese Ausgaben von der Swiss Card zu Bargeld.</li>
+              <li><span>pt</span> Mova essas despesas do cartão suíço para Dinheiro.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Mou eixes gastos de la targeta suïssa a Efectiu.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="delete_finance-finance">
+            <h3><code>delete_finance</code></h3>
+            <p>Delete one account, transaction, recurring rule, or budget line. Call first with confirmed false. If an account has transactions, it says how many and can move them before removal. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Delete Swiss card.</li>
+              <li><span>es</span> Borra la tarjeta suiza.</li>
+              <li><span>de</span> Lösche die Swiss Card.</li>
+              <li><span>pt</span> Apague o cartão suíço.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Esborra la targeta suïssa.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="save_recurring-finance">
+            <h3><code>save_recurring</code></h3>
+            <p>Save a repeating bill, payday, subscription, card payment, or automated investment. cadence can be every N days, weeks, months, or years.</p>
+            <ul class="phrases">
+              <li><span>en</span> Add a 20 franc payment every 10 days starting tomorrow.</li>
+              <li><span>es</span> Añade un pago de 20 francos cada 10 días desde mañana.</li>
+              <li><span>de</span> Füge eine Zahlung von 20 Franken alle 10 Tage ab morgen hinzu.</li>
+              <li><span>pt</span> Adicione um pagamento de 20 francos a cada 10 dias a partir de amanhã.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Afig un pagament de 20 francs cada 10 dies a partir de demà.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="save_schedule-finance">
+            <h3><code>save_schedule</code></h3>
+            <p>Program a fixed run, open-ended rent, a subscription, a one-off, planned income, or an investment payout. It stays planned until mark_paid. Changing the amount applies to future unpaid occurrences.</p>
+            <ul class="phrases">
+              <li><span>en</span> A course for 9 months at 270 euros.</li>
+              <li><span>es</span> Un curso de 9 meses a 270 euros.</li>
+              <li><span>de</span> Ein Kurs für 9 Monate zu 270 Euro.</li>
+              <li><span>pt</span> Um curso de 9 meses a 270 euros.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Un curs de 9 mesos a 270 euros.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="mark_paid-finance">
+            <h3><code>mark_paid</code></h3>
+            <p>Mark a saved bill, rent, subscription, or card payment as paid. It logs that amount and moves a repeating date forward. confirmed is not required.</p>
+            <ul class="phrases">
+              <li><span>en</span> Mark rent paid.</li>
+              <li><span>es</span> Marca el alquiler como pagado.</li>
+              <li><span>de</span> Markiere die Miete als bezahlt.</li>
+              <li><span>pt</span> Marque o aluguel como pago.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Marca el lloguer com a pagat.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="save_budget-finance">
+            <h3><code>save_budget</code></h3>
+            <p>Create or change the monthly budget. role is income, expense, savings, or investment. delete asks first with confirmed false.</p>
+            <ul class="phrases">
+              <li><span>en</span> Set restaurants to 400 euros this month.</li>
+              <li><span>es</span> Pon restaurantes en 400 euros este mes.</li>
+              <li><span>de</span> Setze Restaurants diesen Monat auf 400 Euro.</li>
+              <li><span>pt</span> Defina restaurantes em 400 euros este mês.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa restaurants a 400 euros este mes.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_finance-finance">
+            <h3><code>open_finance</code></h3>
+            <p>Open a Finance screen and answer with the same numbers the screen shows. view is overview, activity, accounts, holdings, plan, portfolio, or charts. action color paints one saved item on every chart. Resetting every color asks first.</p>
+            <ul class="phrases">
+              <li><span>en</span> Show my holdings chart.</li>
+              <li><span>es</span> Muestra el gráfico de posiciones.</li>
+              <li><span>de</span> Zeig das Bestandsdiagramm.</li>
+              <li><span>pt</span> Mostre o gráfico de posições.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Mostra el gràfic de posicions.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="export_finance_pdf-finance">
+            <h3><code>export_finance_pdf</code></h3>
+            <p>Write a Finance PDF on this phone and open the share sheet. Call first with confirmed false, say the period, then call with confirmed true. Nothing is uploaded. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Export this month’s finance PDF.</li>
+              <li><span>es</span> Exporta el PDF de finanzas de este mes.</li>
+              <li><span>de</span> Exportiere das Finanz-PDF dieses Monats.</li>
+              <li><span>pt</span> Exporte o PDF de finanças deste mês.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Exporta el PDF de finances d’este mes.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="colors">Colors</h2>
+        <div>
+          <article class="cmd" id="list_finance-colors">
+            <h3><code>list_finance</code></h3>
+            <p>Read or set one saved color with phrase. “What color is X” reads it. “Make X green” sets it. “Reset the color for X” clears it. It does not create an account when you only ask the color.</p>
+            <ul class="phrases">
+              <li><span>en</span> What color is silver?</li>
+              <li><span>es</span> ¿De qué color es la plata?</li>
+              <li><span>de</span> Welche Farbe hat Silber?</li>
+              <li><span>pt</span> Qual é a cor da prata?</li>
+              <li><span lang="ca-ES-valencia">ca</span> De quin color és la plata?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="open_finance-colors">
+            <h3><code>open_finance</code></h3>
+            <p>action color with a name and a color paints that holding, account, category, income type, or money-flow node on every chart. action reset with name all asks first, then clears every saved chart color only after confirmed true.</p>
+            <ul class="phrases">
+              <li><span>en</span> Make silver gray.</li>
+              <li><span>es</span> Pon la plata en gris.</li>
+              <li><span>de</span> Mach Silber grau.</li>
+              <li><span>pt</span> Deixe a prata cinza.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa la plata en gris.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="save_account-colors">
+            <h3><code>save_account</code></h3>
+            <p>color on save_account stores a hex color on that nickname, such as #E25B45. The same color is used wherever that item is drawn.</p>
+            <ul class="phrases">
+              <li><span>en</span> Set Checking to #4C78D8.</li>
+              <li><span>es</span> Pon Checking en #4C78D8.</li>
+              <li><span>de</span> Setze Checking auf #4C78D8.</li>
+              <li><span>pt</span> Defina Checking como #4C78D8.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Posa Checking en #4C78D8.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="settings">Settings</h2>
+        <div>
+          <article class="cmd" id="get_settings-settings">
+            <h3><code>get_settings</code></h3>
+            <p>Read settings on this phone. It never returns keys or passwords. When you ask which model you are using, it speaks the model and the provider. For On device and 1min.ai it also says speech to text and the voice stay on this phone.</p>
+            <ul class="phrases">
+              <li><span>en</span> Which model am I using?</li>
+              <li><span>es</span> ¿Qué modelo estoy usando?</li>
+              <li><span>de</span> Welches Modell benutze ich?</li>
+              <li><span>pt</span> Que modelo estou usando?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Quin model estic fent servir?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="update_settings-settings">
+            <h3><code>update_settings</code></h3>
+            <p>Change language, Listen, budgets in minutes, Prefer on device, the default music player, the voice, or whether alerts are spoken. Listen off and wiping memory need confirmed true. It refuses API keys, backup passwords, and reordering voice keys. language is English, Spanish, German, Portuguese, Valencian, or follow the phone.</p>
+            <ul class="phrases">
+              <li><span>en</span> Switch the language to Spanish.</li>
+              <li><span>es</span> Cambia el idioma a español.</li>
+              <li><span>de</span> Stelle die Sprache auf Spanisch.</li>
+              <li><span>pt</span> Mude o idioma para espanhol.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Canvia la llengua a espanyol.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="phone-and-search">Phone and search</h2>
+        <div>
+          <article class="cmd" id="open_browser-phone-and-search">
+            <h3><code>open_browser</code></h3>
+            <p>Open the browser on a site or a search. Speak it and wait for a yes, then call with confirmed true. Waits for a clear yes.</p>
+            <ul class="phrases">
+              <li><span>en</span> Open the browser to the weather.</li>
+              <li><span>es</span> Abre el navegador en el tiempo.</li>
+              <li><span>de</span> Öffne den Browser beim Wetter.</li>
+              <li><span>pt</span> Abra o navegador no tempo.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Obri el navegador en el temps.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="set_dnd-phone-and-search">
+            <h3><code>set_dnd</code></h3>
+            <p>Set Do Not Disturb. mode is off, priority, alarms, or none. It runs immediately. If notification access is off, it says so.</p>
+            <ul class="phrases">
+              <li><span>en</span> Turn on Do Not Disturb.</li>
+              <li><span>es</span> Activa No molestar.</li>
+              <li><span>de</span> Schalte Bitte nicht stören ein.</li>
+              <li><span>pt</span> Ative o Não perturbe.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Activa No molestar.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="go_home-phone-and-search">
+            <h3><code>go_home</code></h3>
+            <p>Leave this app and show the phone’s home screen. It runs immediately.</p>
+            <ul class="phrases">
+              <li><span>en</span> Go home.</li>
+              <li><span>es</span> Ve a inicio.</li>
+              <li><span>de</span> Geh zum Startbildschirm.</li>
+              <li><span>pt</span> Vá para a tela inicial.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Ves a l’inici.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="phone_status-phone-and-search">
+            <h3><code>phone_status</code></h3>
+            <p>Say the battery level and the next alarm from the phone clock. It does not guess.</p>
+            <ul class="phrases">
+              <li><span>en</span> What’s my battery?</li>
+              <li><span>es</span> ¿Cuánta batería tengo?</li>
+              <li><span>de</span> Wie voll ist der Akku?</li>
+              <li><span>pt</span> Quanta bateria eu tenho?</li>
+              <li><span lang="ca-ES-valencia">ca</span> Quina bateria tinc?</li>
+            </ul>
+          </article>
+          <article class="cmd" id="web_search-phone-and-search">
+            <h3><code>web_search</code></h3>
+            <p>Search the live web and return a sourced summary. On-device Talk reads DuckDuckGo. Offline, the tool says web search needs a network.</p>
+            <ul class="phrases">
+              <li><span>en</span> Search the web for the weather in Valencia.</li>
+              <li><span>es</span> Busca en la web el tiempo en Valencia.</li>
+              <li><span>de</span> Such im Web das Wetter in Valencia.</li>
+              <li><span>pt</span> Pesquise na web o tempo em Valência.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Busca a la web el temps a València.</li>
+            </ul>
+          </article>
+        </div>
+        <h2 id="on-this-phone-only">On this phone only</h2>
+        <div>
+          <article class="cmd" id="remember_fact-on-this-phone-only">
+            <h3><code>remember_fact</code></h3>
+            <p>Pin or update one short fact you asked to remember. This tool is added only in the on-device session. It is not in the cloud tool list.</p>
+            <ul class="phrases">
+              <li><span>en</span> Remember that I take the train at 8.</li>
+              <li><span>es</span> Recuerda que tomo el tren a las 8.</li>
+              <li><span>de</span> Merk dir, dass ich um 8 den Zug nehme.</li>
+              <li><span>pt</span> Lembre que eu pego o trem às 8.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Recorda que agafe el tren a les 8.</li>
+            </ul>
+          </article>
+          <article class="cmd" id="forget_fact-on-this-phone-only">
+            <h3><code>forget_fact</code></h3>
+            <p>Forget one pinned fact by id or text. It does not delete notes, People, reminders, or events. On-device session only.</p>
+            <ul class="phrases">
+              <li><span>en</span> Forget that.</li>
+              <li><span>es</span> Olvida eso.</li>
+              <li><span>de</span> Vergiss das.</li>
+              <li><span>pt</span> Esqueça isso.</li>
+              <li><span lang="ca-ES-valencia">ca</span> Oblida això.</li>
+            </ul>
+          </article>
+        </div>
+          <p>Back to the <a href="./index.html">guide</a>.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap narrow"><p>Tools as of 0.1.64. <a href="./index.html">Guide</a></p></div>
+    </footer>
+    <script src="../main.js"></script>
+  </body>
+</html>

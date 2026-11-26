@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="graphite">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Voice troubleshooting</title>
+    <meta name="description" content="Install, key, pack, microphone, and money problems for Grok Voice on Android." />
+    <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/guide/troubleshooting.html" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="../index.html">Grok Voice</a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <ul id="site-nav">
+          <li><a href="./index.html" aria-current="page">Guide</a></li>
+          <li><a href="./commands.html">Commands</a></li>
+          <li><a href="../develop.html">Develop</a></li>
+          <li><a href="https://github.com/Gabo-Tech/grok-voice-android">Source</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="content">
+      <section class="hero">
+        <div class="wrap narrow">
+          <p class="chapter">Troubleshooting</p>
+          <h1>When a step stops.</h1>
+
+          <h2>The APK will not install</h2>
+          <ul>
+            <li>The phone must be arm64-v8a and Android 8 (API 26) or newer. A 32-bit device is refused because the native code is arm64 only.</li>
+            <li>Allow installs from the app that opened the file. That switch is per app, under Install unknown apps.</li>
+            <li><code>adb install -r</code> fails with a signature mismatch when an older copy was signed by a different key. The release certificate SHA-256 is <code>fd400ffe61c9b18654bc40f567275e5a6e13bab8d311355f389f6e46458aafe9</code>. A locally built APK that you did not sign with that keystore will not replace the GitHub release.</li>
+            <li>Check the file size. The 0.1.64 asset is 58,146,206 bytes. A short download is not a complete APK.</li>
+          </ul>
+
+          <h2>Setup does not finish</h2>
+          <ul>
+            <li>Finish later does not discard the step. Open Settings, then Voice and AI, and continue the same path.</li>
+            <li>The on-device and 1min.ai paths need the English pack: 250,807,309 plus 144,811,360 plus 65,051,089 bytes. Use Wi-Fi. If a file fails its checksum, download that piece again from Voice and AI. Nothing new downloads until you tap Download.</li>
+            <li>A key that is too short was not copied whole. xAI keys usually start with <code>xai-</code>. OpenAI keys usually start with <code>sk-</code>. The 1min.ai key is under Settings, then API, at app.1min.ai.</li>
+            <li>A refused xAI key: create a new one and check that the account can spend. A refused OpenAI key: check billing on the platform. A refused 1min.ai key: copy it again and check credits.</li>
+            <li>If the network fails on a cloud path, try again, or put On this phone next in Voice and AI. Mixed mode uses the phone first and the saved cloud key only if the phone cannot answer.</li>
+            <li>A gated Phonon 40m model stays refused without a Hugging Face token, and without the license accepted on the model page. English Phonon 31m does not need that token. Valencian has no Phonon model and no Piper voice, so it stays on the Android voice. Portuguese has no Piper voice.</li>
+          </ul>
+
+          <h2>Talk is quiet or talks to itself</h2>
+          <ul>
+            <li>Allow the microphone. On this phone, say hello after the pack is ready. A cloud path needs a network.</li>
+            <li>Use headphones if the speaker feeds the microphone. Echo guard is on unless you turn it off in Debug.</li>
+            <li>Listen shows a notification while the microphone stays open. Stop on that notification ends it. Android may ask for unrestricted battery use. Without that, some phones kill the microphone later.</li>
+            <li>A force-stop stays off until you open the app and turn Listen on again. After a reboot, open the app once before background listening can use the microphone.</li>
+            <li>Settings shows background-listening status. A watchdog restarts the microphone if it stalls while Listen is on.</li>
+            <li>“Which model am I using?” calls <code>get_settings</code>. That tool never returns keys. For On device and 1min.ai, speech to text and the voice stay on the phone even when the reply is written elsewhere.</li>
+          </ul>
+
+          <h2>Money, colors, and deletes</h2>
+          <ul>
+            <li>“No rate is saved” means refresh rates, or set a manual rate in Settings. The app does not invent a rate and does not assume one-to-one.</li>
+            <li>Logging never creates an account or a card. If two names are close, Talk asks. Create one only by asking to add it.</li>
+            <li>A card payment is not a second expense. Charging a card raises what it owes and counts as an expense. Paying more than it owes is allowed and leaves a credit.</li>
+            <li>Cancelling a reminder, alarm, or countdown, deleting a person, and deleting a finance row or a budget line ask for a yes first. The first call does not remove them.</li>
+            <li>A chart color is saved on the item. “Reset every chart color” asks, then clears saved colors only after yes. It does not delete the holdings.</li>
+          </ul>
+
+          <h2>Messages and calls</h2>
+          <ul>
+            <li>Message reading stays off until you turn it on under Settings, Phone access. Notification access is a system setting.</li>
+            <li>A reply is read back and sent only after a clear yes, and only when that app exposes a reply action. Otherwise a draft opens and you tap Send.</li>
+            <li>Opening the dialer does not place the call. <code>place_call</code> says the number and dials after yes. Answer, decline, and hang up happen only when you say so.</li>
+          </ul>
+          <p>Back to the <a href="./index.html">guide</a>.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap narrow"><p><a href="./index.html">Guide</a></p></div>
+    </footer>
+    <script src="../main.js"></script>
+  </body>
+</html>

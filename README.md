@@ -2,6 +2,8 @@
 
 **Website:** [gabo-tech.github.io/grok-voice-android](https://gabo-tech.github.io/grok-voice-android/)
 
+**Guide:** [Install, setup, Talk, and troubleshooting](docs/guide/index.html). The [tool list](docs/guide/commands.html) names every Talk tool with an example in en, es, de, pt, and ca-ES-valencia. Developer notes are [docs/develop.html](docs/develop.html). How to change the app is [CONTRIBUTING.md](CONTRIBUTING.md).
+
 A voice assistant for Android. A new install talks on the phone in English: Moonshine, SmolLM2, and Phonon 31m, with no account and no token. The screen can use another language. Spanish, German, Piper, and gated Phonon models can be added later in Settings. An [xAI](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech), OpenAI, or 1min.ai key is optional and is tried only if you add one. The wake word stays on the device.
 
 The current sideload build is [Grok Voice 0.1.64](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading. versionCode is 1064.
@@ -43,7 +45,7 @@ Use headphones the first few times. On a loudspeaker the microphone hears the re
 
 ## What you can ask
 
-During a session the assistant can act on the phone. It calls the tool, then tells you what happened. The full voice-command guide, in the five languages the app speaks, is on the site: [English](docs/voice/en.html), [Spanish](docs/voice/es.html), [German](docs/voice/de.html), [Portuguese](docs/voice/pt.html), and [Valencian](docs/voice/ca.html).
+During a session the assistant can act on the phone. It calls the tool, then tells you what happened. The [tool list](docs/guide/commands.html) is generated from those definitions, with an example in each language. The voice-command guide, one language per page, is [English](docs/voice/en.html), [Spanish](docs/voice/es.html), [German](docs/voice/de.html), [Portuguese](docs/voice/pt.html), and [Valencian](docs/voice/ca.html).
 
 | Ask | What happens |
 | --- | --- |

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="graphite">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Voice developer notes</title>
+    <meta name="description" content="Architecture, codebase map, Android build, signing, CI, versioning, local packs, and translations for Grok Voice." />
+    <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/develop.html" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="./index.html">Grok Voice</a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <ul id="site-nav">
+          <li><a href="guide/index.html">Guide</a></li>
+          <li><a href="guide/commands.html">Commands</a></li>
+          <li><a href="./develop.html" aria-current="page">Develop</a></li>
+          <li><a href="https://github.com/Gabo-Tech/grok-voice-android">Source</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="content">
+      <section class="hero">
+        <div class="wrap narrow">
+          <p class="chapter">Develop</p>
+          <h1>How the app is put together.</h1>
+          <p>These notes match the tree on main at 0.1.64. The short contributor path is <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>. Release signing steps also live in <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/RELEASING.md">RELEASING.md</a>. Screen rules are <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/DESIGN-LANGUAGE.md">DESIGN-LANGUAGE.md</a>.</p>
+
+          <h2 id="architecture">Architecture</h2>
+          <p>The UI is React and Vite. Tauri 2 hosts it. On Android the WebView sits in <code>ai.grokvoice.app</code>. Rust owns the microphone, the vault, the stores, and the model runtimes.</p>
+          <ul>
+            <li><strong>Session.</strong> xAI and OpenAI are realtime voice. Each xAI call mints a short-lived client secret with <code>POST https://api.x.ai/v1/realtime/client_secrets</code>, then connects to <code>wss://api.x.ai/v1/realtime</code>. The long-lived key is not sent on the socket. OpenAI uses its own key the same way. 1min.ai is a text model: Moonshine and the on-device voice stay on the phone. On-device Talk waits for a pause, then runs a GGUF. It is not full-duplex barge-in.</li>
+            <li><strong>Audio.</strong> Uplink is 16 kHz PCM16. Downlink is 24 kHz PCM16. On Android the capture is an <code>AudioRecord</code> owned by the microphone foreground service. <code>cpal</code> is the desktop capture and the speaker.</li>
+            <li><strong>Tools.</strong> <code>actions::tool_definitions</code> in <code>src-tauri/src/actions.rs</code> is the phone tool list, and it appends <code>finance::tool_definitions</code>. Cloud sessions and 1min.ai use that list. <code>remember_fact</code> and <code>forget_fact</code> are added only in the on-device session (<code>local_memory.rs</code>).</li>
+            <li><strong>Vault.</strong> Keys live in a Stronghold snapshot. On Android the snapshot key is wrapped by a non-exportable Android Keystore key.</li>
+            <li><strong>Wake word.</strong> rustpotter, trained from three recordings on the phone. The samples are not uploaded.</li>
+            <li><strong>Stores.</strong> Notes, Time, the in-app calendar, People, and Finance are local files. Talk and the screen share them. There is no bank login and no cloud sync. Backup is AES-256-GCM on the phone.</li>
+          </ul>
+
+          <h2 id="map">Codebase map</h2>
+          <table class="stack">
+            <thead><tr><th>Path</th><th>What it is</th></tr></thead>
+            <tbody>
+              <tr><td data-label="Path"><code>src/App.tsx</code></td><td data-label="What it is">Tab shell: Talk, Notes, Calendar, Time, Finance, Settings.</td></tr>
+              <tr><td data-label="Path"><code>src/components/</code></td><td data-label="What it is">Screens. <code>Onboarding.tsx</code> is the setup tour. <code>FinancePage.tsx</code> and the chart files are money. <code>LocalPacks.tsx</code> is the pack list.</td></tr>
+              <tr><td data-label="Path"><code>src/lib/setupGuide.ts</code></td><td data-label="What it is">The five paths and the key copy. <code>stack.ts</code> is the first-run byte total.</td></tr>
+              <tr><td data-label="Path"><code>src/lib/i18n.ts</code></td><td data-label="What it is">Screen strings for en, es, de, pt, and ca-ES-valencia. <code>financeCopy.ts</code>, <code>setup-i18n.json</code>, and <code>phonon-i18n.json</code> add more.</td></tr>
+              <tr><td data-label="Path"><code>src/lib/appearance.ts</code></td><td data-label="What it is">Theme presets and the custom palette. The attribute is <code>data-appearance</code>.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/src/lib.rs</code></td><td data-label="What it is">Rust crate root. Commands are registered from here.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/src/actions.rs</code></td><td data-label="What it is">Notes, Time, Calendar, People, music, settings, calls, and messages.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/src/finance.rs</code></td><td data-label="What it is">Money tools, including colors, budgets, and the PDF.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/src/local/</code></td><td data-label="What it is">Packs, llama.cpp, Moonshine, Piper, Phonon, and the on-device turn.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/src/realtime.rs</code></td><td data-label="What it is">xAI and OpenAI voice sessions.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/src/onemin.rs</code></td><td data-label="What it is">1min.ai text provider.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/gen/android/</code></td><td data-label="What it is">The generated Android project, plus the voice service, widgets, and permissions. Do not re-init over it.</td></tr>
+              <tr><td data-label="Path"><code>docs/</code></td><td data-label="What it is">This site. GitHub Pages serves the folder.</td></tr>
+            </tbody>
+          </table>
+          <p>Home-screen widgets are declared in <code>AndroidManifest.xml</code> and labeled in <code>strings.xml</code>: Listen, Reminders, Coming up, Net worth, This month, Next 30 days, and Next. <code>HomeWidgets.kt</code> and <code>WidgetTheme.kt</code> paint them from the theme.</p>
+
+          <h2 id="build">Tauri and Android build</h2>
+          <p>You need Node, pnpm, Rust, a JDK, and the Android SDK with NDK <code>27.1.12297006</code>. CI uses Rust 1.94.1, Temurin 17, Node 26.0.0, pnpm 10.33.0, platform <code>android-37.0</code>, and build-tools <code>37.0.0</code>.</p>
+          <pre><code>pnpm install
+pnpm tauri dev</code></pre>
+          <p>That is the desktop shell. Phone alarms, the calendar provider, the keystore, and the foreground service run on Android.</p>
+          <pre><code>export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_NDK_HOME="$HOME/Android/Sdk/ndk/27.1.12297006"
+export NDK_HOME="$ANDROID_NDK_HOME"
+
+pnpm tauri android dev
+pnpm tauri android build --target aarch64 --apk</code></pre>
+          <p>The release APK is written to:</p>
+          <pre><code>src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk</code></pre>
+          <p><code>pnpm tauri android init</code> is only for a missing <code>src-tauri/gen/android</code>. This repository already contains that project. <code>build.rs</code> downloads sherpa-onnx <code>v1.13.8</code> and llama.cpp tag <code>b12774</code>, and it builds <code>libptts_ffi</code>. Model weights are not in the APK.</p>
+
+          <h2 id="abi">arm64-v8a</h2>
+          <p><code>minSdk</code> is 26 and <code>targetSdk</code> is 37 in <code>src-tauri/gen/android/app/build.gradle.kts</code>. The release command targets <code>aarch64</code>. The workflow rejects an APK whose badging ABI or <code>lib/</code> entries are anything other than <code>arm64-v8a</code>, and it requires <code>lib/arm64-v8a/libptts_ffi.so</code>.</p>
+
+          <h2 id="signing">Signing with the debug certificate</h2>
+          <p>The release build type uses the debug signing config. The Gradle comment says “Local sideload key. Replace this with an upload keystore before Play Store.” A local APK is therefore signed with the debug keystore on that machine.</p>
+          <p>The Release APK workflow signs that file again with <code>apksigner</code> (v2 only) and the repository secrets:</p>
+          <ul>
+            <li><code>ANDROID_KEYSTORE_BASE64</code></li>
+            <li><code>ANDROID_KEYSTORE_PASSWORD</code></li>
+            <li><code>ANDROID_KEY_ALIAS</code></li>
+            <li><code>ANDROID_KEY_PASSWORD</code></li>
+          </ul>
+          <p>It accepts one certificate, SHA-256 <code>fd400ffe61c9b18654bc40f567275e5a6e13bab8d311355f389f6e46458aafe9</code>. That is the sideload certificate the README calls the debug key. An APK signed by another certificate does not install over an existing copy. GitHub cannot show the secrets again. Keep an offline backup of the keystore.</p>
+
+          <h2 id="ci">CI: Build and sign</h2>
+          <p>The workflow file is <code>.github/workflows/release-apk.yml</code>. The workflow name is Release APK. The job name is <strong>Build and sign</strong>. It runs on <code>ubuntu-24.04</code> with a 180 minute limit.</p>
+          <ul>
+            <li>A pull request into <code>main</code> builds, signs, and verifies. It does not upload a release. The tag it checks is <code>v</code> plus the version in <code>src-tauri/tauri.conf.json</code>.</li>
+            <li>A push of a <code>v*</code> tag builds the same APK and uploads <code>GrokVoice-X.Y.Z.apk</code> to that GitHub release, creating the release when it is missing. A tag push does not replace an asset that is already there.</li>
+            <li>Manual dispatch takes a tag and a dry-run flag. Dry run skips the upload. Manual dispatch can replace the asset with <code>--clobber</code>.</li>
+          </ul>
+          <p>Before the native build, the job runs:</p>
+          <pre><code>node --experimental-strip-types --test src/lib/setupGuide.test.ts src/lib/i18nCoverage.test.ts</code></pre>
+          <p>Verify checks versionName, versionCode, minSdk 26, the arm64-v8a ABI, v2 signing, the certificate, and <code>libptts_ffi.so</code>. The 0.1.64 release asset is 58,146,206 bytes, sha256 <code>932f66af1bb2f6e4784d8e5e665a716b5a96a8392ea03e221cb3b467cf94a2c0</code>.</p>
+
+          <h2 id="versioning">Versioning</h2>
+          <p><code>versionName</code> is the version string. <code>versionCode</code> is <code>major * 1000000 + minor * 1000 + patch</code>. For 0.1.64 that is 1064. The workflow computes it the same way and compares it to <code>aapt dump badging</code>. Gradle reads <code>tauri.android.versionCode</code> and <code>tauri.android.versionName</code> from the generated <code>tauri.properties</code>.</p>
+          <p>The 0.1.64 bump changed these files:</p>
+          <ul>
+            <li><code>package.json</code></li>
+            <li><code>src-tauri/tauri.conf.json</code></li>
+            <li><code>src-tauri/Cargo.toml</code> and <code>src-tauri/Cargo.lock</code></li>
+            <li><code>src-tauri/src/local/phonon.rs</code> (the Hugging Face user-agent <code>GrokVoice/0.1.64</code>)</li>
+            <li><code>README.md</code> and <code>docs/index.html</code>, where the user-facing copy names the version</li>
+          </ul>
+          <p>Merge the bump to <code>main</code>, tag that commit <code>vX.Y.Z</code>, and push the tag. See <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/RELEASING.md">RELEASING.md</a>.</p>
+
+          <h2 id="packs">Local AI packs</h2>
+          <p>Definitions are <code>PACKS</code> in <code>src-tauri/src/local/packs.rs</code> and <code>MODELS</code> in <code>src-tauri/src/local/phonon.rs</code>. Bytes below are the <code>download_bytes</code> fields, or the sum of the Phonon file sizes. llama.cpp <code>b12774</code> loads the GGUF. A custom GGUF is refused above 2,147,483,648 bytes.</p>
+          <table class="stack">
+            <thead><tr><th>Pack</th><th>Bytes</th><th>Minimum RAM</th></tr></thead>
+            <tbody>
+              <tr><td data-label="Pack">Moonshine Base English, int8</td><td data-label="Bytes">250,807,309</td><td data-label="Minimum RAM">First-run speech</td></tr>
+              <tr><td data-label="Pack">SmolLM2 135M Instruct Q8_0</td><td data-label="Bytes">144,811,360</td><td data-label="Minimum RAM">2 GB</td></tr>
+              <tr><td data-label="Pack">Phonon 31m English</td><td data-label="Bytes">65,051,089</td><td data-label="Minimum RAM">First-run voice</td></tr>
+              <tr><td data-label="Pack">Piper en_US lessac, low</td><td data-label="Bytes">67,097,098</td><td data-label="Minimum RAM">Other English voice</td></tr>
+              <tr><td data-label="Pack">LFM2.5 350M Q8_0</td><td data-label="Bytes">379,217,632</td><td data-label="Minimum RAM">2 GB</td></tr>
+              <tr><td data-label="Pack">Qwen2.5 0.5B Instruct Q8_0</td><td data-label="Bytes">675,710,816</td><td data-label="Minimum RAM">3 GB</td></tr>
+              <tr><td data-label="Pack">Qwen3.5 0.8B Q8_0</td><td data-label="Bytes">811,843,840</td><td data-label="Minimum RAM">2 GB</td></tr>
+              <tr><td data-label="Pack">Llama 3.2 1B Instruct Q4_K_M</td><td data-label="Bytes">807,694,464</td><td data-label="Minimum RAM">3 GB</td></tr>
+              <tr><td data-label="Pack">Gemma 3 1B Instruct Q4_K_M</td><td data-label="Bytes">806,058,240</td><td data-label="Minimum RAM">3 GB</td></tr>
+              <tr><td data-label="Pack">Qwen3.5 2B IQ4_NL</td><td data-label="Bytes">1,213,300,992</td><td data-label="Minimum RAM">3 GB</td></tr>
+              <tr><td data-label="Pack">Gemma 4 E2B QAT Q4</td><td data-label="Bytes">2,620,370,976</td><td data-label="Minimum RAM">8 GB</td></tr>
+              <tr><td data-label="Pack">Qwen3.5 4B Q4_K_M</td><td data-label="Bytes">2,708,804,608</td><td data-label="Minimum RAM">8 GB</td></tr>
+              <tr><td data-label="Pack">German NeMo FastConformer, int8</td><td data-label="Bytes">108,124,747</td><td data-label="Minimum RAM">Optional speech</td></tr>
+              <tr><td data-label="Pack">Piper de_DE thorsten, low</td><td data-label="Bytes">67,101,576</td><td data-label="Minimum RAM">Optional voice</td></tr>
+              <tr><td data-label="Pack">Spanish NeMo FastConformer, int8</td><td data-label="Bytes">107,246,685</td><td data-label="Minimum RAM">Optional speech</td></tr>
+              <tr><td data-label="Pack">Piper es_ES davefx, medium</td><td data-label="Bytes">67,184,952</td><td data-label="Minimum RAM">Optional voice</td></tr>
+            </tbody>
+          </table>
+          <p>Phonon 40m checkpoints are gated, CC BY-NC 4.0. Sum of the four files in each spec: English 75,092,305 bytes, Spanish 75,093,175, German 75,092,449, Portuguese 75,093,372, French 75,092,087, multilingual 75,092,127. Minimum RAM for the chat models is <code>localModelCandidates</code> in <code>setupGuide.ts</code>. Strength order in that list picks the strongest model that fits.</p>
+
+          <h2 id="i18n">Translations and the check</h2>
+          <p>Locales are <code>en</code>, <code>es</code>, <code>de</code>, <code>pt</code>, and <code>ca-ES-valencia</code>. English is the key. <code>t("…")</code> and <code>fill("…")</code> in <code>src/</code> must exist in every other catalog. Android <code>strings.xml</code> files are <code>values</code>, <code>values-es</code>, <code>values-de</code>, <code>values-pt</code>, and <code>values-b+ca+ES+valencia</code>. Apostrophes in those XML files are written as <code>\'</code>. Spoken lines are the <code>EN</code>, <code>ES</code>, <code>DE</code>, <code>PT</code>, and <code>CA</code> tables in <code>src-tauri/src/i18n.rs</code>.</p>
+          <p>The check is <code>src/lib/i18nCoverage.test.ts</code> plus <code>src/lib/setupGuide.test.ts</code>. CI runs both before the APK build. Run them locally with the same command as the workflow. A new English string that is missing, empty, or still identical in another locale fails the test, except for names the test keeps on purpose.</p>
+
+          <h2 id="tests">Tests</h2>
+          <p>JavaScript tests are the <code>src/lib/*.test.ts</code> files, run with Node’s test runner (<code>node --experimental-strip-types --test</code>). The CI job runs the setup and i18n files. The others cover finance math, colors, appearance, budgets, and time tabs.</p>
+          <p>Rust unit tests live next to the modules under <code>src-tauri/src</code>. Run them with:</p>
+          <pre><code>cargo test --manifest-path src-tauri/Cargo.toml</code></pre>
+          <p>The Release APK workflow does not run that cargo suite. It compiles the Android release instead.</p>
+
+          <h2 id="design">DESIGN-LANGUAGE.md</h2>
+          <p>Read it before changing a screen, sheet, dialog, widget, or theme. Themes may set only the semantic tokens it lists, through <code>data-appearance</code>. No raw hex in a component. No pure black or white. Text is at least 13px. Targets are at least 44px. Radius stays on 0, 2, and 4px. One accent. Primary actions are solid fills. Secondary actions are underlined text. This site uses the Graphite tokens from <code>src/index.css</code>.</p>
+
+          <h2 id="contribute">Contribute</h2>
+          <p>Follow <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>. A new field or a new kind of record needs create, read, update, and delete on the screen and in Talk, in all five locales. Deletes that remove a saved record wait for a clear yes. Talk does not create an account, a card, or another record the person did not ask for.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap narrow"><p><a href="./index.html">Grok Voice</a> · <a href="guide/index.html">Guide</a></p></div>
+    </footer>
+    <script src="./main.js"></script>
+  </body>
+</html>

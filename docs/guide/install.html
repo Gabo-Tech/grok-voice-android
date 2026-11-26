@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="graphite">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Install Grok Voice</title>
+    <meta name="description" content="Sideload GrokVoice-0.1.64.apk on Android 8 or newer, arm64-v8a." />
+    <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/guide/install.html" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="../index.html">Grok Voice</a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <ul id="site-nav">
+          <li><a href="./index.html" aria-current="page">Guide</a></li>
+          <li><a href="./commands.html">Commands</a></li>
+          <li><a href="../develop.html">Develop</a></li>
+          <li><a href="https://github.com/Gabo-Tech/grok-voice-android">Source</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="content">
+      <section class="hero">
+        <div class="wrap narrow">
+          <p class="chapter">Install</p>
+          <h1>Sideload the APK.</h1>
+          <p class="lead">The current release is an arm64 package for Android 8 and newer. It is not a Play Store upload.</p>
+          <p>
+            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.64/GrokVoice-0.1.64.apk">GrokVoice-0.1.64.apk</a>
+          </p>
+          <p class="fine">58,146,206 bytes. sha256 <code>932f66af1bb2f6e4784d8e5e665a716b5a96a8392ea03e221cb3b467cf94a2c0</code>. versionName 0.1.64. versionCode 1064. ABI arm64-v8a. minSdk 26.</p>
+
+          <h2>On the phone</h2>
+          <ol>
+            <li>Download <code>GrokVoice-0.1.64.apk</code> from the link above, or from the <a href="https://github.com/Gabo-Tech/grok-voice-android/releases/latest">latest release</a> when that asset is this file.</li>
+            <li>Open the file. If Android blocks it, allow installs from this source for the browser or the files app. The wording is “Install unknown apps” on Android 8 and newer.</li>
+            <li>Confirm the install. An update over an older Grok Voice uses the same sideload certificate, so Android replaces the existing app and keeps its data.</li>
+          </ol>
+          <p>A 32-bit phone cannot install this APK. The native libraries are arm64-v8a only.</p>
+
+          <h2>From a computer</h2>
+          <p>With the phone in developer mode and USB debugging on:</p>
+          <pre><code id="install-cmd">adb install -r GrokVoice-0.1.64.apk</code></pre>
+          <p><button type="button" class="quiet" id="copy-cmd">Copy command</button> <span class="fine" id="copy-status" role="status"></span></p>
+          <p><code>-r</code> replaces an existing install signed with the same certificate. A different signature is refused. Uninstalling first deletes the on-phone data.</p>
+
+          <h2>What the signature is</h2>
+          <p>
+            GitHub Actions signs the release with the repository sideload key and checks certificate SHA-256
+            <code>fd400ffe61c9b18654bc40f567275e5a6e13bab8d311355f389f6e46458aafe9</code>.
+            The project describes that key as the debug certificate used for hand installs.
+            It is not Play App Signing. Details are in the <a href="../develop.html#signing">developer notes</a>.
+          </p>
+          <p>Next: <a href="./setup.html">first setup</a>.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap narrow"><p><a href="./index.html">Guide</a></p></div>
+    </footer>
+    <script src="../main.js"></script>
+  </body>
+</html>

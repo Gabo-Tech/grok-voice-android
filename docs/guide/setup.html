@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="graphite">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Voice setup paths</title>
+    <meta name="description" content="First-launch setup for on-device voice, xAI, OpenAI, 1min.ai, and phone-then-cloud." />
+    <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/guide/setup.html" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="../index.html">Grok Voice</a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <ul id="site-nav">
+          <li><a href="./index.html" aria-current="page">Guide</a></li>
+          <li><a href="./commands.html">Commands</a></li>
+          <li><a href="../develop.html">Develop</a></li>
+          <li><a href="https://github.com/Gabo-Tech/grok-voice-android">Source</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="content">
+      <section class="hero">
+        <div class="wrap narrow">
+          <p class="chapter">Setup</p>
+          <h1>Pick one path. The others can wait.</h1>
+          <p>
+            A new install opens a tour: Language, Choose, Guide, Try it.
+            Finish later leaves the tour and keeps what is already on the phone.
+            Settings, then Voice and AI, opens the same path again.
+            An install that already finished setup is not sent through the tour.
+          </p>
+          <p>The screen language is English, Spanish, German, Portuguese, or Valencian. The first offline voice stays English until you add another pack. The tour does not ask for a Hugging Face token.</p>
+
+          <h2>On this phone</h2>
+          <p>No key. Moonshine hears you, a local model thinks, and Phonon or Piper speaks. This is utterance mode: the phone waits until you pause, then answers. It is not the full-duplex barge-in of a cloud voice.</p>
+          <p>The first download is three files, 460,669,758 bytes in total:</p>
+          <table class="stack">
+            <thead>
+              <tr><th>Piece</th><th>Bytes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td data-label="Piece">Moonshine Base English, int8</td><td data-label="Bytes">250,807,309</td></tr>
+              <tr><td data-label="Piece">SmolLM2 135M Instruct Q8_0</td><td data-label="Bytes">144,811,360</td></tr>
+              <tr><td data-label="Piece">Phonon 31m English</td><td data-label="Bytes">65,051,089</td></tr>
+            </tbody>
+          </table>
+          <p>Wi-Fi is the better way to fetch it. The screen shows the size and the progress. Piper English is 67,097,098 bytes and is the other on-device voice, not part of that first three-file pack. The phone recommends a stronger GGUF when memory and storage fit. Minimum RAM in the picker starts at 2 GB for SmolLM2 and LFM2.5, and is 8 GB for Qwen3.5 4B and Gemma 4 E2B.</p>
+          <p>Try it: play the voice, allow the microphone, then open Talk and say hello. A reply means this path works with no network, once the pack is on the phone.</p>
+          <p>If the download fails, retry from the same step. If the model cannot load, Voice and AI can pick a smaller pack, or you can add a cloud key as the next voice.</p>
+
+          <h2>xAI</h2>
+          <p>Hearing, thinking, and the voice run in the cloud.</p>
+          <ol>
+            <li>Open the <a href="https://console.x.ai/team/default/api-keys">xAI console</a> and create an API key. Copy the whole key. It usually starts with <code>xai-</code>.</li>
+            <li>xAI bills that key. This app does not charge you. Settings can warn you after a number of minutes.</li>
+            <li>Paste the key, then save it. It stays in the vault on this phone.</li>
+            <li>Allow the microphone, then open Talk and say hello. A spoken reply means the key works.</li>
+          </ol>
+          <p>If the key is refused, create a new one and check that the xAI account can spend. If the network fails, try again, or add On this phone as the next voice. A key that is too short needs the whole value from the console.</p>
+
+          <h2>OpenAI</h2>
+          <p>Hearing, thinking, and the voice run in the cloud.</p>
+          <ol>
+            <li>Open the <a href="https://platform.openai.com/api-keys">OpenAI platform</a> and create a secret key. Copy the whole key. It usually starts with <code>sk-</code>.</li>
+            <li>OpenAI bills that key. Realtime voice is their audio API. This app does not add a fee. Settings can warn you after a number of minutes.</li>
+            <li>Paste the key, then save it. It stays in the vault on this phone.</li>
+            <li>Allow the microphone, then open Talk and say hello. A spoken reply means the key works.</li>
+          </ol>
+          <p>If the key is refused, create a new one and check billing on the OpenAI platform. If the network fails, try again, or add On this phone as the next voice.</p>
+
+          <h2>1min.ai</h2>
+          <p>A 1min.ai key writes the reply. Hearing and the voice stay on this phone, so this path still downloads the offline pack.</p>
+          <ol>
+            <li>Sign in at <a href="https://app.1min.ai">app.1min.ai</a>, open Settings, then API, and copy the key.</li>
+            <li>1min.ai spends credits on your account for the reply. Hearing and the voice do not use those credits. This app does not add a fee.</li>
+            <li>Paste the key, then save it. It stays in the vault on this phone.</li>
+            <li>Download the English hearing and voice packs. Then open Talk and say hello. You are heard on this phone, and 1min.ai writes the reply.</li>
+          </ol>
+          <p>If the key is refused, copy it again and check that the account has credits. If the reply never starts, download Moonshine and the voice pack, then try Talk again.</p>
+
+          <h2>Phone, then a cloud key</h2>
+          <p>This phone answers first. A saved cloud key is used only if the phone cannot. Download the offline pack, then save one cloud key: xAI, OpenAI, or 1min.ai. The order in Voice and AI is the fallback order. Downloaded, key set, and offline-ready show at the top of that screen.</p>
+          <p>Try it the same way: allow the microphone and say hello in Talk. If the phone pack is missing, Talk moves to the saved cloud key.</p>
+
+          <h2>After the tour</h2>
+          <p>Settings, then Voice and AI, is the one screen for hearing, the model, the voice, and the order Talk tries. Spanish and German speech packs, Piper, the Android voice, and Phonon models that need a token are added there. A Hugging Face token is stored in the same vault and is sent only for a gated download. English Phonon 31m does not use it.</p>
+          <p>You can replay the tour from Voice and AI, or from Debug, then Replay setup tour.</p>
+          <p>Next: <a href="./talk.html">use Talk</a>.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap narrow"><p><a href="./index.html">Guide</a></p></div>
+    </footer>
+    <script src="../main.js"></script>
+  </body>
+</html>

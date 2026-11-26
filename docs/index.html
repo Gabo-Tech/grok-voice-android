@@ -1,305 +1,231 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-appearance="graphite">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Grok Voice: Free Open-Source "Hey Grok" Voice Assistant for Android</title>
+    <title>Grok Voice for Android</title>
     <meta
       name="description"
-      content="Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone."
+      content="Voice assistant for Android 8 and newer. Talk on the phone with Moonshine, a local model, and Phonon, or use xAI, OpenAI, or 1min.ai. Arm64 sideload APK."
     />
     <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/" />
     <meta name="author" content="Gabriel Clemente" />
-    <meta name="theme-color" content="#0c0c0c" />
+    <meta name="theme-color" content="#0e0f11" />
     <link rel="icon" href="./icon.png" type="image/png" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Grok Voice" />
     <meta property="og:locale" content="en_US" />
-    <meta
-      property="og:title"
-      content="Grok Voice: Free Open-Source &quot;Hey Grok&quot; Voice Assistant for Android"
-    />
+    <meta property="og:title" content="Grok Voice for Android" />
     <meta
       property="og:description"
-      content="Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone."
+      content="Voice assistant for Android. On-device Talk, or xAI, OpenAI, and 1min.ai. Finance, Time, Calendar, and People stay on the phone."
     />
     <meta property="og:url" content="https://gabo-tech.github.io/grok-voice-android/" />
     <meta property="og:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
-    <meta property="og:image:secure_url" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
-    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta
-      property="og:image:alt"
-      content="Grok Voice, a free open-source Hey Grok voice assistant for Android"
-    />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta
-      name="twitter:title"
-      content="Grok Voice: Free Open-Source &quot;Hey Grok&quot; Voice Assistant for Android"
-    />
+    <meta name="twitter:title" content="Grok Voice for Android" />
     <meta
       name="twitter:description"
-      content="Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone."
+      content="Voice assistant for Android. On-device Talk, or xAI, OpenAI, and 1min.ai."
     />
     <meta name="twitter:image" content="https://gabo-tech.github.io/grok-voice-android/og.png" />
-    <meta
-      name="twitter:image:alt"
-      content="Grok Voice, a free open-source Hey Grok voice assistant for Android"
-    />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Grok Voice",
-        "description": "Free, open-source voice assistant for Android. It talks on the phone by default. A cloud key is optional. The wake word stays on the phone.",
+        "description": "Voice assistant for Android. A new install can talk on the phone. xAI, OpenAI, and 1min.ai are optional. Notes, money, calendar, and people stay on the device.",
         "url": "https://gabo-tech.github.io/grok-voice-android/",
         "image": "https://gabo-tech.github.io/grok-voice-android/og.png",
         "operatingSystem": "Android",
         "applicationCategory": "UtilitiesApplication",
         "softwareVersion": "0.1.64",
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "license": "https://opensource.org/licenses/MIT",
-        "downloadUrl": "https://github.com/Gabo-Tech/grok-voice-android/releases/latest",
+        "downloadUrl": "https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.64/GrokVoice-0.1.64.apk",
         "codeRepository": "https://github.com/Gabo-Tech/grok-voice-android",
-        "author": {
-          "@type": "Person",
-          "name": "Gabriel Clemente",
-          "url": "https://gabo.is-a.dev"
-        }
+        "author": { "@type": "Person", "name": "Gabriel Clemente", "url": "https://gabo.is-a.dev" }
       }
     </script>
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "What is Grok Voice?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "A voice assistant for Android. A new install talks on the phone in English, with Moonshine, SmolLM2, and Phonon 31m. No account and no token. The screen can use another language. Other voice packs are optional in Settings. An xAI or OpenAI key is optional. The wake word stays on the device. The app is free and open source under the MIT license."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "How do I install it?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Download the arm64 APK for Android 8 and newer from the GitHub releases, then open it on the phone or install it from a computer with adb. The package is signed for sideloading. It is not a Play Store upload."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Where does my API key go?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "A cloud key is optional. If you add an xAI or OpenAI key in Voice and AI, it is stored encrypted on the phone. An xAI key is sent to api.x.ai only to mint a short-lived voice token, and only while that provider is in use. The default voice does not need a key. A Hugging Face token, if you add one, is used only to download a gated Phonon model."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Are wake-word recordings uploaded?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. Wake-word audio is checked on the device and is not uploaded. “Hey Grok” is trained on the phone from three recordings you make, and those samples are not uploaded."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "What can I ask?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Notes, timers, alarms, reminders, and calendar events. 0.1.64 walks through setup for xAI, OpenAI, 1min.ai, on-device Moonshine and Piper, and a phone-then-cloud fallback. Each path says where a key comes from, what it costs or needs, how to test it, and what to do when it fails. Finish later returns to the same step from Settings. 0.1.63 lets you choose a color for each holding, account, category, income type, and chart. That color is saved on the phone, included in backup, and used on every chart that shows the item. Talk can read, set, or reset it. 0.1.62 gives Reminders, Alarms, and Countdowns their own list, search, and add button. A new reminder or alarm can repeat every N days, weeks, months, or years, and can stop after a number of times or on a date. A spoken alert can follow Settings, speak that one item, or stay quiet. Cancelling a reminder, alarm, or countdown asks for a yes on the screen and in Talk. 0.1.61 adds Qwen3.5 0.8B, 2B, and 4B and Gemma 4 E2B as optional offline packs, recommends the strongest model that fits the phone, and adds a 1min.ai text provider plus a model picker. Speech to text and the voice stay on the phone when Talk uses a local pack or 1min.ai. 0.1.60 redraws the phone money-flow chart so ribbons sit flush, leaves keep their share of income, and colors and layout live in a collapsed options menu. 0.1.59 spaces money-flow labels so each name and amount fits a phone, and moves Plan delete into the line. 0.1.58 thins the money-flow chart so it fits a phone, prices EPIC Cash from the right coin even when an older holding stored the wrong id, and redraws Plan around what is left to spend and the next 30 days. 0.1.57 rebuilds the money-flow chart so income, spending, investments, and savings are one picture, and adds a monthly budget on Plan. 0.1.56 fixes the money-flow chart, full-screen zoom, filter chips, finance tab height, live prices including EPIC Cash, and landscape layout. 0.1.55 lets recurring payments, expenses, income, and bills repeat every N days, weeks, months, or years, and Talk can create, list, edit, and delete them. 0.1.54 leads the Finance overview with net worth, income, and expenses for a chosen period, and counts every debt. 0.1.53 redesigns the Finance overview, groups where the money went by category and subcategory, and prices EPIC Cash from CoinGecko. 0.1.52 adds a phone money-flow chart, net worth that subtracts debts, EPIC Cash pricing, and the type-led surface. 0.1.51 shows the original amount under every converted Finance total, keeps investments on Holdings, and treats a card payment as cash that left rather than a second expense. Charts fit their content, and portfolio value is saved on the phone each day a real price is stored. 0.1.50 rebuilds Finance around the main currency: net worth, this month's income and expenses, and card debt, with live prices, full quantities, and a holdings chart. A card payment, transfer, or loan repayment is not counted twice. Talk reads messages and places or answers calls only after an explicit yes. 0.1.49 prices crypto, metals, and ETFs from live markets and shows that worth in Finance and Talk. Talk keeps a compact Listen control, hides the header on a double tap, and puts the mic in the composer. Shared colors are softer, with quieter borders and rounded panels. 0.1.44 makes expenses and incomes fully editable, including amounts. Coming expenses and Coming income are limited to the next 30 days. Credit cards are payment methods apart from accounts. A charge raises card debt and hits this month's result without moving the bank. Paying the card from a funding account is a debt payment, not an expense, and does not change net worth. Talk has voice parity for Finance: accounts, investments, cash, debts, cards, expenses, incomes, charges, and pay-card. A whole-app translation audit covers English, Spanish, German, Portuguese, and Valencian (en, es, de, pt, ca-ES-valencia), including calendar titles that were previously hardcoded. 0.1.43 makes Finance phone-first. Filters are a scrolling date-range row plus a Filters sheet, and the action bar sits above the Finance tabs so Program a bill is not covered. The same clipping pattern is tightened elsewhere. Live daily FX uses ordered multi-provider failover. api.frankfurter.app now 301s to api.frankfurter.dev, and the old redirect allowlist refused the new host, so every fiat fetch failed. Fiat now tries Frankfurter on api.frankfurter.dev, then open.er-api.com, ECB, and currency-api on jsDelivr and pages.dev. Crypto tries CoinGecko, Coinbase, Kraken, then currency-api. One book is kept per local day. Settings Refresh forces a fetch. Manual rates in Settings are the last resort. There are no invented rates, no 1:1, and no silent USD fallback. Unpaid scheduled expenses, payments, income, and investment payouts appear as all-day items on the in-app Calendar on each due date, for example rent on the 20th. Existing Time reminders and Spoken alerts are unchanged. 0.1.42 opens Finance on net worth, then this month's expenses, then income, then the month's result. A thumb-zone tab bar lists Overview, Expenses, Income, Accounts, and Charts. The rate book is only in Settings. Live Frankfurter and CoinGecko rates still load in the background as in 0.1.41. 0.1.41 uses today's live exchange rate, with manual rates in Settings. Finance fetches Frankfurter and CoinGecko when the screen opens, when the local day changes, and when a needed pair is missing. A rate fetched today wins, then a labeled stale cache, then a Settings manual rate unless that rate is marked as an override. Overview sections share one column width. 0.1.40 shows combined Finance totals in the Settings currency on Overview, charts, the PDF, and voice. A missing rate asks for a real rate instead of leading with a per-currency stack, and native amounts stay on each item. Themes add Midnight, Carbon, Ivory, Sand, Forest, Plum, and a custom palette. Home-screen widgets follow the theme and show those combined totals. 0.1.39 adds Finance schedules for one-off and recurring income and expenses, including fixed-term runs such as a 9-month 270 EUR course, open-ended rent with no lifetime total, subscriptions, planned income, and investment payouts such as Nitroeggs with a quoted value settled in another currency. Overview is five cards: net worth right now, this month's cash flow, Coming expenses, Coming income, and If these land. Display-only multi-currency conversion uses Frankfurter, CoinGecko, cached, or manual rates; native amounts stay, and a missing rate omits the combined total. Next 30 days is its own panel of planned in and out, with overdue listed separately. Missing Spanish, German, Portuguese, and Valencian UI, PDF, and voice strings are filled in, PDF accents are distinct, and phone layout fixes keep Finance panels from scrolling sideways, wrap the program sheet, and label reminders for one day and a week. 0.1.38 adds an app-wide magazine look, Graphite, Ink, Stone, and System themes, a keyboard inset under the focused input, a default currency in reorganized Settings, and Finance cash-flow, upcoming bills, and debt payoff. 0.1.37 adds separate Finance accounts, phone charts, a PDF summary, and payment reminders. 0.1.36 adds a default music player, Musify voice control, and searchable Settings. 0.1.35 adds an on-device Finance tab and Talk money tools, optional Spanish speech and voice packs, LFM2.5 350M for on-device Talk, local music from Talk, and a custom audio file or YouTube sound on in-app alarms. Spanish, German, Portuguese, and Valencian screen copy is complete, and the phone layout was reviewed for one-handed use. 0.1.34 fixes the blank screen after launch for already-onboarded users (the 0.1.33 hook crash). In 0.1.33, Settings lists all 28 Grok voices and the 10 OpenAI Realtime voices, each with a preview. System back walks in-app screens. Back and add sit in the bottom bar. A wake-word watchdog restarts listening if the microphone stalls, and Settings shows the background-listening status. Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone's alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example Hey Gabriel, remember to brush your teeth. Normal mode is unchanged and remains the default. Talk-created reminders, events, alarms, and countdowns stay in this app; that shipped in 0.1.30. They fire through this app's notifications. A phrase such as in 5 minutes creates an in-app reminder instead of a phone Clock countdown. Talk does not write these creates to the phone Clock, and Talk-created events go to the app calendar. Reading the phone calendar is unchanged. An event added from the Calendar screen, while calendar access is granted, still goes to the phone calendar. Person-date visibility is unchanged."
-            }
-          }
-        ]
-      }
-    </script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <a class="skip" href="#content">Skip to content</a>
     <header class="site-header">
       <nav class="nav">
         <a class="brand" href="#top">Grok Voice</a>
         <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
         <ul id="site-nav">
-          <li><a href="#talk">Talk</a></li>
+          <li><a href="#paths">Setup</a></li>
           <li><a href="#phone">Phone</a></li>
-          <li><a href="#private">Privacy</a></li>
-          <li><a href="#install">Install</a></li>
-          <li><a href="#faq">Questions</a></li>
+          <li><a href="guide/index.html">Guide</a></li>
+          <li><a href="guide/commands.html">Commands</a></li>
+          <li><a href="develop.html">Develop</a></li>
         </ul>
       </nav>
     </header>
 
-    <main id="top">
-      <section class="hero">
-        <div class="wrap reveal">
-          <img
-            class="mark"
-            src="./icon.png"
-            width="1024"
-            height="1024"
-            alt="Grok Voice app icon, a white square frame on black"
-          />
-          <p class="eyebrow">Android · on the phone by default</p>
+    <main id="content">
+      <section class="hero" id="top">
+        <div class="wrap">
+          <img class="mark" src="./icon.png" width="1024" height="1024" alt="Grok Voice app icon" />
+          <p class="chapter">Android 8 and newer</p>
           <h1>A voice assistant on your phone.</h1>
           <p class="lead">
-            Say “Hey Grok” with the screen off. A new install answers on the phone, with no cloud key.
-            Notes, calendar, reminders, and money stay on the phone. xAI and OpenAI are optional.
+            Say “Hey Grok”, or tap Talk. A new install can answer on the phone, with no account.
+            xAI, OpenAI, and 1min.ai are optional. Notes, money, the calendar, and people stay on the device.
           </p>
           <div class="actions">
-            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.64/GrokVoice-0.1.64.apk">
-              Download Grok Voice 0.1.64
-            </a>
+            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.64/GrokVoice-0.1.64.apk">Download Grok Voice 0.1.64</a>
+            <a class="quiet" href="guide/index.html">User guide</a>
             <a class="quiet" href="https://github.com/Gabo-Tech/grok-voice-android">Source</a>
           </div>
-          <p class="fine">Arm64 APK · Android 8 and newer · signed in GitHub Actions</p>
+          <p class="fine">GrokVoice-0.1.64.apk · 58,146,206 bytes · arm64-v8a · versionCode 1064 · sideload signature</p>
         </div>
       </section>
 
-      <section id="talk" class="band">
+      <section class="band" id="paths">
+        <div class="wrap split two">
+          <div>
+            <p class="chapter">First launch</p>
+            <h2>Five setup paths</h2>
+            <p>
+              The tour asks for the screen language, then one path. Finish later keeps the step.
+              Settings, then Voice and AI, opens the same path again.
+              The <a href="guide/setup.html">setup guide</a> lists where each key comes from and what to do when it fails.
+            </p>
+          </div>
+          <ol class="rows">
+            <li>
+              <strong>On this phone</strong>
+              <span>No key. Moonshine hears you, a local model thinks, and Phonon or Piper speaks.</span>
+            </li>
+            <li>
+              <strong>xAI</strong>
+              <span>A Grok key. Hearing, thinking, and the voice run in the cloud.</span>
+            </li>
+            <li>
+              <strong>OpenAI</strong>
+              <span>An OpenAI key. Hearing, thinking, and the voice run in the cloud.</span>
+            </li>
+            <li>
+              <strong>1min.ai</strong>
+              <span>A 1min.ai key writes the reply. Hearing and the voice stay on this phone.</span>
+            </li>
+            <li>
+              <strong>Phone, then a cloud key</strong>
+              <span>This phone answers first. A saved cloud key is used only if the phone cannot.</span>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="band" id="packs">
         <div class="wrap">
-          <h2 class="reveal">Talk, or type</h2>
-          <div class="cards">
-            <article class="reveal">
-              <h3>Wake word</h3>
-              <p>Listen stays on after you leave. A watchdog restarts it if the microphone stalls, and Settings shows that status. Nothing starts until you say “Hey Grok.”</p>
-            </article>
-            <article class="reveal">
-              <h3>Quiet gap</h3>
-              <p>After a pause you choose, from 5 to 120 seconds, the conversation ends and only the wake word remains.</p>
-            </article>
-            <article class="reveal">
-              <h3>A page for notes</h3>
-              <p>Titles, search, and Markdown. Preview headings, lists, and links before you save.</p>
-            </article>
+          <p class="chapter">Offline packs</p>
+          <h2>Weights stay out of the APK.</h2>
+          <p>
+            The first download is English: Moonshine, SmolLM2 135M Instruct Q8_0, and Phonon 31m.
+            Together that is 460,669,758 bytes. llama.cpp b12774 runs the GGUF, including Qwen3.5 and Gemma.
+            Piper is the other on-device voice. Nothing else downloads until you tap Download.
+          </p>
+          <div class="split two">
+            <p class="figure"><b>460,669,758</b> <small>bytes</small></p>
+            <p>
+              Optional chat models are Qwen3.5 0.8B, 2B, and 4B, Gemma 3 1B, Gemma 4 E2B, Llama 3.2 1B, Qwen2.5 0.5B, and LFM2.5 350M.
+              The phone recommends the strongest model that fits. Spanish and German speech packs, and gated Phonon 40m voices, are added later in Voice and AI.
+              Sizes and checksums are in the <a href="develop.html#packs">developer notes</a>.
+            </p>
           </div>
         </div>
       </section>
 
-      <section id="phone" class="band">
-        <div class="wrap narrow reveal">
-          <h2>On the phone</h2>
-          <ul class="asks">
-            <li><span>Notes</span>Save, retitle, and search what you asked Grok to remember.</li>
-            <li><span>Reminders</span>Talk saves reminders, alarms, and countdowns on Time. They fire through this app’s notifications. An alarm can use the phone sound, an audio file you pick, or a YouTube video. “In 5 minutes” is an in-app reminder.</li>
-            <li><span>Calendar</span>Talk saves new events on the app calendar. Reading the phone calendar is unchanged. An event added on the Calendar screen, while access is granted, still goes to the phone calendar.</li>
-            <li><span>Finance</span>Accounts, spending, cards, crypto, and custom assets stay on this phone. Talk can log money and read what is saved. There is no bank login. <a href="voice/en.html">Voice commands</a>: <a href="voice/en.html">English</a>, <a href="voice/es.html">Español</a>, <a href="voice/de.html">Deutsch</a>, <a href="voice/pt.html">Português</a>, <a href="voice/ca.html">Valencià</a>.</li>
-            <li><span>Music</span>Talk plays with the default player in Settings. Files on this phone are the default. Musify, when installed, can be chosen and searched by voice. If it cannot play, YouTube opens, then the YouTube site in the browser. Saying “on YouTube” still waits for a yes. A search does not start playing by itself, and nothing is downloaded.</li>
-            <li><span>Search</span>News, weather, and what is on in town, spoken and written, with sources.</li>
+      <section class="band" id="phone">
+        <div class="wrap">
+          <p class="chapter">On the phone</p>
+          <h2>Talk uses the same records as the screen.</h2>
+          <ul class="rows">
+            <li>
+              <strong>Talk</strong>
+              <span>Tap the control, or say “Hey Grok” when Listen is on. The wake word is trained on the phone from three recordings. Those samples are not uploaded.</span>
+            </li>
+            <li>
+              <strong>Time</strong>
+              <span>Reminders, alarms, and countdowns each have a list, a search, and an add button. A repeat can be every N days, weeks, months, or years. Cancelling asks for a yes.</span>
+            </li>
+            <li>
+              <strong>Calendar</strong>
+              <span>Talk saves new events on this app’s calendar. Reading the phone calendar is separate. An event added on the Calendar screen, with access granted, can still go to the phone calendar.</span>
+            </li>
+            <li>
+              <strong>People</strong>
+              <span>Nicknames, a preferred channel, and dates live in this app. Phone numbers and email are read from Android contacts and are not written back. A call or a message waits for a clear yes.</span>
+            </li>
+            <li>
+              <strong>Finance</strong>
+              <span>Accounts, cards, holdings, plans, and a monthly budget stay on the phone. There is no bank login. Each holding, account, category, income type, and chart can keep a color. That color is in backup and on every chart that shows the item. Talk can read it, set it, or reset it.</span>
+            </li>
+            <li>
+              <strong>Notes and music</strong>
+              <span>Notes are saved on the phone. Music uses the default player in Settings. Saying “on YouTube” still waits for a yes, and the app does not download that video.</span>
+            </li>
+            <li>
+              <strong>Widgets and themes</strong>
+              <span>Home-screen widgets: Listen, Reminders, Coming up, Net worth, This month, Next 30 days, and Next. They follow the theme. Themes are Graphite, Ink, Stone, Midnight, Carbon, Ivory, Sand, Forest, Plum, System, and Custom.</span>
+            </li>
+            <li>
+              <strong>Five languages</strong>
+              <span>Screen copy is English, Spanish, German, Portuguese, and Valencian (en, es, de, pt, ca-ES-valencia). The first offline voice stays English until you add another pack.</span>
+            </li>
           </ul>
           <p>
-            0.1.64 walks through setup for xAI, OpenAI, 1min.ai, on-device Moonshine and Piper, and a phone-then-cloud fallback. Each path says where a key comes from, what it costs or needs, how to test it, and what to do when it fails. Finish later returns to the same step from Settings. 0.1.63 lets you choose a color for each holding, account, category, income type, and chart. That color is saved on the phone, included in backup, and used on every chart that shows the item. Talk can read, set, or reset it. 0.1.62 gives Reminders, Alarms, and Countdowns their own list, search, and add button. A new reminder or alarm can repeat every N days, weeks, months, or years, and can stop after a number of times or on a date. A spoken alert can follow Settings, speak that one item, or stay quiet. Cancelling a reminder, alarm, or countdown asks for a yes on the screen and in Talk. 0.1.61 adds Qwen3.5 0.8B, 2B, and 4B and Gemma 4 E2B as optional offline packs, recommends the strongest model that fits the phone, and adds a 1min.ai text provider plus a model picker. Speech to text and the voice stay on the phone when Talk uses a local pack or 1min.ai. 0.1.60 redraws the phone money-flow chart so ribbons sit flush, leaves keep their share of income, and colors and layout live in a collapsed options menu. 0.1.59 spaces money-flow labels so each name and amount fits a phone, and moves Plan delete into the line. 0.1.58 thins the money-flow chart so it fits a phone, prices EPIC Cash from the right coin even when an older holding stored the wrong id, and redraws Plan around what is left to spend and the next 30 days. 0.1.57 rebuilds the money-flow chart so income, spending, investments, and savings are one picture, and adds a monthly budget on Plan. 0.1.56 fixes the money-flow chart, full-screen zoom, filter chips, finance tab height, live prices including EPIC Cash, and landscape layout. 0.1.55 lets recurring payments, expenses, income, and bills repeat every N days, weeks, months, or years, and Talk can create, list, edit, and delete them. 0.1.54 leads the Finance overview with net worth, income, and expenses for a chosen period, and counts every debt. 0.1.53 redesigns the Finance overview, groups where the money went by category and subcategory, and prices EPIC Cash from CoinGecko. 0.1.52 adds a phone money-flow chart, net worth that subtracts debts, EPIC Cash pricing, and the type-led surface. 0.1.51 shows the original amount under every converted Finance total, keeps investments on Holdings, and treats a card payment as cash that left rather than a second expense. Charts fit their content, and portfolio value is saved on the phone each day a real price is stored. 0.1.50 rebuilds Finance around the main currency: net worth, this month's income and expenses, and card debt, with live prices, full quantities, and a holdings chart. A card payment, transfer, or loan repayment is not counted twice. Talk reads messages and places or answers calls only after an explicit yes. 0.1.49 prices crypto, metals, and ETFs from live markets and shows that worth in Finance and Talk. Talk keeps a compact Listen control, hides the header on a double tap, and puts the mic in the composer. Shared colors are softer, with quieter borders and rounded panels. 0.1.44 makes expenses and incomes fully editable, including amounts. Coming expenses and Coming income are limited to the next 30 days. Credit cards are payment methods apart from accounts. A charge raises card debt and hits this month's result without moving the bank. Paying the card from a funding account is a debt payment, not an expense, and does not change net worth. Talk has voice parity for Finance: accounts, investments, cash, debts, cards, expenses, incomes, charges, and pay-card. A whole-app translation audit covers English, Spanish, German, Portuguese, and Valencian (en, es, de, pt, ca-ES-valencia), including calendar titles that were previously hardcoded. 0.1.43 makes Finance phone-first. Filters are a scrolling date-range row plus a Filters sheet, and the action bar sits above the Finance tabs so Program a bill is not covered. The same clipping pattern is tightened elsewhere. Live daily FX uses ordered multi-provider failover. api.frankfurter.app now 301s to api.frankfurter.dev, and the old redirect allowlist refused the new host, so every fiat fetch failed. Fiat now tries Frankfurter on api.frankfurter.dev, then open.er-api.com, ECB, and currency-api on jsDelivr and pages.dev. Crypto tries CoinGecko, Coinbase, Kraken, then currency-api. One book is kept per local day. Settings Refresh forces a fetch. Manual rates in Settings are the last resort. There are no invented rates, no 1:1, and no silent USD fallback. Unpaid scheduled expenses, payments, income, and investment payouts appear as all-day items on the in-app Calendar on each due date, for example rent on the 20th. Existing Time reminders and Spoken alerts are unchanged. 0.1.42 opens Finance on net worth, then this month's expenses, then income, then the month's result. A thumb-zone tab bar lists Overview, Expenses, Income, Accounts, and Charts. The rate book is only in Settings. Live Frankfurter and CoinGecko rates still load in the background as in 0.1.41. 0.1.41 uses today's live exchange rate, with manual rates in Settings. Finance fetches Frankfurter and CoinGecko when the screen opens, when the local day changes, and when a needed pair is missing. A rate fetched today wins, then a labeled stale cache, then a Settings manual rate unless that rate is marked as an override. Overview sections share one column width. 0.1.40 shows combined Finance totals in the Settings currency on Overview, charts, the PDF, and voice. A missing rate asks for a real rate instead of leading with a per-currency stack, and native amounts stay on each item. Themes add Midnight, Carbon, Ivory, Sand, Forest, Plum, and a custom palette. Home-screen widgets follow the theme and show those combined totals. 0.1.39 adds Finance schedules for one-off and recurring income and expenses, including fixed-term runs such as a 9-month 270 EUR course, open-ended rent with no lifetime total, subscriptions, planned income, and investment payouts such as Nitroeggs with a quoted value settled in another currency. Overview is five cards: net worth right now, this month's cash flow, Coming expenses, Coming income, and If these land. Display-only multi-currency conversion uses Frankfurter, CoinGecko, cached, or manual rates; native amounts stay, and a missing rate omits the combined total. Next 30 days is its own panel of planned in and out, with overdue listed separately. Missing Spanish, German, Portuguese, and Valencian UI, PDF, and voice strings are filled in, PDF accents are distinct, and phone layout fixes keep Finance panels from scrolling sideways, wrap the program sheet, and label reminders for one day and a week. 0.1.38 adds an app-wide magazine look, Graphite, Ink, Stone, and System themes, a keyboard inset under the focused input, a default currency in reorganized Settings, and Finance cash-flow, upcoming bills, and debt payoff. 0.1.37 adds separate Finance accounts, phone charts, a PDF summary, and payment reminders. 0.1.36 adds a default music player, Musify voice control, and searchable Settings. 0.1.35 adds an on-device Finance tab and Talk money tools, optional Spanish speech and voice packs, LFM2.5 350M for on-device Talk, local music from Talk, and a custom audio file or YouTube sound on in-app alarms. Spanish, German, Portuguese, and Valencian screen copy is complete, and the phone layout was reviewed for one-handed use. 0.1.34 fixes the blank screen after launch for already-onboarded users (the 0.1.33 hook crash). In 0.1.33, Settings lists all 28 Grok voices and the 10 OpenAI Realtime voices, each with a preview. System back walks in-app screens. Back and add sit in the bottom bar. A wake-word watchdog restarts listening if the microphone stalls, and Settings shows the background-listening status. Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone’s alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example “Hey Gabriel, remember to brush your teeth.” Normal mode is unchanged and remains the default. Reminders, alarms, countdowns, and calendar events created in Talk stay inside Grok Voice and fire through this app’s notifications. That in-app schedule shipped in 0.1.30. Talk does not write those creates to the phone Clock. Person-date visibility is unchanged.
+            <a href="guide/commands.html">Voice commands</a>, with an example in each language.
+            The same list, written as speech in one language at a time:
+            <a href="voice/en.html">English</a>,
+            <a href="voice/es.html">Español</a>,
+            <a href="voice/de.html">Deutsch</a>,
+            <a href="voice/pt.html">Português</a>,
+            <a href="voice/ca.html">Valencià</a>.
           </p>
         </div>
       </section>
 
-      <section id="on-device" class="band">
-        <div class="wrap narrow reveal">
-          <h2>Voice and AI</h2>
+      <section class="band" id="private">
+        <div class="wrap narrow">
+          <p class="chapter">Privacy</p>
+          <h2>No server of its own.</h2>
           <p>
-            Settings has one Voice and AI screen. From there you pick who hears you, which model thinks,
-            which voice speaks, and the order Talk tries if the first one fails. On this phone can sit next to
-            xAI, OpenAI, and 1min.ai. Settings picks the model for each provider. A key is typed on the provider it belongs to. Downloaded, key set, and offline-ready
-            show at the top.
+            The app does not collect analytics. A cloud key, if you add one, stays in the on-device vault.
+            An xAI key is sent to api.x.ai only to mint a short-lived voice token, and only while xAI is the provider in use.
+            OpenAI works the same way with its own key. 1min.ai sees the text of the reply path. Hearing and the voice for that path stay on the phone.
+            A Hugging Face token, if you add one, is used only to download a gated Phonon model.
           </p>
-          <p>
-            The first launch downloads one English pack: Moonshine, SmolLM2, and Phonon 31m. It shows the
-            size and the progress, and it asks for Wi-Fi. There is no Hugging Face token and no other-language
-            pack in that tour. The screen language can still be Spanish, German, Portuguese, or Valencian.
-            Those voices, Piper, and the gated Phonon models can be added later in Voice and AI. The tour can
-            be paused and finished later from that screen. An install that already finished setup is not sent
-            through it again.
-          </p>
-          <p>
-            The on-device engine is Phonon, Piper, or the Android voice, or Auto. Auto uses Phonon when that
-            language already has a model, otherwise Piper, then the Android voice. If Phonon fails, Piper speaks,
-            and the Android voice is next.
-          </p>
-          <p>
-            <a href="https://gradium.ai/phonon">Phonon</a> is Gradium’s on-device speech engine. It builds on Pocket TTS
-            and the Mimi codec from Kyutai. The runtime is
-            <a href="https://github.com/gradium-ai/xn-ptts">xn-ptts</a>, MIT or Apache 2.0, and it runs on the phone
-            with no PyTorch. English Phonon 31m is Apache 2.0 and needs no account. The 40m models are CC BY-NC 4.0
-            and gated on Hugging Face. This app is non-commercial, so those terms allow them. Accept the license on
-            the model page, then save a Hugging Face token in Voice and AI. The token stays in the on-device vault and
-            is sent only for that gated download. English 31m works with no token. Valencian has no Phonon model,
-            so it keeps Piper when a voice is installed and otherwise the Android voice. Portuguese has no Piper
-            voice; Phonon speaks it after the model is downloaded.
-          </p>
-          <p>
-            Moonshine speech-to-text, SmolLM2, and the Piper packs are still there, under the same screen.
-            Nothing new downloads until you tap Download. After that, the voice is offline.
-          </p>
+          <p>The <a href="guide/install.html">install guide</a> covers sideloading the APK. <a href="guide/troubleshooting.html">Troubleshooting</a> covers a refused key, a missing pack, and a microphone that stops.</p>
         </div>
       </section>
 
-      <section id="private" class="band">
-        <div class="wrap narrow reveal">
-          <h2>Privacy</h2>
-          <p>
-            This app has no server of its own and does not collect analytics. The key is stored encrypted on the phone.
-            Wake-word audio is checked on the device and is not uploaded. Notes, reminders, and in-app events stay in a local file.
-          </p>
-          <p>
-            The default conversation stays on the phone. If you add a cloud provider, that part of the talk is not
-            private from them. An xAI key is sent to api.x.ai to mint a short-lived voice token, and speech goes to
-            xAI only while xAI is the provider in use. OpenAI works the same way with its own key. A typed question
-            that uses a cloud model is sent there too.
-          </p>
-        </div>
-      </section>
-
-      <section id="install" class="band">
-        <div class="wrap narrow reveal">
-          <h2>Install</h2>
-          <p>Download the APK, then install it from the phone or from a computer.</p>
-          <p>
-            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.64/GrokVoice-0.1.64.apk">
-              GrokVoice-0.1.64.apk
-            </a>
-          </p>
-          <pre><code id="install-cmd">adb install -r GrokVoice-0.1.64.apk</code></pre>
-          <button type="button" id="copy-cmd">Copy command</button>
-          <p class="fine" id="copy-status" role="status"></p>
-        </div>
-      </section>
-
-      <section id="faq" class="band">
-        <div class="wrap narrow reveal">
-          <h2>Questions</h2>
+      <section class="band" id="faq">
+        <div class="wrap narrow">
+          <p class="chapter">Questions</p>
+          <h2>Short answers</h2>
           <dl class="faq">
             <div>
-              <dt>What is Grok Voice?</dt>
-              <dd>A voice assistant for Android. A new install talks on the phone in English, with Moonshine, SmolLM2, and Phonon 31m. No account and no token. The screen can use another language. Other voice packs are optional in Settings. An xAI or OpenAI key is optional. The wake word stays on the device. The app is free and open source under the MIT license.</dd>
+              <dt>What is this build?</dt>
+              <dd>0.1.64. versionCode is 1064. The signed release asset is GrokVoice-0.1.64.apk, 58,146,206 bytes, sha256 932f66af1bb2f6e4784d8e5e665a716b5a96a8392ea03e221cb3b467cf94a2c0. The setup tour walks through on-device voice, xAI, OpenAI, 1min.ai, and phone-then-cloud.</dd>
             </div>
             <div>
               <dt>How do I install it?</dt>
-              <dd>Download the arm64 APK for Android 8 and newer from the GitHub releases, then open it on the phone or install it from a computer with adb. The release APK is signed in GitHub Actions, so it installs over an existing install. It is not a Play Store upload.</dd>
+              <dd>Download the arm64 APK and open it on the phone, or run <code>adb install -r GrokVoice-0.1.64.apk</code>. Android 8 (API 26) or newer. It is not a Play Store upload. The release is signed with the sideload certificate so an update installs over an existing copy.</dd>
             </div>
             <div>
-              <dt>Where does my API key go?</dt>
-              <dd>A cloud key is optional. If you add an xAI or OpenAI key in Voice and AI, it is stored encrypted on the phone. An xAI key is sent to api.x.ai only to mint a short-lived voice token, and only while that provider is in use. The default voice does not need a key. A Hugging Face token, if you add one, is used only to download a gated Phonon model.</dd>
+              <dt>Does Talk invent money?</dt>
+              <dd>No. Balances are what you saved. A missing exchange rate is refused. Combined totals do not treat a missing rate as one-to-one.</dd>
             </div>
             <div>
-              <dt>Can the phone speak without a cloud key?</dt>
-              <dd>Yes. That is the default, in English: Moonshine, SmolLM2, and Phonon 31m, with no token. Voice and AI is one screen for hearing, the model, the voice, and the fallback order. The first launch downloads only that English pack and can be finished later from Settings. Spanish, German, Piper, and gated Phonon models are optional there. Phonon is Gradium’s on-device engine, built on Kyutai’s Pocket TTS and Mimi codec. Once a model is downloaded, that voice works offline.</dd>
-            </div>
-            <div>
-              <dt>Are wake-word recordings uploaded?</dt>
-              <dd>No. Wake-word audio is checked on the device and is not uploaded. “Hey Grok” is trained on the phone from three recordings you make, and those samples are not uploaded.</dd>
-            </div>
-            <div>
-              <dt>What can I ask?</dt>
-              <dd>Notes, timers, alarms, reminders, and calendar events. 0.1.64 walks through setup for xAI, OpenAI, 1min.ai, on-device Moonshine and Piper, and a phone-then-cloud fallback. Each path says where a key comes from, what it costs or needs, how to test it, and what to do when it fails. Finish later returns to the same step from Settings. 0.1.63 lets you choose a color for each holding, account, category, income type, and chart. That color is saved on the phone, included in backup, and used on every chart that shows the item. Talk can read, set, or reset it. 0.1.62 gives Reminders, Alarms, and Countdowns their own list, search, and add button. A new reminder or alarm can repeat every N days, weeks, months, or years, and can stop after a number of times or on a date. A spoken alert can follow Settings, speak that one item, or stay quiet. Cancelling a reminder, alarm, or countdown asks for a yes on the screen and in Talk. 0.1.61 adds Qwen3.5 0.8B, 2B, and 4B and Gemma 4 E2B as optional offline packs, recommends the strongest model that fits the phone, and adds a 1min.ai text provider plus a model picker. Speech to text and the voice stay on the phone when Talk uses a local pack or 1min.ai. 0.1.60 redraws the phone money-flow chart so ribbons sit flush, leaves keep their share of income, and colors and layout live in a collapsed options menu. 0.1.59 spaces money-flow labels so each name and amount fits a phone, and moves Plan delete into the line. 0.1.58 thins the money-flow chart so it fits a phone, prices EPIC Cash from the right coin even when an older holding stored the wrong id, and redraws Plan around what is left to spend and the next 30 days. 0.1.57 rebuilds the money-flow chart so income, spending, investments, and savings are one picture, and adds a monthly budget on Plan. 0.1.56 fixes the money-flow chart, full-screen zoom, filter chips, finance tab height, live prices including EPIC Cash, and landscape layout. 0.1.55 lets recurring payments, expenses, income, and bills repeat every N days, weeks, months, or years, and Talk can create, list, edit, and delete them. 0.1.54 leads the Finance overview with net worth, income, and expenses for a chosen period, and counts every debt. 0.1.53 redesigns the Finance overview, groups where the money went by category and subcategory, and prices EPIC Cash from CoinGecko. 0.1.52 adds a phone money-flow chart, net worth that subtracts debts, EPIC Cash pricing, and the type-led surface. 0.1.51 shows the original amount under every converted Finance total, keeps investments on Holdings, and treats a card payment as cash that left rather than a second expense. Charts fit their content, and portfolio value is saved on the phone each day a real price is stored. 0.1.50 rebuilds Finance around the main currency: net worth, this month's income and expenses, and card debt, with live prices, full quantities, and a holdings chart. A card payment, transfer, or loan repayment is not counted twice. Talk reads messages and places or answers calls only after an explicit yes. 0.1.49 prices crypto, metals, and ETFs from live markets and shows that worth in Finance and Talk. Talk keeps a compact Listen control, hides the header on a double tap, and puts the mic in the composer. Shared colors are softer, with quieter borders and rounded panels. 0.1.44 makes expenses and incomes fully editable, including amounts. Coming expenses and Coming income are limited to the next 30 days. Credit cards are payment methods apart from accounts. A charge raises card debt and hits this month's result without moving the bank. Paying the card from a funding account is a debt payment, not an expense, and does not change net worth. Talk has voice parity for Finance: accounts, investments, cash, debts, cards, expenses, incomes, charges, and pay-card. A whole-app translation audit covers English, Spanish, German, Portuguese, and Valencian (en, es, de, pt, ca-ES-valencia), including calendar titles that were previously hardcoded. 0.1.43 makes Finance phone-first. Filters are a scrolling date-range row plus a Filters sheet, and the action bar sits above the Finance tabs so Program a bill is not covered. The same clipping pattern is tightened elsewhere. Live daily FX uses ordered multi-provider failover. api.frankfurter.app now 301s to api.frankfurter.dev, and the old redirect allowlist refused the new host, so every fiat fetch failed. Fiat now tries Frankfurter on api.frankfurter.dev, then open.er-api.com, ECB, and currency-api on jsDelivr and pages.dev. Crypto tries CoinGecko, Coinbase, Kraken, then currency-api. One book is kept per local day. Settings Refresh forces a fetch. Manual rates in Settings are the last resort. There are no invented rates, no 1:1, and no silent USD fallback. Unpaid scheduled expenses, payments, income, and investment payouts appear as all-day items on the in-app Calendar on each due date, for example rent on the 20th. Existing Time reminders and Spoken alerts are unchanged. 0.1.42 opens Finance on net worth, then this month's expenses, then income, then the month's result. A thumb-zone tab bar lists Overview, Expenses, Income, Accounts, and Charts. The rate book is only in Settings. Live Frankfurter and CoinGecko rates still load in the background as in 0.1.41. 0.1.41 uses today's live exchange rate, with manual rates in Settings. Finance fetches Frankfurter and CoinGecko when the screen opens, when the local day changes, and when a needed pair is missing. A rate fetched today wins, then a labeled stale cache, then a Settings manual rate unless that rate is marked as an override. Overview sections share one column width. 0.1.40 shows combined Finance totals in the Settings currency on Overview, charts, the PDF, and voice. A missing rate asks for a real rate instead of leading with a per-currency stack, and native amounts stay on each item. Themes add Midnight, Carbon, Ivory, Sand, Forest, Plum, and a custom palette. Home-screen widgets follow the theme and show those combined totals. 0.1.39 adds Finance schedules for one-off and recurring income and expenses, including fixed-term runs such as a 9-month 270 EUR course, open-ended rent with no lifetime total, subscriptions, planned income, and investment payouts such as Nitroeggs with a quoted value settled in another currency. Overview is five cards: net worth right now, this month's cash flow, Coming expenses, Coming income, and If these land. Display-only multi-currency conversion uses Frankfurter, CoinGecko, cached, or manual rates; native amounts stay, and a missing rate omits the combined total. Next 30 days is its own panel of planned in and out, with overdue listed separately. Missing Spanish, German, Portuguese, and Valencian UI, PDF, and voice strings are filled in, PDF accents are distinct, and phone layout fixes keep Finance panels from scrolling sideways, wrap the program sheet, and label reminders for one day and a week. 0.1.38 adds an app-wide magazine look, Graphite, Ink, Stone, and System themes, a keyboard inset under the focused input, a default currency in reorganized Settings, and Finance cash-flow, upcoming bills, and debt payoff. 0.1.37 adds separate Finance accounts, phone charts, a PDF summary, and payment reminders. 0.1.36 adds a default music player, Musify voice control, and searchable Settings. 0.1.35 adds an on-device Finance tab and Talk money tools, optional Spanish speech and voice packs, LFM2.5 350M for on-device Talk, local music from Talk, and a custom audio file or YouTube sound on in-app alarms. Spanish, German, Portuguese, and Valencian screen copy is complete, and the phone layout was reviewed for one-handed use. 0.1.34 fixes the blank screen after launch for already-onboarded users (the 0.1.33 hook crash). In 0.1.33, Settings lists all 28 Grok voices and the 10 OpenAI Realtime voices, each with a preview. System back walks in-app screens. Back and add sit in the bottom bar. A wake-word watchdog restarts listening if the microphone stalls, and Settings shows the background-listening status. Spoken mode posts the banner on a silent channel, so the normal chime no longer plays over the voice. If a sound still plays, speech waits for it. The spoken voice plays at full level on the alarm stream, and the phone’s alarm volume is the only ceiling. An optional name in Settings lets reminders be spoken in the second person, for example “Hey Gabriel, remember to brush your teeth.” Normal mode is unchanged and remains the default. Talk-created reminders, events, alarms, and countdowns stay in this app; that shipped in 0.1.30. They fire through this app’s notifications. “In 5 minutes” is an in-app reminder instead of a phone Clock countdown. Talk does not write these creates to the phone Clock, and Talk-created events go to the app calendar. Reading the phone calendar is unchanged. An event added from the Calendar screen, while calendar access is granted, still goes to the phone calendar. Person-date visibility is unchanged.</dd>
+              <dt>Where is the code map?</dt>
+              <dd><a href="develop.html">Developer notes</a> cover the Tauri and Android layout, the arm64 build, signing, the Release APK workflow, versioning, packs, translations, and tests. <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> is the short path for a change.</dd>
             </div>
           </dl>
         </div>
@@ -308,31 +234,8 @@
 
     <footer>
       <div class="wrap">
-        <p>Grok Voice 0.1.64 · <a href="https://github.com/Gabo-Tech/grok-voice-android">Gabo-Tech/grok-voice-android</a></p>
+        <p>Grok Voice 0.1.64 · <a href="https://github.com/Gabo-Tech/grok-voice-android">Gabo-Tech/grok-voice-android</a> · MIT</p>
         <p>Built by <a href="https://gabo.is-a.dev">Gabriel Clemente</a></p>
-        <p>Made with ❤️ by <a href="https://solutions.gabo.rocks/" target="_blank" rel="noopener">GABO</a></p>
-        <p class="also">
-          Also:
-          <a href="https://miningcalculator.gabo.rocks/">Mining Profit Lab</a>
-          ·
-          <a href="https://financetracker.putopulse.org/">Aurelia</a>
-          ·
-          <a href="https://threadly.putopulse.org/">Threadly</a>
-        </p>
-        <div class="featured">
-          <p>Featured on</p>
-          <div class="featured-badges">
-            <a href="https://tinylaunch.com/launch/30066-grok-voice" target="_blank" rel="noopener">
-              <img src="https://tinylaunch.com/tinylaunch_badge_launching_soon.svg" alt="TinyLaunch Badge" width="619" height="188" />
-            </a>
-            <a href="https://fazier.com" target="_blank">
-              <img src="https://fazier.com/api/v1//public/badges/launch_badges.svg?badge_type=launched&theme=light" width="103" height="44" alt="Fazier badge" />
-            </a>
-            <a href="https://launch.cab/product/grok-voice?utm_source=gabo-tech.github.io&utm_medium=badge" target="_blank" rel="noopener">
-              <img src="https://launch.cab/badges/featured.svg" alt="Grok Voice on launch.cab" width="116" height="38" />
-            </a>
-          </div>
-        </div>
       </div>
     </footer>
     <script src="./main.js"></script>
