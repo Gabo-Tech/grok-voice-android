@@ -65,7 +65,7 @@ export function MorePage({
   onAuth: (auth: AuthStatus) => void;
   onWake: (s: WakewordStatus) => void;
   onSignedOut: () => void;
-  onReplayTour: () => void;
+  onReplayTour: (step?: string) => void;
   finance: FinanceState;
   onAppearance: (choice: ReturnType<typeof normalizeAppearance>) => void;
 }) {
@@ -224,10 +224,11 @@ export function MorePage({
               setSettings(next);
               void api.saveSettings(next).then(setSettings).catch(() => setSettings(next));
             }}
-            onOpenTour={() => {
-              const next = { ...settings, onboarded: false, setupStep: "language" };
+            onOpenTour={(step) => {
+              const resume = step && step !== "done" ? step : "path";
+              const next = { ...settings, onboarded: false, setupStep: resume };
               setSettings(next);
-              void api.saveSettings(next).finally(() => onReplayTour());
+              void api.saveSettings(next).finally(() => onReplayTour(resume));
             }}
           />
         ) : (
@@ -542,7 +543,14 @@ export function MorePage({
       id: "appearance",
       title: t("Appearance"),
       hint: `${t("Theme")} ${t("Graphite")} ${t("Ink")} ${t("Stone")} ${t("Midnight")} ${t("Carbon")} ${t("Ivory")} ${t("Sand")} ${t("Forest")} ${t("Plum")} ${t("System")} ${t("Custom")}`,
-      extra: <ThemePicker settings={settings} onChange={saveLook} />,
+      extra: (
+        <>
+          <ThemePicker settings={settings} onChange={saveLook} />
+          <p data-widget-note className="px-1 pt-4 text-sm leading-6 text-muted-foreground">
+            {t("Home screen widgets use this theme and the currency in Settings. Add Listen, reminders, the schedule, net worth, this month, or the next 30 days from the phone's home screen.")}
+          </p>
+        </>
+      ),
       rows: [],
     },
     {

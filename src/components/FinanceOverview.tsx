@@ -351,14 +351,14 @@ export function FinanceOverview({
         <button type="button" className="fin-chip" aria-pressed={customizing} onClick={() => setCustomizing((value) => !value)}>{t("Customize dashboard")}</button>
       </div>
       {layout.preset === "custom" ? (
-        <div className="mt-2 flex flex-wrap gap-2" data-swipe-ignore="">
-          <label className="text-[13px] leading-4">
+        <div className="mt-2 flex min-w-0 flex-wrap gap-2" data-swipe-ignore="">
+          <label className="min-w-0 flex-1 text-[13px] leading-4">
             {t("From")}
-            <input type="date" className="mt-1 block h-11 border border-[var(--line)] bg-transparent px-2 text-[15px]" value={layout.start} onChange={(event) => setLayout((current) => ({ ...current, start: event.target.value }))} />
+            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-[15px]" value={layout.start} onChange={(event) => setLayout((current) => ({ ...current, start: event.target.value }))} />
           </label>
-          <label className="text-[13px] leading-4">
+          <label className="min-w-0 flex-1 text-[13px] leading-4">
             {t("To")}
-            <input type="date" className="mt-1 block h-11 border border-[var(--line)] bg-transparent px-2 text-[15px]" value={layout.end} onChange={(event) => setLayout((current) => ({ ...current, end: event.target.value }))} />
+            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-[15px]" value={layout.end} onChange={(event) => setLayout((current) => ({ ...current, end: event.target.value }))} />
           </label>
         </div>
       ) : null}

@@ -68,6 +68,12 @@ export function recoveryFor(message: string): { hint: string; go?: SettingsDesti
       go: "voice",
     };
   }
+  if (/1min\.ai|invalid api key|incorrect api key|api key|unauthorized/.test(text)) {
+    return {
+      hint: "Check the key in Voice and AI. Create a new one if it was refused, then try Talk again.",
+      go: "voice",
+    };
+  }
   if (/offline|couldn't reach|could not reach|timed out|network|connection/.test(text)) {
     return {
       hint: "Check the connection. On device still answers offline after its packs are on the phone.",

@@ -1,11 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api, errorText, type AuthStatus, type OfflinePlan, type PackProgress, type PermissionStatus } from "@/lib/api";
+import { api, errorText, type AuthStatus, type OfflinePlan, type PackProgress, type PermissionStatus, type PlanPiece } from "@/lib/api";
 import { fill, setAppLocale, useT } from "@/lib/i18n";
+import { safeHttps } from "@/lib/links";
+import {
+  KEY_GUIDES,
+  PATHS,
+  PROGRESS,
+  adviceFor,
+  formatAdvice,
+  memorySentence,
+  pathFromScreen,
+  progressIndex,
+  reportedPhoneBytes,
+  screenFor,
+  type SetupPath,
+  type SetupScreen,
+} from "@/lib/setupGuide";
 import { englishSetupPlan, formatBytes } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
@@ -17,19 +32,7 @@ const LANGS = [
   { id: "ca", label: "Valencian" },
 ] as const;
 
-const STEPS = [
-  { id: "language", label: "Language" },
-  { id: "packs", label: "Offline pack" },
-  { id: "preview", label: "Voice preview" },
-  { id: "cloud", label: "Cloud key" },
-] as const;
-
-function stepIndex(raw: string | undefined): number {
-  if (raw === "preview") return 2;
-  if (raw === "cloud") return 3;
-  if (raw === "packs" || raw === "packs-run") return 1;
-  return 0;
-}
+const CLOUD: Array<"xai" | "openai" | "onemin"> = ["xai", "openai", "onemin"];
 
 function guessLang(locale: string): (typeof LANGS)[number]["id"] {
   const tag = locale.trim().toLowerCase().replace(/_/g, "-");
@@ -50,6 +53,42 @@ function playWav(wavBase64: string) {
   return audio.play();
 }
 
+async function openGuideLink(url: string) {
+  if (!safeHttps(url)) return;
+  if (isTauri()) {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+  const t = useT();
+  return (
+    <section className="space-y-2">
+      <h2 className="chapter">
+        {n}. {t(title)}
+      </h2>
+      <div className="space-y-3 text-sm leading-6 text-muted-foreground">{children}</div>
+    </section>
+  );
+}
+
+function PackList({ pieces, ready }: { pieces: PlanPiece[]; ready: Set<string> }) {
+  const t = useT();
+  return (
+    <ul className="divide-y divide-border border-y border-border">
+      {pieces.map((piece) => (
+        <li key={piece.id} className="flex min-h-12 items-center justify-between gap-3 text-sm text-foreground">
+          <span>{t(piece.label)}</span>
+          <span className="text-muted-foreground">{ready.has(piece.id) ? t("Downloaded") : formatBytes(piece.bytes)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function Onboarding({
   auth,
   preview,
@@ -68,31 +107,40 @@ export function Onboarding({
   onFinished: (step: "done" | "skipped") => void;
 }) {
   const t = useT();
-  const [step, setStep] = useState(() => stepIndex(initialStep));
+  const demoFailed = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("guide") === "error";
+  const [screen, setScreen] = useState<SetupScreen>(() => screenFor(demoFailed ? "local" : initialStep));
+  const [path, setPath] = useState<SetupPath>(() => pathFromScreen(screenFor(initialStep)));
   const [lang, setLang] = useState<(typeof LANGS)[number]["id"]>(() => guessLang(locale || (typeof navigator === "undefined" ? "" : navigator.language)));
   const [plan, setPlan] = useState<OfflinePlan | null>(null);
   const [ready, setReady] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<PackProgress | null>(null);
   const [doneBytes, setDoneBytes] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [cloud, setCloud] = useState<"xai" | "openai">("xai");
+  const [error, setError] = useState<string | null>(demoFailed ? "Download stopped. What is already on the phone stays. Try again." : null);
+  const [failed, setFailed] = useState(demoFailed);
+  const [cloud, setCloud] = useState<"xai" | "openai" | "onemin">(() => {
+    const opened = screenFor(initialStep);
+    return opened === "openai" || opened === "onemin" ? opened : "xai";
+  });
   const [key, setKey] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
   const [perms, setPerms] = useState<PermissionStatus | null>(null);
   const [playing, setPlaying] = useState(false);
   const [cellular, setCellular] = useState(false);
   const resumed = useRef(false);
-  const id = STEPS[step].id;
+  const advice = adviceFor(reportedPhoneBytes());
+  const sized = formatAdvice(advice);
 
   useEffect(() => {
     let alive = true;
     const load = preview || !isTauri() ? Promise.resolve(englishSetupPlan()) : api.offlinePlan();
-    void load.then((next) => {
-      if (alive) setPlan(next);
-    }).catch(() => {
-      if (alive) setPlan(englishSetupPlan());
-    });
+    void load
+      .then((next) => {
+        if (alive) setPlan(next);
+      })
+      .catch(() => {
+        if (alive) setPlan(englishSetupPlan());
+      });
     return () => {
       alive = false;
     };
@@ -119,15 +167,17 @@ export function Onboarding({
   }, []);
 
   useEffect(() => {
-    if (id !== "preview" || preview || !isTauri()) return;
+    if (screen !== "test" || preview || !isTauri()) return;
     void api.permissionsStatus().then(setPerms).catch(() => {});
-  }, [id, preview]);
+  }, [screen, preview]);
 
   const screenLocale = lang === "ca" ? "ca-ES-valencia" : lang;
   const pieces = plan?.pieces ?? [];
   const totalBytes = pieces.reduce((sum, piece) => sum + piece.bytes, 0);
   const currentBytes = progress && progress.total > 0 ? progress.received : 0;
   const ratio = totalBytes > 0 ? Math.min(100, Math.round(((doneBytes + currentBytes) / totalBytes) * 100)) : 0;
+  const packsReady = pieces.length > 0 && pieces.every((piece) => ready.has(piece.id));
+  const needsPacks = path === "local" || path === "mixed" || path === "onemin" || screen === "local";
 
   const refreshReady = async () => {
     if (!isTauri()) return new Set<string>();
@@ -142,6 +192,15 @@ export function Onboarding({
     }
     setReady(ids);
     return ids;
+  };
+
+  const remember = async (nextStep: string, withLang: boolean) => {
+    if (!isTauri()) {
+      if (withLang) setAppLocale(screenLocale);
+      return;
+    }
+    const saved = await api.saveSetup(withLang ? lang : null, nextStep);
+    if (withLang) setAppLocale(saved.locale || screenLocale);
   };
 
   const download = async () => {
@@ -192,8 +251,7 @@ export function Onboarding({
         setProgress(null);
       }
       setReady(new Set(have));
-      if (isTauri()) await api.saveSetup(null, "preview");
-      setStep(2);
+      if (isTauri()) await api.saveSetup(null, path === "mixed" || path === "onemin" ? path : "local");
     } catch (err) {
       setError(errorText(err));
       setFailed(true);
@@ -203,27 +261,34 @@ export function Onboarding({
   };
 
   useEffect(() => {
-    if (!autoResume || resumed.current || !plan || step !== 1) return;
+    if (!autoResume || resumed.current || !plan || screen !== "local") return;
     resumed.current = true;
     void download();
-    // Resume once, after the plan for this language is known.
+    // Resume once, after the plan is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoResume, plan, step]);
-
-  const remember = async (nextStep: string, withLang: boolean) => {
-    if (!isTauri()) {
-      if (withLang) setAppLocale(screenLocale);
-      return;
-    }
-    const saved = await api.saveSetup(withLang ? lang : null, nextStep);
-    if (withLang) setAppLocale(saved.locale || screenLocale);
-  };
+  }, [autoResume, plan, screen]);
 
   const finish = async (next: "done" | "skipped") => {
     setBusy(true);
     setError(null);
     try {
-      if (!preview) await remember(next, next === "skipped" && step === 0);
+      if (!preview && isTauri()) {
+        if (next === "done") {
+          await remember("done", false);
+        } else {
+          const current = await api.getSettings();
+          const step = screen === "test" ? "test" : screen;
+          await api.saveSettings({
+            ...current,
+            onboarded: true,
+            setupStep: step,
+            locale: screen === "language" ? screenLocale : current.locale,
+          });
+          if (screen === "language") setAppLocale(screenLocale);
+        }
+      } else if (!preview && screen === "language") {
+        setAppLocale(screenLocale);
+      }
       onFinished(next);
     } catch (err) {
       setError(errorText(err));
@@ -232,48 +297,30 @@ export function Onboarding({
     }
   };
 
-  const next = async () => {
+  const go = async (next: SetupScreen, savedStep: string, withLang = false) => {
     setError(null);
-    if (id === "language") {
-      setBusy(true);
-      try {
-        await remember("packs", true);
-        setStep(1);
-      } catch (err) {
-        setError(errorText(err));
-      } finally {
-        setBusy(false);
+    setBusy(true);
+    try {
+      await remember(savedStep, withLang);
+      if (isTauri() && (next === "local" || next === "mixed" || next === "xai" || next === "openai" || next === "onemin")) {
+        const current = await api.getSettings();
+        await api.saveSettings({ ...current, preferLocalOnWake: next === "local" || next === "mixed", setupStep: savedStep });
       }
-      return;
+      if (next === "xai" || next === "openai" || next === "onemin" || next === "mixed" || next === "local") setPath(next);
+      setScreen(next);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
     }
-    if (id === "packs") {
-      if (failed || pieces.length === 0 || pieces.every((piece) => ready.has(piece.id))) {
-        try {
-          await remember("preview", false);
-        } catch (err) {
-          setError(errorText(err));
-          return;
-        }
-        setStep(2);
-        return;
-      }
-      await download();
-      return;
-    }
-    if (id === "preview") {
-      try {
-        await remember("cloud", false);
-      } catch (err) {
-        setError(errorText(err));
-        return;
-      }
-      setStep(3);
-      return;
-    }
-    await finish("done");
   };
 
   const saveCloud = async () => {
+    const provider = screen === "mixed" ? cloud : screen === "openai" || screen === "onemin" || screen === "xai" ? screen : cloud;
+    if (key.trim().length < 12) {
+      setError(KEY_GUIDES[provider].short);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -281,13 +328,23 @@ export function Onboarding({
         onAuth({
           ...auth,
           hasKey: true,
-          accounts: [...auth.accounts, { id: `demo-${cloud}`, provider: cloud, hint: "demo…key" }],
+          accounts: [...auth.accounts.filter((account) => account.provider !== provider), { id: `demo-${provider}`, provider, hint: "demo…key" }],
         });
-        setKey("");
-        return;
+      } else {
+        onAuth(await api.addVoiceAccount(provider, key.trim()));
       }
-      onAuth(await api.addVoiceAccount(cloud, key.trim()));
       setKey("");
+      setKeySaved(true);
+      if (isTauri() && screen !== "mixed") {
+        const list = (await api.authStatus()).accounts;
+        const index = list.findIndex((account) => account.provider === provider);
+        if (index > 0) {
+          const ids = list.map((account) => account.id);
+          const [kept] = ids.splice(index, 1);
+          ids.unshift(kept);
+          onAuth(await api.reorderVoiceAccounts(ids));
+        }
+      }
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -325,143 +382,321 @@ export function Onboarding({
     }
   };
 
-  const packsReady = pieces.length === 0 || pieces.every((piece) => ready.has(piece.id));
+  const back = () => {
+    setError(null);
+    if (screen === "path") setScreen("language");
+    else if (screen === "test") setScreen(path);
+    else setScreen("path");
+  };
+
+  const next = async () => {
+    if (screen === "language") {
+      await go("path", "path", true);
+      return;
+    }
+    if (screen === "path") {
+      await go(path, path);
+      return;
+    }
+    if (screen === "test") {
+      await finish("done");
+      return;
+    }
+    if ((screen === "local" || screen === "mixed" || screen === "onemin") && !packsReady && !failed && pieces.length > 0) {
+      await download();
+      return;
+    }
+    await go("test", "test");
+  };
+
+  const index = progressIndex(screen);
+  const guide = cloud === "openai" || cloud === "onemin" || cloud === "xai" ? KEY_GUIDES[cloud] : KEY_GUIDES.xai;
+  const activeKey = screen === "xai" || screen === "openai" || screen === "onemin" ? KEY_GUIDES[screen] : guide;
+  const sentence = memorySentence(advice);
+  const memoryPairs = { ...sentence.pairs };
+  if (memoryPairs.fit) memoryPairs.fit = t(memoryPairs.fit);
+  const memoryLine = fill(sentence.template, memoryPairs);
+
+  const packBlock = (
+    <>
+      <p>{t("Use Wi-Fi. If the download stops, what is already here stays, and setup continues from this screen.")}</p>
+      {cellular ? <p className="text-foreground">{t("You appear to be on mobile data. Wi-Fi is a better way to download this.")}</p> : null}
+      <p className="text-base text-foreground">{fill("The first download is about {size}. It is Moonshine, SmolLM2, and Phonon.", { size: formatBytes(totalBytes || advice.storageBytes) })}</p>
+      <PackList pieces={pieces} ready={ready} />
+      {totalBytes > 0 ? (
+        <div className="h-2 bg-border" role="progressbar" aria-valuenow={ratio} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full bg-foreground" style={{ width: `${ratio}%` }} />
+        </div>
+      ) : null}
+      {failed ? (
+        <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void download()}>
+          {t("Retry download")}
+        </Button>
+      ) : null}
+    </>
+  );
+
+  const keyBlock = (which: "xai" | "openai" | "onemin") => {
+    const item = KEY_GUIDES[which];
+    return (
+      <>
+        <p>{t(item.save)}</p>
+        <Input
+          type="password"
+          autoComplete="off"
+          value={key}
+          placeholder={item.placeholder}
+          aria-label={t(which === "xai" ? "Paste the xAI key" : which === "onemin" ? "Paste the 1min.ai key" : "Paste the OpenAI key")}
+          onChange={(event) => {
+            setKey(event.target.value);
+            setKeySaved(false);
+          }}
+        />
+        {key.trim().length > 0 && key.trim().length < 12 ? <p className="text-foreground">{t(item.short)}</p> : null}
+        <Button type="button" className="w-full" disabled={busy || key.trim().length < 12} onClick={() => void saveCloud()}>
+          {t("Save this key")}
+        </Button>
+        {keySaved ? <p className="text-foreground">{t("Key saved on this phone.")}</p> : null}
+      </>
+    );
+  };
+
+  let primary = t("Next");
+  if (screen === "test") primary = t("Start talking");
+  else if (screen === "local" || screen === "mixed" || screen === "onemin") {
+    if (failed) primary = t("Continue anyway");
+    else if (!packsReady && pieces.length > 0) primary = t("Download the offline pack");
+    else primary = t("Test this setup");
+  } else if (screen === "xai" || screen === "openai") primary = t("Test this setup");
 
   return (
-    <div className="flex h-full flex-col px-5 py-6">
-      <header className="mb-6 text-center">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-5 landscape:flex-row landscape:gap-8 landscape:px-6 landscape:py-4" data-setup={screen}>
+      <header className="mb-5 shrink-0 landscape:mb-0 landscape:flex landscape:w-52 landscape:flex-col">
         <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
-        <h1 className="masthead mt-2 text-3xl">Grok Voice</h1>
+        <h1 className="masthead mt-2 text-3xl landscape:text-2xl">Grok Voice</h1>
+        <ol className="mt-4 flex items-start gap-1 landscape:mt-6 landscape:flex-col landscape:gap-3">
+          {PROGRESS.map((item, itemIndex) => {
+            const state = itemIndex < index ? "done" : itemIndex === index ? "now" : "later";
+            return (
+              <li key={item} className="flex min-w-0 flex-1 flex-col items-center gap-1 landscape:flex-none landscape:flex-row landscape:gap-3">
+                <span
+                  className={cn(
+                    "grid size-8 place-items-center rounded-[var(--radius)] text-sm landscape:size-11",
+                    state === "now" ? "bg-foreground text-background" : "text-muted-foreground",
+                  )}
+                >
+                  {state === "done" ? <Check className="size-4" /> : itemIndex + 1}
+                </span>
+                <span className={cn("text-center text-[13px] leading-4 landscape:text-left", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item)}</span>
+              </li>
+            );
+          })}
+        </ol>
       </header>
 
-      <ol className="mb-6 flex items-start gap-1">
-        {STEPS.map((item, index) => {
-          const state = index < step ? "done" : index === step ? "now" : "later";
-          return (
-            <li key={item.id} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-              <span
-                className={cn(
-                  "text-[13px] leading-4",
-                  state === "now" ? "text-foreground underline decoration-[var(--brand)] underline-offset-4" : "text-muted-foreground",
-                )}
-              >
-                {state === "done" ? <Check className="mx-auto size-3.5" /> : index + 1}
-              </span>
-              <span className={cn("text-center text-xs", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item.label)}</span>
-            </li>
-          );
-        })}
-      </ol>
-
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
-        {id === "language" && (
-          <>
-            <p className="text-sm leading-6 text-muted-foreground">{t("This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.")}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {LANGS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setLang(item.id)}
-                  className={cn("min-h-12 px-3 text-sm", lang === item.id ? "bg-foreground text-background" : "text-muted-foreground")}
-                >
-                  {t(item.label)}
-                </button>
-              ))}
-            </div>
-            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
-          </>
-        )}
-
-        {id === "packs" && plan && (
-          <>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {t("Use Wi-Fi if you can. These files stay on the phone. If the download stops, setup continues from here.")}
-            </p>
-            {cellular ? <p className="text-sm leading-6 text-foreground">{t("You appear to be on mobile data. Wi-Fi is a better way to download this.")}</p> : null}
-            <p className="text-base text-foreground">{fill("About {size}", { size: formatBytes(totalBytes) })}</p>
-            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
-            <ul className="divide-y divide-border border-y border-border">
-              {pieces.map((piece) => (
-                <li key={piece.id} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <span>{t(piece.label)}</span>
-                  <span className="text-muted-foreground">{ready.has(piece.id) ? t("Downloaded") : formatBytes(piece.bytes)}</span>
-                </li>
-              ))}
-            </ul>
-            {totalBytes > 0 ? (
-              <div className="h-2 bg-border" role="progressbar" aria-valuenow={ratio} aria-valuemin={0} aria-valuemax={100}>
-                <div className="h-full bg-foreground" style={{ width: `${ratio}%` }} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-3">
+          {screen === "language" && (
+            <>
+              <p className="text-sm leading-6 text-muted-foreground">{t("This sets the screen language. You can change it later in Settings. The first offline voice is English until you add another in Voice and AI.")}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {LANGS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setLang(item.id)}
+                    className={cn("min-h-12 px-3 text-left text-sm", lang === item.id ? "bg-foreground text-background" : "text-muted-foreground")}
+                  >
+                    {t(item.label)}
+                  </button>
+                ))}
               </div>
-            ) : null}
-            {failed ? (
-              <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void download()}>
-                {t("Retry download")}
-              </Button>
-            ) : null}
-          </>
-        )}
+              <p className="text-sm leading-6 text-muted-foreground">{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
+            </>
+          )}
 
-        {id === "preview" && (
-          <>
-            <p className="text-sm leading-6 text-muted-foreground">{t("The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.")}</p>
-            <Button type="button" className="w-full" disabled={playing || busy} onClick={() => void play()}>
-              {playing ? t("Playing") : t("Play this voice")}
-            </Button>
-            <p className="text-sm leading-6 text-muted-foreground">{t("Setup downloads the English voice. Add Spanish, German, Piper, or a token model later in Voice and AI.")}</p>
-            <p className="text-sm leading-6 text-muted-foreground">{t("Allow the microphone before the first talk. You can also do this later.")}</p>
-            <Button type="button" variant="outline" className="w-full" disabled={busy || perms?.microphone === "granted"} onClick={() => void allowMic()}>
-              {perms?.microphone === "granted" ? t("Microphone allowed") : t("Allow microphone")}
-            </Button>
-            <p className="text-sm leading-6 text-muted-foreground">{t("Hey Grok can be trained later under Wake word.")}</p>
-            {packsReady ? <p className="text-sm text-foreground">{t("This phone is ready to talk with no network.")}</p> : null}
-          </>
-        )}
+          {screen === "path" && (
+            <>
+              <h2 className="text-2xl font-medium tracking-tight">{t("How should Talk answer?")}</h2>
+              <p className="text-sm leading-6 text-muted-foreground">{t("Pick one path. You can add the others later in Voice and AI.")}</p>
+              <div className="flex flex-col">
+                {PATHS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setPath(item.id)}
+                    className={cn("min-h-12 px-3 py-2 text-left", path === item.id ? "bg-foreground text-background" : "text-foreground")}
+                  >
+                    <span className="block text-base">{t(item.title)}</span>
+                    <span className={cn("mt-1 block text-sm leading-5", path === item.id ? "text-background" : "text-muted-foreground")}>{t(item.blurb)}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">{t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")}</p>
+            </>
+          )}
 
-        {id === "cloud" && (
-          <>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {t("Add a cloud key if you want one. You can skip this and add it later in Voice and AI.")}
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {(["xai", "openai"] as const).map((item) => (
-                <button key={item} type="button" onClick={() => setCloud(item)} className={cn("min-h-12 border text-sm", cloud === item ? "border-foreground" : "border-border text-muted-foreground")}>
-                  {item === "xai" ? "xAI" : "OpenAI"}
+          {screen === "local" && (
+            <>
+              <h2 className="text-2xl font-medium tracking-tight">{t("On this phone")}</h2>
+              <Step n={1} title="What it needs">
+                <p>{t("Nothing to buy. The files download into this phone. No account and no token.")}</p>
+                <p>{t("Moonshine turns speech into text. llama.cpp runs the chat model. Phonon or Piper speaks.")}</p>
+              </Step>
+              <Step n={2} title="Memory">
+                <p className="text-foreground">{memoryLine}</p>
+                <p>{fill("Piper English is a separate file of about {piper}. Phonon speaks first and needs no account. You can switch to Piper in Voice and AI.", { piper: sized.piper })}</p>
+              </Step>
+              <Step n={3} title="Storage">
+                {packBlock}
+              </Step>
+              <Step n={4} title="Test it">
+                <p>{t("Play the voice. Then open Talk and say hello with the network off. A reply means the phone can answer alone.")}</p>
+              </Step>
+              <Step n={5} title="If this fails">
+                <p>{t("If the download stops, try it again. What is already on the phone stays. If a model does not fit, keep SmolLM2 or add a cloud key. If there is no reply, check that Moonshine, the chat model, and Phonon or Piper are on this phone.")}</p>
+              </Step>
+            </>
+          )}
+
+          {(screen === "xai" || screen === "openai" || screen === "onemin") && (
+            <>
+              <h2 className="text-2xl font-medium tracking-tight">{t(screen === "xai" ? "xAI" : screen === "openai" ? "OpenAI" : "1min.ai")}</h2>
+              <p className="text-sm leading-6 text-muted-foreground">{t(PATHS.find((item) => item.id === screen)?.blurb || "")}</p>
+              <Step n={1} title="Get the key">
+                <p>{t(activeKey.where)}</p>
+                <button type="button" className="min-h-11 text-left text-sm text-foreground underline" onClick={() => void openGuideLink(activeKey.url)}>
+                  {t("Open the key page")}
                 </button>
-              ))}
-            </div>
-            <Input type="password" autoComplete="off" value={key} placeholder={cloud === "xai" ? "xai-…" : "sk-…"} onChange={(event) => setKey(event.target.value)} />
-            <Button type="button" variant="outline" className="w-full" disabled={busy || key.trim().length < 12} onClick={() => void saveCloud()}>
-              {t("Save this key")}
-            </Button>
-            <p className="text-sm leading-6 text-muted-foreground">{t("A cloud key is optional. The phone can answer without one after the offline pack is downloaded.")}</p>
-            <p className="text-sm leading-6 text-muted-foreground">{t("Messages and calls stay off until you allow them under Settings, Phone access. Notification text is read on this phone. A cloud model sees it only during a conversation you started.")}</p>
-          </>
-        )}
-      </div>
+              </Step>
+              <Step n={2} title="What it needs">
+                <p>{t(activeKey.cost)}</p>
+              </Step>
+              <Step n={3} title="Save the key">
+                {keyBlock(screen)}
+              </Step>
+              {screen === "onemin" ? (
+                <Step n={4} title="Hearing and voice">
+                  <p>{t("1min.ai still needs this phone to hear you and to speak. Download the offline pack before the first talk.")}</p>
+                  {packBlock}
+                </Step>
+              ) : null}
+              <Step n={screen === "onemin" ? 5 : 4} title="Test it">
+                <p>{t(activeKey.test)}</p>
+              </Step>
+              <Step n={screen === "onemin" ? 6 : 5} title="If this fails">
+                <p>{t(activeKey.error)}</p>
+              </Step>
+            </>
+          )}
 
-      {error ? (
-        <p role="alert" className="mt-3 text-sm leading-6 text-foreground">
-          {t(error)}
-        </p>
-      ) : null}
-      {failed && id === "packs" ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Download stopped. What is already on the phone stays. Try again.")}</p> : null}
+          {screen === "mixed" && (
+            <>
+              <h2 className="text-2xl font-medium tracking-tight">{t("Phone, then a cloud key")}</h2>
+              <Step n={1} title="What it needs">
+                <p>{t("Two parts. The phone answers when it can. A cloud key answers when the phone cannot.")}</p>
+                <p>{t("Download the offline pack first. Then save one cloud key: xAI, OpenAI, or 1min.ai.")}</p>
+                <p>{t("Talk tries this phone first when the packs are ready. If a pack is missing, the model will not load, or memory is low, Talk uses the cloud key.")}</p>
+                <p className="text-foreground">{memoryLine}</p>
+              </Step>
+              <Step n={2} title="On this phone">
+                {packBlock}
+              </Step>
+              <Step n={3} title="Cloud fallback">
+                <p>{t("Which cloud key")}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {CLOUD.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => {
+                        setCloud(item);
+                        setKeySaved(false);
+                      }}
+                      className={cn("min-h-12 px-2 text-sm", cloud === item ? "bg-foreground text-background" : "text-muted-foreground")}
+                    >
+                      {t(item === "xai" ? "xAI" : item === "openai" ? "OpenAI" : "1min.ai")}
+                    </button>
+                  ))}
+                </div>
+                <p>{t(guide.where)}</p>
+                <button type="button" className="min-h-11 text-left text-sm text-foreground underline" onClick={() => void openGuideLink(guide.url)}>
+                  {t("Open the key page")}
+                </button>
+                <p>{t(guide.cost)}</p>
+                {keyBlock(cloud)}
+              </Step>
+              <Step n={4} title="Test it">
+                <p>{t("Play the voice with the network off. Then turn the network on and say hello again. If the packs are missing, the cloud key should answer instead.")}</p>
+              </Step>
+              <Step n={5} title="If this fails">
+                <p>{t("If the phone is silent, finish the download. If the cloud key is silent, check that key and the network. The order in Voice and AI is the order Talk uses.")}</p>
+              </Step>
+            </>
+          )}
 
-      <footer className="mt-4 flex flex-col gap-2 pt-2">
-        <div className="flex gap-2">
-          <Button variant="outline" disabled={step === 0 || busy} onClick={() => setStep((value) => Math.max(0, value - 1))}>
-            <ChevronLeft /> {t("Back")}
-          </Button>
-          <Button className="flex-1" disabled={busy || (id === "packs" && !plan)} onClick={() => void next()}>
-            {busy ? <Loader2 className="animate-spin" /> : <ChevronRight />}
-            {id === "cloud" ? t("Start talking") : id === "packs" && failed ? t("Continue anyway") : id === "packs" && !packsReady ? t("Download the offline pack") : t("Next")}
-          </Button>
+          {screen === "test" && (
+            <>
+              <h2 className="text-2xl font-medium tracking-tight">{t("Try it")}</h2>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {path === "local"
+                  ? t("Play the voice. Then open Talk and say hello with the network off. A reply means the phone can answer alone.")
+                  : path === "mixed"
+                    ? t("Play the voice with the network off. Then turn the network on and say hello again. If the packs are missing, the cloud key should answer instead.")
+                    : t(KEY_GUIDES[path === "openai" || path === "onemin" || path === "xai" ? path : "xai"].test)}
+              </p>
+              {needsPacks ? (
+                <Button type="button" className="w-full" disabled={playing || busy} onClick={() => void play()}>
+                  {playing ? t("Playing") : t("Play this voice")}
+                </Button>
+              ) : null}
+              <p className="text-sm leading-6 text-muted-foreground">{t("Allow the microphone before the first talk. You can also do this later.")}</p>
+              <Button type="button" variant="outline" className="w-full" disabled={busy || perms?.microphone === "granted"} onClick={() => void allowMic()}>
+                {perms?.microphone === "granted" ? t("Microphone allowed") : t("Allow microphone")}
+              </Button>
+              <p className="text-sm leading-6 text-muted-foreground">{t("Hey Grok can be trained later under Wake word.")}</p>
+              <p className="text-sm leading-6 text-foreground">{t("A reply in Talk means this path works. You can change it later in Voice and AI.")}</p>
+              {path === "local" && (packsReady || pieces.length === 0) ? <p className="text-sm text-foreground">{t("This phone is ready to talk with no network.")}</p> : null}
+              <Step n={1} title="If this fails">
+                <p>
+                  {path === "local"
+                    ? t("If the download stops, try it again. What is already on the phone stays. If a model does not fit, keep SmolLM2 or add a cloud key. If there is no reply, check that Moonshine, the chat model, and Phonon or Piper are on this phone.")
+                    : path === "mixed"
+                      ? t("If the phone is silent, finish the download. If the cloud key is silent, check that key and the network. The order in Voice and AI is the order Talk uses.")
+                      : t(KEY_GUIDES[path === "openai" || path === "onemin" ? path : "xai"].error)}
+                </p>
+              </Step>
+            </>
+          )}
         </div>
-        <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void finish("skipped")}>
-          {t("Finish later")}
-        </Button>
-        <p className="text-center text-xs leading-5 text-muted-foreground">{t("Setup can wait. Voice and AI in Settings finishes the download.")}</p>
-      </footer>
+
+        {error ? (
+          <p role="alert" className="mt-3 text-sm leading-6 text-foreground">
+            {t(error)}
+          </p>
+        ) : null}
+
+        <footer className="mt-3 flex shrink-0 flex-col gap-2 border-t border-border pt-3">
+          <div className="flex gap-2">
+            <Button variant="outline" disabled={screen === "language" || busy} onClick={back}>
+              <ChevronLeft /> {t("Back")}
+            </Button>
+            <Button className="flex-1" disabled={busy || ((screen === "local" || screen === "mixed" || screen === "onemin") && !plan)} onClick={() => void next()}>
+              {busy ? <Loader2 className="animate-spin" /> : <ChevronRight />}
+              {primary}
+            </Button>
+          </div>
+          {(screen === "mixed" || screen === "onemin") && primary !== t("Test this setup") ? (
+            <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void go("test", "test")}>
+              {t("Skip this key")}
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void finish("skipped")}>
+            {t("Finish later")}
+          </Button>
+          <p className="text-center text-[13px] leading-5 text-muted-foreground">{t("Setup can wait. Open Settings, then Voice and AI, and continue from the same path.")}</p>
+        </footer>
+      </div>
     </div>
   );
 }

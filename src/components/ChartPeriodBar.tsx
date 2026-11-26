@@ -56,14 +56,14 @@ export function ChartPeriodBar({
         ))}
       </div>
       {period.preset === "custom" ? (
-        <div className="mt-2 flex flex-wrap gap-2">
-          <label className="text-[13px] leading-4">
+        <div className="mt-2 flex min-w-0 flex-wrap gap-2">
+          <label className="min-w-0 flex-1 text-[13px] leading-4">
             {t("From")}
-            <input type="date" className="mt-1 block h-11 min-w-0 border border-[var(--fin-line)] bg-transparent px-2 text-[15px]" value={period.start} onChange={(event) => onChange({ ...period, preset: "custom", start: event.target.value })} />
+            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--fin-line)] bg-transparent px-0 text-[15px]" value={period.start} onChange={(event) => onChange({ ...period, preset: "custom", start: event.target.value })} />
           </label>
-          <label className="text-[13px] leading-4">
+          <label className="min-w-0 flex-1 text-[13px] leading-4">
             {t("To")}
-            <input type="date" className="mt-1 block h-11 min-w-0 border border-[var(--fin-line)] bg-transparent px-2 text-[15px]" value={period.end} onChange={(event) => onChange({ ...period, preset: "custom", end: event.target.value })} />
+            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--fin-line)] bg-transparent px-0 text-[15px]" value={period.end} onChange={(event) => onChange({ ...period, preset: "custom", end: event.target.value })} />
           </label>
         </div>
       ) : null}

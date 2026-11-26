@@ -10,7 +10,9 @@ import { Input } from "@/components/ui/input";
 import { api, errorText, type AuthStatus, type LocalPack, type OneMinModel, type Settings, type VoiceSetupStatus } from "@/lib/api";
 import { attemptOrder, packsReadyForTalk, providerLabel } from "@/lib/flow";
 import { fitLabel } from "@/lib/fit";
-import { useT } from "@/lib/i18n";
+import { fill, useT } from "@/lib/i18n";
+import { safeHttps } from "@/lib/links";
+import { KEY_GUIDES, PATHS, adviceFor, formatAdvice, memorySentence, reportedPhoneBytes } from "@/lib/setupGuide";
 import { OPENAI_VOICES, XAI_VOICES, voiceLabel } from "@/lib/voices";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +21,33 @@ const HEARING = [
   { id: "es", label: "Spanish", how: "NeMo" },
   { id: "de", label: "German", how: "NeMo" },
 ] as const;
+
+async function openGuideLink(url: string) {
+  if (!safeHttps(url)) return;
+  if (isTauri()) {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function LocalAdviceLine() {
+  const t = useT();
+  const advice = adviceFor(reportedPhoneBytes());
+  const sentence = memorySentence(advice);
+  const pairs = { ...sentence.pairs };
+  if (pairs.fit) pairs.fit = t(pairs.fit);
+  const sized = formatAdvice(advice);
+  return (
+    <>
+      <p className="text-sm leading-6 text-foreground">{fill(sentence.template, pairs)}</p>
+      <p className="text-sm leading-6 text-muted-foreground">
+        {fill("Piper English is a separate file of about {piper}. Phonon speaks first and needs no account. You can switch to Piper in Voice and AI.", { piper: sized.piper })}
+      </p>
+    </>
+  );
+}
 
 function pairValue(map: string | undefined, lang: string, fallback = "") {
   for (const part of (map ?? "").split(",")) {
@@ -39,7 +68,7 @@ export function VoiceHome({
   auth: AuthStatus;
   onAuth: (auth: AuthStatus) => void;
   onSettings: (next: Settings) => void;
-  onOpenTour: () => void;
+  onOpenTour: (step?: string) => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState<"hearing" | "brain" | "voice" | "order" | "advanced" | null>(askedSection());
@@ -95,7 +124,7 @@ export function VoiceHome({
   const downloaded = sttReady && llmReady && (engine === "android" || voiceReady);
   const cloudKey = accounts.some((account) => account.provider === "xai" || account.provider === "openai" || account.provider === "onemin");
   const textBrain = primary === "local" || primary === "onemin";
-  const unfinished = settings.setupStep === "skipped" || settings.setupStep === "language" || settings.setupStep === "packs" || settings.setupStep === "packs-run";
+  const unfinished = ["language", "path", "packs", "packs-run", "preview", "cloud", "local", "xai", "openai", "onemin", "mixed", "test", "skipped"].includes(settings.setupStep || "");
 
   const toggle = (id: typeof open) => setOpen((current) => (current === id ? null : id));
 
@@ -276,10 +305,19 @@ export function VoiceHome({
       </ul>
 
       {unfinished ? (
-        <Button type="button" variant="outline" className="w-full whitespace-normal" onClick={onOpenTour}>
-          {t("Finish offline setup")}
+        <Button type="button" variant="outline" className="w-full whitespace-normal" onClick={() => onOpenTour(settings.setupStep)}>
+          {t("Continue setup")}
         </Button>
       ) : null}
+
+      <div data-setup-paths className="space-y-1 px-1">
+        <p className="text-sm leading-6 text-muted-foreground">{t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")}</p>
+        {PATHS.map((item) => (
+          <button key={item.id} type="button" className="flex min-h-12 w-full items-center text-left text-base text-foreground underline" onClick={() => onOpenTour(item.id)}>
+            {t(item.title)}
+          </button>
+        ))}
+      </div>
 
       <Section
         title={t("Hearing")}
@@ -412,12 +450,24 @@ export function VoiceHome({
           ))}
         </div>
         {provider === "local" ? (
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("No key. Talk uses this phone when the packs below are ready. If a pack is missing or the model cannot load, the next key is used.")}</p>
+          <div className="mt-3 space-y-3">
+            <p className="text-sm leading-6 text-muted-foreground">{t("No key. Talk uses this phone when the packs below are ready. If a pack is missing or the model cannot load, the next key is used.")}</p>
+            <LocalAdviceLine />
+          </div>
         ) : (
-          <label className="mt-3 block">
-            <span className="mb-2 block text-sm text-muted-foreground">{provider === "xai" ? t("Paste the xAI key") : provider === "onemin" ? t("Paste the 1min.ai key") : t("Paste the OpenAI key")}</span>
-            <Input type="password" autoComplete="off" value={secret} placeholder={editing ? t("Leave blank to keep the saved key") : provider === "xai" ? "xai-…" : "sk-…"} onChange={(event) => setSecret(event.target.value)} />
-          </label>
+          <div data-order-guide className="mt-3 space-y-3">
+            <p className="text-sm leading-6 text-muted-foreground">{t(KEY_GUIDES[provider].where)}</p>
+            <button type="button" className="min-h-11 text-left text-sm text-foreground underline" onClick={() => void openGuideLink(KEY_GUIDES[provider].url)}>
+              {t("Open the key page")}
+            </button>
+            <p className="text-sm leading-6 text-muted-foreground">{t(KEY_GUIDES[provider].cost)}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t(KEY_GUIDES[provider].test)}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t(KEY_GUIDES[provider].error)}</p>
+            <label className="block">
+              <span className="mb-2 block text-sm text-muted-foreground">{provider === "xai" ? t("Paste the xAI key") : provider === "onemin" ? t("Paste the 1min.ai key") : t("Paste the OpenAI key")}</span>
+              <Input type="password" autoComplete="off" value={secret} placeholder={editing ? t("Leave blank to keep the saved key") : provider === "xai" ? "xai-…" : provider === "openai" ? "sk-…" : ""} onChange={(event) => setSecret(event.target.value)} />
+            </label>
+          </div>
         )}
         <Button type="button" className="mt-3 w-full" disabled={busy || (provider !== "local" && secret.trim().length < 12 && !editing)} onClick={() => void saveKey()}>
           {provider === "local" ? t("Use on device") : t("Save this key")}
@@ -442,7 +492,7 @@ export function VoiceHome({
             onEdit={(id, current) => {
               setEditing(id);
               setSecret("");
-              if (current === "xai" || current === "openai" || current === "local") setProvider(current);
+              if (current === "xai" || current === "openai" || current === "local" || current === "onemin") setProvider(current);
             }}
             onRemove={(id) => {
               void api.removeVoiceAccount(id).then(onAuth).catch((err) => setError(errorText(err)));
@@ -467,8 +517,8 @@ export function VoiceHome({
       </Section>
 
       <Section title={t("Advanced")} value={t("Set up offline voice")} open={open === "advanced"} onToggle={() => toggle("advanced")}>
-        <Button type="button" variant="outline" className="w-full whitespace-normal" onClick={onOpenTour}>
-          {t("Set up offline voice")}
+        <Button type="button" variant="outline" className="w-full whitespace-normal" onClick={() => onOpenTour("path")}>
+          {t("Set up again")}
         </Button>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           {t("A cloud key is optional. The phone can answer without one after the offline pack is downloaded.")}

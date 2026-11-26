@@ -1608,8 +1608,8 @@ function AccountSheet({
                 <Field label={t("Price each")}>
                   <Input inputMode="decimal" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
                 </Field>
-                <label className="mt-2 flex items-start gap-2 text-sm leading-5">
-                  <input type="checkbox" className="mt-1 size-4" checked={priceOverride} onChange={(event) => setPriceOverride(event.target.checked)} />
+                <label className="mt-2 flex min-h-12 items-center gap-3 text-sm leading-5">
+                  <input type="checkbox" className="size-5 shrink-0" checked={priceOverride} onChange={(event) => setPriceOverride(event.target.checked)} />
                   <span>{t("Use this instead of the live price")}</span>
                 </label>
               </>

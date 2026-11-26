@@ -20,12 +20,14 @@ Allow installs from unknown sources if Android asks. This package is signed with
 
 ## First launch
 
-A new install opens a setup tour and downloads the English offline pack: Moonshine, SmolLM2, and Phonon 31m. No Hugging Face token and no other-language pack. The tour remembers its step, so a closed app or a failed download can continue. **Finish later** leaves the tour and keeps what is already on the phone. **Settings → Voice and AI** opens it again. An install that already finished setup is not sent through the tour.
+A new install opens a setup tour. It asks for the screen language, then which path Talk should use. **Finish later** leaves the tour and keeps what is already on the phone. **Settings → Voice and AI** opens the same path again. An install that already finished setup is not sent through the tour.
 
-1. **Language.** The screen language: English, Spanish, German, Portuguese, or Valencian. The offline voice stays English.
-2. **Offline pack.** The screen shows the total size and the progress. Wi-Fi is the better way to fetch it. The files are Moonshine, SmolLM2, and Phonon 31m.
-3. **Voice preview.** Play the voice. The microphone can be allowed here. Hey Grok can be trained later.
-4. **Cloud key.** Optional. Paste an xAI key from [console.x.ai](https://console.x.ai/team/default/api-keys) or an OpenAI key, or skip it.
+1. **Language.** English, Spanish, German, Portuguese, or Valencian. The first offline voice stays English until you add another.
+2. **Path.** On this phone, xAI, OpenAI, 1min.ai, or the phone first with a cloud key after it.
+3. **Guide.** Each path says where the key comes from, what it costs or how much memory and storage it needs, how to test it, and what to do when it fails. The phone path uses the same memory check as Voice and AI. The first download is still Moonshine, SmolLM2, and Phonon 31m. Piper is the other voice on the phone.
+4. **Try it.** Play the voice, allow the microphone, then say hello in Talk.
+
+xAI keys come from [console.x.ai](https://console.x.ai/team/default/api-keys). OpenAI keys come from [platform.openai.com/api-keys](https://platform.openai.com/api-keys). A 1min.ai key is under Settings, API, at [app.1min.ai](https://app.1min.ai). 1min.ai writes the reply. Hearing and the voice stay on the phone, so that path still downloads the offline pack. No Hugging Face token is asked during setup.
 
 **Settings → Voice and AI** is the one screen for hearing, the model, the voice, and the order Talk tries. The offline voice starts as English. Spanish, German, Piper, the Android voice, and Phonon models that need a token can be added there later. xAI, OpenAI, and 1min.ai sit in the same list. Settings → Model picks the model for each one, and which provider answers. A key is entered on that provider, and the Hugging Face token is entered with the Phonon models. The list is the fallback order. Downloaded, key set, and offline-ready show at the top. Spend limits, the quiet gap, and Hey Grok stay on their own rows.
 

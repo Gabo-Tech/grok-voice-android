@@ -25,6 +25,13 @@ function cnShell(thumb: boolean) {
   return cn("app-safe flex h-full flex-col bg-background", thumb && "app-safe-bar");
 }
 
+function previewGuide(inApp: boolean, appPreview: boolean): string {
+  if (inApp || appPreview || typeof window === "undefined") return "language";
+  const guide = new URLSearchParams(window.location.search).get("guide") || "";
+  if (!guide) return "language";
+  return guide === "error" ? "local" : guide;
+}
+
 function previewRoute(inApp: boolean): { app: boolean; tab: AppTab; section: Section } {
   const fallback = { app: false, tab: "talk" as AppTab, section: "menu" as Section };
   if (inApp || !import.meta.env.DEV || typeof window === "undefined") return fallback;
@@ -58,7 +65,7 @@ export default function App() {
   const previewApp = preview.app;
   const [auth, setAuth] = useState<AuthStatus | null>(inApp ? null : previewApp ? PREVIEW_APP_AUTH : PREVIEW_AUTH);
   const [onboarded, setOnboarded] = useState<boolean | null>(inApp ? null : previewApp);
-  const [setupStep, setSetupStep] = useState<string | null>(inApp ? null : previewApp ? "done" : "language");
+  const [setupStep, setSetupStep] = useState<string | null>(inApp ? null : previewApp ? "done" : previewGuide(inApp, previewApp));
   const [bootLocale, setBootLocale] = useState("");
   const [bootError, setBootError] = useState<string | null>(null);
   const [wake, setWake] = useState<WakewordStatus>(EMPTY_WAKE);
@@ -197,7 +204,7 @@ export default function App() {
 
   if (!onboarded) {
     return (
-      <main className="safe-area flex h-full flex-col">
+      <main className="setup-safe flex h-full flex-col">
         <UpdateBanner />
         <div className="min-h-0 flex-1">
           <Onboarding
@@ -311,8 +318,8 @@ export default function App() {
               setOnboarded(false);
               void api.authStatus().then(setAuth);
             }}
-            onReplayTour={() => {
-              setSetupStep("language");
+            onReplayTour={(step) => {
+              setSetupStep(step || "language");
               setOnboarded(false);
             }}
             finance={finance}
