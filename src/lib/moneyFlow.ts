@@ -602,7 +602,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const compact = width < 640 || (!portrait && reported < 480);
   const flowPx = Math.round(clamp(width * 0.055, 16, 48));
 
-  let top = labels ? (reference ? 64 : portrait ? (vertical ? 128 : 96) : Math.round(clamp(reported * 0.1, 56, 84))) : 8;
+  let top = labels ? (reference ? 16 : portrait ? (vertical ? 128 : 96) : Math.round(clamp(reported * 0.08, 28, 48))) : 8;
   let bottom = labels ? (reference ? 12 : portrait ? (vertical ? (busiest > 4 ? 108 : 64) : 88) : 12) : 8;
   let plot = reference
     ? Math.max(64, busiest * 64)

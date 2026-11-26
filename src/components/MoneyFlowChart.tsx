@@ -828,7 +828,7 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
   }
   const plotH = frame.plot;
   const plotW = Math.max(40, frame.width - frame.left - frame.right);
-  const labelBand = 3 * frame.lineHeight + 8;
+  const labelBand = frame.lineHeight * 3 + 8;
   const flowTop = labelBand;
   const flowH = Math.max(44, plotH - labelBand);
   const placed = new Map<number, { localX: number; localY: number; w: number; h: number }>();
@@ -854,7 +854,7 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
       });
       return;
     }
-    const y = flowTop + Math.round((flowH - hubH) / 2);
+    const y = Math.max(frame.lineHeight * 3, flowTop - 8);
     ordered.forEach((item) => {
       item.el.setShape?.({ x: localX, y, height: hubH });
       item.el.dirty?.();
@@ -904,7 +904,7 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     const blockH = lines.length * frame.lineHeight;
     const role = item.node.role;
     const middle = role === "pool";
-    let cursor = middle ? 4 : Math.max(frame.seriesTop + 2, globalY + box.h / 2 - blockH / 2);
+    let cursor = middle ? Math.max(2, globalY - 6 - blockH) : Math.max(frame.seriesTop + labelBand, globalY + box.h / 2 - blockH / 2);
     cursor = Math.max(2, cursor);
     for (const line of lines) {
       const now = measure(line.el);
