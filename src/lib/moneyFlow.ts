@@ -319,9 +319,10 @@ export function buildMoneyFlow(
 
   let inPaint = 0;
   let outPaint = 0;
-  const sourceNodes = sourceList.map((row) => toNode(row, "source", inflow || 1, row.kind === "drawn" ? colorFor(row, "short", 0) : colorFor(row, "in", inPaint++)));
-  const spendNodes = spendList.map((row) => toNode(row, "sink", spendingMinor || 1, colorFor(row, "out", outPaint++)));
-  const investNodes = investList.map((row) => toNode(row, "sink", investmentMinor || 1, colorFor(row, "invest", 0)));
+  const incomeBase = incomeMinor > 0 ? incomeMinor : inflow || 1;
+  const sourceNodes = sourceList.map((row) => toNode(row, "source", incomeBase, row.kind === "drawn" ? colorFor(row, "short", 0) : colorFor(row, "in", inPaint++)));
+  const spendNodes = spendList.map((row) => toNode(row, "sink", incomeBase, colorFor(row, "out", outPaint++)));
+  const investNodes = investList.map((row) => toNode(row, "sink", incomeBase, colorFor(row, "invest", 0)));
   const poolNode = incomeMinor > 0
     ? toNode(
         plain("pool", labels.totalIncome, "pool", incomeMinor),
@@ -335,7 +336,7 @@ export function buildMoneyFlow(
     hubs.push(toNode(
       plain("spend", labels.totalSpending, "spending", spendingMinor),
       "hub",
-      inflow || 1,
+      incomeBase,
       colorFor(plain("spend", labels.totalSpending, "spending", spendingMinor), "spend", 0),
     ));
   }
@@ -343,7 +344,7 @@ export function buildMoneyFlow(
     hubs.push(toNode(
       plain("invest", labels.investments, "investment", investmentMinor),
       "hub",
-      inflow || 1,
+      incomeBase,
       colorFor(plain("invest", labels.investments, "investment", investmentMinor), "invest", 0),
     ));
   }
@@ -351,7 +352,7 @@ export function buildMoneyFlow(
     hubs.push(toNode(
       plain("save", labels.savings, "savings", savingsMinor),
       "hub",
-      inflow || 1,
+      incomeBase,
       colorFor(plain("save", labels.savings, "savings", savingsMinor), "save", 0),
     ));
   }
@@ -362,7 +363,7 @@ export function buildMoneyFlow(
       role: "child" as const,
       kind: "child",
       amountMinor: child.amountMinor,
-      share: spendingMinor > 0 ? child.amountMinor / spendingMinor : 0,
+      share: incomeBase > 0 ? child.amountMinor / incomeBase : 0,
       color: SPEND_COLORS[(outPaint + index) % SPEND_COLORS.length],
       originals: child.originals,
       members: [],
@@ -884,8 +885,7 @@ export function portraitLevels(nodes: FlowNode[], currency: string, spendingLabe
   }
   const sources = order([...income, ...(shortfall ? [shortfall] : [])]);
   const leaves = order([...categories, ...(savings ? [savings] : []), ...(investment ? [investment] : [])]);
-  const shareBase = pool.amountMinor + (shortfall?.amountMinor || 0);
-  const spendShare = shareBase > 0 ? (spending?.amountMinor || 0) / shareBase : 0;
+  const spendShare = pool.amountMinor > 0 ? (spending?.amountMinor || 0) / pool.amountMinor : 0;
   const caption = spending && spending.amountMinor > 0 ? `${spendingLabel} ${flowAmountLabel(spending.amountMinor, currency, spendShare, true)}` : "";
   const hub = { ...pool, amountMinor: pool.amountMinor + (shortfall?.amountMinor || 0), caption };
   return {
@@ -949,9 +949,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
     const name = baseName.includes(" / ") ? baseName.replace(" / ", " /\n") : baseName;
     const meta = flowAmountLabel(node.amountMinor, input.currency, node.share, compact);
     const valueLine = dated ? `${meta}\n${dated[2]}` : meta;
-    const tiny = node.share < 0.03 && !node.italic;
-    const small = node.share < 0.05;
-    const showValue = input.values && (!small || Boolean(node.italic));
+    const showValue = input.values;
     return {
       name: safe.get(node.id),
       depth,
@@ -960,7 +958,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
       kind: node.kind,
       value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
       label: {
-        show: input.labels && !tiny,
+        show: input.labels,
         color: input.ink,
         position: frame.reference
           ? node.role === "source"

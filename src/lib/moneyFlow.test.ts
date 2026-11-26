@@ -475,6 +475,7 @@ const richRows = [
 ];
 const richCategories = [
   { name: "Salary", color: "#3caa68", kind: "income" },
+  { name: "Side project", color: "#125a36", kind: "income" },
   { name: "Funds", color: "#6a420c", kind: "investment" },
 ];
 const deficitRows = [
@@ -504,7 +505,8 @@ function assertChart(rows: typeof richRows, group: "category" | "entry", layout:
   if (builtFlow.state !== "ready") return;
   assert.equal(builtFlow.nodes.some((node) => node.kind === "savings" && node.amountMinor < 0), false);
   const expenseShares = builtFlow.nodes.filter((node) => node.role === "sink" && node.kind !== "investment").reduce((sum, node) => sum + node.share, 0);
-  assert.ok(Math.abs(expenseShares - 1) < 0.02, `shares ${expenseShares}`);
+  const incomeBase = builtFlow.incomeMinor || 1;
+  assert.ok(Math.abs(expenseShares - builtFlow.spendingMinor / incomeBase) < 0.02, `shares ${expenseShares}`);
   const graph = portraitLevels(builtFlow.nodes, "CHF", "Spending");
   const hub = graph.nodes.find((node) => node.role === "pool");
   assert.ok(hub);
@@ -537,6 +539,7 @@ function assertChart(rows: typeof richRows, group: "category" | "entry", layout:
   const texts = rowsOut.map((row) => row.label.formatter);
   assert.ok(texts.every((line) => !line.includes("…")));
   if (labels) assert.ok(texts.some((line) => line.includes("\n") && line.includes("CHF ") && line.includes("·")));
+  if (labels && group === "category") assert.ok(texts.some((line) => line.includes("Side project") && line.includes("CHF ")));
   if (!labels) assert.ok(rowsOut.every((row) => row.label.show === false));
 }
 
