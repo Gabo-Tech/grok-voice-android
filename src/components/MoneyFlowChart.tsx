@@ -986,8 +986,8 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   const sources = paired.filter((item) => item.node.role === "source").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
   const hubItem = paired.find((item) => item.node.role === "pool");
   const leaves = paired.filter((item) => item.node.role !== "source" && item.node.role !== "pool").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
-  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; below: boolean; stack: number; align: "left" | "right" | "above" }>();
-  const placeBar = (item: (typeof paired)[number], localX: number, localY: number, w: number, align: "left" | "right" | "above", stack = 0) => {
+  const placed = new Map<number, { x: number; y: number; w: number; h: number; localX: number; localY: number; below: boolean; stack: number; align: "left" | "right" | "above" | "below" }>();
+  const placeBar = (item: (typeof paired)[number], localX: number, localY: number, w: number, align: "left" | "right" | "above" | "below", stack = 0) => {
     item.el.setShape?.({ x: localX, y: localY, width: w, height: barH });
     item.el.dirty?.();
     placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below: align !== "above", stack, align });
