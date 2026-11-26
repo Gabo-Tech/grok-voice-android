@@ -65,7 +65,7 @@ export function MorePage({
   onAuth: (auth: AuthStatus) => void;
   onWake: (s: WakewordStatus) => void;
   onSignedOut: () => void;
-  onReplayTour: () => void;
+  onReplayTour: (step?: string) => void;
   finance: FinanceState;
   onAppearance: (choice: ReturnType<typeof normalizeAppearance>) => void;
 }) {
@@ -224,10 +224,11 @@ export function MorePage({
               setSettings(next);
               void api.saveSettings(next).then(setSettings).catch(() => setSettings(next));
             }}
-            onOpenTour={() => {
-              const next = { ...settings, onboarded: false, setupStep: "language" };
+            onOpenTour={(step) => {
+              const resume = step && step !== "done" ? step : "path";
+              const next = { ...settings, onboarded: false, setupStep: resume };
               setSettings(next);
-              void api.saveSettings(next).finally(() => onReplayTour());
+              void api.saveSettings(next).finally(() => onReplayTour(resume));
             }}
           />
         ) : (

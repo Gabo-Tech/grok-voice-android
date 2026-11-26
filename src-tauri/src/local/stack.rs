@@ -12,6 +12,13 @@ use super::speech;
 use crate::settings::Settings;
 
 pub const STEP_LANGUAGE: &str = "language";
+pub const STEP_PATH: &str = "path";
+pub const STEP_LOCAL: &str = "local";
+pub const STEP_XAI: &str = "xai";
+pub const STEP_OPENAI: &str = "openai";
+pub const STEP_ONEMIN: &str = "onemin";
+pub const STEP_MIXED: &str = "mixed";
+pub const STEP_TEST: &str = "test";
 pub const STEP_PACKS: &str = "packs";
 pub const STEP_PACKS_RUN: &str = "packs-run";
 pub const STEP_PREVIEW: &str = "preview";
@@ -51,7 +58,8 @@ pub struct OfflinePlan {
 
 pub fn normalize_step(raw: &str) -> String {
     match raw.trim() {
-        STEP_LANGUAGE | STEP_PACKS | STEP_PACKS_RUN | STEP_PREVIEW | STEP_CLOUD | STEP_DONE
+        STEP_LANGUAGE | STEP_PATH | STEP_LOCAL | STEP_XAI | STEP_OPENAI | STEP_ONEMIN | STEP_MIXED
+        | STEP_TEST | STEP_PACKS | STEP_PACKS_RUN | STEP_PREVIEW | STEP_CLOUD | STEP_DONE
         | STEP_SKIPPED => raw.trim().to_string(),
         _ => String::new(),
     }
@@ -365,6 +373,17 @@ mod tests {
     }
 
     #[test]
+    fn each_setup_path_is_a_saved_step() {
+        for step in [
+            "language", "path", "local", "xai", "openai", "onemin", "mixed", "test", "packs",
+            "packs-run", "preview", "cloud", "done", "skipped",
+        ] {
+            assert_eq!(normalize_step(step), step, "{step}");
+        }
+        assert_eq!(normalize_step("nope"), "");
+    }
+
+    #[test]
     fn setup_copy_is_translated() {
         let raw = include_str!("../../../src/lib/setup-i18n.json");
         let value: serde_json::Value = serde_json::from_str(raw).expect("setup i18n");
@@ -401,6 +420,12 @@ mod tests {
                 "On-device voice packs are not downloaded yet. Download them in Settings, under Voice and AI.",
                 "The offline pack is English: Moonshine, SmolLM2, and Phonon. No account and no token.",
                 "This chooses the screen language. The offline voice stays English. Other languages can be added later in Voice and AI.",
+                "How should Talk answer?",
+                "Open the xAI console and create an API key. Copy the whole key. It usually starts with xai-.",
+                "Sign in at 1min.ai, open Settings, then API, and copy the key.",
+                "Moonshine turns speech into text. llama.cpp runs the chat model. Phonon or Piper speaks.",
+                "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.",
+                "Phone, then a cloud key",
             ] {
                 assert!(object.contains_key(key), "{locale} missing {key}");
             }
