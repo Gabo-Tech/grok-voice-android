@@ -9,7 +9,7 @@ import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
-import { buildMoneyFlow, buildSankeyOption, flowSlices, leafOffsets, spreadColumn, spreadLevel, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
+import { buildMoneyFlow, buildSankeyOption, flowSlices, spreadColumn, spreadLevel, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
 import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
@@ -730,16 +730,32 @@ function stackFlowCurves(
   idIndex: Map<string, number>,
   axis: "x" | "y",
 ) {
-  const outUsed = new Map<number, number>();
-  const inUsed = new Map<number, number>();
-  const outSum = new Map<number, number>();
-  const inSum = new Map<number, number>();
-  for (const link of links) {
+  const groups = new Map<number, number[]>();
+  links.forEach((link, index) => {
     const source = idIndex.get(link.source);
-    const target = idIndex.get(link.target);
-    if (source == null || target == null) continue;
-    outSum.set(source, (outSum.get(source) || 0) + link.amountMinor);
-    inSum.set(target, (inSum.get(target) || 0) + link.amountMinor);
+    if (source == null || idIndex.get(link.target) == null) return;
+    const group = groups.get(source) || [];
+    group.push(index);
+    groups.set(source, group);
+  });
+  const srcOff = new Map<number, number>();
+  const srcExtentOf = new Map<number, number>();
+  for (const [source, indexes] of groups) {
+    const src = placed.get(source);
+    if (!src) continue;
+    const ordered = [...indexes].sort((a, b) => {
+      const left = placed.get(idIndex.get(links[a].target) ?? -1);
+      const right = placed.get(idIndex.get(links[b].target) ?? -1);
+      const ax = axis === "x" ? left?.localX || 0 : left?.localY || 0;
+      const bx = axis === "x" ? right?.localX || 0 : right?.localY || 0;
+      return ax - bx || (left?.localY || 0) - (right?.localY || 0);
+    });
+    const span = axis === "y" ? src.h : src.w;
+    const slices = flowSlices(ordered.map((index) => links[index].amountMinor), span);
+    ordered.forEach((index, slot) => {
+      srcOff.set(index, slices[slot]?.start || 0);
+      srcExtentOf.set(index, slices[slot]?.extent || 1);
+    });
   }
   curves.forEach((curve, index) => {
     const link = links[index];
@@ -750,19 +766,11 @@ function stackFlowCurves(
     const src = placed.get(source);
     const dst = placed.get(target);
     if (!src || !dst) return;
-    const srcSpan = axis === "y" ? src.h : src.w;
-    const dstSpan = axis === "y" ? dst.h : dst.w;
-    const srcSlice = flowSlices([link.amountMinor, Math.max(0, (outSum.get(source) || 0) - link.amountMinor)], srcSpan)[0];
-    const dstSlice = flowSlices([link.amountMinor, Math.max(0, (inSum.get(target) || 0) - link.amountMinor)], dstSpan)[0];
-    const srcExtent = srcSlice?.extent || 1;
-    const dstExtent = dstSlice?.extent || 1;
-    const srcOff = outUsed.get(source) || 0;
-    const dstOff = inUsed.get(target) || 0;
-    outUsed.set(source, srcOff + srcExtent);
-    inUsed.set(target, dstOff + dstExtent);
+    const start = srcOff.get(index) || 0;
+    const srcExtent = srcExtentOf.get(index) || 1;
     if (axis === "y") {
-      const y1 = src.localY + srcOff;
-      const y2 = dst.localY + dstOff;
+      const y1 = src.localY + start;
+      const y2 = dst.localY;
       const x1 = src.localX + src.w;
       const x2 = dst.localX;
       curve.setShape?.({
@@ -774,11 +782,11 @@ function stackFlowCurves(
         cpy2: y2,
         cpx1: x1 + (x2 - x1) * 0.55,
         cpx2: x1 + (x2 - x1) * 0.32,
-        extent: dstExtent,
+        extent: srcExtent,
       });
     } else {
-      const x1 = src.localX + srcOff;
-      const x2 = dst.localX + dstOff;
+      const x1 = src.localX + start;
+      const x2 = dst.localX;
       const y1 = src.localY + src.h;
       const y2 = dst.localY;
       curve.setShape?.({
@@ -790,7 +798,7 @@ function stackFlowCurves(
         cpx2: x2,
         cpy1: y1 + (y2 - y1) * 0.55,
         cpy2: y1 + (y2 - y1) * 0.32,
-        extent: dstExtent,
+        extent: srcExtent,
       });
     }
     curve.dirty?.();
@@ -956,14 +964,14 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   const leafStart = hubY + barH + labelBlock + 8;
   const step = labelBlock + 8;
   const leafMax = Math.max(1, ...leaves.map((item) => item.node.amountMinor));
-  const offsets = leafOffsets(leaves.length, leafStart, step, frame.plot - 4, barH);
+  const lanes = leaves.length > 4 ? 3 : Math.max(1, leaves.length);
   leaves.forEach((item, index) => {
-    const w = Math.max(10, Math.round(Math.min(plotW * 0.34, 96) * Math.max(0.22, item.node.amountMinor / leafMax)));
-    const lane = leaves.length > 4 ? index % 3 : index % Math.max(1, leaves.length);
-    const lanes = leaves.length > 4 ? 3 : Math.max(1, leaves.length);
+    const w = Math.max(10, Math.round(Math.min(plotW * 0.28, 72) * Math.max(0.35, item.node.amountMinor / leafMax)));
+    const lane = index % lanes;
+    const row = Math.floor(index / lanes);
     const laneW = plotW / lanes;
     const localX = Math.max(0, Math.round(lane * laneW + (laneW - w) / 2));
-    const localY = offsets[index] ?? leafStart;
+    const localY = Math.min(frame.plot - barH - 4, leafStart + row * step + lane * frame.lineHeight);
     placeBar(item, Math.min(localX, Math.max(0, plotW - w)), localY, w, true);
   });
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
