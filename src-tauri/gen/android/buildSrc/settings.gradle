@@ -1,5 +1,9 @@
 pluginManagement {
     repositories {
+        // GitHub-hosted runners intermittently fail to resolve this plugin from
+        // plugins.gradle.org and report it as missing. The jars are the published
+        // 6.6.4 release that Gradle 9.6.1 asks for.
+        maven { url = uri("${rootDir}/repo") }
         mavenCentral()
         google()
         gradlePluginPortal()
@@ -9,6 +13,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
+        maven { url = uri("${rootDir}/repo") }
         mavenCentral()
         google()
         gradlePluginPortal()
