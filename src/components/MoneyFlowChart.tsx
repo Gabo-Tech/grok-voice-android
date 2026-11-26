@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { init, use, type ECharts } from "echarts/core";
+import { GraphicComponent } from "echarts/components";
 import { SankeyChart } from "echarts/charts";
 import { CanvasRenderer } from "echarts/renderers";
 import { TooltipComponent } from "echarts/components";
@@ -15,7 +16,7 @@ import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 
-use([SankeyChart, CanvasRenderer, TooltipComponent]);
+use([SankeyChart, CanvasRenderer, TooltipComponent, GraphicComponent]);
 
 const COLOR_KEY = "grok-flow-colors";
 const OPTION_KEY = "grok-flow-options";
@@ -676,6 +677,7 @@ function FlowChart({
         nudgeLabels(instance, frame.width, frame.height);
         liftSpending(instance);
       }
+      (window as Window & { __flowChart?: ECharts }).__flowChart = instance;
       const report = readLabelAudit(instance, frame.width, frame.height);
       publishing = false;
       const node = host.current;
@@ -736,6 +738,104 @@ function labelElements(instance: ECharts): Array<{ el: AuditEl; x: number; y: nu
 
 function boxesHit(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
   return a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y < b.y + b.h - 1 && a.y + a.h > b.y + 1;
+}
+
+function syncFlowModel(
+  instance: ECharts,
+  placed: Map<number, { localX: number; localY: number; w: number; h: number }>,
+  widths: Map<number, number>,
+) {
+  const series = (instance as unknown as { getModel: () => { getSeriesByIndex: (index: number) => {
+    getGraph: () => {
+      eachNode: (fn: (node: { setLayout: (layout: object, merge?: boolean) => void }) => void) => void;
+      eachEdge: (fn: (edge: { setLayout: (layout: object, merge?: boolean) => void }) => void) => void;
+    };
+  } } }).getModel().getSeriesByIndex(0);
+  const graph = series.getGraph();
+  const nodes: Array<{ setLayout: (layout: object, merge?: boolean) => void }> = [];
+  const edges: Array<{ setLayout: (layout: object, merge?: boolean) => void }> = [];
+  graph.eachNode((node) => nodes.push(node));
+  graph.eachEdge((edge) => edges.push(edge));
+  nodes.forEach((node, index) => {
+    const box = placed.get(index);
+    if (!box) return;
+    node.setLayout({ x: box.localX, y: box.localY, dx: box.w, dy: box.h }, true);
+  });
+  edges.forEach((edge, index) => {
+    const width = widths.get(index);
+    if (width == null) return;
+    edge.setLayout({ dy: width }, true);
+  });
+}
+
+function moveGlobal(el: AuditEl, x: number, y: number) {
+  const before = measure(el);
+  if (!before) return;
+  el.x = (el.x || 0) + (x - before.x);
+  el.y = (el.y || 0) + (y - before.y);
+  el.dirty?.();
+}
+
+function unstackLabels(instance: ECharts) {
+  const zr = instance.getZr();
+  zr.refresh();
+  for (let pass = 0; pass < 10; pass += 1) {
+    const texts = labelElements(instance);
+    let moved = false;
+    for (let i = 0; i < texts.length; i += 1) {
+      for (let j = i + 1; j < texts.length; j += 1) {
+        const a = texts[i];
+        const b = texts[j];
+        if (!a || !b || !(a.x < b.x + b.w + 4 && a.x + a.w + 4 > b.x && a.y < b.y + b.h + 4 && a.y + a.h + 4 > b.y)) continue;
+        const lower = a.y <= b.y ? b : a;
+        const upper = lower === a ? b : a;
+        const dy = upper.y + upper.h + 4 - lower.y;
+        if (dy <= 0) continue;
+        moveGlobal(lower.el, lower.x, lower.y + dy);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+    zr.refresh();
+  }
+}
+
+function hideOffscreenText(instance: ECharts, width: number, height: number) {
+  const zr = instance.getZr() as unknown as { refresh: () => void; storage: { getDisplayList?: (all?: boolean) => AuditEl[] } };
+  zr.refresh();
+  for (const el of zr.storage.getDisplayList?.(true) || []) {
+    const text = el.style?.text || "";
+    if (!text.trim()) continue;
+    const box = measure(el);
+    if (!box) continue;
+    if (box.x < -1 || box.y < -1 || box.x + box.w > width + 1 || box.y + box.h > height + 1) {
+      el.ignore = true;
+      el.style = { ...el.style, text: "" };
+      el.dirty?.();
+    }
+  }
+  zr.refresh();
+}
+
+function placeCaption(instance: ECharts, lines: Array<{ el: AuditEl; text: string }>, left: number, top: number, fill: string, lineHeight: number) {
+  const text = lines.map((line) => line.text.trim()).filter(Boolean).join("\n");
+  for (const line of lines) {
+    line.el.ignore = true;
+    if (line.el.parent) line.el.parent.ignore = true;
+    if (line.el.style) line.el.style.text = "";
+    line.el.dirty?.();
+  }
+  instance.setOption({
+    graphic: [{
+      id: "hub-caption",
+      type: "text",
+      left: Math.max(2, left),
+      top: Math.max(2, top),
+      style: { text, fill, fontSize: 13, lineHeight },
+      silent: true,
+      z: 40,
+    }],
+  });
 }
 
 function measure(el: AuditEl): { x: number; y: number; w: number; h: number } | null {
@@ -846,6 +946,7 @@ function stackFlowCurves(
     }
     curve.dirty?.();
   });
+  return outExtent;
 }
 
 /** Narrow portrait, left to right. Even rows, hairline tails, labels beside each bar. */
@@ -872,32 +973,31 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
   const sources = paired.filter((item) => item.node.role === "source").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
   const hubItem = paired.find((item) => item.node.role === "pool");
   const leaves = paired.filter((item) => item.node.role !== "source" && item.node.role !== "pool").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
-  const gap = frame.lineHeight * 2 + 8;
+  const gap = 4;
   const hubAmount = Math.max(1, hubItem?.node.amountMinor || 0);
   const scale = fitValueScale([sources.map((item) => item.node.amountMinor), leaves.map((item) => item.node.amountMinor), [hubAmount]], gap, flowH);
   const hubH = hubAmount * scale;
   const placeColumn = (items: typeof sources, localX: number) => {
     const slices = flowSlices(items.map((item) => item.node.amountMinor), hubH);
-    const gaps = gap * Math.max(0, items.length - 1);
-    let y = flowTop + Math.max(0, (flowH - (hubH + gaps)) / 2);
+    let y = flowTop;
     items.forEach((item, index) => {
       const h = slices[index]?.extent || 0;
-      item.el.setShape?.({ x: localX, y, height: h });
+      item.el.setShape?.({ x: localX, y, width: 4, height: Math.max(h, 1) });
       item.el.dirty?.();
       placed.set(item.index, { localX, localY: y, w: 4, h });
       y += h + gap;
     });
   };
+  const hubX = Math.round(plotW * 0.46);
   placeColumn(sources, 0);
   if (hubItem) {
-    const y = flowTop + Math.max(0, (flowH - hubH) / 2);
-    hubItem.el.setShape?.({ x: Math.round(plotW * 0.58), y, height: hubH });
+    hubItem.el.setShape?.({ x: hubX, y: flowTop, width: 4, height: hubH });
     hubItem.el.dirty?.();
-    placed.set(hubItem.index, { localX: Math.round(plotW * 0.58), localY: y, w: 4, h: hubH });
+    placed.set(hubItem.index, { localX: hubX, localY: flowTop, w: 4, h: hubH });
   }
   placeColumn(leaves, Math.max(0, plotW - 4));
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
-  stackFlowCurves(curves, links, placed, idIndex, "y");
+  syncFlowModel(instance, placed, stackFlowCurves(curves, links, placed, idIndex, "y") || new Map());
   zr.refresh();
   const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
   const texts = (zr.storage.getDisplayList?.(true) || []).flatMap((el) => {
@@ -929,18 +1029,26 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     group.push(text);
     groups.set(owner.index, group);
   }
-  for (const item of paired) {
+  let leafFloor = 0;
+  const ordered = [...paired].sort((a, b) => (placed.get(a.index)?.localY || 0) - (placed.get(b.index)?.localY || 0));
+  for (const item of ordered) {
     const box = placed.get(item.index);
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
-    const globalX = (item.el.parent?.x || 0) + box.localX;
-    const globalY = item.originY + box.localY;
+    const globalX = frame.left + box.localX;
+    const globalY = frame.seriesTop + box.localY;
     const nodeW = item.el.shape?.width || item.old.w;
     const blockH = lines.length * frame.lineHeight;
     const role = item.node.role;
     const middle = role === "pool";
-    let cursor = middle ? Math.max(2, globalY - 6 - blockH) : Math.max(frame.seriesTop + labelBand, globalY + box.h / 2 - blockH / 2);
+    if (middle) {
+      placeCaption(instance, lines, Math.min(globalX, frame.width - 168), frame.seriesTop + 2, String(item.el.style?.fill || muted), frame.lineHeight);
+      continue;
+    }
+    let cursor = globalY + Math.max(0, box.h / 2 - blockH / 2);
+    if (role !== "source" && cursor < leafFloor) cursor = leafFloor;
     cursor = Math.max(2, cursor);
+    if (role !== "source") leafFloor = cursor + blockH + 20;
     for (const line of lines) {
       const now = measure(line.el);
       if (!now) continue;
@@ -950,15 +1058,15 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
       line.el.dirty?.();
       zr.refresh();
       const painted = measure(line.el) || now;
-      let x = middle ? (frame.left + (frame.width - frame.right)) / 2 - painted.w / 2 : role === "source" ? globalX - 6 - painted.w : globalX + nodeW + 6;
-      if (middle) x = Math.max(2, Math.min(x, frame.width - frame.right - painted.w - 8));
-      line.el.x = (line.el.x || 0) + (x - painted.x);
-      line.el.y = (line.el.y || 0) + (cursor - painted.y);
-      line.el.dirty?.();
+      let x = role === "source" ? globalX - 6 - painted.w : globalX + nodeW + 6;
+      x = Math.max(2, Math.min(x, frame.width - painted.w - 2));
+      moveGlobal(line.el, x, cursor);
       cursor += frame.lineHeight;
     }
   }
   zr.refresh();
+  unstackLabels(instance);
+  hideOffscreenText(instance, frame.width, frame.height);
 }
 
 /** Narrow portrait, top to bottom. Every node uses one px-per-value, so a ribbon keeps that width from end to end. */
@@ -988,9 +1096,8 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     item.el.dirty?.();
     placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below: align !== "above", stack, align });
   };
-  const labelLane = 156;
-  const flowW = Math.max(80, plotW - labelLane);
   const gap = 4;
+  const flowW = plotW;
   const hubAmount = Math.max(1, hubItem?.node.amountMinor || 0);
   const scale = fitValueScale([sources.map((item) => item.node.amountMinor), leaves.map((item) => item.node.amountMinor), [hubAmount]], gap, flowW);
   const hubW = hubAmount * scale;
@@ -998,19 +1105,21 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     const slices = flowSlices(items.map((item) => item.node.amountMinor), hubW);
     const gaps = gap * Math.max(0, items.length - 1);
     let x = Math.max(0, (flowW - (hubW + gaps)) / 2);
+    let small = 0;
     items.forEach((item, index) => {
       const w = slices[index]?.extent || 0;
-      placeBar(item, x, y, w, align, 0);
+      const stack = w < 80 ? ++small : 0;
+      placeBar(item, x, y, w, align, stack);
       x += w + gap;
     });
   };
-  placeRow(sources, 2, "above");
+  placeRow(sources, 72, "above");
   const hubX = Math.max(0, (flowW - hubW) / 2);
   const hubY = Math.round(frame.plot * 0.42);
   if (hubItem) placeBar(hubItem, hubX, hubY, hubW, "right");
   placeRow(leaves, frame.plot - barH - 4, "below");
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
-  stackFlowCurves(curves, links, placed, idIndex, "x");
+  syncFlowModel(instance, placed, stackFlowCurves(curves, links, placed, idIndex, "x") || new Map());
   zr.refresh();
   const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
   const liveTexts = (zr.storage.getDisplayList?.(true) || []).flatMap((el) => {
@@ -1042,87 +1151,74 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     group.push(text);
     groups.set(index, group);
   }
-  const blocks: Array<{ align: "left" | "right" | "above" | "below"; preferX: number; w: number; h: number; y: number; lines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> }> = [];
+  const graphics: object[] = [];
   for (const item of paired) {
     const box = placed.get(item.index);
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
-    const blockH = lines.length * frame.lineHeight;
-    const stack = box.stack || 0;
-    const band = blockH + 6;
-    let cursor = box.align === "right"
-      ? box.y + box.h / 2 - blockH / 2
-      : box.align === "below"
-        ? box.y + box.h + 8 + stack * band
-        : box.y - 8 - blockH - stack * band;
-    cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
-    const paintedLines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> = [];
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = 0;
+    const stacked = (box.stack || 0) > 0;
+    const blockH = stacked ? frame.lineHeight : lines.length * frame.lineHeight;
+    if (box.align === "right") {
+      placeCaption(instance, lines, 8, 8, String(item.el.style?.fill || muted), frame.lineHeight);
+      continue;
+    }
+    const step = box.align === "below" ? ((box.stack || 0) === 0 ? 0 : 36 + ((box.stack || 1) - 1) * 18) : (box.stack || 0) * 20;
+    const raw = box.align === "below" ? box.y + box.h + 8 + ((box.stack || 0) === 0 ? 0 : step) : box.y - 8 - blockH - step;
+    const sample = measure(lines[0].el);
+    const blockW = Math.max(48, ...lines.map((line) => measure(line.el)?.w || sample?.w || 48));
+    const centered = box.x + box.w / 2 - blockW / 2;
+    const preferredLeft = stacked ? Math.max(2, frame.width - 200) : (box.w > blockW + 12 ? box.x : centered);
+    const left = Math.max(2, Math.min(preferredLeft, frame.width - 8));
+    const top = Math.max(2, Math.min(raw, frame.height - blockH - 2));
     for (const line of lines) {
-      const now = measure(line.el);
-      if (!now) continue;
-      const amount = line.text.includes("·");
-      line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
+      line.el.ignore = true;
+      if (line.el.parent) line.el.parent.ignore = true;
+      if (line.el.style) line.el.style.text = "";
       line.el.dirty?.();
-      zr.refresh();
-      const painted = measure(line.el) || now;
-      const x = box.align === "right"
-        ? Math.min(box.x + box.w + 8, frame.width - painted.w - 2)
-        : Math.max(2, Math.min(box.x + box.w / 2 - painted.w / 2, frame.width - painted.w - 2));
-      line.el.x = (line.el.x || 0) + (x - painted.x);
-      line.el.y = (line.el.y || 0) + (cursor - painted.y);
-      line.el.dirty?.();
-      paintedLines.push({ el: line.el, x, y: cursor, w: painted.w, h: frame.lineHeight });
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x + painted.w);
-      cursor += frame.lineHeight;
     }
-    if (!paintedLines.length) continue;
-    blocks.push({ align: box.align, preferX: minX, w: Math.max(1, maxX - minX), h: blockH, y: paintedLines[0].y, lines: paintedLines });
+    graphics.push({
+      id: `label-${item.node.id}`,
+      type: "text",
+      left,
+      top,
+      style: {
+        text: lines.map((line) => line.text.trim()).join(stacked ? " · " : "\n"),
+        fill: String(item.el.style?.fill || muted),
+        fontSize: 13,
+        lineHeight: frame.lineHeight,
+      },
+      silent: true,
+      z: 30,
+    });
+    if (stacked) {
+      const anchorY = box.align === "above" ? box.y : box.y + box.h;
+      const labelY = box.align === "above" ? top + blockH : top;
+      graphics.push({
+        id: `leader-${item.node.id}`,
+        type: "line",
+        shape: { x1: box.x + box.w / 2, y1: anchorY, x2: left + 8, y2: labelY },
+        style: { stroke: muted, lineWidth: 1 },
+        silent: true,
+        z: 20,
+      });
+    }
   }
-  const hits = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
-    a.x < b.x + b.w + 8 && a.x + a.w + 8 > b.x && a.y < b.y + b.h + 8 && a.y + a.h + 8 > b.y;
-  const pack = (align: "above" | "below") => {
-    const group = blocks.filter((block) => block.align === align).sort((a, b) => a.preferX - b.preferX);
-    const taken: Array<{ x: number; y: number; w: number; h: number }> = blocks.filter((block) => block.align === "right").map((block) => ({ x: block.preferX, y: block.y, w: block.w, h: block.h }));
-    for (const block of group) {
-      const dir = align === "below" ? 1 : -1;
-      let y = block.y;
-      let x = Math.max(2, Math.min(block.preferX, frame.width - block.w - 2));
-      let placed = false;
-      for (let row = 0; row < 8 && !placed; row += 1) {
-        const rowY = block.y + dir * row * (block.h + 8);
-        if (rowY < 2 || rowY + block.h > frame.height - 2) continue;
-        if (!taken.some((other) => hits({ x, y: rowY, w: block.w, h: block.h }, other))) {
-          y = rowY;
-          placed = true;
-        }
-      }
-      if (!placed) {
-        x = Math.max(2, frame.width - block.w - 2);
-        y = align === "below" ? Math.max(2, frame.height - block.h - 2) : 2;
-        for (let row = 0; row < 10 && !placed; row += 1) {
-          const rowY = align === "below" ? y - row * (block.h + 8) : y + row * (block.h + 8);
-          if (rowY < 2 || rowY + block.h > frame.height - 2) continue;
-          if (!taken.some((other) => hits({ x, y: rowY, w: block.w, h: block.h }, other))) {
-            y = rowY;
-            placed = true;
-          }
-        }
-      }
-      const dx = x - block.preferX;
-      const dy = y - block.lines[0].y;
-      for (const line of block.lines) {
-        line.el.x = (line.el.x || 0) + dx;
-        line.el.y = (line.el.y || 0) + dy;
-        line.el.dirty?.();
-      }
-      taken.push({ x, y, w: block.w, h: block.h });
+  if (graphics.length) instance.setOption({ graphic: graphics });
+  zr.refresh();
+  for (const el of zr.storage.getDisplayList?.(true) || []) {
+    if (!el.style?.text) continue;
+    let sankey = false;
+    const seen = new Set<AuditEl>();
+    let current: AuditEl | undefined = el;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      if (current.type === "rect") sankey = true;
+      const host = (current as AuditEl & { __hostTarget?: AuditEl }).__hostTarget;
+      if (host?.type === "rect") sankey = true;
+      current = current.parent;
     }
-  };
-  pack("below");
-  pack("above");
+    if (sankey) el.ignore = true;
+  }
   zr.refresh();
 }
 
@@ -1466,6 +1562,7 @@ function readLabelAudit(instance: ECharts, width: number, height: number): { ok:
   const visit = (el: AuditEl) => {
     const key = `${el.type || "?"}:${el.style?.text ? "t" : "-"}`;
     kinds.set(key, (kinds.get(key) || 0) + 1);
+    if (el.ignore) return;
     const text = el.style?.text || "";
     if (!text.trim()) return;
     const rect = el.getBoundingRect?.().clone();
