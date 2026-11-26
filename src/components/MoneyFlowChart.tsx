@@ -6,6 +6,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { TooltipComponent } from "echarts/components";
 import type { FinanceAccount, FinanceCategory, FinanceFx, FinanceTransaction } from "@/lib/api";
 import { ChartCard } from "@/components/ChartKit";
+import { ColorSheet } from "@/components/ColorSheet";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
@@ -21,23 +22,6 @@ const COLOR_KEY = "grok-flow-colors";
 const OPTION_KEY = "grok-flow-options";
 const PANEL_KEY = "grok-flow-panel";
 
-const FLOW_PRESETS = [
-  "var(--flow-in-1)",
-  "var(--flow-in-3)",
-  "var(--flow-in-5)",
-  "var(--flow-in-7)",
-  "var(--flow-save)",
-  "var(--flow-invest)",
-  "var(--brand)",
-  "var(--positive)",
-  "var(--flow-out-1)",
-  "var(--flow-out-3)",
-  "var(--flow-out-5)",
-  "var(--flow-out-8)",
-  "var(--flow-short)",
-  "var(--negative)",
-];
-
 type FlowGroupMode = "category" | "entry";
 
 type PortraitLayout = "vertical" | "horizontal";
@@ -49,16 +33,6 @@ interface FlowOptions {
   mono: boolean;
   planned: boolean;
   portraitLayout: PortraitLayout;
-}
-
-function readColors(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(COLOR_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 function readPanelOpen(): boolean {
@@ -135,7 +109,7 @@ export function MoneyFlowPanel({
     own.setPeriod(next);
   };
   const bounds = useMemo(() => boundsOf(period), [period]);
-  const [colors, setColors] = useState(readColors);
+  const [colors, setColors] = useState<Record<string, string>>(() => Object.fromEntries((flowColors || []).filter((row) => row.id && row.color).map((row) => [row.id, row.color])));
   const [openOther, setOpenOther] = useState(false);
   const [panelOpen, setPanelOpen] = useState(readPanelOpen);
   const [colorsOpen, setColorsOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("colors") === "open");
@@ -218,6 +192,24 @@ export function MoneyFlowPanel({
       labels: flowLabels,
     });
   }, [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, flowColors, options.group, options.planned, budgets, months, flowLabels]);
+
+  useEffect(() => {
+    setColors(Object.fromEntries((flowColors || []).filter((row) => row.id && row.color).map((row) => [row.id, row.color])));
+  }, [flowColors]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLOR_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      localStorage.removeItem(COLOR_KEY);
+      for (const [id, color] of Object.entries(parsed || {})) {
+        if (id && color) onPaintNode?.(id, color);
+      }
+    } catch {
+      /* A phone without saved colors just uses the series palette. */
+    }
+  }, [onPaintNode]);
 
   useEffect(() => {
     try {
@@ -332,6 +324,9 @@ export function MoneyFlowPanel({
       <button type="button" className="fin-chip" aria-pressed={options.planned} onClick={() => setOptions((current) => ({ ...current, planned: !current.planned }))}>
         {t("Planned")}
       </button>
+      <button type="button" className="fin-chip min-h-11" onClick={() => setColorsOpen(true)}>
+        {t("Chart colors")}
+      </button>
       <button type="button" className="fin-chip" onClick={() => setOpenOther((value) => !value)}>
         {openOther ? t("Group small flows") : t("Show small flows")}
       </button>
@@ -347,7 +342,9 @@ export function MoneyFlowPanel({
   const periodName = periodCaption(period, bounds, t);
   const paint = (id: string, color: string) => {
     paintColor(id, color, setColors, onPaintNode);
-    if (color && categories.some((row) => row.name === id)) onPaintCategory?.(id, color);
+    const node = ready?.nodes.find((row) => row.id === id);
+    const category = categories.find((row) => row.name === id || row.name === node?.label);
+    if (category) onPaintCategory?.(category.name, color);
   };
   return (
     <ChartCard title={title}>
@@ -373,9 +370,19 @@ export function MoneyFlowPanel({
       </div>
       {colorsOpen && ready ? (
         <ColorSheet
-          nodes={ready.nodes.filter((node) => node.role !== "child")}
-          colors={colors}
-          display={display}
+          series={ready.nodes.filter((node) => node.role !== "child" && node.amountMinor > 0).map((node) => ({
+            id: node.id,
+            label: node.label,
+            color: colors[node.id] || colors[node.label] || node.color,
+            amountMinor: node.amountMinor,
+            group: colorGroup(node),
+          }))}
+          currency={display}
+          groups={[
+            { id: "income", label: t("Income") },
+            { id: "spend", label: t("Spending") },
+            { id: "save", label: t("Savings and investments") },
+          ]}
           onPaint={paint}
           onResetAll={() => paint("all", "")}
           onClose={() => setColorsOpen(false)}
@@ -1518,27 +1525,9 @@ function paintColor(
     } else {
       next[id] = color;
     }
-    try {
-      localStorage.setItem(COLOR_KEY, JSON.stringify(next));
-    } catch {
-      /* The color still applies until the page reloads. */
-    }
     return next;
   });
   onPaintNode?.(id, color);
-}
-
-function cssHex(token: string): string {
-  if (typeof document === "undefined") return "";
-  const probe = document.createElement("span");
-  probe.style.color = token.startsWith("var(") ? token : "var(--brand)";
-  document.body.appendChild(probe);
-  const painted = getComputedStyle(probe).color;
-  probe.remove();
-  const match = painted.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!match) return "";
-  const hex = (part: string) => Number(part).toString(16).padStart(2, "0");
-  return `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
 }
 
 function colorGroup(node: FlowNode): "income" | "spend" | "save" {
@@ -1547,101 +1536,6 @@ function colorGroup(node: FlowNode): "income" | "spend" | "save" {
   return "spend";
 }
 
-function ColorSheet({
-  nodes,
-  colors,
-  display,
-  onPaint,
-  onResetAll,
-  onClose,
-}: {
-  nodes: FlowNode[];
-  colors: Record<string, string>;
-  display: string;
-  onPaint: (id: string, color: string) => void;
-  onResetAll: () => void;
-  onClose: () => void;
-}) {
-  const t = useT();
-  const [confirmAll, setConfirmAll] = useState(false);
-  const [openId, setOpenId] = useState("");
-  const rows = nodes.filter((node) => node.amountMinor > 0);
-  const groups: Array<{ id: "income" | "spend" | "save"; label: string }> = [
-    { id: "income", label: t("Income") },
-    { id: "spend", label: t("Spending") },
-    { id: "save", label: t("Savings and investments") },
-  ];
-  return (
-    <div className="flow-sheet mt-2" role="dialog" aria-label={t("Chart colors")} data-swipe-ignore="">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--line-soft)] pb-2">
-        <h2 className="text-[15px] leading-5">{t("Chart colors")}</h2>
-        <div className="flex items-center">
-          {confirmAll ? (
-            <button type="button" className="h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => { onResetAll(); setConfirmAll(false); }}>
-              {t("Yes, reset all colors")}
-            </button>
-          ) : (
-            <button type="button" className="fin-chip" onClick={() => setConfirmAll(true)}>{t("Reset all colors")}</button>
-          )}
-          <button type="button" className="fin-chip" onClick={onClose}>{t("Close")}</button>
-        </div>
-      </div>
-      {groups.map((group) => {
-        const members = rows.filter((node) => colorGroup(node) === group.id);
-        if (!members.length) return null;
-        return (
-          <section key={group.id} className="mt-3">
-            <h3 className="text-[13px] leading-4 tracking-wide uppercase text-[var(--text-tertiary)]">{group.label}</h3>
-            <ul className="mt-1">
-              {members.map((node) => {
-                const current = colors[node.id] || colors[node.label] || node.color;
-                const picker = /^#[0-9A-Fa-f]{6}$/.test(current) ? current : cssHex(current || "var(--brand)");
-                const open = openId === node.id;
-                return (
-                  <li key={node.id} className="border-b border-[var(--line-soft)]">
-                    <div className="flex h-11 items-center gap-2">
-                      <button type="button" className="flex h-11 min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={open} onClick={() => setOpenId(open ? "" : node.id)}>
-                        <span className="h-6 w-6 shrink-0" style={{ background: current, borderRadius: "var(--radius)" }} aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate text-[15px] leading-5" style={node.italic ? { fontStyle: "italic" } : undefined}>{node.label}</span>
-                        <span className="fin-muted shrink-0 text-[13px] leading-4">{formatMoney(node.amountMinor, display)}</span>
-                      </button>
-                      <button type="button" className="fin-chip shrink-0" onClick={() => onPaint(node.id, "")}>{t("Reset")}</button>
-                    </div>
-                    {open ? (
-                      <div className="flex gap-1 overflow-x-auto pb-2">
-                        {FLOW_PRESETS.map((swatch, index) => (
-                          <button
-                            key={swatch}
-                            type="button"
-                            className="h-11 w-11 shrink-0"
-                            style={{ background: swatch, borderRadius: "var(--radius)" }}
-                            aria-label={fill("Preset {n} for {name}", { n: String(index + 1), name: node.label })}
-                            aria-pressed={current === swatch}
-                            onClick={() => onPaint(node.id, swatch)}
-                          />
-                        ))}
-                        <label className="relative grid h-11 w-11 shrink-0 place-items-center" style={{ borderRadius: "var(--radius)" }}>
-                          <span className="h-6 w-6" style={{ background: current, borderRadius: "var(--radius)" }} aria-hidden="true" />
-                          <input
-                            type="color"
-                            aria-label={fill("{name} color", { name: node.label })}
-                            value={picker}
-                            onChange={(event) => onPaint(node.id, event.target.value)}
-                            className="absolute inset-0 h-11 w-11 cursor-pointer opacity-0"
-                          />
-                        </label>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
 
 function OptionsIcon() {
   return (

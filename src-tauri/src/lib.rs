@@ -233,6 +233,7 @@ pub fn run() {
             commands::set_finance_default_currency,
             commands::rename_finance_category,
             commands::edit_finance_category,
+            commands::set_finance_color,
             commands::mark_finance_paid,
             commands::export_finance_pdf,
             commands::refresh_finance_rates,

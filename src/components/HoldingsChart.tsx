@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import type { FinanceAccount, FinanceFx, FinancePrices } from "@/lib/api";
-import { ChartCard, Donut, Legend, LineChart, PaletteMenu, useChartVisibility, type LegendRow } from "@/components/ChartKit";
+import { ChartCard, Donut, Legend, LineChart, useChartVisibility, type LegendRow } from "@/components/ChartKit";
+import { ChartColorMenu, ColorSheet } from "@/components/ColorSheet";
+import { resolveColor, type EntityColor } from "@/lib/entityColor";
 import {
   ALLOCATION_PRESETS,
   allocation,
   assetClassOf,
   originalHolding,
-  persistedColor,
   positionOf,
   type AllocGroup,
 } from "@/lib/financeLedger";
@@ -42,6 +43,9 @@ export function HoldingsChart({
   prices,
   history = [],
   onRecolor,
+  onPaint,
+  entityColors = [],
+  openSheet = "",
   onUnpriced,
 }: {
   accounts: FinanceAccount[];
@@ -50,11 +54,15 @@ export function HoldingsChart({
   prices?: FinancePrices | null;
   history?: ValuePoint[];
   onRecolor: (account: FinanceAccount, color: string) => void;
+  onPaint?: (kind: string, id: string, color: string) => void;
+  entityColors?: EntityColor[];
+  openSheet?: "" | "donut" | "line" | "holding";
   onUnpriced?: (account: FinanceAccount) => void;
 }) {
   const t = useT();
   const [pref, setPref] = useState(readPref);
   const [painting, setPainting] = useState("");
+  const [sheet, setSheet] = useState<"" | "donut" | "line" | "holding">(openSheet);
   const portfolioPeriod = useChartPeriod("portfolio", "3m");
   const holdingsPeriod = useChartPeriod("holdings");
   const [focus, setFocus] = useState("");
@@ -76,7 +84,7 @@ export function HoldingsChart({
             name: account.name,
             kind: account.kind,
             assetClass: assetClassOf(account.kind, account.investmentType || "", symbolKind),
-            color: account.color,
+            color: resolveColor(entityColors, "account", account.id, account.color),
             amountMinor: position.amountMinor,
             unpriced: position.unpriced,
             quantity: original.quantity,
@@ -95,19 +103,19 @@ export function HoldingsChart({
     [rows, pref],
   );
   const legend: LegendRow[] = [
-    ...pie.slices.map((slice, index) => ({
+    ...pie.slices.map((slice) => ({
       id: slice.id,
       label: sliceLabel(slice.label, slice.other, t),
-      color: index === 0 ? "var(--brand)" : "var(--text-tertiary)",
+      color: pref.group === "class" ? resolveColor(entityColors, "class", slice.label, "") : resolveColor(entityColors, "account", slice.members[0]?.id || slice.id, slice.members[0]?.color || ""),
       amountMinor: slice.amountMinor,
       currency: code,
       original: [slice.quantity, slice.members.length === 1 ? rows.find((row) => row.id === slice.members[0].id)?.native || "" : ""].filter(Boolean).join(" · "),
       className: slice.members.length === 1 ? slice.members[0].assetClass : slice.label,
     })),
-    ...pie.unpriced.map((row, index) => ({
+    ...pie.unpriced.map((row) => ({
       id: row.id,
       label: row.name,
-      color: persistedColor(row.color, ALLOCATION_PRESETS[pref.preset][index % ALLOCATION_PRESETS[pref.preset].length]),
+      color: resolveColor(entityColors, "account", row.id, row.color),
       amountMinor: null,
       currency: code,
       original: row.quantity,
@@ -138,22 +146,22 @@ export function HoldingsChart({
   const totalSeries = completeSeries(historyIn, portfolioIds, from);
   const change = changeOf(totalSeries);
   const lineSeries = [
-    portVis.hidden.has("total") ? null : { id: "total", color: "var(--brand)", points: totalSeries },
+    portVis.hidden.has("total") ? null : { id: "total", color: resolveColor(entityColors, "series", "portfolio:total", ""), points: totalSeries },
     ...shownIds.map((id) => ({
       id,
-      color: "var(--text-tertiary)",
+      color: resolveColor(entityColors, "account", id, accounts.find((account) => account.id === id)?.color || ""),
       points: completeSeries(historyIn, [id], from),
     })),
   ].filter((row): row is { id: string; color: string; points: { date: string; valueMinor: number }[] } => Boolean(row && row.points.length));
   const portRows: LegendRow[] = [
-    { id: "total", label: t("Portfolio value"), color: "var(--brand)", amountMinor: totalSeries.length ? totalSeries[totalSeries.length - 1].valueMinor : null, currency: code, className: "total" },
+    { id: "total", label: t("Portfolio value"), color: resolveColor(entityColors, "series", "portfolio:total", ""), amountMinor: totalSeries.length ? totalSeries[totalSeries.length - 1].valueMinor : null, currency: code, className: "total" },
     ...portfolioItems.map((item) => {
       const points = seriesFor(historyIn, [item.id], from);
       const last = points.length ? points[points.length - 1] : undefined;
       return {
         id: item.id,
         label: item.label,
-        color: "var(--text-tertiary)",
+        color: resolveColor(entityColors, "account", item.id, accounts.find((account) => account.id === item.id)?.color || ""),
         amountMinor: last?.valueMinor ?? null,
         currency: code,
         className: item.className,
@@ -162,10 +170,26 @@ export function HoldingsChart({
     }),
   ];
   const focused = focus ? totalSeries.find((point) => point.date === focus) : null;
+  const paint = (kind: string, id: string, color: string) => {
+    if (onPaint) onPaint(kind, id, color);
+    if (kind === "account") {
+      const account = accounts.find((row) => row.id === id);
+      if (account) onRecolor(account, color || resolveColor(entityColors, "account", account.id, ""));
+    }
+    if (kind === "series" && id === "portfolio:total" && onPaint) return;
+  };
+  const donutSeries = legend.map((row) => ({
+    id: row.id,
+    label: row.label,
+    color: row.color,
+    amountMinor: row.amountMinor,
+    group: pref.group,
+  }));
+  const lineSeriesRows = portRows.map((row) => ({ id: row.id, label: row.label, color: row.color, amountMinor: row.amountMinor }));
 
   return (
     <div className="space-y-4">
-      <ChartCard title={t("Holdings chart")} action={<PaletteMenu value={pref.preset} onChange={(preset) => save({ ...pref, preset })} />}>
+      <ChartCard title={t("Holdings chart")}>
         <p className="fin-muted text-[13px] leading-4">{fill("By value in {code}.", { code: code || "—" })}</p>
         <p className="fin-muted text-[13px] leading-4">{t("Latest balances. This period does not rewrite them.")}</p>
         <ChartPeriodBar period={holdingsPeriod.period} onChange={holdingsPeriod.setPeriod} />
@@ -186,19 +210,32 @@ export function HoldingsChart({
           onToggle={vis.toggle}
           onShowAll={vis.showAll}
           anyHidden={vis.anyHidden}
-          onColor={(id, color) => {
-            const account = accounts.find((row) => row.id === id);
-            if (account) onRecolor(account, color);
-            setPainting("");
-          }}
-          colors={["var(--brand)", "var(--text-primary)", "var(--text-tertiary)", "var(--line)"]}
+          onColor={() => undefined}
           painting={painting}
-          setPainting={setPainting}
+          setPainting={(id) => {
+            setPainting(id);
+            if (id) setSheet("holding");
+          }}
           onUnpriced={(id) => {
             const account = accounts.find((row) => row.id === id);
             if (account && onUnpriced) onUnpriced(account);
           }}
         />
+        <ChartColorMenu
+          series={donutSeries}
+          currency={code}
+          startOpen={openSheet === "donut"}
+          onPaint={(id, color) => paint(pref.group === "class" ? "class" : "account", id, color)}
+        />
+        {sheet === "holding" && painting ? (
+          <ColorSheet
+            series={donutSeries.filter((row) => row.id === painting)}
+            currency={code}
+            initialId={painting}
+            onPaint={(id, color) => paint(pref.group === "class" ? "class" : "account", id, color)}
+            onClose={() => { setSheet(""); setPainting(""); }}
+          />
+        ) : null}
       </ChartCard>
 
       <div data-shot="portfolio">
@@ -222,7 +259,35 @@ export function HoldingsChart({
             ) : null}
           </>
         )}
-        <Legend rows={portRows} hidden={portVis.hidden} currency={code} onToggle={portVis.toggle} onShowAll={portVis.showAll} anyHidden={portVis.anyHidden} />
+        <Legend
+          rows={portRows}
+          hidden={portVis.hidden}
+          currency={code}
+          onToggle={portVis.toggle}
+          onShowAll={portVis.showAll}
+          anyHidden={portVis.anyHidden}
+          onColor={() => undefined}
+          setPainting={(id) => {
+            setPainting(id);
+            if (id) setSheet("line");
+          }}
+          painting={painting}
+        />
+        <ChartColorMenu
+          series={lineSeriesRows}
+          currency={code}
+          startOpen={openSheet === "line"}
+          onPaint={(id, color) => paint(id === "total" ? "series" : "account", id === "total" ? "portfolio:total" : id, color)}
+        />
+        {sheet === "line" && painting ? (
+          <ColorSheet
+            series={lineSeriesRows.filter((row) => row.id === painting)}
+            currency={code}
+            initialId={painting}
+            onPaint={(id, color) => paint(id === "total" ? "series" : "account", id === "total" ? "portfolio:total" : id, color)}
+            onClose={() => { setSheet(""); setPainting(""); }}
+          />
+        ) : null}
       </ChartCard>
       </div>
     </div>

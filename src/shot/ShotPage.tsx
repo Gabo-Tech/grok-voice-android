@@ -1,11 +1,15 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { BudgetSection } from "@/components/BudgetSection";
+import { HoldingsChart } from "@/components/HoldingsChart";
+import { financeSample } from "@/lib/financeSample";
+import { paintColors, type EntityColor } from "@/lib/entityColor";
 import { FinanceDashboard } from "@/components/FinanceDashboard";
 import { MoneyFlowPanel } from "@/components/MoneyFlowChart";
 import { todayIso } from "@/components/FinanceDashboard";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceBudget, FinanceCategory, FinanceRule, FinanceSnapshot, FinanceTransaction } from "@/lib/api";
 import { emptyFinance } from "@/lib/money";
+import "@/finance.css";
 
 function iso(offset: number): string {
   const date = new Date();
@@ -216,6 +220,7 @@ function planFinance(empty: boolean): FinanceState {
     setPriceProvider: noop,
     exportPdf: async () => ({ fileName: "", dataB64: "", shared: false, pages: 0 }),
     setError: noop,
+    paintColor: noop,
   } as FinanceState;
 }
 
@@ -231,9 +236,39 @@ function PlanShot({ empty }: { empty: boolean }) {
   );
 }
 
+function HoldingsShot({ open }: { open: "" | "donut" | "line" }) {
+  const sample = financeSample("CHF");
+  const [colors, setColors] = useState<EntityColor[]>([
+    { kind: "account", id: "quanloop", color: "#009E73" },
+    { kind: "account", id: "xmr", color: "#0072B2" },
+    { kind: "account", id: "silver", color: "#9A5C00" },
+    { kind: "account", id: "zano", color: "#A84B86" },
+    { kind: "account", id: "epic", color: "#C44E00" },
+    { kind: "account", id: "rolex", color: "#1F7A6E" },
+  ]);
+  return (
+    <div className="finance min-h-screen bg-[var(--surface-0)] px-4 py-6 text-[var(--text-primary)]">
+      <HoldingsChart
+        accounts={sample.accounts}
+        display="CHF"
+        fx={sample.fx}
+        prices={sample.prices}
+        history={sample.history}
+        entityColors={colors}
+        openSheet={open}
+        onRecolor={() => undefined}
+        onPaint={(kind, id, color) => setColors((current) => paintColors(current, kind, id, color))}
+      />
+    </div>
+  );
+}
+
 export function ShotPage({ kind }: { kind: string }) {
   if (kind === "flow-empty") return <FlowShot empty />;
   if (kind === "plan-full") return <PlanShot empty={false} />;
   if (kind === "plan-empty") return <PlanShot empty />;
+  if (kind === "holdings-line") return <HoldingsShot open="" />;
+  if (kind === "holdings-donut") return <HoldingsShot open="" />;
+  if (kind === "holdings-color") return <HoldingsShot open="donut" />;
   return <FlowShot empty={false} />;
 }

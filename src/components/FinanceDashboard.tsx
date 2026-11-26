@@ -25,6 +25,8 @@ import {
 import { selectDebt, type DebtSelection, type DebtSliceId } from "@/lib/financeDebt";
 import { flowParts as flowPartsOf, monthActivity, monthCash, netWorthParts, worthBuckets, type CashTx } from "@/lib/financeLedger";
 import { formatMoney, moneyParts } from "@/lib/money";
+import { ChartColorMenu } from "@/components/ColorSheet";
+import { resolveColor } from "@/lib/entityColor";
 import { fill, useT } from "@/lib/i18n";
 import { financePanels, type FinancePlace } from "@/lib/financeTabs";
 import { cn } from "@/lib/utils";
@@ -289,7 +291,7 @@ export function FinanceDashboard({
 
       {panels.includes("month") ? (
         <div data-finance-panel="month">
-          <MonthSection txs={txs} accounts={accounts} display={display} book={book} nowMs={nowMs} bounds={bounds} />
+          <MonthSection txs={txs} accounts={accounts} display={display} book={book} nowMs={nowMs} bounds={bounds} entityColors={finance.snapshot.entityColors} onPaint={finance.paintColor} />
         </div>
       ) : null}
 
@@ -347,7 +349,7 @@ export function FinanceDashboard({
           busy={finance.busy}
           dense={place === "plan"}
           today={today}
-          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, row.color]))}
+          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, resolveColor(finance.snapshot.entityColors, row.kind === "income" ? "income" : "category", row.name, row.color)]))}
         />
       ) : null}
 
@@ -377,7 +379,7 @@ export function FinanceDashboard({
           onOpen={onOpenRule}
           dense={place === "plan"}
           today={today}
-          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, row.color]))}
+          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, resolveColor(finance.snapshot.entityColors, row.kind === "income" ? "income" : "category", row.name, row.color)]))}
           onPaid={(id, date) => finance.markPaid(id, date)}
           onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
           paidLabel={t("Mark received")}
@@ -400,7 +402,7 @@ export function FinanceDashboard({
           onOpen={onOpenRule}
           dense={place === "plan"}
           today={today}
-          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, row.color]))}
+          colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, resolveColor(finance.snapshot.entityColors, row.kind === "income" ? "income" : "category", row.name, row.color)]))}
           onPaid={(id, date) => finance.markPaid(id, date)}
           onSkip={(id, date) => finance.scheduleAction(id, "skip", date)}
           paidLabel={t("Mark received")}
@@ -592,7 +594,7 @@ function Coming({
                       nowMs={nowMs}
                       dense={dense}
                       today={today}
-                      color={colors[row.category] || "var(--text-tertiary)"}
+                      color={colors[row.category] || resolveColor(undefined, "category", row.category, "")}
                     />
                   ))}
                 </div>
@@ -741,6 +743,8 @@ function MonthSection({
   book,
   nowMs,
   bounds,
+  entityColors = [],
+  onPaint,
 }: {
   txs: FinanceTransaction[];
   accounts: FinanceAccount[];
@@ -748,6 +752,8 @@ function MonthSection({
   book: RateBook | null;
   nowMs: number;
   bounds: { start: string; end: string };
+  entityColors?: { kind: string; id: string; color: string }[];
+  onPaint?: (kind: string, id: string, color: string) => void;
 }) {
   const t = useT();
   const kind = (id: string) => accounts.find((account) => account.id === id)?.kind || "";
@@ -781,12 +787,24 @@ function MonthSection({
     <section className="fin-panel fin-tight" data-finance-panel="month">
       <h2 className="fin-kicker">{t("This month")}</h2>
       <p className="fin-muted mt-1 text-[13px] leading-5">{t("Income minus expenses. A charge on a card counts once.")}</p>
-      <MoneyRow label={t("Income")} parts={income} display={display} book={book} nowMs={nowMs} />
-      <MoneyRow label={t("Expenses")} parts={expenses} display={display} book={book} nowMs={nowMs} />
+      <MoneyRow label={t("Income")} parts={income} display={display} book={book} nowMs={nowMs} color={resolveColor(entityColors, "series", "activity:income", "")} />
+      <MoneyRow label={t("Expenses")} parts={expenses} display={display} book={book} nowMs={nowMs} color={resolveColor(entityColors, "series", "activity:expenses", "")} />
       {cards.length > 0 ? <MoneyRow label={t("Card payments")} parts={cards} display={display} book={book} nowMs={nowMs} /> : null}
       {debts.length > 0 ? <MoneyRow label={t("Debt payments")} parts={debts} display={display} book={book} nowMs={nowMs} /> : null}
-      <MoneyRow label={t("Result")} parts={result} display={display} book={book} nowMs={nowMs} emphasize />
-      <MoneyRow label={t("Cash flow")} parts={flow} display={display} book={book} nowMs={nowMs} />
+      <MoneyRow label={t("Result")} parts={result} display={display} book={book} nowMs={nowMs} emphasize color={resolveColor(entityColors, "series", "activity:result", "")} />
+      <MoneyRow label={t("Cash flow")} parts={flow} display={display} book={book} nowMs={nowMs} color={resolveColor(entityColors, "series", "activity:cash", "")} />
+      {onPaint ? (
+        <ChartColorMenu
+          series={[
+            { id: "activity:income", label: t("Income"), color: resolveColor(entityColors, "series", "activity:income", "") },
+            { id: "activity:expenses", label: t("Expenses"), color: resolveColor(entityColors, "series", "activity:expenses", "") },
+            { id: "activity:result", label: t("Result"), color: resolveColor(entityColors, "series", "activity:result", "") },
+            { id: "activity:cash", label: t("Cash flow"), color: resolveColor(entityColors, "series", "activity:cash", "") },
+          ]}
+          currency={display}
+          onPaint={(id, color) => onPaint("series", id, color)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -798,6 +816,7 @@ function MoneyRow({
   book,
   nowMs,
   emphasize,
+  color = "",
 }: {
   label: string;
   parts: MoneyPart[];
@@ -805,13 +824,14 @@ function MoneyRow({
   book: RateBook | null;
   nowMs: number;
   emphasize?: boolean;
+  color?: string;
 }) {
   const head = headlineOf(parts, display, book, nowMs);
   const text = head.state === "ready" ? signedMoney(head.amountMinor, head.currency) : head.state === "needs-rate" ? head.missing.join(", ") : "—";
   const tone = head.state === "ready" && emphasize ? (head.amountMinor < 0 ? "fin-out" : head.amountMinor > 0 ? "fin-in" : "") : "";
   return (
     <div className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--line-soft)]">
-      <span className="text-[15px]">{label}</span>
+      <span className="flex items-center gap-2 text-[15px]">{color ? <span className="fin-swatch" style={{ background: color }} aria-hidden="true" /> : null}{label}</span>
       <span className={cn("fin-num text-[15px]", tone)}>{text}</span>
     </div>
   );

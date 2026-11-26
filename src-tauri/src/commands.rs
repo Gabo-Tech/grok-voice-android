@@ -1736,6 +1736,13 @@ pub fn edit_finance_category(
 }
 
 #[tauri::command]
+pub fn set_finance_color(app: AppHandle, kind: String, id: String, color: Option<String>) -> Result<crate::finance::Snapshot> {
+    app.state::<crate::finance::Finance>()
+        .set_color_on(&app, &kind, &id, color.as_deref().unwrap_or(""))
+        .map_err(msg)
+}
+
+#[tauri::command]
 pub fn mark_finance_paid(
     app: AppHandle,
     id: String,

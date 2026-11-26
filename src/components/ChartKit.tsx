@@ -142,7 +142,7 @@ export function Legend({
           return (
             <li key={row.id} className={off ? "opacity-40 transition-opacity" : "transition-opacity"}>
               <div className="flex min-h-11 items-center gap-1">
-                {onColor && colors && setPainting ? (
+                {onColor && setPainting ? (
                   <button
                     type="button"
                     className="fin-icon shrink-0"

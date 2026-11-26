@@ -514,6 +514,7 @@ export interface FinanceSnapshot {
   categories: FinanceCategory[];
   flowColors?: { id: string; color: string }[];
   flowLayout?: string;
+  entityColors?: { kind: string; id: string; color: string }[];
   fx?: FinanceFx;
   prices?: FinancePrices;
   history?: import("@/lib/portfolio").ValuePoint[];
@@ -957,6 +958,7 @@ export const api = {
   renameFinanceCategory: (from: string, to: string) => invoke<FinanceSnapshot>("rename_finance_category", { from, to }),
   editFinanceCategory: (draft: { action: string; name: string; to?: string; color?: string; kind?: string; icon?: string; order?: number; parent?: string }) =>
     invoke<FinanceSnapshot>("edit_finance_category", draft),
+  setFinanceColor: (kind: string, id: string, color: string) => invoke<FinanceSnapshot>("set_finance_color", { kind, id, color }),
   markFinancePaid: (id: string, date?: string) => invoke<FinanceSnapshot>("mark_finance_paid", { id, date: date ?? null }),
   exportFinancePdf: (filter: FinancePdfRequest) => invoke<ExportedFinancePdf>("export_finance_pdf", { filter }),
   refreshFinanceRates: (force = false) => invoke<FinanceSnapshot>("refresh_finance_rates", { force }),

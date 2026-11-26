@@ -26,6 +26,8 @@ import { selectDebt } from "@/lib/financeDebt";
 import { isHoldingAccount, positionOf, worthBuckets } from "@/lib/financeLedger";
 import { bookFromStatus, comingCashRows, headlineOf, plannedHits, utilization, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
+import { ChartColorMenu } from "@/components/ColorSheet";
+import { resolveColor } from "@/lib/entityColor";
 import { fill, useT } from "@/lib/i18n";
 
 const LAYOUT_KEY = "grok-dashboard-layout";
@@ -193,7 +195,7 @@ export function FinanceOverview({
     .map((bucket) => ({
       id: bucket.id,
       label: bucket.id,
-      color: bucket.id === "money" ? "var(--brand)" : "var(--text-tertiary)",
+      color: resolveColor(finance.snapshot.entityColors, "series", `allocation:${bucket.id}`, ""),
       amountMinor: bucket.amountMinor,
     }));
 
@@ -212,7 +214,10 @@ export function FinanceOverview({
           <Amount total={expenses} display={display} book={book} nowMs={nowMs} />
         </button>
         {ringRows.length ? (
-          <Donut rows={ringRows} hidden={new Set()} caption={t("Net worth")} center={formatMoney(buckets.assets - debt.amountMinor, display)} debtRatio={buckets.assets > 0 ? debt.amountMinor / buckets.assets : debt.amountMinor > 0 ? 1 : 0} />
+          <>
+            <Donut rows={ringRows} hidden={new Set()} caption={t("Net worth")} center={formatMoney(buckets.assets - debt.amountMinor, display)} debtRatio={buckets.assets > 0 ? debt.amountMinor / buckets.assets : debt.amountMinor > 0 ? 1 : 0} />
+            <ChartColorMenu series={ringRows.map((row) => ({ ...row, label: t(row.label === "money" ? "Money" : row.label === "investment" ? "Investments" : "Card credit") }))} currency={display} onPaint={(id, color) => finance.paintColor("series", `allocation:${id}`, color)} />
+          </>
         ) : null}
       </section>
     ),
@@ -281,7 +286,7 @@ export function FinanceOverview({
                 <span className="fin-num text-[15px]">{formatMoney(row.amountMinor, display)}</span>
               </div>
               <span className="mt-1 block h-0.5 w-full bg-[var(--line-soft)]">
-                <span className="block h-full bg-[var(--negative)]" style={{ width: `${Math.max(4, Math.round((row.amountMinor / maxCategory) * 100))}%` }} />
+                <span className="block h-full" style={{ width: `${Math.max(4, Math.round((row.amountMinor / maxCategory) * 100))}%`, background: resolveColor(finance.snapshot.entityColors, finance.snapshot.categories.find((category) => category.name === row.name)?.kind === "income" ? "income" : "category", row.name, finance.snapshot.categories.find((category) => category.name === row.name)?.color || "") }} />
               </span>
             </li>
           ))}
