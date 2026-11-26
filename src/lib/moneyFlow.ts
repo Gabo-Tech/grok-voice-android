@@ -596,7 +596,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const busiest = Math.max(1, ...counts, 1);
   const fontSize = Math.round(clamp(width * 0.034, 13, 15));
   const lineHeight = fontSize + 3;
-  const compact = width < 640;
+  const compact = width < 640 || (!portrait && reported < 480);
   const flowPx = Math.round(clamp(width * 0.055, 16, 48));
 
   let top = labels ? (reference ? 64 : portrait ? (vertical ? 128 : 96) : Math.round(clamp(reported * 0.1, 56, 84))) : 8;
@@ -607,10 +607,9 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     ? Math.round(clamp(busiest * (lineHeight * 2 + 14) + 120, 260, 640))
     : portrait
     ? Math.round(clamp(busiest * (lineHeight * 2 + 18), 260, 440))
-    : Math.round(clamp(Math.max(56, busiest * (lineHeight + 4)) / 0.68, 168, 340));
-  if (!portrait && top + bottom + plot > reported) plot = Math.max(128, reported - top - bottom);
+    : Math.max(220, busiest * (lineHeight * 3 + 8));
   const height = top + plot + bottom;
-  const columnFill = vertical ? 0.32 : portrait ? flowPx / plot : 0.32;
+  const columnFill = vertical ? 0.32 : portrait ? flowPx / plot : 1;
   const seriesH = Math.round(plot * (vertical ? 1 : columnFill));
   const seriesTop = portrait ? top : top + 2;
   const seriesBottom = portrait ? bottom : height - seriesTop - seriesH;
@@ -659,7 +658,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     nodeGap,
     floorShare: 2 / Math.max(40, seriesH),
     layoutIterations: 0,
-    linkOpacity: 0.3,
+    linkOpacity: vertical ? 0.45 : 0.3,
     columnFill,
     flowPx,
     portrait,

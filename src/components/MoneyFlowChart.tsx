@@ -1317,7 +1317,8 @@ function nudgeLabels(instance: ECharts, width: number, height: number) {
         if (!boxesHit(clusters[i], clusters[j])) continue;
         const lower = clusters[i].y <= clusters[j].y ? clusters[j] : clusters[i];
         const upper = lower === clusters[i] ? clusters[j] : clusters[i];
-        move(lower, 0, upper.y + upper.h - lower.y + 4);
+        const gap = Math.max(upper.h, lower.h);
+        move(lower, 0, upper.y + upper.h + gap - lower.y);
         moved = true;
       }
       const cluster = clusters[i];
@@ -1339,6 +1340,19 @@ function nudgeLabels(instance: ECharts, width: number, height: number) {
       }
     }
     if (!moved) break;
+  }
+  for (let i = 0; i < clusters.length; i += 1) {
+    for (let j = i + 1; j < clusters.length; j += 1) {
+      if (!boxesHit(clusters[i], clusters[j])) continue;
+      const lower = clusters[i].y >= clusters[j].y ? clusters[i] : clusters[j];
+      for (const item of lower.items) {
+        const text = item.el.style?.text || "";
+        const name = text.split("\n")[0];
+        if (!name || name === text) continue;
+        item.el.style = { ...item.el.style, text: name };
+        item.el.dirty?.();
+      }
+    }
   }
   instance.getZr().refresh();
 }
