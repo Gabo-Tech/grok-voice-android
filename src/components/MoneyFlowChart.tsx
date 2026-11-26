@@ -9,7 +9,7 @@ import { ChartCard } from "@/components/ChartKit";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
-import { buildMoneyFlow, buildSankeyOption, flowSlices, spreadColumn, spreadLevel, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
+import { buildMoneyFlow, buildSankeyOption, fitValueScale, flowSlices, spreadColumn, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
 import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
@@ -862,47 +862,40 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
     originY: el.parent?.y || 0,
     old: { x: el.shape?.x || 0, y: el.shape?.y || 0, w: el.shape?.width || 0, h: el.shape?.height || 0 },
   }));
-  const columns: Array<typeof paired> = [];
-  for (const item of [...paired].sort((a, b) => a.old.x - b.old.x)) {
-    const column = columns.find((group) => Math.abs(group[0].old.x - item.old.x) < 6);
-    if (column) column.push(item);
-    else columns.push([item]);
-  }
   const plotH = frame.plot;
   const plotW = Math.max(40, frame.width - frame.left - frame.right);
   const labelBand = frame.lineHeight * 3 + 8;
   const flowTop = labelBand;
   const flowH = Math.max(44, plotH - labelBand);
   const placed = new Map<number, { localX: number; localY: number; w: number; h: number }>();
-  columns.forEach((column) => {
-    const hub = column.some((item) => item.node.role === "pool");
-    const source = column.every((item) => item.node.role === "source");
-    const ordered = [...column].sort((a, b) => {
-      if (a.node.italic !== b.node.italic) return a.node.italic ? 1 : -1;
-      return b.node.amountMinor - a.node.amountMinor;
-    });
-    const localX = hub ? Math.round(plotW * 0.58) : source ? 0 : Math.max(0, plotW - 4);
-    const hubH = Math.min(72, Math.max(28, Math.round(flowH * 0.34)));
-    if (!hub) {
-      const count = Math.max(1, ordered.length);
-      const slot = flowH / count;
-      const total = Math.max(1, ordered.reduce((sum, item) => sum + item.node.amountMinor, 0));
-      ordered.forEach((item, index) => {
-        const h = Math.max(4, (item.node.amountMinor / total) * hubH);
-        const y = count === 1 ? flowTop + 4 : flowTop + index * slot + Math.max(0, (slot - h) / 2);
-        item.el.setShape?.({ x: localX, y, height: h });
-        item.el.dirty?.();
-        placed.set(item.index, { localX, localY: y, w: 4, h });
-      });
-      return;
-    }
-    const y = Math.max(frame.lineHeight * 3, flowTop - 8);
-    ordered.forEach((item) => {
-      item.el.setShape?.({ x: localX, y, height: hubH });
+  const rank = (node: FlowNode) => (node.italic ? 1 : 0);
+  const sources = paired.filter((item) => item.node.role === "source").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
+  const hubItem = paired.find((item) => item.node.role === "pool");
+  const leaves = paired.filter((item) => item.node.role !== "source" && item.node.role !== "pool").sort((a, b) => rank(a.node) - rank(b.node) || b.node.amountMinor - a.node.amountMinor);
+  const gap = frame.lineHeight * 2 + 8;
+  const hubAmount = Math.max(1, hubItem?.node.amountMinor || 0);
+  const scale = fitValueScale([sources.map((item) => item.node.amountMinor), leaves.map((item) => item.node.amountMinor), [hubAmount]], gap, flowH);
+  const hubH = hubAmount * scale;
+  const placeColumn = (items: typeof sources, localX: number) => {
+    const slices = flowSlices(items.map((item) => item.node.amountMinor), hubH);
+    const gaps = gap * Math.max(0, items.length - 1);
+    let y = flowTop + Math.max(0, (flowH - (hubH + gaps)) / 2);
+    items.forEach((item, index) => {
+      const h = slices[index]?.extent || 0;
+      item.el.setShape?.({ x: localX, y, height: h });
       item.el.dirty?.();
-      placed.set(item.index, { localX, localY: y, w: 4, h: hubH });
+      placed.set(item.index, { localX, localY: y, w: 4, h });
+      y += h + gap;
     });
-  });
+  };
+  placeColumn(sources, 0);
+  if (hubItem) {
+    const y = flowTop + Math.max(0, (flowH - hubH) / 2);
+    hubItem.el.setShape?.({ x: Math.round(plotW * 0.58), y, height: hubH });
+    hubItem.el.dirty?.();
+    placed.set(hubItem.index, { localX: Math.round(plotW * 0.58), localY: y, w: 4, h: hubH });
+  }
+  placeColumn(leaves, Math.max(0, plotW - 4));
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
   stackFlowCurves(curves, links, placed, idIndex, "y");
   zr.refresh();
@@ -955,9 +948,10 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
       const fill = amount ? muted : String(item.el.style?.fill || muted);
       line.el.style = { ...line.el.style, fill, fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
+      zr.refresh();
       const painted = measure(line.el) || now;
       let x = middle ? (frame.left + (frame.width - frame.right)) / 2 - painted.w / 2 : role === "source" ? globalX - 6 - painted.w : globalX + nodeW + 6;
-      if (middle) x = Math.max(frame.left, Math.min(x, frame.width - frame.right - painted.w));
+      if (middle) x = Math.max(2, Math.min(x, frame.width - frame.right - painted.w - 8));
       line.el.x = (line.el.x || 0) + (x - painted.x);
       line.el.y = (line.el.y || 0) + (cursor - painted.y);
       line.el.dirty?.();
@@ -967,7 +961,7 @@ function spreadReference(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[
   zr.refresh();
 }
 
-/** Narrow portrait. Rows run across the full width and the ribbons stay about a third of that width. */
+/** Narrow portrait, top to bottom. Every node uses one px-per-value, so a ribbon keeps that width from end to end. */
 function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[], links: FlowLink[]) {
   const zr = instance.getZr() as unknown as { storage: { getDisplayList?: (all?: boolean) => AuditEl[] }; refresh: () => void; add?: (el: AuditEl) => void };
   const list = zr.storage.getDisplayList?.(true) || [];
@@ -994,27 +988,27 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     item.el.dirty?.();
     placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below: align !== "above", stack, align });
   };
-  const labelCol = 8;
-  const flowW = Math.max(80, plotW - labelCol);
-  const sourceBudget = sources.length === 1 ? Math.min(64, flowW * 0.28) : flowW * 0.9;
-  const sourceBoxes = spreadLevel(sources.map((item) => item.node.amountMinor), flowW, sourceBudget, sources.length === 1 ? "center" : "slots");
-  sources.forEach((item, index) => {
-    const next = sourceBoxes[index];
-    if (next) placeBar(item, next.x, 2, next.w, "above", index % 2);
-  });
-  const hubW = Math.min(flowW * 0.72, Math.max(48, flowW * 0.42));
-  const hubX = Math.round((flowW - hubW) / 2);
+  const labelLane = 156;
+  const flowW = Math.max(80, plotW - labelLane);
+  const gap = 4;
+  const hubAmount = Math.max(1, hubItem?.node.amountMinor || 0);
+  const scale = fitValueScale([sources.map((item) => item.node.amountMinor), leaves.map((item) => item.node.amountMinor), [hubAmount]], gap, flowW);
+  const hubW = hubAmount * scale;
+  const placeRow = (items: typeof sources, y: number, align: "above" | "below") => {
+    const slices = flowSlices(items.map((item) => item.node.amountMinor), hubW);
+    const gaps = gap * Math.max(0, items.length - 1);
+    let x = Math.max(0, (flowW - (hubW + gaps)) / 2);
+    items.forEach((item, index) => {
+      const w = slices[index]?.extent || 0;
+      placeBar(item, x, y, w, align, 0);
+      x += w + gap;
+    });
+  };
+  placeRow(sources, 2, "above");
+  const hubX = Math.max(0, (flowW - hubW) / 2);
   const hubY = Math.round(frame.plot * 0.42);
   if (hubItem) placeBar(hubItem, hubX, hubY, hubW, "right");
-  const leafMax = Math.max(1, ...leaves.map((item) => item.node.amountMinor));
-  const leafY = frame.plot - barH - 4;
-  leaves.forEach((item, index) => {
-    const slot = flowW / Math.max(1, leaves.length);
-    const w = Math.max(6, Math.min(slot - 10, Math.round(slot * 0.55 * Math.max(0.4, item.node.amountMinor / leafMax))));
-    const localX = Math.round(index * slot + (slot - w) / 2);
-    const bands = leaves.length > 6 ? 4 : leaves.length > 3 ? 2 : 1;
-    placeBar(item, Math.min(Math.max(0, localX), flowW - w), leafY, w, "below", index % bands);
-  });
+  placeRow(leaves, frame.plot - barH - 4, "below");
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
   stackFlowCurves(curves, links, placed, idIndex, "x");
   zr.refresh();
@@ -1048,6 +1042,7 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     group.push(text);
     groups.set(index, group);
   }
+  const blocks: Array<{ align: "left" | "right" | "above" | "below"; preferX: number; w: number; h: number; y: number; lines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> }> = [];
   for (const item of paired) {
     const box = placed.get(item.index);
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
@@ -1061,12 +1056,16 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
         ? box.y + box.h + 8 + stack * band
         : box.y - 8 - blockH - stack * band;
     cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
+    const paintedLines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> = [];
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = 0;
     for (const line of lines) {
       const now = measure(line.el);
       if (!now) continue;
       const amount = line.text.includes("·");
       line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
+      zr.refresh();
       const painted = measure(line.el) || now;
       const x = box.align === "right"
         ? Math.min(box.x + box.w + 8, frame.width - painted.w - 2)
@@ -1074,9 +1073,56 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
       line.el.x = (line.el.x || 0) + (x - painted.x);
       line.el.y = (line.el.y || 0) + (cursor - painted.y);
       line.el.dirty?.();
+      paintedLines.push({ el: line.el, x, y: cursor, w: painted.w, h: frame.lineHeight });
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x + painted.w);
       cursor += frame.lineHeight;
     }
+    if (!paintedLines.length) continue;
+    blocks.push({ align: box.align, preferX: minX, w: Math.max(1, maxX - minX), h: blockH, y: paintedLines[0].y, lines: paintedLines });
   }
+  const hits = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+    a.x < b.x + b.w + 8 && a.x + a.w + 8 > b.x && a.y < b.y + b.h + 8 && a.y + a.h + 8 > b.y;
+  const pack = (align: "above" | "below") => {
+    const group = blocks.filter((block) => block.align === align).sort((a, b) => a.preferX - b.preferX);
+    const taken: Array<{ x: number; y: number; w: number; h: number }> = blocks.filter((block) => block.align === "right").map((block) => ({ x: block.preferX, y: block.y, w: block.w, h: block.h }));
+    for (const block of group) {
+      const dir = align === "below" ? 1 : -1;
+      let y = block.y;
+      let x = Math.max(2, Math.min(block.preferX, frame.width - block.w - 2));
+      let placed = false;
+      for (let row = 0; row < 8 && !placed; row += 1) {
+        const rowY = block.y + dir * row * (block.h + 8);
+        if (rowY < 2 || rowY + block.h > frame.height - 2) continue;
+        if (!taken.some((other) => hits({ x, y: rowY, w: block.w, h: block.h }, other))) {
+          y = rowY;
+          placed = true;
+        }
+      }
+      if (!placed) {
+        x = Math.max(2, frame.width - block.w - 2);
+        y = align === "below" ? Math.max(2, frame.height - block.h - 2) : 2;
+        for (let row = 0; row < 10 && !placed; row += 1) {
+          const rowY = align === "below" ? y - row * (block.h + 8) : y + row * (block.h + 8);
+          if (rowY < 2 || rowY + block.h > frame.height - 2) continue;
+          if (!taken.some((other) => hits({ x, y: rowY, w: block.w, h: block.h }, other))) {
+            y = rowY;
+            placed = true;
+          }
+        }
+      }
+      const dx = x - block.preferX;
+      const dy = y - block.lines[0].y;
+      for (const line of block.lines) {
+        line.el.x = (line.el.x || 0) + dx;
+        line.el.y = (line.el.y || 0) + dy;
+        line.el.dirty?.();
+      }
+      taken.push({ x, y, w: block.w, h: block.h });
+    }
+  };
+  pack("below");
+  pack("above");
   zr.refresh();
 }
 

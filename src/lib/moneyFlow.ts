@@ -941,7 +941,6 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   const depthOf = (node: FlowNode) => (narrow ? (node.role === "source" ? 0 : node.role === "pool" ? 1 : 2) : flowDepth(node.role, present));
   const counts = [0, 1, 2, 3, 4].map((depth) => graph.nodes.filter((node) => depthOf(node) === depth).length);
   const frame = sankeyFrame(input.width, counts, input.labels, input.height || 0, input.portraitLayout || "vertical");
-  const total = Math.max(1, ...graph.nodes.map((node) => node.amountMinor));
   const safe = new Map(graph.nodes.map((node, index) => [node.id, `n${index}`]));
   const compact = frame.compact;
   const labelWidth = Math.max(108, Math.max(frame.left, frame.right) - 8);
@@ -961,7 +960,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
       raw: node.amountMinor,
       role: node.role,
       kind: node.kind,
-      value: Math.max(1, sankeyValue(node.amountMinor, total, frame.floorShare)),
+      value: node.amountMinor,
       label: {
         show: input.labels,
         color: input.ink,
@@ -1054,7 +1053,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
               source: safe.get(link.source),
               target: safe.get(link.target),
               raw: link.amountMinor,
-              value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)),
+              value: link.amountMinor,
               lineStyle: { color, opacity: frame.linkOpacity },
             };
           }),
@@ -1062,6 +1061,22 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
       ],
     },
   };
+}
+
+/**
+ * One px-per-value for every row. The row with the most gaps sets the scale so
+ * node lengths plus the gaps between them fit in `avail`. Nodes are never
+ * shrunk on their own.
+ */
+export function fitValueScale(rows: number[][], gap: number, avail: number): number {
+  let scale = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    const sum = row.reduce((total, value) => total + Math.max(0, value), 0);
+    if (sum <= 0) continue;
+    const gaps = gap * Math.max(0, row.length - 1);
+    scale = Math.min(scale, Math.max(0, avail - gaps) / sum);
+  }
+  return Number.isFinite(scale) ? scale : 0;
 }
 
 /** Each link takes its own slice of a bar. Slices tile the span and do not overlap. */
