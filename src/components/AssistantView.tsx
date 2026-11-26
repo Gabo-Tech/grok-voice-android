@@ -210,11 +210,10 @@ export function AssistantView({
         {voice.rows.length === 0 ? (
           <div className="py-6">
             <p className="text-base leading-6 text-foreground">{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
-            {accounts.length === 0 && (
-              <Button type="button" className="mt-4" onClick={() => onOpenSettings("keys")}>
-                {t("Add a voice")}
-              </Button>
-            )}
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Hearing, the model, the voice, and what is tried next.")}</p>
+            <Button type="button" variant="outline" className="mt-4" onClick={() => onOpenSettings("voice")}>
+              {t("Open voice and AI")}
+            </Button>
           </div>
         ) : (
           <>
