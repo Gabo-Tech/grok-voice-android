@@ -52,12 +52,13 @@ object PhoneActions {
     soundKind: String = "",
     soundRef: String = "",
     soundLabel: String = "",
+    delivery: String = "",
   ): String {
     if (atMs <= System.currentTimeMillis()) {
       return """{"ok":false,"error":"That time is in the past."}"""
     }
-    upsert(context, id, kind, title, note, atMs, soundKind, soundRef, soundLabel)
-    arm(context, id, kind, title, note, atMs, soundKind, soundRef, soundLabel)
+    upsert(context, id, kind, title, note, atMs, soundKind, soundRef, soundLabel, delivery)
+    arm(context, id, kind, title, note, atMs, soundKind, soundRef, soundLabel, delivery)
     return """{"ok":true,"via":"local"}"""
   }
 
@@ -104,6 +105,7 @@ object PhoneActions {
         o.optString("soundKind"),
         o.optString("soundRef"),
         o.optString("soundLabel"),
+        o.optString("delivery"),
       )
     }
     write(context, keep)
@@ -122,7 +124,12 @@ object PhoneActions {
     val alarm = kind == "alarm" || kind == "timer" || kind == "countdown"
     val event = kind == "event" || kind == "calendar"
     val audibleChannel = if (alarm) ALARM_CHANNEL else REMINDER_CHANNEL
-    val spoken = SpokenAlerts.isSpoken(context)
+    val itemDelivery = deliveryOf(context, id)
+    val spoken = when (itemDelivery) {
+      "spoken" -> true
+      "normal" -> false
+      else -> SpokenAlerts.isSpoken(context)
+    }
     val custom = if (kind == "alarm") AlarmSounds.choice(soundKind, soundRef, soundLabel) else null
     val customError = if (custom?.kind == "file") AlarmSounds.fileProblem(context, custom.ref) else null
     // Spoken posts on a silent sibling so the existing audible channel, and any
@@ -231,7 +238,7 @@ object PhoneActions {
         else -> "reminder"
       }
       val bannerAudible = spoken && channelHasSound(nm, channel)
-      SpokenAlerts.enqueue(context, id, kind, shownTitle, text, channel, category, bannerAudible)
+      SpokenAlerts.enqueue(context, id, kind, shownTitle, text, channel, category, bannerAudible, itemDelivery)
     }
   }
 
@@ -504,9 +511,10 @@ object PhoneActions {
     soundKind: String,
     soundRef: String,
     soundLabel: String,
+    delivery: String = "",
   ) {
     val am = context.getSystemService(AlarmManager::class.java)
-    val pi = pending(context, id, kind, title, note, soundKind, soundRef, soundLabel)
+    val pi = pending(context, id, kind, title, note, soundKind, soundRef, soundLabel, delivery)
     val show = PendingIntent.getActivity(
       context, id + 100_000,
       Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -534,6 +542,7 @@ object PhoneActions {
     soundKind: String = "",
     soundRef: String = "",
     soundLabel: String = "",
+    delivery: String = "",
   ): PendingIntent {
     val intent = Intent(context, ReminderReceiver::class.java)
       .putExtra("id", id)
@@ -543,6 +552,7 @@ object PhoneActions {
       .putExtra("soundKind", soundKind)
       .putExtra("soundRef", soundRef)
       .putExtra("soundLabel", soundLabel)
+      .putExtra("delivery", delivery)
     return PendingIntent.getBroadcast(
       context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
@@ -558,6 +568,7 @@ object PhoneActions {
     soundKind: String,
     soundRef: String,
     soundLabel: String,
+    delivery: String = "",
   ) {
     val arr = read(context)
     val next = JSONArray()
@@ -575,8 +586,18 @@ object PhoneActions {
         .put("soundKind", soundKind)
         .put("soundRef", soundRef)
         .put("soundLabel", soundLabel)
+        .put("delivery", delivery)
     )
     write(context, next)
+  }
+
+  private fun deliveryOf(context: Context, id: Int): String {
+    val arr = read(context)
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      if (o.optInt("id") == id) return o.optString("delivery")
+    }
+    return ""
   }
 
   private fun read(context: Context): JSONArray {

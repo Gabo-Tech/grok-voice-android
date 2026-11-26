@@ -297,6 +297,7 @@ mod imp {
             sound_kind: &str,
             sound_ref: &str,
             sound_label: &str,
+            delivery: &str,
         ) -> Result<String> {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
@@ -309,10 +310,11 @@ mod imp {
                 sound_kind: &'a str,
                 sound_ref: &'a str,
                 sound_label: &'a str,
+                delivery: &'a str,
             }
             self.plugin_json(
                 "scheduleItem",
-                Args { id, kind, title, note, at_ms, sound_kind, sound_ref, sound_label },
+                Args { id, kind, title, note, at_ms, sound_kind, sound_ref, sound_label, delivery },
             )
         }
 
@@ -768,6 +770,7 @@ mod imp {
             _sound_kind: &str,
             _sound_ref: &str,
             _sound_label: &str,
+            _delivery: &str,
         ) -> Result<String> {
             Ok(serde_json::json!({
                 "ok": true,

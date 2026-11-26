@@ -250,13 +250,13 @@ export function AssistantView({
         <div className="mag-panel mb-3">
           <p className="text-sm leading-6 text-foreground">{voice.handoff.summary}</p>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {voice.handoff.kind === "delete_person" || voice.handoff.kind === "listen_off" || voice.handoff.kind === "wipe_memory"
+            {voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled" || voice.handoff.kind === "listen_off" || voice.handoff.kind === "wipe_memory"
               ? t("Say yes to finish this.")
               : t("Nothing is sent until you confirm in the other app.")}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button type="button" onClick={voice.confirmHandoff}>
-              {voice.handoff.kind === "delete_person"
+              {voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled"
                 ? t("Delete")
                 : voice.handoff.kind === "wipe_memory"
                   ? t("Wipe memory")

@@ -6428,6 +6428,8 @@ fn upcoming_start(date: NaiveDate, cadence: &str, weekdays: &[u8], now: chrono::
         year: Some(date.year()),
         lead_days: 0,
         until: None,
+        interval: 1,
+        anchor: None,
     };
     recurrence::next_after(&spec, now)
 }

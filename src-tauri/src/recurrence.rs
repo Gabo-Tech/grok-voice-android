@@ -17,6 +17,10 @@ pub struct Spec {
     pub lead_days: u32,
     /// Last day the series may fire. None means it does not end.
     pub until: Option<NaiveDate>,
+    /// 1 keeps the old cadence. 2 is every other day, week, month, or year.
+    pub interval: u32,
+    /// First day of an every-N series. None uses the next clock time.
+    pub anchor: Option<NaiveDate>,
 }
 
 pub fn normalize_kind(value: &str) -> String {
@@ -25,13 +29,40 @@ pub fn normalize_kind(value: &str) -> String {
         "weekly" | "week" | "weekdays" => "weekly".into(),
         "monthly" | "month" | "every month" => "monthly".into(),
         "yearly" | "annual" | "every year" | "annually" => "yearly".into(),
+        "every_n_days" | "every n days" => "every_n_days".into(),
+        "every_n_weeks" | "every n weeks" => "every_n_weeks".into(),
+        "every_n_months" | "every n months" => "every_n_months".into(),
+        "every_n_years" | "every n years" => "every_n_years".into(),
         "once" | "one-off" | "oneoff" | "single" => "once".into(),
         _ => "none".into(),
     }
 }
 
 pub fn is_repeating(kind: &str) -> bool {
-    matches!(normalize_kind(kind).as_str(), "daily" | "weekly" | "monthly" | "yearly")
+    matches!(
+        normalize_kind(kind).as_str(),
+        "daily" | "weekly" | "monthly" | "yearly" | "every_n_days" | "every_n_weeks" | "every_n_months" | "every_n_years"
+    )
+}
+
+/// `every 3 days` keeps the count with the unit. Other phrases return no interval.
+pub fn every_phrase(value: &str) -> Option<(String, u32)> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.len() < 3 || !parts[0].eq_ignore_ascii_case("every") {
+        return None;
+    }
+    let count: u32 = parts[1].parse().ok()?;
+    if count == 0 {
+        return None;
+    }
+    let kind = match parts[2].to_ascii_lowercase().as_str() {
+        "day" | "days" => "every_n_days",
+        "week" | "weeks" => "every_n_weeks",
+        "month" | "months" => "every_n_months",
+        "year" | "years" => "every_n_years",
+        _ => return None,
+    };
+    Some((kind.into(), count))
 }
 
 /// The soonest fire strictly after `after`.
@@ -39,11 +70,16 @@ pub fn next_after(spec: &Spec, after: chrono::DateTime<Local>) -> Option<chrono:
     let kind = normalize_kind(&spec.kind);
     let hour = spec.hour.min(23);
     let minute = spec.minute.min(59);
+    let interval = spec.interval.max(1);
     let when = match kind.as_str() {
         "daily" => Some(next_daily(after, hour, minute)),
+        "every_n_days" => Some(next_spaced_days(after, spec.anchor, interval, hour, minute)),
         "weekly" => Some(next_weekly(after, &spec.weekdays, hour, minute)),
+        "every_n_weeks" => Some(next_spaced_weeks(after, spec.anchor, &spec.weekdays, interval, hour, minute)),
         "monthly" => Some(next_monthly(after, spec.day, hour, minute)),
+        "every_n_months" => Some(next_spaced_months(after, spec.anchor, spec.day, interval, hour, minute)),
         "yearly" => next_yearly(after, spec.month, spec.day, hour, minute, spec.lead_days, None),
+        "every_n_years" => next_spaced_years(after, spec, interval),
         "once" => next_once(after, spec),
         _ => None,
     }?;
@@ -451,6 +487,137 @@ fn soonest_clock(
     best
 }
 
+fn next_spaced_days(
+    after: chrono::DateTime<Local>,
+    anchor: Option<NaiveDate>,
+    interval: u32,
+    hour: u32,
+    minute: u32,
+) -> chrono::DateTime<Local> {
+    let interval = interval.max(1) as i64;
+    if interval == 1 {
+        return next_daily(after, hour, minute);
+    }
+    let anchor = anchor.unwrap_or(after.date_naive());
+    let mut date = anchor;
+    let horizon = after.date_naive();
+    if date < horizon {
+        let steps = (horizon - date).num_days().max(0) / interval;
+        date += Duration::days(steps * interval);
+    }
+    for _ in 0..8 {
+        if let Some(when) = local_hms(date, hour, minute) {
+            if when > after {
+                return when;
+            }
+        }
+        date += Duration::days(interval);
+    }
+    after + Duration::days(interval)
+}
+
+fn next_spaced_weeks(
+    after: chrono::DateTime<Local>,
+    anchor: Option<NaiveDate>,
+    weekdays: &[u8],
+    interval: u32,
+    hour: u32,
+    minute: u32,
+) -> chrono::DateTime<Local> {
+    let interval = interval.max(1);
+    if interval == 1 {
+        return next_weekly(after, weekdays, hour, minute);
+    }
+    let anchor = anchor.unwrap_or(after.date_naive());
+    let mut days: Vec<u8> = weekdays.iter().copied().filter(|d| (1..=7).contains(d)).collect();
+    if days.is_empty() {
+        days.push(anchor.weekday().number_from_monday() as u8);
+    }
+    let span = i64::from(interval) * 7 + 14;
+    for add in 0..span {
+        let date = after.date_naive() + Duration::days(add);
+        if !week_matches(date, anchor, interval) {
+            continue;
+        }
+        let weekday = date.weekday().number_from_monday() as u8;
+        if !days.contains(&weekday) {
+            continue;
+        }
+        if let Some(when) = local_hms(date, hour, minute) {
+            if when > after {
+                return when;
+            }
+        }
+    }
+    after + Duration::days(span)
+}
+
+fn week_index(date: NaiveDate) -> i64 {
+    let monday = date - Duration::days(date.weekday().num_days_from_monday() as i64);
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 5).unwrap_or(monday);
+    monday.signed_duration_since(epoch).num_days() / 7
+}
+
+fn week_matches(date: NaiveDate, anchor: NaiveDate, interval: u32) -> bool {
+    let diff = week_index(date) - week_index(anchor);
+    diff >= 0 && diff % i64::from(interval.max(1)) == 0
+}
+
+fn next_spaced_months(
+    after: chrono::DateTime<Local>,
+    anchor: Option<NaiveDate>,
+    day: u32,
+    interval: u32,
+    hour: u32,
+    minute: u32,
+) -> chrono::DateTime<Local> {
+    let interval = interval.max(1);
+    if interval == 1 {
+        return next_monthly(after, day, hour, minute);
+    }
+    let anchor = anchor.unwrap_or(after.date_naive());
+    let mut year = anchor.year();
+    let mut month = anchor.month();
+    for _ in 0..240 {
+        if let Some(date) = clamped_month_day(year, month, day.max(1)) {
+            if let Some(when) = local_hms(date, hour, minute) {
+                if when > after {
+                    return when;
+                }
+            }
+        }
+        month += interval;
+        while month > 12 {
+            month -= 12;
+            year += 1;
+        }
+    }
+    after + Duration::days(31 * i64::from(interval))
+}
+
+fn next_spaced_years(after: chrono::DateTime<Local>, spec: &Spec, interval: u32) -> Option<chrono::DateTime<Local>> {
+    let interval = i32::try_from(interval.max(1)).unwrap_or(1);
+    if interval == 1 {
+        return next_yearly(after, spec.month, spec.day, spec.hour, spec.minute, spec.lead_days, None);
+    }
+    let anchor_year = spec.anchor.map(|date| date.year()).or(spec.year).unwrap_or(after.year());
+    let mut year = anchor_year;
+    if year < after.year() {
+        let steps = (after.year() - year) / interval;
+        year += steps * interval;
+    }
+    for _ in 0..40 {
+        let event = date_in_year(year, spec.month, spec.day)?;
+        let fire_day = event - Duration::days(spec.lead_days as i64);
+        let when = local_hms(fire_day, spec.hour.min(23), spec.minute.min(59))?;
+        if when > after {
+            return Some(when);
+        }
+        year += interval;
+    }
+    None
+}
+
 fn next_daily(after: chrono::DateTime<Local>, hour: u32, minute: u32) -> chrono::DateTime<Local> {
     let today = local_hms(after.date_naive(), hour, minute).unwrap_or(after + Duration::days(1));
     if today > after {
@@ -631,6 +798,8 @@ mod tests {
             year: None,
             lead_days: 0,
             until: None,
+            interval: 1,
+            anchor: None,
         };
         assert_eq!(next_after(&daily_later, after).unwrap(), t(2026, 3, 3, 11, 0));
         let daily_morning = Spec { hour: 9, ..daily_later.clone() };
@@ -646,6 +815,8 @@ mod tests {
             year: None,
             lead_days: 0,
             until: None,
+            interval: 1,
+            anchor: None,
         };
         let next = next_after(&standup, after).unwrap();
         assert_eq!(next, t(2026, 3, 4, 9, 0));
@@ -664,6 +835,8 @@ mod tests {
             year: None,
             lead_days: 1,
             until: None,
+            interval: 1,
+            anchor: None,
         };
         assert_eq!(next_after(&birthday, t(2026, 2, 1, 8, 0)).unwrap(), t(2026, 3, 2, 9, 0));
         assert_eq!(next_after(&birthday, t(2026, 3, 2, 10, 0)).unwrap(), t(2027, 3, 2, 9, 0));
@@ -683,6 +856,8 @@ mod tests {
             year: Some(2026),
             lead_days: 0,
             until: None,
+            interval: 1,
+            anchor: None,
         };
         assert_eq!(next_after(&once, t(2026, 3, 3, 10, 0)).unwrap(), t(2026, 3, 3, 15, 0));
         assert!(next_after(&once, t(2026, 3, 3, 16, 0)).is_none());
@@ -702,6 +877,8 @@ mod tests {
             year: None,
             lead_days: 7,
             until: None,
+            interval: 1,
+            anchor: None,
         };
         assert_eq!(notify_anchor(&birthday, t(2026, 3, 3, 10, 0)).unwrap(), t(2026, 6, 8, 9, 0));
         assert_eq!(notify_anchor(&birthday, t(2026, 6, 8, 8, 0)).unwrap(), t(2026, 6, 8, 9, 0));
@@ -728,8 +905,33 @@ mod tests {
             year: None,
             lead_days: 0,
             until: None,
+            interval: 1,
+            anchor: None,
         };
         assert_eq!(next_after(&leap, t(2027, 1, 1, 0, 0)).unwrap(), t(2027, 2, 28, 9, 0));
+    }
+
+    #[test]
+    fn every_n_respects_the_anchor_and_the_end_date() {
+        let anchor = NaiveDate::from_ymd_opt(2026, 3, 1).unwrap();
+        let days = Spec {
+            kind: "every_n_days".into(),
+            weekdays: vec![],
+            hour: 8,
+            minute: 0,
+            month: 3,
+            day: 1,
+            year: Some(2026),
+            lead_days: 0,
+            until: Some(NaiveDate::from_ymd_opt(2026, 3, 8).unwrap()),
+            interval: 3,
+            anchor: Some(anchor),
+        };
+        assert_eq!(next_after(&days, t(2026, 3, 1, 8, 1)).unwrap(), t(2026, 3, 4, 8, 0));
+        assert_eq!(next_after(&days, t(2026, 3, 4, 8, 1)).unwrap(), t(2026, 3, 7, 8, 0));
+        assert!(next_after(&days, t(2026, 3, 7, 8, 1)).is_none());
+        assert_eq!(every_phrase("every 2 weeks"), Some(("every_n_weeks".into(), 2)));
+        assert!(every_phrase("daily").is_none());
     }
 
     #[test]
@@ -744,6 +946,8 @@ mod tests {
             year: None,
             lead_days: 0,
             until: Some(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()),
+            interval: 1,
+            anchor: None,
         };
         assert_eq!(next_after(&rent, t(2026, 1, 1, 0, 0)).unwrap(), t(2026, 1, 31, 9, 0));
         assert_eq!(next_after(&rent, t(2026, 1, 31, 10, 0)).unwrap(), t(2026, 2, 28, 9, 0));

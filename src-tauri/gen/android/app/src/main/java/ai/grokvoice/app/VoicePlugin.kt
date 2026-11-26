@@ -84,6 +84,7 @@ class ScheduleArgs {
   var soundKind: String = ""
   var soundRef: String = ""
   var soundLabel: String = ""
+  var delivery: String = ""
 }
 
 @InvokeArg
@@ -320,6 +321,7 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
         a.soundKind,
         a.soundRef,
         a.soundLabel,
+        a.delivery,
       )
     )
   }

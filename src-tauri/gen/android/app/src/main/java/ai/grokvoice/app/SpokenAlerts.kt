@@ -91,6 +91,7 @@ object SpokenAlerts {
     channelId: String,
     category: String,
     bannerAudible: Boolean = false,
+    itemDelivery: String = "",
   ) {
     val app = context.applicationContext
     val file = File(appRoot(app), "settings.json")
@@ -98,13 +99,19 @@ object SpokenAlerts {
       val tried = roots(app).joinToString { it.absolutePath }
       Log.w(TAG, "spoken notice settings.json not found; tried $tried")
     }
-    val delivery = readSettings(app).optString("notificationDelivery", "")
-    if (delivery != "spoken") {
-      Log.i(TAG, "spoken notice quiet: notificationDelivery=${delivery.ifEmpty { "missing" }} kind=$kind settings=${file.path} exists=${file.isFile}")
+    val settingsDelivery = readSettings(app).optString("notificationDelivery", "")
+    val speak = when (itemDelivery) {
+      "spoken" -> true
+      "normal" -> false
+      else -> settingsDelivery == "spoken"
+    }
+    if (!speak) {
+      Log.i(TAG, "spoken notice quiet: notificationDelivery=${settingsDelivery.ifEmpty { "missing" }} item=$itemDelivery kind=$kind settings=${file.path} exists=${file.isFile}")
       return
     }
-    Log.i(TAG, "spoken notice delivery=spoken kind=$kind settings=${file.path}")
+    Log.i(TAG, "spoken notice delivery=spoken kind=$kind item=$itemDelivery settings=${file.path}")
     val intent = SpokenNoticeService.intent(app, id, kind, title, body, channelId, category, bannerAudible)
+    if (itemDelivery == "spoken") intent.putExtra("itemDelivery", "spoken")
     try {
       ContextCompat.startForegroundService(app, intent)
     } catch (t: Throwable) {
@@ -133,10 +140,11 @@ object SpokenAlerts {
     val channelId = intent.getStringExtra("channelId") ?: ""
     val category = intent.getStringExtra("category") ?: "reminder"
     val bannerAudible = intent.getBooleanExtra("bannerAudible", false)
+    val itemDelivery = intent.getStringExtra("itemDelivery") ?: ""
     worker.execute {
       val wake = wakeLock(app)
       try {
-        speak(app, id, kind, title, body, channelId, category, bannerAudible)
+        speak(app, id, kind, title, body, channelId, category, bannerAudible, itemDelivery)
       } catch (t: Throwable) {
         Log.w(TAG, "spoken notice failed", t)
       } finally {
@@ -155,12 +163,13 @@ object SpokenAlerts {
     channelId: String,
     category: String,
     bannerAudible: Boolean,
+    itemDelivery: String,
   ) {
     if (!RustBridge.loadCore()) {
       Log.w(TAG, "spoken notice skipped: Rust core failed to load")
       return
     }
-    val specJson = spec(context, id, kind, channelId, category)
+    val specJson = spec(context, id, kind, channelId, category, itemDelivery)
     val line = RustBridge.planSpokenNotice(specJson, title, body).orEmpty()
     if (line.isEmpty()) {
       Log.w(TAG, "spoken notice produced no line for kind=$kind; spec=$specJson")
@@ -210,7 +219,7 @@ object SpokenAlerts {
     }
   }
 
-  private fun spec(context: Context, id: Int, kind: String, channelId: String, category: String): String {
+  private fun spec(context: Context, id: Int, kind: String, channelId: String, category: String, itemDelivery: String = ""): String {
     val settings = readSettings(context)
     val due = dueOf(context, id)
     val nm = context.getSystemService(NotificationManager::class.java)
@@ -249,7 +258,7 @@ object SpokenAlerts {
       true
     }
     return JSONObject()
-      .put("delivery", settings.optString("notificationDelivery", ""))
+      .put("delivery", if (itemDelivery == "spoken") "spoken" else settings.optString("notificationDelivery", ""))
       .put("userName", settings.optString("spokenName", ""))
       .put("locale", settings.optString("locale", ""))
       .put("phoneLang", Locale.getDefault().toLanguageTag())
