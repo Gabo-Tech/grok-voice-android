@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="graphite">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Use Talk in Grok Voice</title>
+    <meta name="description" content="How to start Talk, use Hey Grok, and what stays on the phone." />
+    <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/guide/talk.html" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="../index.html">Grok Voice</a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <ul id="site-nav">
+          <li><a href="./index.html" aria-current="page">Guide</a></li>
+          <li><a href="./commands.html">Commands</a></li>
+          <li><a href="../develop.html">Develop</a></li>
+          <li><a href="https://github.com/Gabo-Tech/grok-voice-android">Source</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="content">
+      <section class="hero">
+        <div class="wrap narrow">
+          <p class="chapter">Talk</p>
+          <h1>Open Talk and say the thing.</h1>
+          <p>The bottom bar is Talk, Notes, Calendar, Time, Finance, and Settings. People is under Settings. Talk reads and writes the same records those screens use. It does not keep a second copy.</p>
+
+          <h2>Start and stop</h2>
+          <ul>
+            <li>Open Talk and tap the control. Tap it again to hang up. The transcript stays on screen while the session is running.</li>
+            <li>Listen keeps the microphone after you leave the app. A notification means it is still open. Stop on that notification ends it. “Hey Grok” starts a turn only when Listen is on. Turning Listen off asks you to confirm. Turning it on does not.</li>
+            <li>The wake word is trained on the phone from three recordings. The samples are not uploaded. Open the app once after a reboot before background listening can use the microphone.</li>
+            <li>The quiet gap is 5 to 120 seconds, in steps of 5, under Settings. After that pause the conversation ends and only the wake word remains.</li>
+          </ul>
+          <p>Use headphones the first few times. On a loudspeaker the microphone hears the reply. Echo guard mutes the uplink while the app is speaking. Turn it off in Debug if you want to interrupt.</p>
+          <p>On this phone, Talk waits until you pause, then answers. A cloud voice session can keep the line open. 1min.ai writes the reply while Moonshine and the on-device voice stay on the phone.</p>
+
+          <h2>What a turn can do</h2>
+          <p>During a session the assistant calls a tool, then tells you what happened. The tools cover notes, Time, Calendar, People, messages and calls, Finance, music, settings, and web search. Two extra tools, <code>remember_fact</code> and <code>forget_fact</code>, exist only when Talk is running on this phone. They are not in the cloud tool list.</p>
+          <p>Deletes that the tool marks with <code>confirmed</code> ask for a clear yes before anything is removed: a reminder, alarm, or countdown, a person, a finance account or transaction or budget, and Listen off. Opening YouTube, the browser, a dialer, a text, WhatsApp, Signal, or email also waits for a yes. You still tap Send or Call in the other app when that tool only opens a draft or the dialer. <code>place_call</code> dials only after a second yes. <code>answer_call</code>, <code>decline_call</code>, and <code>end_call</code> run only when you say so.</p>
+          <p>Talk does not create an account, a card, or another record you did not ask for. Logging an expense matches a saved name. If none match, or two do, it asks. A new card is <code>save_account</code>, and only after you ask to add one.</p>
+          <p>The full list, with an example in each screen language, is the <a href="./commands.html">command catalog</a>. The same ideas as continuous speech are in the <a href="../voice/en.html">voice-command guide</a>.</p>
+
+          <h2>Money, colors, and the home screen</h2>
+          <p>Finance has no bank login. A missing rate is refused. Chart colors are saved per holding, account, category, income type, and money-flow item, included in backup, and used on every chart that shows that item. “Make silver gray” sets one. Resetting every color asks first.</p>
+          <p>Home-screen widgets follow the theme: Listen, Reminders, Coming up, Net worth, This month, Next 30 days, and Next. Themes are Graphite, Ink, Stone, Midnight, Carbon, Ivory, Sand, Forest, Plum, System, and Custom, under Settings.</p>
+          <p>Next: <a href="./commands.html">commands</a>, or <a href="./troubleshooting.html">troubleshooting</a>.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap narrow"><p><a href="./index.html">Guide</a></p></div>
+    </footer>
+    <script src="../main.js"></script>
+  </body>
+</html>
