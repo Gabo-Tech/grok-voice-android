@@ -315,7 +315,7 @@ export function buildMoneyFlow(
     return kids.map((row) => ({ id: row.id, label: row.label, amountMinor: row.amount, originals: originalsOf(row) }));
   };
 
-  sourceList = sourceList.filter((row) => row.amount > 0).sort((a, b) => a.amount - b.amount || a.label.localeCompare(b.label));
+  sourceList = sourceList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
   spendList = spendList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
   investList = investList.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
 
@@ -605,7 +605,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const flowPx = Math.round(clamp(width * 0.055, 16, 48));
 
   let top = labels ? (reference ? 16 : portrait ? (vertical ? 112 : 96) : 16) : 8;
-  let bottom = labels ? (reference ? 12 : portrait ? (vertical ? 20 : 88) : 8) : 8;
+  let bottom = labels ? (reference ? 12 : portrait ? (vertical ? 180 : 88) : 8) : 8;
   let plot = reference
     ? Math.max(64, busiest * 64)
     : vertical
@@ -663,7 +663,7 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
     nodeGap,
     floorShare: 2 / Math.max(40, seriesH),
     layoutIterations: 0,
-    linkOpacity: vertical ? 0.45 : 0.3,
+    linkOpacity: 0.45,
     columnFill,
     flowPx,
     portrait,
@@ -1015,7 +1015,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
           top: frame.seriesTop,
           bottom: frame.seriesBottom,
           emphasis: { focus: "adjacency" },
-          lineStyle: { color: input.mono ? input.brand : "gradient", curveness: frame.reference || frame.vertical ? 0.35 : 0.45, opacity: frame.linkOpacity },
+          lineStyle: { curveness: 0.5, opacity: frame.linkOpacity },
           label: { show: input.labels },
           labelLayout: (params: { dataType?: string; dataIndex?: number; rect?: { x: number; y: number; width: number; height: number } }) => {
             if (params.dataType !== "node" || params.dataIndex == null || !params.rect) return {};
@@ -1045,12 +1045,19 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
             }
           },
           data,
-          links: graph.links.map((link) => ({
-            source: safe.get(link.source),
-            target: safe.get(link.target),
-            raw: link.amountMinor,
-            value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)),
-          })),
+          links: graph.links.map((link) => {
+            const sourceNode = graph.nodes.find((node) => node.id === link.source);
+            const targetNode = graph.nodes.find((node) => node.id === link.target);
+            const colored = targetNode && (targetNode.role === "sink" || targetNode.role === "child" || targetNode.role === "hub") ? targetNode : sourceNode;
+            const color = input.mono ? input.brand : input.colors[colored?.id || ""] || input.brand;
+            return {
+              source: safe.get(link.source),
+              target: safe.get(link.target),
+              raw: link.amountMinor,
+              value: Math.max(1, sankeyValue(link.amountMinor, total, frame.floorShare)),
+              lineStyle: { color, opacity: frame.linkOpacity },
+            };
+          }),
         },
       ],
     },

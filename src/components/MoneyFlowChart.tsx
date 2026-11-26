@@ -746,7 +746,7 @@ function measure(el: AuditEl): { x: number; y: number; w: number; h: number } | 
   return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
 }
 
-/** Stack each ribbon on its own slice of the bar so two salaries do not land on one blob. */
+/** Stack ribbons in the same order at both ends so a later slot never crosses an earlier one. */
 function stackFlowCurves(
   curves: AuditEl[],
   links: FlowLink[],
@@ -754,31 +754,49 @@ function stackFlowCurves(
   idIndex: Map<string, number>,
   axis: "x" | "y",
 ) {
-  const groups = new Map<number, number[]>();
+  const along = (index: number, end: "source" | "target") => {
+    const id = end === "source" ? links[index]?.source : links[index]?.target;
+    const box = id == null ? undefined : placed.get(idIndex.get(id) ?? -1);
+    if (!box) return 0;
+    return axis === "x" ? box.localX : box.localY;
+  };
+  const outGroups = new Map<number, number[]>();
+  const inGroups = new Map<number, number[]>();
   links.forEach((link, index) => {
     const source = idIndex.get(link.source);
-    if (source == null || idIndex.get(link.target) == null) return;
-    const group = groups.get(source) || [];
-    group.push(index);
-    groups.set(source, group);
+    const target = idIndex.get(link.target);
+    if (source == null || target == null) return;
+    const out = outGroups.get(source) || [];
+    out.push(index);
+    outGroups.set(source, out);
+    const inn = inGroups.get(target) || [];
+    inn.push(index);
+    inGroups.set(target, inn);
   });
-  const srcOff = new Map<number, number>();
-  const srcExtentOf = new Map<number, number>();
-  for (const [source, indexes] of groups) {
+  const outStart = new Map<number, number>();
+  const outExtent = new Map<number, number>();
+  const inStart = new Map<number, number>();
+  const inExtent = new Map<number, number>();
+  for (const [source, indexes] of outGroups) {
     const src = placed.get(source);
     if (!src) continue;
-    const ordered = [...indexes].sort((a, b) => {
-      const left = placed.get(idIndex.get(links[a].target) ?? -1);
-      const right = placed.get(idIndex.get(links[b].target) ?? -1);
-      const ax = axis === "x" ? left?.localX || 0 : left?.localY || 0;
-      const bx = axis === "x" ? right?.localX || 0 : right?.localY || 0;
-      return ax - bx || (left?.localY || 0) - (right?.localY || 0);
-    });
+    const ordered = [...indexes].sort((a, b) => along(a, "target") - along(b, "target"));
     const span = axis === "y" ? src.h : src.w;
     const slices = flowSlices(ordered.map((index) => links[index].amountMinor), span);
     ordered.forEach((index, slot) => {
-      srcOff.set(index, slices[slot]?.start || 0);
-      srcExtentOf.set(index, slices[slot]?.extent || 1);
+      outStart.set(index, slices[slot]?.start || 0);
+      outExtent.set(index, slices[slot]?.extent || 1);
+    });
+  }
+  for (const [target, indexes] of inGroups) {
+    const dst = placed.get(target);
+    if (!dst) continue;
+    const ordered = [...indexes].sort((a, b) => along(a, "source") - along(b, "source"));
+    const span = axis === "y" ? dst.h : dst.w;
+    const slices = flowSlices(ordered.map((index) => links[index].amountMinor), span);
+    ordered.forEach((index, slot) => {
+      inStart.set(index, slices[slot]?.start || 0);
+      inExtent.set(index, slices[slot]?.extent || 1);
     });
   }
   curves.forEach((curve, index) => {
@@ -790,11 +808,10 @@ function stackFlowCurves(
     const src = placed.get(source);
     const dst = placed.get(target);
     if (!src || !dst) return;
-    const start = srcOff.get(index) || 0;
-    const srcExtent = srcExtentOf.get(index) || 1;
+    const extent = Math.max(1, Math.min(outExtent.get(index) || src.h, inExtent.get(index) || dst.h));
     if (axis === "y") {
-      const y1 = src.localY + start;
-      const y2 = dst.localY;
+      const y1 = src.localY + (outStart.get(index) || 0);
+      const y2 = dst.localY + (inStart.get(index) || 0);
       const x1 = src.localX + src.w;
       const x2 = dst.localX;
       curve.setShape?.({
@@ -804,13 +821,13 @@ function stackFlowCurves(
         y2,
         cpy1: y1,
         cpy2: y2,
-        cpx1: x1 + (x2 - x1) * 0.55,
-        cpx2: x1 + (x2 - x1) * 0.32,
-        extent: srcExtent,
+        cpx1: x1 + (x2 - x1) * 0.45,
+        cpx2: x1 + (x2 - x1) * 0.55,
+        extent,
       });
     } else {
-      const x1 = src.localX + start;
-      const x2 = dst.localX;
+      const x1 = src.localX + (outStart.get(index) || 0);
+      const x2 = dst.localX + (inStart.get(index) || 0);
       const y1 = src.localY + src.h;
       const y2 = dst.localY;
       curve.setShape?.({
@@ -820,9 +837,9 @@ function stackFlowCurves(
         y2,
         cpx1: x1,
         cpx2: x2,
-        cpy1: y1 + (y2 - y1) * 0.55,
-        cpy2: y1 + (y2 - y1) * 0.32,
-        extent: srcExtent,
+        cpy1: y1 + (y2 - y1) * 0.45,
+        cpy2: y1 + (y2 - y1) * 0.55,
+        extent,
       });
     }
     curve.dirty?.();
@@ -975,33 +992,26 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     item.el.dirty?.();
     placed.set(item.index, { x: item.originX + localX, y: item.originY + localY, w, h: barH, localX, localY, below: align !== "above", stack, align });
   };
-  const sourceBudget = sources.length === 1 ? Math.min(72, plotW * 0.4) : plotW * 0.92;
-  const sourceBoxes = spreadLevel(sources.map((item) => item.node.amountMinor), plotW, sourceBudget, sources.length === 1 ? "center" : "slots");
+  const labelCol = 8;
+  const flowW = Math.max(80, plotW - labelCol);
+  const sourceBudget = sources.length === 1 ? Math.min(64, flowW * 0.28) : flowW * 0.9;
+  const sourceBoxes = spreadLevel(sources.map((item) => item.node.amountMinor), flowW, sourceBudget, sources.length === 1 ? "center" : "slots");
   sources.forEach((item, index) => {
     const next = sourceBoxes[index];
     if (next) placeBar(item, next.x, 2, next.w, "above", index % 2);
   });
-  const hubW = Math.min(72, Math.max(28, Math.round(plotW * 0.22)));
-  const hubX = Math.round(plotW * 0.28);
-  const hubY = Math.max(28, Math.round(frame.plot * 0.12));
+  const hubW = Math.min(flowW * 0.72, Math.max(48, flowW * 0.42));
+  const hubX = Math.round((flowW - hubW) / 2);
+  const hubY = Math.round(frame.plot * 0.42);
   if (hubItem) placeBar(hubItem, hubX, hubY, hubW, "right");
-  const labelBlock = frame.lineHeight * 2 + 8;
   const leafMax = Math.max(1, ...leaves.map((item) => item.node.amountMinor));
-  const lanes = leaves.length > 4 ? 3 : Math.max(1, leaves.length);
-  const rows = Math.max(1, Math.ceil(leaves.length / lanes));
-  const leafTop = hubY + barH + labelBlock + 16;
-  const leafBottom = frame.plot - barH - 8;
-  const step = rows <= 1 ? 0 : (leafBottom - leafTop) / (rows - 1);
+  const leafY = frame.plot - barH - 4;
   leaves.forEach((item, index) => {
-    const lane = index % lanes;
-    const row = Math.floor(index / lanes);
-    const laneW = plotW / lanes;
-    const w = Math.max(8, Math.min(Math.round(laneW * 0.22), Math.round(28 * Math.max(0.45, item.node.amountMinor / leafMax))));
-    const laneX = lane * laneW;
-    const localX = lane === 0 ? Math.round(laneX + laneW - w - 4) : Math.round(laneX + 4);
-    const stagger = (lane - 1) * Math.round(Math.min(step * 0.22, frame.lineHeight));
-    const localY = Math.min(leafBottom, Math.max(leafTop, Math.round(leafTop + row * step + stagger)));
-    placeBar(item, Math.min(Math.max(0, localX), plotW - w), localY, w, lane === 0 ? "left" : "right");
+    const slot = flowW / Math.max(1, leaves.length);
+    const w = Math.max(6, Math.min(slot - 10, Math.round(slot * 0.55 * Math.max(0.4, item.node.amountMinor / leafMax))));
+    const localX = Math.round(index * slot + (slot - w) / 2);
+    const bands = leaves.length > 6 ? 4 : leaves.length > 3 ? 2 : 1;
+    placeBar(item, Math.min(Math.max(0, localX), flowW - w), leafY, w, "below", index % bands);
   });
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
   stackFlowCurves(curves, links, placed, idIndex, "x");
@@ -1042,11 +1052,13 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     if (!box || !lines.length) continue;
     const blockH = lines.length * frame.lineHeight;
     const stack = box.stack || 0;
-    const band = Math.max(blockH, frame.lineHeight * 3) + 8;
-    const beside = box.align === "left" || box.align === "right";
-    let cursor = beside ? box.y + box.h / 2 - blockH / 2 : box.y - 8 - band - stack * band;
+    const band = blockH + 6;
+    let cursor = box.align === "right"
+      ? box.y + box.h / 2 - blockH / 2
+      : box.align === "below"
+        ? box.y + box.h + 8 + stack * band
+        : box.y - 8 - blockH - stack * band;
     cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
-    const paper = usedColor("var(--surface-0)", "rgb(23, 24, 27)");
     for (const line of lines) {
       const now = measure(line.el);
       if (!now) continue;
@@ -1054,20 +1066,9 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
       line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
       line.el.dirty?.();
       const painted = measure(line.el) || now;
-      const x = box.align === "left"
-        ? Math.max(2, box.x - 8 - painted.w)
-        : box.align === "right"
-          ? Math.min(box.x + box.w + 8, frame.width - painted.w - 2)
-          : Math.max(2, Math.min(box.x + box.w / 2 - painted.w / 2, frame.width - painted.w - 2));
-      if (beside && item.node.role === "pool") {
-        const back = new (item.el.constructor as new (opts: unknown) => AuditEl)({
-          shape: { x: x - 4, y: cursor - 2, width: painted.w + 8, height: frame.lineHeight },
-          style: { fill: paper },
-          silent: true,
-          z2: 3,
-        });
-        zr.add?.(back);
-      }
+      const x = box.align === "right"
+        ? Math.min(box.x + box.w + 8, frame.width - painted.w - 2)
+        : Math.max(2, Math.min(box.x + box.w / 2 - painted.w / 2, frame.width - painted.w - 2));
       line.el.x = (line.el.x || 0) + (x - painted.x);
       line.el.y = (line.el.y || 0) + (cursor - painted.y);
       line.el.dirty?.();
