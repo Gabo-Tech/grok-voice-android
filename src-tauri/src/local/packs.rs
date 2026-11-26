@@ -35,6 +35,18 @@ pub const LLAMA_FILE: &str = "llama-3.2-1b-instruct-q4_k_m.gguf";
 pub const LFM_URL: &str =
     "https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/main/LFM2.5-350M-Q8_0.gguf";
 pub const LFM_FILE: &str = "lfm2.5-350m-q8_0.gguf";
+/// Qwen3.5 0.8B, Q8_0, from Unsloth. Apache-2.0. Verified 811,843,840 bytes.
+pub const QWEN35_08_URL: &str = "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf";
+pub const QWEN35_08_FILE: &str = "Qwen3.5-0.8B-Q8_0.gguf";
+/// Qwen3.5 2B, IQ4_NL, from Unsloth. Apache-2.0. Verified 1,213,300,992 bytes.
+pub const QWEN35_2B_URL: &str = "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-IQ4_NL.gguf";
+pub const QWEN35_2B_FILE: &str = "Qwen3.5-2B-IQ4_NL.gguf";
+/// Atomic Chat's own Qwen3.5 4B Q4_K_M. Apache-2.0. Verified 2,708,804,608 bytes.
+pub const QWEN35_4B_URL: &str = "https://huggingface.co/AtomicChat/Qwen3.5-4B-GGUF/resolve/main/qwen35-4b-Q4_K_M.gguf";
+pub const QWEN35_4B_FILE: &str = "qwen35-4b-Q4_K_M.gguf";
+/// Gemma 4 E2B QAT, Unsloth dynamic Q4. Apache-2.0. Verified 2,620,370,976 bytes.
+pub const GEMMA4_URL: &str = "https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf";
+pub const GEMMA4_FILE: &str = "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf";
 pub const STT_DIR: &str = "sherpa-onnx-moonshine-base-en-int8";
 const LEGACY_STT_DIR: &str = "sherpa-onnx-moonshine-tiny-en-int8";
 const REPLACE_NOTE: &str = "Replaces the previous pack. Download it again.";
@@ -222,6 +234,58 @@ const PACKS: &[Spec] = &[
         file: LFM_FILE,
         family: "lfm2",
     },
+    Spec {
+        id: "llm-qwen35-08b",
+        label: "Qwen3.5 0.8B",
+        detail: "Q8_0. Qwen3.5 chat model. Minimum 2 GB of memory.",
+        url: QWEN35_08_URL,
+        download_bytes: 811_843_840,
+        sha256: "0ad885ffd4bb022fc4f0d33a3308fa108ef8613159d3b3a67e23abca056b7a6c",
+        archive: false,
+        required: false,
+        kind: "llm",
+        file: QWEN35_08_FILE,
+        family: "chatml",
+    },
+    Spec {
+        id: "llm-qwen35-2b",
+        label: "Qwen3.5 2B",
+        detail: "IQ4_NL. Qwen3.5 chat model. Minimum 3 GB of memory.",
+        url: QWEN35_2B_URL,
+        download_bytes: 1_213_300_992,
+        sha256: "e430d87ebc5abbb269c2e2461f1a49b9c5dc79847c13c786dc3615d0b116c4ba",
+        archive: false,
+        required: false,
+        kind: "llm",
+        file: QWEN35_2B_FILE,
+        family: "chatml",
+    },
+    Spec {
+        id: "llm-qwen35-4b",
+        label: "Qwen3.5 4B",
+        detail: "Q4_K_M. Qwen3.5 chat model. Minimum 8 GB of memory.",
+        url: QWEN35_4B_URL,
+        download_bytes: 2_708_804_608,
+        sha256: "c1c33fb44b3cea1d296174d58dc9f1449a0150cbc353679b7ad86955c240d49a",
+        archive: false,
+        required: false,
+        kind: "llm",
+        file: QWEN35_4B_FILE,
+        family: "chatml",
+    },
+    Spec {
+        id: "llm-gemma4-e2b",
+        label: "Gemma 4 E2B",
+        detail: "QAT Q4. Gemma 4 chat model. Minimum 8 GB of memory.",
+        url: GEMMA4_URL,
+        download_bytes: 2_620_370_976,
+        sha256: "e531007218dfab990486a5de7676a6932d6ea8dea233d1f698d7c21cf8a16889",
+        archive: false,
+        required: false,
+        kind: "llm",
+        file: GEMMA4_FILE,
+        family: "gemma",
+    },
 ];
 
 #[derive(Clone, Serialize)]
@@ -239,6 +303,18 @@ pub struct PackInfo {
     pub kind: String,
     /// The language model Talk will load. Speech packs are never selected.
     pub selected: bool,
+    /// SPDX-style name from the model card. Empty for a speech pack.
+    pub license: String,
+    /// Minimum total RAM, in GB, before this model is a fit. 0 for speech.
+    pub min_ram_gb: u32,
+    /// Higher is a stronger chat model. 0 for speech.
+    pub strength: u32,
+    /// `fits`, `tight`, `unknown`, `no`, or empty before a probe is applied.
+    pub fit: String,
+    /// True for the strongest model that fits, or the strongest tight model.
+    pub recommended: bool,
+    /// `allow`, `warn`, or `block`.
+    pub gate: String,
 }
 
 #[derive(Clone, Debug)]
@@ -370,6 +446,12 @@ pub fn pack_status(root: &Path) -> Vec<PackInfo> {
             note: pack_note(root, spec.id),
             kind: spec.kind.into(),
             selected: spec.kind == "llm" && spec.id == selected,
+            license: pack_license(spec.id).into(),
+            min_ram_gb: pack_floor(spec.id).0,
+            strength: pack_floor(spec.id).1,
+            fit: String::new(),
+            recommended: false,
+            gate: "allow".into(),
         })
         .collect();
     for model in super::phonon::MODELS {
@@ -390,6 +472,12 @@ pub fn pack_status(root: &Path) -> Vec<PackInfo> {
             note: String::new(),
             kind: "phonon".into(),
             selected: false,
+            license: model.license.into(),
+            min_ram_gb: 0,
+            strength: 0,
+            fit: String::new(),
+            recommended: false,
+            gate: "allow".into(),
         });
     }
     packs.push(custom_info(root, &selected));
@@ -636,7 +724,7 @@ fn download_locked(
     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     let partial = dir.join("download.partial");
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(900))
+        .timeout(std::time::Duration::from_secs(2700))
         .connect_timeout(std::time::Duration::from_secs(20))
         .redirect(crate::http::pack_redirect())
         .build()
@@ -847,6 +935,88 @@ fn custom_info(root: &Path, selected: &str) -> PackInfo {
         },
         kind: "custom".into(),
         selected: selected == CUSTOM_LLM,
+        license: String::new(),
+        min_ram_gb: 0,
+        strength: 0,
+        fit: String::new(),
+        recommended: false,
+        gate: "allow".into(),
+    }
+}
+
+fn pack_license(id: &str) -> &'static str {
+    match id {
+        "llm" | "llm-qwen25-05b" | "llm-qwen35-08b" | "llm-qwen35-2b" | "llm-qwen35-4b" | "llm-gemma4-e2b" => "Apache-2.0",
+        "llm-gemma3-1b" => "Gemma",
+        "llm-llama32-1b" => "Llama 3.2",
+        "llm-lfm25-350m" => "LFM1.0",
+        _ => "",
+    }
+}
+
+fn pack_floor(id: &str) -> (u32, u32) {
+    match id {
+        "llm" => (2, 1),
+        "llm-lfm25-350m" => (2, 2),
+        "llm-qwen25-05b" => (3, 3),
+        "llm-qwen35-08b" => (2, 4),
+        "llm-llama32-1b" => (3, 5),
+        "llm-gemma3-1b" => (3, 6),
+        "llm-qwen35-2b" => (3, 7),
+        "llm-gemma4-e2b" => (8, 8),
+        "llm-qwen35-4b" => (8, 9),
+        _ => (0, 0),
+    }
+}
+
+/// Fill fit, recommendation, and the download gate from a memory probe.
+/// `total_mem` and `free_storage` are bytes. Zero means the probe is missing.
+pub fn apply_fit(packs: &mut [PackInfo], total_mem: u64, free_storage: u64) {
+    let candidates: Vec<super::fit::Candidate> = packs
+        .iter()
+        .filter(|pack| pack.kind == "llm" && pack.strength > 0)
+        .map(|pack| super::fit::Candidate {
+            id: pack.id.as_str(),
+            size_bytes: pack.download_bytes,
+            min_ram_gb: pack.min_ram_gb,
+            strength: pack.strength,
+        })
+        .collect();
+    let ids: Vec<(String, u64, u32, u32)> = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.id.to_string(),
+                candidate.size_bytes,
+                candidate.min_ram_gb,
+                candidate.strength,
+            )
+        })
+        .collect();
+    let borrowed: Vec<super::fit::Candidate> = ids
+        .iter()
+        .map(|(id, size, floor, strength)| super::fit::Candidate {
+            id: id.as_str(),
+            size_bytes: *size,
+            min_ram_gb: *floor,
+            strength: *strength,
+        })
+        .collect();
+    let recommended = super::fit::recommend(&borrowed, total_mem).unwrap_or("");
+    for pack in packs.iter_mut() {
+        if pack.kind != "llm" || pack.strength == 0 {
+            continue;
+        }
+        let fit = super::fit::classify(total_mem, pack.download_bytes, pack.min_ram_gb);
+        let gate = super::fit::download_gate(fit, free_storage, pack.download_bytes);
+        pack.fit = fit.as_str().into();
+        pack.recommended = pack.id == recommended;
+        pack.gate = match gate {
+            super::fit::DownloadGate::Allow => "allow",
+            super::fit::DownloadGate::Warn => "warn",
+            super::fit::DownloadGate::BlockStorage | super::fit::DownloadGate::BlockFit => "block",
+        }
+        .into();
     }
 }
 
@@ -1462,6 +1632,10 @@ mod tests {
             "llm-qwen25-05b",
             "llm-llama32-1b",
             "llm-lfm25-350m",
+            "llm-qwen35-08b",
+            "llm-qwen35-2b",
+            "llm-qwen35-4b",
+            "llm-gemma4-e2b",
         ] {
             let spec = PACKS.iter().find(|spec| spec.id == id).unwrap();
             assert_eq!(spec.kind, "llm");
@@ -1512,6 +1686,26 @@ mod tests {
         );
         assert_eq!(lfm.family, "lfm2");
         assert_eq!(lfm.file, LFM_FILE);
+        let qwen08 = PACKS.iter().find(|spec| spec.id == "llm-qwen35-08b").unwrap();
+        assert_eq!(qwen08.download_bytes, 811_843_840);
+        assert_eq!(qwen08.sha256, "0ad885ffd4bb022fc4f0d33a3308fa108ef8613159d3b3a67e23abca056b7a6c");
+        assert!(qwen08.url.contains("unsloth/Qwen3.5-0.8B-GGUF"));
+        let qwen2 = PACKS.iter().find(|spec| spec.id == "llm-qwen35-2b").unwrap();
+        assert_eq!(qwen2.download_bytes, 1_213_300_992);
+        assert_eq!(qwen2.sha256, "e430d87ebc5abbb269c2e2461f1a49b9c5dc79847c13c786dc3615d0b116c4ba");
+        let atomic = PACKS.iter().find(|spec| spec.id == "llm-qwen35-4b").unwrap();
+        assert_eq!(atomic.download_bytes, 2_708_804_608);
+        assert_eq!(atomic.sha256, "c1c33fb44b3cea1d296174d58dc9f1449a0150cbc353679b7ad86955c240d49a");
+        assert!(atomic.url.contains("AtomicChat/Qwen3.5-4B-GGUF"));
+        let gemma4 = PACKS.iter().find(|spec| spec.id == "llm-gemma4-e2b").unwrap();
+        assert_eq!(gemma4.download_bytes, 2_620_370_976);
+        assert_eq!(gemma4.sha256, "e531007218dfab990486a5de7676a6932d6ea8dea233d1f698d7c21cf8a16889");
+        assert!(gemma4.url.contains("unsloth/gemma-4-E2B-it-qat-GGUF"));
+        assert_eq!(pack_license("llm-qwen35-4b"), "Apache-2.0");
+        assert_eq!(pack_license("llm-gemma4-e2b"), "Apache-2.0");
+        for skipped in ["aion", "turboquant", "lfm3", "spark", "llm-lfm3", "llm-spark"] {
+            assert!(PACKS.iter().all(|spec| spec.id != skipped));
+        }
         assert!(lfm.url.contains("LiquidAI/LFM2.5-350M-GGUF"));
         assert!(lfm.url.ends_with("LFM2.5-350M-Q8_0.gguf"));
         assert!(!lfm.required);

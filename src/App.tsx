@@ -47,6 +47,7 @@ const PREVIEW_APP_AUTH: AuthStatus = {
   accounts: [
     { id: "preview", provider: "xai", hint: "xai" },
     { id: "preview-openai", provider: "openai", hint: "openai" },
+    { id: "preview-onemin", provider: "onemin", hint: "1min" },
   ],
 };
 const EMPTY_WAKE: WakewordStatus = { trained: false, samples: [false, false, false] };

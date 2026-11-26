@@ -1,4 +1,4 @@
-//! Enough of a GGUF header read to decide whether llama.cpp `b12140` can load the file.
+//! Enough of a GGUF header read to decide whether llama.cpp `b12774` can load the file.
 //! The bytes are never executed. Talk only passes the path to the existing loader.
 
 use std::{fs::File, io::Read, path::Path};
@@ -17,7 +17,10 @@ const NO_TENSORS: &str = "This GGUF has no tensors, so Talk cannot load it.";
 const HEADER_TOO_BIG: &str = "This GGUF header is too large to check.";
 const MISSING: &str = "That file is missing.";
 
-/// Architectures llama.cpp b12140 knows how to load as a generative model.
+/// Generative architectures llama.cpp b12774 (v1.1.0) can load.
+/// Embeddings, speech synthesizers, OCR, and encoder-only weights are left out.
+/// Aion is `maion-coder` and does load. TurboQuant is not an architecture here.
+/// LFM3 and Spark load, and they are not offered as download packs.
 /// Embeddings, speech synthesizers, OCR, and encoder-only weights are left out.
 const ARCHITECTURES: &[&str] = &[
     "afmoe",
@@ -50,6 +53,7 @@ const ARCHITECTURES: &[&str] = &[
     "deepseek4",
     "deepseek41",
     "dflash",
+    "domynedge",
     "dots1",
     "dots3note",
     "dream",
@@ -89,12 +93,16 @@ const ARCHITECTURES: &[&str] = &[
     "hunyuan_vl",
     "hy_v3",
     "hy_v4",
+    "hy_v4_flash",
+    "inkling2",
+    "inkling2_loop",
     "internlm2",
     "jais",
     "jais2",
     "jamba",
     "k2-horizon",
     "kimi-k3",
+    "kimi-k31",
     "kimi-linear",
     "kolibri1",
     "laguna",
@@ -134,6 +142,7 @@ const ARCHITECTURES: &[&str] = &[
     "olmoe",
     "openelm",
     "orion",
+    "pangu-embedded",
     "phi2",
     "phi3",
     "phimoe",
@@ -153,7 +162,9 @@ const ARCHITECTURES: &[&str] = &[
     "qwen3vl",
     "qwen3vlmoe",
     "qwen4exp",
+    "raon1",
     "refact",
+    "ricursive",
     "rnd1",
     "rwkv6",
     "rwkv6qwen2",
@@ -170,7 +181,9 @@ const ARCHITECTURES: &[&str] = &[
     "t5",
     "talkie",
     "vllm-decision2",
+    "xing4_0",
     "xverse",
+    "zaya1",
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -407,7 +420,15 @@ mod tests {
         sorted.sort_unstable();
         assert_eq!(sorted, ARCHITECTURES);
         assert!(ARCHITECTURES.binary_search(&"gemma3").is_ok());
+        assert!(ARCHITECTURES.binary_search(&"gemma4").is_ok());
+        assert!(ARCHITECTURES.binary_search(&"qwen35").is_ok());
+        assert!(ARCHITECTURES.binary_search(&"qwen35moe").is_ok());
         assert!(ARCHITECTURES.binary_search(&"qwen2").is_ok());
+        assert!(ARCHITECTURES.binary_search(&"lfm3").is_ok());
+        assert!(ARCHITECTURES.binary_search(&"spark2_5").is_ok());
+        assert!(ARCHITECTURES.binary_search(&"maion-coder").is_ok());
+        let build = include_str!("../../build.rs");
+        assert!(build.contains("const LLAMA_TAG: &str = \"b12774\""));
         assert!(ARCHITECTURES.binary_search(&"llama").is_ok());
         assert!(ARCHITECTURES.binary_search(&"lfm2").is_ok());
         assert!(ARCHITECTURES.binary_search(&"smollm3").is_ok());

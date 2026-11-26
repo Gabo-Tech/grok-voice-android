@@ -84,11 +84,7 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
     let facts = app
         .state::<NativeBridge>()
         .device_facts()
-        .unwrap_or(crate::native::DeviceFacts {
-            avail_mb: 0,
-            low_memory: false,
-            online: false,
-        });
+        .unwrap_or_default();
     let paths = model_paths_for(&dir, &speech);
     let family = super::packs::active_model(&dir).family;
     if let Err(why) = memory_gate(
@@ -117,6 +113,33 @@ pub fn answer_text(app: &AppHandle, text: &str) -> Result<String, String> {
     Ok(spoken)
 }
 
+pub struct RemoteBrain {
+    pub key: String,
+    pub model: String,
+}
+
+pub async fn run_onemin_session(
+    app: &AppHandle,
+    mic: &mut mpsc::Receiver<Vec<i16>>,
+    player: &Player,
+    active: &AtomicBool,
+    settings: &Settings,
+    hub: &Hub,
+    key: String,
+    model: String,
+) -> Result<String, String> {
+    run_session_inner(
+        app,
+        mic,
+        player,
+        active,
+        settings,
+        hub,
+        Some(RemoteBrain { key, model }),
+    )
+    .await
+}
+
 pub async fn run_session(
     app: &AppHandle,
     mic: &mut mpsc::Receiver<Vec<i16>>,
@@ -125,13 +148,25 @@ pub async fn run_session(
     settings: &Settings,
     hub: &Hub,
 ) -> Result<String, String> {
+    run_session_inner(app, mic, player, active, settings, hub, None).await
+}
+
+async fn run_session_inner(
+    app: &AppHandle,
+    mic: &mut mpsc::Receiver<Vec<i16>>,
+    player: &Player,
+    active: &AtomicBool,
+    settings: &Settings,
+    hub: &Hub,
+    remote: Option<RemoteBrain>,
+) -> Result<String, String> {
     let _guard = SearchGuard;
     set_public_search(true);
     let dir = model_dir(app)?;
     let chosen = super::packs::active_model(&dir);
     hub.update(|state| {
         state.ws_state = "on device".into();
-        state.model = Some(chosen.name.clone());
+        state.model = Some(remote.as_ref().map(|brain| brain.model.clone()).unwrap_or_else(|| chosen.name.clone()));
         state.token_minted_at_ms = None;
         state.token_expires_at = None;
     });
@@ -140,37 +175,46 @@ pub async fn run_session(
     }
     let facts = device_facts(app).await;
     let speech = settings.local_speech.as_str();
-    if !super::speech::talk_ready(
-        &dir,
-        speech,
-        &settings.speech_engines,
-        &settings.phonon_models,
-    ) {
+    let speech_ok = if remote.is_some() {
+        super::speech::speech_ready(&dir, speech, &settings.speech_engines, &settings.phonon_models)
+    } else {
+        super::speech::talk_ready(&dir, speech, &settings.speech_engines, &settings.phonon_models)
+    };
+    if !speech_ok {
         return Err(optional_speech_missing(speech).unwrap_or(
-            "On-device voice packs are not downloaded yet. Download them in Settings, under Voice and AI.",
+            if remote.is_some() {
+                "On-device speech packs are not downloaded yet. 1min.ai still hears and speaks on this phone. Download speech to text and the voice in Settings."
+            } else {
+                "On-device voice packs are not downloaded yet. Download them in Settings, under Voice and AI."
+            },
         ).into());
     }
     let paths = model_paths_for(&dir, speech);
     let family = chosen.family;
-    if let Err(why) = memory_gate(
-        facts.avail_mb,
-        facts.low_memory,
-        model_file_bytes(&paths.llm),
-    ) {
+    let model_bytes = if remote.is_some() { 0 } else { model_file_bytes(&paths.llm) };
+    if let Err(why) = memory_gate(facts.avail_mb, facts.low_memory, model_bytes) {
         return Err(why);
     }
     let threads = std::thread::available_parallelism()
         .map(|n| n.get().clamp(2, 4) as i32)
         .unwrap_or(2);
-    hub.info(format!(
-        "loading on-device speech, {}, and voice",
-        chosen.name
-    ));
-    let engines = tokio::task::spawn_blocking(move || Engines::load(&paths, threads))
-        .await
-        .map_err(|err| err.to_string())??;
+    let remote_model = remote.as_ref().map(|brain| brain.model.clone());
+    hub.info(match &remote_model {
+        Some(model) => format!("loading on-device speech and voice, reply from {model}"),
+        None => format!("loading on-device speech, {}, and voice", chosen.name),
+    });
+    let with_llm = remote.is_none();
+    let engines = tokio::task::spawn_blocking(move || {
+        if with_llm {
+            Engines::load(&paths, threads)
+        } else {
+            Engines::load_speech(&paths, threads)
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())??;
     let engines = Arc::new(Mutex::new(engines));
-    let system = local_system(app);
+    let system = if remote.is_some() { onemin_system(app) } else { local_system(app) };
     let mut history = Vec::new();
     let mut vad = Vad::new(UPLINK_RATE);
     let mut last = Instant::now();
@@ -189,7 +233,7 @@ pub async fn run_session(
                     break Ok("ended by user".into());
                 }
                 if let Some(utterance) = vad.push(&frame) {
-                    if let Err(err) = handle_audio(app, hub, player, active, &engines, &system, &family, &mut history, &utterance).await {
+                    if let Err(err) = handle_audio(app, hub, player, active, &engines, &system, &family, remote.as_ref(), &mut history, &utterance).await {
                         hub.error(format!("on-device turn failed: {err}"));
                         speak_line(app, hub, player, active, &engines, &format!("I couldn't finish that. {err}")).await;
                     }
@@ -206,7 +250,7 @@ pub async fn run_session(
                 }
                 for note in crate::search::take_context_notes() {
                     let Some(text) = typed_user_note(&note) else { continue };
-                    if let Err(err) = handle_text(app, hub, player, active, &engines, &system, &family, &mut history, &text, true).await {
+                    if let Err(err) = handle_text(app, hub, player, active, &engines, &system, &family, remote.as_ref(), &mut history, &text, true).await {
                         hub.error(format!("typed message failed: {err}"));
                     }
                     last = Instant::now();
@@ -256,6 +300,35 @@ fn typed_user_note(note: &str) -> Option<String> {
     }
 }
 
+fn onemin_system(app: &AppHandle) -> String {
+    let settings = app.state::<crate::settings::SettingsStore>().get();
+    format!(
+        "{}\n\nYou are answering on this phone through 1min.ai. Speech to text and the voice stay on this phone. Reply in one to three short spoken sentences. Call a tool before saying a phone action is done. Never repeat an API key.",
+        settings.instructions.trim()
+    )
+}
+
+fn answer_with_onemin(app: &AppHandle, system: &str, text: &str, key: &str, model: &str) -> Result<String, String> {
+    let mut tools = crate::actions::tool_definitions();
+    if let Some(list) = tools.as_array_mut() {
+        list.extend(crate::local_memory::tool_definitions());
+    }
+    let client = crate::onemin::client();
+    crate::onemin::converse(
+        model,
+        system,
+        text,
+        &tools,
+        |body| crate::onemin::post_chat(&client, key, body),
+        |name, args| call_tool(app, name, args),
+    )
+    .map_err(|err| err.failover_text())
+}
+
+pub fn answer_onemin(app: &AppHandle, text: &str, key: &str, model: &str) -> Result<String, String> {
+    answer_with_onemin(app, &onemin_system(app), text, key, model)
+}
+
 fn local_system(app: &AppHandle) -> String {
     let settings = app.state::<crate::settings::SettingsStore>().get();
     turn::system_prompt(
@@ -281,11 +354,7 @@ async fn device_facts(app: &AppHandle) -> crate::native::DeviceFacts {
     let app = app.clone();
     match tokio::task::spawn_blocking(move || app.state::<NativeBridge>().device_facts()).await {
         Ok(Ok(facts)) => facts,
-        _ => crate::native::DeviceFacts {
-            avail_mb: 0,
-            low_memory: false,
-            online: true,
-        },
+        _ => crate::native::DeviceFacts::default(),
     }
 }
 
@@ -297,6 +366,7 @@ async fn handle_audio(
     engines: &Arc<Mutex<Engines>>,
     system: &str,
     family: &str,
+    remote: Option<&RemoteBrain>,
     history: &mut Vec<ChatTurn>,
     utterance: &[i16],
 ) -> Result<(), String> {
@@ -320,7 +390,7 @@ async fn handle_audio(
     hub.info(format!("heard: {text}"));
     remember(app, hub, "user", &text);
     handle_text(
-        app, hub, player, active, engines, system, family, history, &text, true,
+        app, hub, player, active, engines, system, family, remote, history, &text, true,
     )
     .await
 }
@@ -333,6 +403,7 @@ async fn handle_text(
     engines: &Arc<Mutex<Engines>>,
     system: &str,
     family: &str,
+    remote: Option<&RemoteBrain>,
     history: &mut Vec<ChatTurn>,
     text: &str,
     already_recorded: bool,
@@ -348,19 +419,29 @@ async fn handle_text(
     let system = system.to_string();
     let family = family.to_string();
     let text = text.to_string();
+    let remote_key = remote.map(|brain| (brain.key.clone(), brain.model.clone()));
     let mut history_owned = std::mem::take(history);
     let outcome = tokio::task::spawn_blocking(move || {
-        let result = turn::run_turns_with(
-            &system,
-            &mut history_owned,
-            &text,
-            &family,
-            |prompt, grammar| {
-                let mut engine = engines_bg.lock().unwrap_or_else(|err| err.into_inner());
-                engine.complete(prompt, grammar)
-            },
-            |name, args| call_tool(&app_bg, name, args),
-        );
+        let result = if let Some((key, model)) = remote_key {
+            let spoken = answer_with_onemin(&app_bg, &system, &text, &key, &model);
+            if let Ok(spoken) = &spoken {
+                history_owned.push(ChatTurn { role: "user", text: text.clone() });
+                history_owned.push(ChatTurn { role: "assistant", text: spoken.clone() });
+            }
+            spoken
+        } else {
+            turn::run_turns_with(
+                &system,
+                &mut history_owned,
+                &text,
+                &family,
+                |prompt, grammar| {
+                    let mut engine = engines_bg.lock().unwrap_or_else(|err| err.into_inner());
+                    engine.complete(prompt, grammar)
+                },
+                |name, args| call_tool(&app_bg, name, args),
+            )
+        };
         (result, history_owned)
     })
     .await

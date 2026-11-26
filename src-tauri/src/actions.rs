@@ -432,11 +432,11 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["confirmed"]
         })),
-        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, the default music player, voice order, the Grok voice, the OpenAI voice, whether notifications are normal or spoken out loud, and spokenName when one is saved.", json!({
+        fn_tool("get_settings", "Read settings on this phone. It never returns keys or passwords. Report language, local speech, Prefer on device, Listen, quiet gap seconds, daily and monthly voice budget minutes, the default music player, voice order, the Grok voice, the OpenAI voice, the xAI model, the OpenAI model, the 1min.ai model, whether notifications are normal or spoken out loud, and spokenName when one is saved. When they ask which model they are using, call this and speak the model and the provider. For On device and 1min.ai, also say speech to text and the voice stay on this phone.", json!({
             "type": "object",
             "properties": {}
         })),
-        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, the default music player, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English, Spanish, or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. musicPlayer is local, Musify, YouTube, YouTube Music, or system. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model, instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. messageTriage turns message reading on or off. announceMessages and announceCalls stay off until set. redactLocked hides message text on the lock screen. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
+        fn_tool("update_settings", "Change language, Listen, budgets in minutes, Prefer on device, the default music player, or whether alerts are spoken. language is English, Spanish, German, Portuguese, Valencian, or follow the phone. localSpeech is English, Spanish, or German. preferOnDevice is the Prefer on device switch. listen turns Listen on immediately, and off only after confirmed true. notificationDelivery is normal or spoken. spoken reads reminders and other alerts out loud and does not need confirmation. speakNotifications true is the same as spoken. spokenName is the optional name spoken alerts use, and an empty spokenName clears it. Never invent a name. musicPlayer is local, Musify, YouTube, YouTube Music, or system. quietGapSeconds is the quiet gap. dailyBudgetMinutes and monthlyBudgetMinutes are minutes, 0 is off, with dailyHardStop and monthlyHardStop. voice sets the Grok voice (carina, zagan, helix, orion, luna, iris, altair, zenith, perseus, helios, lux, kepler, rigel, cosmo, celeste, ursa, sirius, lumen, castor, naksh, atlas, aurora, liora, ara, eve, leo, rex, sal) or, if you pass an OpenAI name, the OpenAI voice. openaiVoice sets only the OpenAI voice (alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar). Never send a Grok voice to OpenAI. Also model for the xAI model, openaiModel, oneminModel, localModel, and modelChoice. modelChoice is the spoken request: use Qwen 2B selects that on-device pack, which model am I using is get_settings, switch to 1min GPT-4.1 mini sets the 1min.ai model. focusProvider tries an existing key first and must not create a key. clearModels true puts the models back to the defaults only after confirmed true. Also instructions, echoGuard, and wakeThreshold. notifyDays or birthdayLeadDays sets how many days early birthday dates notify. messageTriage turns message reading on or off. announceMessages and announceCalls stay off until set. redactLocked hides message text on the lock screen. Refuse API keys, backup passwords, and reordering or deleting voice keys.", json!({
             "type": "object",
             "properties": {
                 "language": { "type": "string" },
@@ -451,6 +451,12 @@ pub fn tool_definitions() -> Value {
                 "voice": { "type": "string" },
                 "openaiVoice": { "type": "string" },
                 "model": { "type": "string" },
+                "openaiModel": { "type": "string" },
+                "oneminModel": { "type": "string" },
+                "localModel": { "type": "string" },
+                "focusProvider": { "type": "string" },
+                "modelChoice": { "type": "string" },
+                "clearModels": { "type": "boolean" },
                 "instructions": { "type": "string" },
                 "echoGuard": { "type": "boolean" },
                 "wakeThreshold": { "type": "number" },
@@ -1284,7 +1290,78 @@ fn emit_people(app: &AppHandle) {
 
 fn read_settings(app: &AppHandle) -> Result<Value, String> {
     let settings = app.state::<crate::settings::SettingsStore>().get();
-    Ok(crate::settings::describe_settings(&settings, &voice_order(app)))
+    let order = voice_order(app);
+    let mut value = crate::settings::describe_settings(&settings, &order);
+    let local_name = crate::local::model_dir(app)
+        .ok()
+        .map(|dir| crate::local::active_model_name(&dir))
+        .unwrap_or_else(|| "SmolLM2".into());
+    value["localModel"] = serde_json::Value::String(local_name.clone());
+    let (provider, model) = model_in_use(&order, &settings, &local_name);
+    let locale = locale_of(app);
+    let using = crate::i18n::fill(&locale, "model-using", &[("model", &model), ("provider", &provider)]);
+    let stays = if provider == "On device" || provider == "1min.ai" {
+        format!(" {}", crate::i18n::line(&locale, "model-stays"))
+    } else {
+        String::new()
+    };
+    let prior = value["detail"].as_str().unwrap_or("").to_string();
+    value["detail"] = serde_json::Value::String(format!("{using}{stays} {prior}"));
+    Ok(value)
+}
+
+fn model_in_use(order: &[String], settings: &crate::settings::Settings, local_name: &str) -> (String, String) {
+    let first = order.first().map(String::as_str).unwrap_or("");
+    match first {
+        "On device" => ("On device".into(), local_name.to_string()),
+        "1min.ai" => ("1min.ai".into(), settings.onemin_model.clone()),
+        "OpenAI" => ("OpenAI".into(), settings.openai_model.clone()),
+        "xAI" => ("xAI".into(), settings.model.clone()),
+        _ => ("On device".into(), local_name.to_string()),
+    }
+}
+
+fn provider_spoken(id: &str) -> String {
+    match id {
+        "local" => "On device".into(),
+        "onemin" => "1min.ai".into(),
+        "openai" => "OpenAI".into(),
+        "xai" => "xAI".into(),
+        other => other.to_string(),
+    }
+}
+
+fn focus_saved_provider(app: &AppHandle, provider: &str) -> Result<bool, String> {
+    let Some(vault) = app.try_state::<crate::vault::Vault>() else {
+        return Ok(false);
+    };
+    let Some(bridge) = app.try_state::<NativeBridge>() else {
+        return Ok(false);
+    };
+    let accounts = vault.accounts(&bridge).map_err(|err| err.to_string())?;
+    if let Some(pos) = accounts.iter().position(|account| account.provider == provider) {
+        if pos > 0 {
+            let mut ids: Vec<String> = accounts.iter().map(|account| account.id.clone()).collect();
+            let id = ids.remove(pos);
+            ids.insert(0, id);
+            vault.reorder_accounts(&bridge, &ids).map_err(|err| err.to_string())?;
+        }
+        return Ok(true);
+    }
+    if provider == "local" {
+        vault.add_account(&bridge, "local", "on-device").map_err(|err| err.to_string())?;
+        let accounts = vault.accounts(&bridge).map_err(|err| err.to_string())?;
+        if let Some(pos) = accounts.iter().position(|account| account.provider == "local") {
+            if pos > 0 {
+                let mut ids: Vec<String> = accounts.iter().map(|account| account.id.clone()).collect();
+                let id = ids.remove(pos);
+                ids.insert(0, id);
+                vault.reorder_accounts(&bridge, &ids).map_err(|err| err.to_string())?;
+            }
+        }
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn voice_order(app: &AppHandle) -> Vec<String> {
@@ -1302,6 +1379,7 @@ fn voice_order(app: &AppHandle) -> Vec<String> {
                 "xai" => "xAI".into(),
                 "openai" => "OpenAI".into(),
                 "local" => "On device".into(),
+                "onemin" => "1min.ai".into(),
                 other => other.to_string(),
             })
             .collect(),
@@ -1319,6 +1397,27 @@ fn apply_settings(app: &AppHandle, args: &Value) -> Result<Value, String> {
     if let Some(next) = edit.settings {
         let saved = store.save(next).map_err(|err| err.to_string())?;
         publish_settings(app, &saved, edit.listen);
+    }
+    if let Some(id) = edit.local_model.clone() {
+        if let Ok(dir) = crate::local::model_dir(app) {
+            if let Err(err) = crate::local::select_model(&dir, &id) {
+                return Err(err);
+            }
+        }
+    }
+    if let Some(provider) = edit.focus_provider.clone() {
+        match focus_saved_provider(app, &provider) {
+            Ok(true) => {}
+            Ok(false) => {
+                let locale = locale_of(app);
+                let line = crate::i18n::fill(&locale, "model-no-key", &[("provider", &provider_spoken(&provider))]);
+                if !detail.is_empty() {
+                    detail.push(' ');
+                }
+                detail.push_str(&line);
+            }
+            Err(err) => return Err(err),
+        }
     }
     if let Some(lead) = edit.person_lead.clone() {
         let value = crate::people::set_lead_days(&app.state::<crate::people::People>(), &lead.label, lead.days)?;

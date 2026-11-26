@@ -201,6 +201,10 @@ const EN: &[(&str, &str, &str)] = &[
     ("inbox-ended", "", "Ending the call."),
     ("inbox-end-none", "", "No call is in progress."),
     ("inbox-mismatch", "", "That is not the message I just read back. Nothing was sent."),
+    ("model-using", "", "You are using {model} with {provider}."),
+    ("model-stays", "", "Speech to text and the voice stay on this phone."),
+    ("model-clear-ask", "", "Put the chosen models back to the defaults? On this phone that is SmolLM2. Say yes."),
+    ("model-no-key", "", "{provider} has no key on this phone. Add it in Settings. Nothing was created."),
 ];
 
 const ES: &[(&str, &str, &str)] = &[
@@ -342,6 +346,10 @@ const ES: &[(&str, &str, &str)] = &[
     ("inbox-ended", "", "Colgando la llamada."),
     ("inbox-end-none", "", "No hay ninguna llamada en curso."),
     ("inbox-mismatch", "", "Ese no es el mensaje que acabo de leer. No se ha enviado nada."),
+    ("model-using", "", "Estás usando {model} con {provider}."),
+    ("model-stays", "", "El habla a texto y la voz siguen en este teléfono."),
+    ("model-clear-ask", "", "¿Vuelvo los modelos elegidos a los predeterminados? En este teléfono es SmolLM2. Di que sí."),
+    ("model-no-key", "", "{provider} no tiene clave en este teléfono. Añádela en Ajustes. No se ha creado nada."),
 ];
 
 const DE: &[(&str, &str, &str)] = &[
@@ -483,6 +491,10 @@ const DE: &[(&str, &str, &str)] = &[
     ("inbox-ended", "", "Beende das Gespräch."),
     ("inbox-end-none", "", "Es läuft kein Gespräch."),
     ("inbox-mismatch", "", "Das ist nicht die Nachricht, die ich gerade vorgelesen habe. Nichts wurde gesendet."),
+    ("model-using", "", "Du nutzt {model} mit {provider}."),
+    ("model-stays", "", "Sprache zu Text und die Stimme bleiben auf diesem Telefon."),
+    ("model-clear-ask", "", "Die gewählten Modelle auf die Vorgaben zurücksetzen? Auf diesem Telefon ist das SmolLM2. Sag ja."),
+    ("model-no-key", "", "{provider} hat keinen Schlüssel auf diesem Telefon. Füge ihn in den Einstellungen hinzu. Nichts wurde angelegt."),
 ];
 
 const PT: &[(&str, &str, &str)] = &[
@@ -624,6 +636,10 @@ const PT: &[(&str, &str, &str)] = &[
     ("inbox-ended", "", "A desligar a chamada."),
     ("inbox-end-none", "", "Não há nenhuma chamada em curso."),
     ("inbox-mismatch", "", "Essa não é a mensagem que acabei de ler. Nada foi enviado."),
+    ("model-using", "", "Está a usar {model} com {provider}."),
+    ("model-stays", "", "A fala para texto e a voz ficam neste telefone."),
+    ("model-clear-ask", "", "Voltar os modelos escolhidos para o padrão? Neste telefone é o SmolLM2. Diga sim."),
+    ("model-no-key", "", "{provider} não tem chave neste telefone. Adicione em Ajustes. Nada foi criado."),
 ];
 
 const CA: &[(&str, &str, &str)] = &[
@@ -765,6 +781,10 @@ const CA: &[(&str, &str, &str)] = &[
     ("inbox-ended", "", "Penjant la trucada."),
     ("inbox-end-none", "", "No hi ha cap trucada en curs."),
     ("inbox-mismatch", "", "Eixe no és el missatge que acabe de llegir. No s'ha enviat res."),
+    ("model-using", "", "Estàs utilitzant {model} amb {provider}."),
+    ("model-stays", "", "La parla a text i la veu es queden en este telèfon."),
+    ("model-clear-ask", "", "Torne els models triats als valors inicials? En este telèfon és SmolLM2. Digues que sí."),
+    ("model-no-key", "", "{provider} no té clau en este telèfon. Afig-la en Ajusts. No s'ha creat res."),
 ];
 
 include!("finance_phrases.rs");

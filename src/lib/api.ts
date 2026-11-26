@@ -160,6 +160,20 @@ export interface LocalPack {
   kind?: string;
   /** The language model Talk will load. */
   selected?: boolean;
+  license?: string;
+  minRamGb?: number;
+  strength?: number;
+  /** `fits`, `tight`, `unknown`, or `no`. */
+  fit?: string;
+  recommended?: boolean;
+  /** `allow`, `warn`, or `block`. */
+  gate?: string;
+}
+
+export interface OneMinModel {
+  id: string;
+  ownedBy: string;
+  tools: boolean;
 }
 
 export interface VoiceLangStatus {
@@ -220,6 +234,10 @@ export interface Settings {
   voice: string;
   /** OpenAI Realtime voice. A Grok voice is never stored here. */
   openaiVoice?: string;
+  /** OpenAI Realtime model. Empty stays on gpt-realtime. */
+  openaiModel?: string;
+  /** 1min.ai chat model. Empty stays on gpt-4.1-mini. */
+  oneminModel?: string;
   instructions: string;
   echoGuard: boolean;
   wakeThreshold: number;
@@ -310,6 +328,7 @@ export interface UsageStatus {
   xaiMinutes: number;
   openaiMinutes: number;
   localMinutes: number;
+  oneminMinutes?: number;
   month: string;
   monthMinutes: number;
   monthXaiMinutes: number;
@@ -893,7 +912,8 @@ export const api = {
   importContactBirthday: (id: string) => invoke<Person>("import_contact_birthday", { id }),
   importContactDates: (id: string) => invoke<Person>("import_contact_dates", { id }),
   localPacks: () => invoke<LocalPack[]>("local_pack_status"),
-  downloadLocalPack: (id: string) => invoke<LocalPack[]>("download_local_pack", { id }),
+  downloadLocalPack: (id: string, confirm = false) => invoke<LocalPack[]>("download_local_pack", { id, confirm }),
+  oneminModels: (refresh = false) => invoke<OneMinModel[]>("onemin_models", { refresh }),
   deleteLocalPack: (id: string) => invoke<LocalPack[]>("delete_local_pack", { id }),
   selectLocalModel: (id: string) => invoke<LocalPack[]>("select_local_model", { id }),
   importLocalModel: (name: string, family: string) => invoke<LocalPack[]>("import_local_model", { name, family }),
