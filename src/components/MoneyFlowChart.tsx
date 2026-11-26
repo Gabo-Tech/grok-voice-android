@@ -1441,6 +1441,12 @@ function cssHex(token: string): string {
   return `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
 }
 
+function colorGroup(node: FlowNode): "income" | "spend" | "save" {
+  if (node.kind === "savings" || node.kind === "investment" || node.kind === "drawn") return "save";
+  if (node.role === "source" || node.role === "pool" || node.kind === "income" || node.kind === "pool") return "income";
+  return "spend";
+}
+
 function ColorSheet({
   nodes,
   colors,
@@ -1458,61 +1464,81 @@ function ColorSheet({
 }) {
   const t = useT();
   const [confirmAll, setConfirmAll] = useState(false);
+  const [openId, setOpenId] = useState("");
   const rows = nodes.filter((node) => node.amountMinor > 0);
+  const groups: Array<{ id: "income" | "spend" | "save"; label: string }> = [
+    { id: "income", label: t("Income") },
+    { id: "spend", label: t("Spending") },
+    { id: "save", label: t("Savings and investments") },
+  ];
   return (
     <div className="flow-sheet mt-2" role="dialog" aria-label={t("Chart colors")} data-swipe-ignore="">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--line-soft)] pb-2">
         <h2 className="text-[15px] leading-5">{t("Chart colors")}</h2>
-        <button type="button" className="fin-chip" onClick={onClose}>{t("Close")}</button>
+        <div className="flex items-center">
+          {confirmAll ? (
+            <button type="button" className="h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => { onResetAll(); setConfirmAll(false); }}>
+              {t("Yes, reset all colors")}
+            </button>
+          ) : (
+            <button type="button" className="fin-chip" onClick={() => setConfirmAll(true)}>{t("Reset all colors")}</button>
+          )}
+          <button type="button" className="fin-chip" onClick={onClose}>{t("Close")}</button>
+        </div>
       </div>
-      <ul className="mt-2 flex flex-col gap-3">
-        {rows.map((node) => {
-          const current = colors[node.id] || colors[node.label] || node.color;
-          const picker = /^#[0-9A-Fa-f]{6}$/.test(current) ? current : cssHex(current || "var(--brand)");
-          return (
-            <li key={node.id} className="flex flex-wrap items-center gap-2">
-              <span className="h-11 w-11 shrink-0" style={{ background: current }} aria-hidden="true" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] leading-5" style={node.italic ? { fontStyle: "italic" } : undefined}>{node.label}</span>
-                <span className="fin-muted block text-[13px] leading-4">{formatMoney(node.amountMinor, display)}</span>
-              </span>
-              <label className="relative grid h-11 w-11 shrink-0 place-items-center">
-                <span className="h-6 w-6" style={{ background: current }} aria-hidden="true" />
-                <input
-                  type="color"
-                  aria-label={fill("{name} color", { name: node.label })}
-                  value={picker}
-                  onChange={(event) => onPaint(node.id, event.target.value)}
-                  className="absolute inset-0 h-11 w-11 cursor-pointer opacity-0"
-                />
-              </label>
-              <button type="button" className="fin-chip" onClick={() => onPaint(node.id, "")}>{t("Reset to default")}</button>
-              <div className="flex w-full flex-wrap gap-1">
-                {FLOW_PRESETS.map((swatch, index) => (
-                  <button
-                    key={swatch}
-                    type="button"
-                    className="h-11 w-11"
-                    style={{ background: swatch }}
-                    aria-label={fill("Preset {n} for {name}", { n: String(index + 1), name: node.label })}
-                    aria-pressed={current === swatch}
-                    onClick={() => onPaint(node.id, swatch)}
-                  />
-                ))}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="mt-3">
-        {confirmAll ? (
-          <button type="button" className="h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => { onResetAll(); setConfirmAll(false); }}>
-            {t("Yes, reset all colors")}
-          </button>
-        ) : (
-          <button type="button" className="fin-chip" onClick={() => setConfirmAll(true)}>{t("Reset all colors")}</button>
-        )}
-      </div>
+      {groups.map((group) => {
+        const members = rows.filter((node) => colorGroup(node) === group.id);
+        if (!members.length) return null;
+        return (
+          <section key={group.id} className="mt-3">
+            <h3 className="text-[13px] leading-4 tracking-wide uppercase text-[var(--text-tertiary)]">{group.label}</h3>
+            <ul className="mt-1">
+              {members.map((node) => {
+                const current = colors[node.id] || colors[node.label] || node.color;
+                const picker = /^#[0-9A-Fa-f]{6}$/.test(current) ? current : cssHex(current || "var(--brand)");
+                const open = openId === node.id;
+                return (
+                  <li key={node.id} className="border-b border-[var(--line-soft)]">
+                    <div className="flex h-11 items-center gap-2">
+                      <button type="button" className="flex h-11 min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={open} onClick={() => setOpenId(open ? "" : node.id)}>
+                        <span className="h-6 w-6 shrink-0" style={{ background: current, borderRadius: "var(--radius)" }} aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate text-[15px] leading-5" style={node.italic ? { fontStyle: "italic" } : undefined}>{node.label}</span>
+                        <span className="fin-muted shrink-0 text-[13px] leading-4">{formatMoney(node.amountMinor, display)}</span>
+                      </button>
+                      <button type="button" className="fin-chip shrink-0" onClick={() => onPaint(node.id, "")}>{t("Reset")}</button>
+                    </div>
+                    {open ? (
+                      <div className="flex gap-1 overflow-x-auto pb-2">
+                        {FLOW_PRESETS.map((swatch, index) => (
+                          <button
+                            key={swatch}
+                            type="button"
+                            className="h-11 w-11 shrink-0"
+                            style={{ background: swatch, borderRadius: "var(--radius)" }}
+                            aria-label={fill("Preset {n} for {name}", { n: String(index + 1), name: node.label })}
+                            aria-pressed={current === swatch}
+                            onClick={() => onPaint(node.id, swatch)}
+                          />
+                        ))}
+                        <label className="relative grid h-11 w-11 shrink-0 place-items-center" style={{ borderRadius: "var(--radius)" }}>
+                          <span className="h-6 w-6" style={{ background: current, borderRadius: "var(--radius)" }} aria-hidden="true" />
+                          <input
+                            type="color"
+                            aria-label={fill("{name} color", { name: node.label })}
+                            value={picker}
+                            onChange={(event) => onPaint(node.id, event.target.value)}
+                            className="absolute inset-0 h-11 w-11 cursor-pointer opacity-0"
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
