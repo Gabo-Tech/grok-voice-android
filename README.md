@@ -4,16 +4,16 @@
 
 A voice assistant for Android. A new install talks on the phone in English: Moonshine, SmolLM2, and Phonon 31m, with no account and no token. The screen can use another language. Spanish, German, Piper, and gated Phonon models can be added later in Settings. An [xAI](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech), OpenAI, or 1min.ai key is optional and is tried only if you add one. The wake word stays on the device.
 
-The current sideload build is [Grok Voice 0.1.61](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading. versionCode is 1061.
+The current sideload build is [Grok Voice 0.1.62](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading. versionCode is 1062.
 
-0.1.61 adds optional offline packs: Qwen3.5 0.8B Q8_0, Qwen3.5 2B IQ4_NL, Atomic Chat Qwen3.5 4B Q4_K_M, and Gemma 4 E2B QAT Q4. The phone recommends the strongest model that fits its RAM and free storage, and SmolLM2 stays the default until you switch. 1min.ai is a text provider in the same order as xAI and OpenAI. Settings has a model picker for each provider and a choice of which one answers. When Talk uses a local pack or 1min.ai, speech to text and the voice stay on the phone.
+0.1.62 gives Reminders, Alarms, and Countdowns their own list, search, and add button. A new reminder or alarm can repeat every N days, weeks, months, or years, and can stop after a number of times or on a date. A spoken alert can follow Settings, speak that one item, or stay quiet. Cancelling a reminder, alarm, or countdown asks for a yes on the screen and in Talk.
 
 ## Install
 
-Download `GrokVoice-0.1.61.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
+Download `GrokVoice-0.1.62.apk` from the [latest release](https://github.com/Gabo-Tech/grok-voice-android/releases/latest), then either open it on the phone or install it from a computer:
 
 ```bash
-adb install -r GrokVoice-0.1.61.apk
+adb install -r GrokVoice-0.1.62.apk
 ```
 
 Allow installs from unknown sources if Android asks. This package is signed with a debug key so it can be installed by hand. It is not a Play Store upload.
