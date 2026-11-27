@@ -580,7 +580,6 @@ function FlowChart({
   const [drawn, setDrawn] = useState(460);
   const [quiet, setQuiet] = useState<FlowNode[]>([]);
   const [legend, setLegend] = useState<{ left: FlowNode[]; right: FlowNode[] } | null>(null);
-  const t = useT();
 
   useEffect(() => {
     const node = host.current;
@@ -611,6 +610,8 @@ function FlowChart({
       }
       const fromViewport = window.innerHeight - node.getBoundingClientRect().top - below;
       let height = Math.floor(stageHeight || fromViewport);
+      const shortLand = window.matchMedia("(orientation: landscape) and (max-height: 520px)").matches;
+      if (shortLand && !stage) height = Math.min(height, Math.max(160, window.innerHeight - 132));
       if (!stage) {
         const extra = document.documentElement.scrollHeight - window.innerHeight;
         if (extra > 2) height -= extra + 2;
@@ -743,38 +744,24 @@ function FlowChart({
     return () => cancelAnimationFrame(frame);
   }, [drawn, tall, box.h]);
 
+  const legendItem = (node: FlowNode) => (
+    <li key={node.id} className="flow-key flex min-h-11 items-baseline justify-between gap-2 text-[13px] leading-5">
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span className="fin-swatch" style={{ background: node.color }} aria-hidden="true" />
+        <span className="min-w-0">{node.label}</span>
+      </span>
+      <span className="fin-num shrink-0">{formatMoney(node.amountMinor, currency)}</span>
+    </li>
+  );
   return (
-    <div>
+    <div className="flow-stage">
       <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : drawn }} />
-      {legend ? (
-        <div className="mt-2 grid grid-cols-2 gap-x-4">
-          {[legend.left, legend.right].map((column, index) => (
-            <ul key={index}>
-              {column.map((node) => (
-                <li key={node.id} className="flex min-h-11 items-baseline justify-between gap-2 text-[13px] leading-5">
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="fin-swatch" style={{ background: node.color }} aria-hidden="true" />
-                    <span className="min-w-0">{node.label}</span>
-                  </span>
-                  <span className="fin-num shrink-0">{formatMoney(node.amountMinor, currency)}</span>
-                </li>
-              ))}
-            </ul>
-          ))}
-        </div>
-      ) : null}
-      {quiet.length > 0 ? (
-        <div className="mt-2">
-          <p className="text-[13px] leading-5">{t("Smaller flows")}</p>
-          <ul>
-            {quiet.map((node) => (
-              <li key={node.id} className="flex min-h-11 items-baseline justify-between gap-3 text-[15px]">
-                <span className="min-w-0 truncate">{node.label}</span>
-                <span className="fin-num shrink-0">{formatMoney(node.amountMinor, currency)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {legend || quiet.length > 0 ? (
+        <ul className="flow-legend">
+          {legend ? legend.left.map(legendItem) : null}
+          {legend ? legend.right.map(legendItem) : null}
+          {quiet.map(legendItem)}
+        </ul>
       ) : null}
     </div>
   );

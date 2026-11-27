@@ -53,9 +53,9 @@ function BudgetLineRow({
     <div className="budget-line">
       <button type="button" className="flex min-h-11 w-full items-baseline justify-between gap-3 text-left" onClick={onOpen}>
         <span className="min-w-0">
-          <span className="flex min-w-0 items-center gap-2 truncate text-[15px]">
-            {color ? <span className="fin-swatch" style={{ background: color }} aria-hidden="true" /> : null}
-            {name}
+          <span className="flex min-w-0 items-baseline gap-2 text-[15px]">
+            {color ? <span className="fin-swatch shrink-0" style={{ background: color }} aria-hidden="true" /> : null}
+            <span className="min-w-0">{name}</span>
           </span>
           {over ? <span className="block text-[13px] text-[var(--negative)]">{overLabel}</span> : null}
         </span>
@@ -243,6 +243,8 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
           <ChevronRight size={18} strokeWidth={1.5} aria-hidden="true" />
         </button>
       </div>
+      <div className="plan-body">
+      <div className="plan-summary">
       <p className="mt-3 text-[15px] leading-6">{t("A budget for one month. Recurring bills stay in Activity.")}</p>
       <button type="button" className="mt-1 min-h-11 text-[15px] underline" aria-expanded={about} onClick={() => setAbout((value) => !value)}>
         {t("What a budget is")}
@@ -253,11 +255,8 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
         </p>
       ) : null}
       {!ready ? (
-        <div className="mt-6">
+        <div className="mt-4">
           <p className="text-[16px] leading-6">{t("No budget for this month yet.")}</p>
-          <p className="mt-2 text-[15px] leading-6 text-[var(--text-secondary)]">
-            {t("Set the income you expect, a limit for each expense, and a savings target. Start from recurring bills, from recent months, or from both.")}
-          </p>
           <button type="button" className="mt-4 min-h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => { setSetupNote(""); setSetup(true); }}>
             {t("Set up this month")}
           </button>
@@ -276,7 +275,17 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
           </p>
           <p className="mt-2 text-[13px] leading-5 text-[var(--text-secondary)]">{t("Expected income, minus spending so far, minus the savings target.")}</p>
           {overBudget(summary) ? <p className="mt-1 text-[13px] text-[var(--negative)]">{t("Over the plan")}</p> : null}
-          <h3 className="mt-6 text-[16px]">{t("Expenses")}</h3>
+        </>
+      )}
+      </div>
+      <div className="plan-cats">
+      {!ready ? (
+        <p className="mt-3 text-[15px] leading-6 text-[var(--text-secondary)]">
+          {t("Set the income you expect, a limit for each expense, and a savings target. Start from recurring bills, from recent months, or from both.")}
+        </p>
+      ) : (
+        <>
+          <h3 className="mt-3 text-[16px]">{t("Expenses")}</h3>
           <div className="mt-1">
             {expenseRows.map((row) => {
               const categoryRow = finance.snapshot.categories.find((item) => item.name === row.name || item.name === row.category);
@@ -359,6 +368,8 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
           />
         </>
       )}
+      </div>
+      </div>
       <Sheet open={setup} title={t("Set up this month")} onClose={() => setSetup(false)} className="finance">
         <div className="flex flex-col">
           <button type="button" className="min-h-11 text-left text-[16px] underline" onClick={() => prefill("rules")}>{t("Use recurring bills")}</button>
