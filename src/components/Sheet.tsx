@@ -25,16 +25,47 @@ export function Sheet({
   onCloseRef.current = onClose;
   const t = useT();
 
+  const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
+    const panel = panelRef.current;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () =>
+      panel
+        ? [...panel.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")].filter(
+            (el) => !el.hasAttribute("disabled") && el.tabIndex !== -1,
+          )
+        : [];
+    const first = focusable()[0];
+    first?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panel) return;
+      const items = focusable();
+      if (!items.length) {
+        e.preventDefault();
+        return;
+      }
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === firstEl || !panel.contains(active))) {
+        e.preventDefault();
+        lastEl.focus();
+      } else if (!e.shiftKey && (active === lastEl || !panel.contains(active))) {
+        e.preventDefault();
+        firstEl.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     const release = pushOverlay(() => onCloseRef.current());
     return () => {
       window.removeEventListener("keydown", onKey);
       release();
+      previous?.focus();
     };
   }, [open]);
 
@@ -43,7 +74,7 @@ export function Sheet({
   return (
     <div className={`sheet-root ${className ?? ""}`} data-theme={theme} role="dialog" aria-modal="true" aria-label={title}>
       <button type="button" className="sheet-scrim" aria-label={t("Close")} onClick={onClose} />
-      <div className="sheet-panel">
+      <div ref={panelRef} className="sheet-panel">
         <header className="sheet-head flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
           <h2 className="sheet-title min-w-0 flex-1 text-lg">{title}</h2>
           <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("Close")}>

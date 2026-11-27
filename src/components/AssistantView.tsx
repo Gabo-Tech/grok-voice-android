@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Info, Mic, Send, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
 import { Notice } from "@/components/PageChrome";
+import { Sheet } from "@/components/Sheet";
 import { Button } from "@/components/ui/button";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, type Settings, type VoiceAccount } from "@/lib/api";
@@ -101,14 +103,36 @@ export function AssistantView({
   useEffect(() => {
     const el = draftBox.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    };
+    fit();
+    const soon = window.setTimeout(fit, 160);
+    const later = window.setTimeout(fit, 480);
+    return () => {
+      window.clearTimeout(soon);
+      window.clearTimeout(later);
+    };
   }, [draft]);
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [voice.rows, voice.busy, voice.sending]);
+    const pin = () => {
+      if (voice.lastError && voice.rows.length === 0) {
+        el.scrollTop = 0;
+        return;
+      }
+      el.scrollTop = el.scrollHeight;
+    };
+    pin();
+    const soon = window.setTimeout(pin, 160);
+    const later = window.setTimeout(pin, 480);
+    return () => {
+      window.clearTimeout(soon);
+      window.clearTimeout(later);
+    };
+  }, [voice.rows, voice.busy, voice.sending, voice.lastError]);
   useEffect(() => {
     sessionStorage.setItem("grok-talk-focus", focus ? "1" : "0");
   }, [focus]);
@@ -120,17 +144,6 @@ export function AssistantView({
     const id = window.setTimeout(() => setFocusHint(false), 2400);
     return () => window.clearTimeout(id);
   }, [focusHint]);
-  useEffect(() => {
-    if (!clearAsk) return;
-    const id = window.setTimeout(() => document.getElementById("clear-talk-title")?.scrollIntoView({ block: "center" }), 200);
-    return () => window.clearTimeout(id);
-  }, [clearAsk]);
-  useEffect(() => {
-    if (!voice.lastError || !recoveryFor(voice.lastError)?.openAppSettings) return;
-    const id = window.setTimeout(() => document.querySelector("[data-open-settings]")?.scrollIntoView({ block: "center" }), 200);
-    return () => window.clearTimeout(id);
-  }, [voice.lastError]);
-
   const onChatPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
     if (target?.closest("button, a, input, textarea, label, [role='button']")) return;
@@ -293,27 +306,35 @@ export function AssistantView({
         </div>
       )}
 
-      {clearAsk ? (
-        <div role="dialog" aria-modal="true" aria-labelledby="clear-talk-title" className="mag-panel mb-3">
-          <p id="clear-talk-title" className="text-base leading-6 text-foreground">{t("Clear this talk?")}</p>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("This removes the conversation and the memory Talk keeps.")}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                voice.clearTranscript();
-                setClearAsk(false);
-              }}
+      {clearAsk
+        ? createPortal(
+            <Sheet
+              open
+              title={t("Clear this talk?")}
+              onClose={() => setClearAsk(false)}
+              footer={
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      voice.clearTranscript();
+                      setClearAsk(false);
+                    }}
+                  >
+                    {t("Clear")}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setClearAsk(false)}>
+                    {t("Not now")}
+                  </Button>
+                </div>
+              }
             >
-              {t("Clear")}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => setClearAsk(false)}>
-              {t("Not now")}
-            </Button>
-          </div>
-        </div>
-      ) : null}
+              <p className="text-base leading-6 text-foreground">{t("This removes the conversation and the memory Talk keeps.")}</p>
+            </Sheet>,
+            document.body,
+          )
+        : null}
 
       <form
         className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"

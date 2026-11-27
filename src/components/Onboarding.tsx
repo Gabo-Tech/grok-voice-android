@@ -174,7 +174,7 @@ export function Onboarding({
 
   useEffect(() => {
     if (!askedKeyCheck()) return;
-    const id = window.setTimeout(() => document.querySelector("[data-key-check]")?.scrollIntoView({ block: "center" }), 200);
+    const id = window.setTimeout(() => document.querySelector("[data-key-check]")?.scrollIntoView({ block: "nearest" }), 200);
     return () => window.clearTimeout(id);
   }, [screen]);
 
@@ -520,7 +520,7 @@ export function Onboarding({
       <>
         <p>{t(item.save)}</p>
         <div className="setup-key">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             <Input
               type={showKey ? "text" : "password"}
               autoComplete="off"
@@ -537,18 +537,20 @@ export function Onboarding({
               }}
             />
           </div>
-          <button type="button" className="grid size-12 shrink-0 place-items-center" aria-label={t("Paste")} onClick={() => void pasteKey()}>
-            <ClipboardPaste className="size-5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="grid size-12 shrink-0 place-items-center"
-            aria-label={showKey ? t("Hide key") : t("Show key")}
-            aria-pressed={showKey}
-            onClick={() => setShowKey((open) => !open)}
-          >
-            {showKey ? <EyeOff className="size-5" aria-hidden /> : <Eye className="size-5" aria-hidden />}
-          </button>
+          <div className="setup-key-tools">
+            <button type="button" className="grid size-12 shrink-0 place-items-center" aria-label={t("Paste")} onClick={() => void pasteKey()}>
+              <ClipboardPaste className="size-5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="grid size-12 shrink-0 place-items-center"
+              aria-label={showKey ? t("Hide key") : t("Show key")}
+              aria-pressed={showKey}
+              onClick={() => setShowKey((open) => !open)}
+            >
+              {showKey ? <EyeOff className="size-5" aria-hidden /> : <Eye className="size-5" aria-hidden />}
+            </button>
+          </div>
         </div>
         {key.trim().length > 0 && key.trim().length < 12 ? <p className="text-foreground">{t(item.short)}</p> : null}
         <Button type="button" className="w-full" data-key-check={keyCheck} disabled={busy || key.trim().length < 12} onClick={() => void checkKey()}>

@@ -641,6 +641,9 @@ function FlowChart({
   useEffect(() => {
     const instance = chart.current;
     if (!instance || !flow || flow.state !== "ready" || box.w < 280 || box.h < 160) return;
+    const floor = tall ? Math.max(220, Math.round(window.innerHeight * 0.34)) : 220;
+    const cap = tall ? Math.round(window.innerHeight * 0.5) : Math.max(box.h, floor);
+    const usedHeight = Math.min(Math.max(box.h, floor), Math.max(cap, floor));
     const ink = usedColor("var(--text-primary)", "rgb(58, 52, 44)");
     const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
     const brand = usedColor("var(--brand)", "rgb(125, 107, 88)");
@@ -652,7 +655,7 @@ function FlowChart({
       links: flow.links,
       currency,
       width: box.w,
-      height: box.h,
+      height: usedHeight,
       labels: labelsOn,
       values: valuesOn,
       colors,
@@ -666,7 +669,7 @@ function FlowChart({
       spendingLabel,
     });
     const frame = built.frame;
-    const chartHeight = frame.height;
+    const chartHeight = Math.max(frame.height, usedHeight);
     setDrawn(chartHeight);
     setQuiet(built.quiet);
     setLegend(built.legend);
@@ -745,7 +748,7 @@ function FlowChart({
   }, [drawn, tall, box.h]);
 
   const legendItem = (node: FlowNode) => (
-    <li key={node.id} className="flow-key flex min-h-11 items-baseline justify-between gap-2 text-[13px] leading-5">
+    <li key={node.id} className="flow-key flex min-h-11 items-baseline justify-between gap-2 leading-5">
       <span className="flex min-w-0 items-baseline gap-2">
         <span className="fin-swatch" style={{ background: node.color }} aria-hidden="true" />
         <span className="min-w-0">{node.label}</span>

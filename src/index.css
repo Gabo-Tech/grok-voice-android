@@ -633,7 +633,7 @@ input[type="time"] {
 .sheet-root {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 80;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -662,6 +662,7 @@ input[type="time"] {
   background: var(--surface-1);
   color: var(--text-primary);
   box-shadow: none;
+  isolation: isolate;
   padding-bottom: env(safe-area-inset-bottom);
 }
 
@@ -807,6 +808,16 @@ h1,
 
 .flow-full-stage > div {
   padding-bottom: 24px;
+}
+
+.flow-full [data-shot="money-flow"] {
+  height: max(220px, 42vh);
+  min-height: max(220px, 42vh);
+}
+
+.flow-key {
+  font-size: max(13px, var(--type-caption));
+  line-height: 1.35;
 }
 
 .flow-full-bar {
@@ -1366,6 +1377,7 @@ textarea {
   min-height: var(--touch);
   min-width: var(--touch);
   height: auto;
+  max-height: none;
   line-height: 1.25;
   overflow: visible;
 }
@@ -1373,6 +1385,26 @@ textarea {
 button,
 [role="button"] {
   white-space: normal;
+}
+
+button[data-slot="button"],
+button[data-slot="button"]:disabled {
+  height: auto;
+  max-height: none;
+  min-height: var(--touch);
+  overflow: visible;
+  white-space: normal;
+  opacity: 1;
+}
+
+button[data-slot="button"]:disabled {
+  color: var(--text-primary);
+}
+
+button[data-slot="button"][data-variant="default"]:disabled,
+button[data-slot="button"][data-variant="destructive"]:disabled {
+  background: var(--surface-3);
+  color: var(--text-primary);
 }
 
 .stamp,
@@ -1428,13 +1460,19 @@ button.stamp {
 }
 
 .talk-head {
-  flex-shrink: 1;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
 }
 
 .talk-head:not(.talk-head-off),
 .talk-head:not(.talk-head-off) > div {
   overflow: visible;
+}
+
+.talk-log [role="alert"] {
+  position: relative;
+  background: var(--surface-0);
 }
 
 .talk-composer {
@@ -1450,8 +1488,8 @@ button.stamp {
 }
 
 .talk-head ~ .overflow-y-auto {
-  min-height: 28%;
-  flex: 1 1 0%;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
 }
 
@@ -1462,10 +1500,12 @@ button.stamp {
 }
 
 .setup-step {
+  box-sizing: border-box;
+  flex: none;
+  width: var(--touch);
+  height: var(--touch);
   min-width: var(--touch);
   min-height: var(--touch);
-  width: auto;
-  height: auto;
   padding: 4px;
 }
 
@@ -1490,12 +1530,13 @@ button.stamp {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 16px;
+  width: 100%;
   max-width: 100%;
 }
 
 .setup-step-item {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   align-items: center;
   gap: 4px;
@@ -1503,43 +1544,57 @@ button.stamp {
 }
 
 .setup-step-item > span:last-child {
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .setup-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
 }
 
 .setup-actions > * {
-  flex: 1 1 14rem;
-  min-width: min(100%, max-content);
+  flex: 1 1 auto;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
 }
 
 .setup-key {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.setup-key > div:first-child {
-  flex: 1 1 8rem;
-  min-width: min(100%, 8rem);
-  max-width: 100%;
-}
-
-.setup-key input {
-  min-width: 0;
   width: 100%;
+  min-width: 0;
   max-width: 100%;
-  text-overflow: ellipsis;
+}
+
+.setup-key > div:first-child,
+.setup-key input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.setup-key-tools {
+  display: flex;
+  gap: 8px;
+}
+
+.setup-key-tools button {
+  flex: none;
+  width: var(--touch);
+  height: var(--touch);
+  min-width: var(--touch);
+  min-height: var(--touch);
 }
 
 [data-setup] .overflow-y-auto {
