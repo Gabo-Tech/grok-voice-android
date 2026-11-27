@@ -1622,6 +1622,7 @@ function FullFlow({
 }) {
   const t = useT();
   const stage = useRef<HTMLDivElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
   const view = useRef({ scale, pan, onScale, onPan });
   view.current = { scale, pan, onScale, onPan };
   const closeRef = useRef(onClose);
@@ -1634,6 +1635,26 @@ function FullFlow({
     void orientation?.lock?.("landscape")?.catch(() => undefined);
     return () => orientation?.unlock?.();
   }, []);
+
+  useEffect(() => {
+    const node = stage.current;
+    if (!node) return;
+    const check = () => {
+      setMoreBelow(node.scrollHeight > node.clientHeight + 12 && node.scrollTop + node.clientHeight < node.scrollHeight - 12);
+    };
+    check();
+    const soon = window.setTimeout(check, 240);
+    const later = window.setTimeout(check, 700);
+    node.addEventListener("scroll", check, { passive: true });
+    const observer = new ResizeObserver(check);
+    observer.observe(node);
+    return () => {
+      window.clearTimeout(soon);
+      window.clearTimeout(later);
+      node.removeEventListener("scroll", check);
+      observer.disconnect();
+    };
+  }, [children, scale]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1758,9 +1779,10 @@ function FullFlow({
   return (
     <div className="flow-full" data-swipe-ignore="" role="dialog" aria-modal="true" aria-label={title}>
       <div ref={stage} className="flow-full-stage">
-        <div className="h-full w-full" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`, transformOrigin: "center center" }}>
+        <div className="w-full" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`, transformOrigin: "center center" }}>
           {children}
         </div>
+        {moreBelow ? <span className="flow-more" aria-hidden="true" /> : null}
       </div>
       <div className="flow-full-bar">
         <button type="button" className="fin-chip" onClick={onClose}>
