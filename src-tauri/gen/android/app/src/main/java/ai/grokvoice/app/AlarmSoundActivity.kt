@@ -142,6 +142,7 @@ class AlarmSoundActivity : AppCompatActivity() {
     view.addJavascriptInterface(YtBridge(), "AlarmSound")
     view.webViewClient = object : WebViewClient() {
       override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+        if (request.isForMainFrame) return true
         return !allowedHost(request.url.host)
       }
 

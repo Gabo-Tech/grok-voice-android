@@ -24,21 +24,33 @@ on:
         type: boolean
         default: false
 
+# The build job runs repository code and never sees the release keystore.
+# Signing is a later job: it downloads the APK and does not run package scripts.
+# A tag push is not cancelled by a second run of the same ref.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-apk-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  release-apk:
-    name: Build and sign
+  build:
+    name: Unit tests and APK
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      tag: ${{ steps.rel.outputs.tag }}
+      version: ${{ steps.rel.outputs.version }}
+      version_code: ${{ steps.rel.outputs.version_code }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Resolve release tag
         id: rel
@@ -170,14 +182,56 @@ jobs:
             exit "$code"
           done
 
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Build and sign
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Install host tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-pil unzip
+
+      - name: Set up Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools build-tools;37.0.0
+
+      - name: Download unsigned APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-apk
+          path: ${{ runner.temp }}/unsigned
+
       - name: Sign and verify
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          VERSION: ${{ steps.rel.outputs.version }}
-          VERSION_CODE: ${{ steps.rel.outputs.version_code }}
+          VERSION: ${{ needs.build.outputs.version }}
+          VERSION_CODE: ${{ needs.build.outputs.version_code }}
           EXPECTED_CERT: fd400ffe61c9b18654bc40f567275e5a6e13bab8d311355f389f6e46458aafe9
         run: |
           set -euo pipefail
@@ -186,10 +240,10 @@ jobs:
             exit 1
           fi
 
-          src="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
+          src="${RUNNER_TEMP}/unsigned/app-universal-release.apk"
           if [ ! -f "$src" ]; then
             echo "release APK was not produced at $src"
-            find src-tauri/gen/android/app/build/outputs -type f -name '*.apk' -print || true
+            find "${RUNNER_TEMP}/unsigned" -type f -print || true
             exit 1
           fi
 
@@ -313,11 +367,34 @@ jobs:
             echo "- sha256: \`${hash}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Upload signed APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed-apk
+          path: ${{ runner.temp }}/GrokVoice-${{ needs.build.outputs.version }}.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: [build, sign]
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download signed APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: signed-apk
+          path: ${{ runner.temp }}
+
       - name: Publish GitHub release
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         env:
-          TAG: ${{ steps.rel.outputs.tag }}
-          VERSION: ${{ steps.rel.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
           EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
         run: |

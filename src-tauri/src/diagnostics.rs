@@ -81,6 +81,8 @@ pub struct Hub {
     logs: Mutex<VecDeque<LogLine>>,
 }
 
+const KEY_PREFIXES: &[&str] = &["github_pat_", "sk-", "xai-", "hf_", "ghp_", "aiza"];
+
 /// Strip credential-shaped text before it reaches logcat, the debug panel, or speech.
 pub fn redact(msg: &str) -> String {
     let mut out = String::with_capacity(msg.len().min(400));
@@ -88,11 +90,15 @@ pub fn redact(msg: &str) -> String {
     while !rest.is_empty() {
         let lower = rest.to_ascii_lowercase();
         let bearer = lower.find("bearer ");
-        let sk = find_key(&lower, "sk-");
-        let xai = find_key(&lower, "xai-");
-        let Some(at) = [bearer, sk, xai].into_iter().flatten().min() else {
-            push_limited(&mut out, rest);
-            break;
+        let key = earliest_secret(&lower);
+        let at = match (bearer, key) {
+            (None, None) => {
+                push_limited(&mut out, rest);
+                break;
+            }
+            (Some(b), Some((k, _))) if k < b => k,
+            (Some(b), _) => b,
+            (None, Some((k, _))) => k,
         };
         push_limited(&mut out, &rest[..at]);
         if out.chars().count() >= 400 {
@@ -107,8 +113,8 @@ pub fn redact(msg: &str) -> String {
             push_limited(&mut out, "Bearer [redacted]");
             rest = &rest[end..];
         } else {
-            let prefix = if sk == Some(at) { 3 } else { 4 };
-            let after = at + prefix;
+            let prefix_len = key.map(|(_, len)| len).unwrap_or(0);
+            let after = at + prefix_len;
             let token_bytes: usize = rest[after..]
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
@@ -119,6 +125,23 @@ pub fn redact(msg: &str) -> String {
         }
     }
     out
+}
+
+fn earliest_secret(lower: &str) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for prefix in KEY_PREFIXES {
+        if let Some(at) = find_key(lower, prefix) {
+            let len = prefix.len();
+            let replace = match best {
+                None => true,
+                Some((pos, prev)) => at < pos || (at == pos && len > prev),
+            };
+            if replace {
+                best = Some((at, len));
+            }
+        }
+    }
+    best
 }
 
 fn find_key(lower: &str, prefix: &str) -> Option<usize> {
@@ -263,5 +286,10 @@ mod tests {
                 .to_lowercase()
                 .contains("super-secret")
         );
+        assert!(!redact("token hf_abcdefghijklmnopqrstuvwxyz").contains("abcdefghijklmnopqrstuvwxyz"));
+        assert!(!redact("ghp_abcdefghijklmnopqrstuvwxyz").contains("ghp_abcdefghij"));
+        assert!(!redact("github_pat_abcdefghijklmnopqrstuvwxyz").contains("github_pat_abc"));
+        assert!(!redact("AIzaSy0123456789abcdef").contains("AIzaSy0123456789"));
+        assert_eq!(redact("a short hf_abc note"), "a short hf_abc note");
     }
 }

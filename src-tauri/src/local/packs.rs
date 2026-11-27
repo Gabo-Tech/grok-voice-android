@@ -1117,28 +1117,21 @@ fn normalize_sha(sha: &str) -> Result<Option<String>, String> {
     Ok(Some(sha))
 }
 
-fn ensure_public_host(url: &str) -> Result<(), String> {
-    use std::net::ToSocketAddrs;
+fn pinned_client(url: &str) -> Result<reqwest::blocking::Client, String> {
+    crate::http::custom_download_url(url)?;
     let parsed =
         reqwest::Url::parse(url).map_err(|_| "The download address must be https.".to_string())?;
     let host = parsed.host_str().unwrap_or("");
-    if host.parse::<std::net::IpAddr>().is_ok() {
-        return Ok(());
+    let addrs = crate::http::public_connect_addrs(host)?;
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(900))
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::none());
+    let pin = host.trim_matches(|c| c == '[' || c == ']');
+    for addr in addrs {
+        builder = builder.resolve(pin, addr);
     }
-    let mut any = false;
-    for addr in (host, 443u16)
-        .to_socket_addrs()
-        .map_err(|_| "Could not look up that download address.".to_string())?
-    {
-        any = true;
-        if !crate::http::ip_is_public(addr.ip()) {
-            return Err("That download address is not allowed.".into());
-        }
-    }
-    if !any {
-        return Err("Could not look up that download address.".into());
-    }
-    Ok(())
+    builder.build().map_err(|err| err.to_string())
 }
 
 fn download_public(
@@ -1147,18 +1140,10 @@ fn download_public(
     sha: Option<&str>,
     progress: &mut impl FnMut(PackProgress),
 ) -> Result<(), String> {
-    ensure_public_host(url)?;
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(900))
-        .connect_timeout(std::time::Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|err| err.to_string())?;
     let mut current = url.to_string();
     let mut response = None;
     for _ in 0..5 {
-        crate::http::custom_download_url(&current)?;
-        ensure_public_host(&current)?;
+        let client = pinned_client(&current)?;
         let resp = client
             .get(&current)
             .header("user-agent", "GrokVoice/0.1.14")

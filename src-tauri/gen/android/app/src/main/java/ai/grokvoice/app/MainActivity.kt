@@ -215,6 +215,8 @@ class MainActivity : TauriActivity() {
     }
     val settings = webView.settings
     settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+    settings.allowFileAccess = false
+    settings.allowContentAccess = false
     applyTextZoom(webView)
     @Suppress("DEPRECATION")
     settings.allowFileAccessFromFileURLs = false

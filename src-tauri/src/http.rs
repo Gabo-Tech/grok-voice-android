@@ -76,6 +76,41 @@ pub fn custom_download_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Addresses a custom-model download may connect to.
+///
+/// Every answer from this lookup has to be public. The caller pins the request
+/// to these addresses so a later DNS reply cannot swap in a private address.
+pub fn public_connect_addrs(host: &str) -> Result<Vec<std::net::SocketAddr>, String> {
+    use std::net::{IpAddr, ToSocketAddrs};
+    let host = host
+        .trim_matches(|c| c == '[' || c == ']')
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if host.is_empty() || host_is_local(&host) {
+        return Err("That download address is not allowed.".into());
+    }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if !ip_is_public(ip) {
+            return Err("That download address is not allowed.".into());
+        }
+        return Ok(vec![std::net::SocketAddr::new(ip, 443)]);
+    }
+    let mut addrs = Vec::new();
+    for addr in (host.as_str(), 443u16)
+        .to_socket_addrs()
+        .map_err(|_| "Could not look up that download address.".to_string())?
+    {
+        if !ip_is_public(addr.ip()) {
+            return Err("That download address is not allowed.".into());
+        }
+        addrs.push(addr);
+    }
+    if addrs.is_empty() {
+        return Err("Could not look up that download address.".into());
+    }
+    Ok(addrs)
+}
+
 pub fn ip_is_public(ip: std::net::IpAddr) -> bool {
     match ip {
         std::net::IpAddr::V4(ip) => v4_is_public(ip),
@@ -259,5 +294,13 @@ mod tests {
         assert!(custom_download_url("https://[fd00::1]/model.gguf").is_err());
         assert!(ip_is_public("8.8.8.8".parse().unwrap()));
         assert!(!ip_is_public("0.0.0.0".parse().unwrap()));
+        let public = public_connect_addrs("8.8.8.8").unwrap();
+        assert_eq!(public, vec!["8.8.8.8:443".parse().unwrap()]);
+        assert!(public_connect_addrs("127.0.0.1").is_err());
+        assert!(public_connect_addrs("10.1.2.3").is_err());
+        assert!(public_connect_addrs("192.168.1.9").is_err());
+        assert!(public_connect_addrs("169.254.169.254").is_err());
+        assert!(public_connect_addrs("localhost").is_err());
+        assert!(public_connect_addrs("[::1]").is_err());
     }
 }

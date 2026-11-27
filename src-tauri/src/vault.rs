@@ -68,6 +68,16 @@ fn verr(e: impl std::fmt::Display) -> Error {
     Error::Vault(e.to_string())
 }
 
+fn save_private(sh: &Stronghold, path: &std::path::Path) -> Result<()> {
+    sh.save().map_err(verr)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(verr)?;
+    }
+    Ok(())
+}
+
 impl Vault {
     pub fn new(dir: PathBuf) -> Self {
         Self {
@@ -162,7 +172,7 @@ impl Vault {
                 .insert(API_KEY.to_vec(), key.as_bytes().to_vec(), None)
                 .map_err(verr)?;
             sh.write_client(CLIENT).map_err(verr)?;
-            sh.save().map_err(verr)
+            save_private(sh, &self.snapshot_path())
         })
     }
 
@@ -177,7 +187,7 @@ impl Vault {
         self.with_store(bridge, |sh, client| {
             client.store().delete(API_KEY).map_err(verr)?;
             sh.write_client(CLIENT).map_err(verr)?;
-            sh.save().map_err(verr)
+            save_private(sh, &self.snapshot_path())
         })
     }
 
@@ -237,7 +247,7 @@ impl Vault {
                 provider,
                 secret,
             });
-            write_accounts(sh, client, &list)?;
+            write_accounts(sh, client, &list, &self.snapshot_path())?;
             Ok(public_accounts(&list))
         })
     }
@@ -258,11 +268,11 @@ impl Vault {
                 }
             }
             list.retain(|a| a.id != id);
-            write_accounts(sh, client, &list)?;
+            write_accounts(sh, client, &list, &self.snapshot_path())?;
             if list.is_empty() {
                 let _ = client.store().delete(API_KEY);
                 sh.write_client(CLIENT).map_err(verr)?;
-                sh.save().map_err(verr)?;
+                save_private(sh, &self.snapshot_path())?;
             }
             Ok(public_accounts(&list))
         })
@@ -315,7 +325,7 @@ impl Vault {
             };
             list[index].provider = provider;
             list[index].secret = next_secret;
-            write_accounts(sh, client, &list)?;
+            write_accounts(sh, client, &list, &self.snapshot_path())?;
             Ok(public_accounts(&list))
         })
     }
@@ -333,7 +343,7 @@ impl Vault {
         self.with_store(bridge, |sh, client| {
             let list = read_accounts(client)?;
             let next = order_accounts(&list, ids);
-            write_accounts(sh, client, &next)?;
+            write_accounts(sh, client, &next, &self.snapshot_path())?;
             Ok(public_accounts(&next))
         })
     }
@@ -368,7 +378,7 @@ impl Vault {
                     list.swap(i, j);
                 }
             }
-            write_accounts(sh, client, &list)?;
+            write_accounts(sh, client, &list, &self.snapshot_path())?;
             Ok(public_accounts(&list))
         })
     }
@@ -389,11 +399,11 @@ impl Vault {
             })
             .collect();
         self.with_store(bridge, |sh, client| {
-            write_accounts(sh, client, &list)?;
+            write_accounts(sh, client, &list, &self.snapshot_path())?;
             if list.is_empty() {
                 let _ = client.store().delete(API_KEY);
                 sh.write_client(CLIENT).map_err(verr)?;
-                sh.save().map_err(verr)?;
+                save_private(sh, &self.snapshot_path())?;
             }
             Ok(())
         })
@@ -428,7 +438,7 @@ impl Vault {
                 .insert(HF_TOKEN.to_vec(), token.as_bytes().to_vec(), None)
                 .map_err(verr)?;
             sh.write_client(CLIENT).map_err(verr)?;
-            sh.save().map_err(verr)
+            save_private(sh, &self.snapshot_path())
         })
     }
 
@@ -450,7 +460,7 @@ impl Vault {
         self.with_store(bridge, |sh, client| {
             let _ = client.store().delete(HF_TOKEN);
             sh.write_client(CLIENT).map_err(verr)?;
-            sh.save().map_err(verr)
+            save_private(sh, &self.snapshot_path())
         })
     }
 
@@ -470,6 +480,7 @@ fn write_accounts(
     sh: &Stronghold,
     client: &iota_stronghold::Client,
     list: &[StoredAccount],
+    snapshot: &std::path::Path,
 ) -> Result<()> {
     let bytes = serde_json::to_vec(list).map_err(|e| verr(e.to_string()))?;
     client
@@ -483,7 +494,7 @@ fn write_accounts(
             .map_err(verr)?;
     }
     sh.write_client(CLIENT).map_err(verr)?;
-    sh.save().map_err(verr)
+    save_private(sh, snapshot)
 }
 
 fn public_accounts(list: &[StoredAccount]) -> Vec<VoiceAccount> {
