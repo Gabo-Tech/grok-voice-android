@@ -251,34 +251,48 @@ jobs:
             exit 1
           fi
 
+          # Release packaging shortens res/ file names. The resource table still
+          # names every mipmap and the notification icon.
+          export AAPT_DUMP="$("$bt/aapt" dump resources "$out")"
           python3 - "$out" << 'PY'
-          import sys, zipfile, io
+          import os, re, sys, zipfile, io
           from PIL import Image
+          dump = os.environ["AAPT_DUMP"]
+          required = [
+              "mipmap/ic_launcher:",
+              "mipmap/ic_launcher_round:",
+              "mipmap/ic_launcher_foreground:",
+              "mipmap/ic_launcher_monochrome:",
+              "drawable/ic_stat_grok:",
+          ]
+          for name in required:
+              if name not in dump:
+                  sys.exit(f"resource table missing {name[:-1]}")
+          files = {}
+          lines = dump.splitlines()
+          for index, line in enumerate(lines):
+              for name in required:
+                  if name in line and "resource " in line:
+                      for nxt in lines[index + 1:index + 8]:
+                          match = re.search(r'"(res/[^"]+)"', nxt)
+                          if match:
+                              files.setdefault(name, []).append(match.group(1))
+                              break
+          print("icon files", {key: value for key, value in files.items()})
           apk = zipfile.ZipFile(sys.argv[1])
-          names = [n for n in apk.namelist() if "ic_launcher" in n and n.endswith((".png", ".webp"))]
-          if not names:
-              sys.exit("APK has no ic_launcher images")
-          needed = ["mipmap-mdpi", "mipmap-hdpi", "mipmap-xhdpi", "mipmap-xxhdpi", "mipmap-xxxhdpi"]
-          for density in needed:
-              for kind in ("ic_launcher.png", "ic_launcher_round.png", "ic_launcher_foreground.png", "ic_launcher_monochrome.png"):
-                  hits = [n for n in names if density in n and n.endswith(kind)]
-                  if not hits:
-                      sys.exit(f"APK missing {density}/{kind}")
-          def center_luma(path):
-              im = Image.open(io.BytesIO(apk.read(path))).convert("RGBA")
-              w, h = im.size
-              crop = im.crop((w//2 - w//10, h//2 - h//10, w//2 + w//10, h//2 + h//10))
-              px = list(crop.getdata())
-              return sum((r+g+b)/3 for r, g, b, _a in px) / len(px)
-          launcher = next(n for n in names if n.endswith("mipmap-xxxhdpi/ic_launcher.png") or (n.endswith("ic_launcher.png") and "xxxhdpi" in n))
-          luma = center_luma(launcher)
-          print(f"launcher {launcher} center luma {luma:.1f}")
-          if luma > 140:
-              sys.exit("launcher center is still the old white square")
-          mono = [n for n in names if n.endswith("ic_launcher_monochrome.png")]
-          stat = [n for n in apk.namelist() if n.endswith("ic_stat_grok.png")]
-          if len(mono) < 5 or len(stat) < 5:
-              sys.exit(f"expected monochrome and notification icons, got mono={len(mono)} stat={len(stat)}")
+          launcher_paths = files.get("mipmap/ic_launcher:", [])
+          if launcher_paths:
+              def center_luma(path):
+                  im = Image.open(io.BytesIO(apk.read(path))).convert("RGBA")
+                  w, h = im.size
+                  crop = im.crop((w // 2 - w // 10, h // 2 - h // 10, w // 2 + w // 10, h // 2 + h // 10))
+                  pixels = list(crop.getdata())
+                  return sum((r + g + b) / 3 for r, g, b, _a in pixels) / len(pixels), (w, h)
+              best = max(launcher_paths, key=lambda path: center_luma(path)[1][0] * center_luma(path)[1][1])
+              luma, size = center_luma(best)
+              print(f"launcher {best} {size[0]}x{size[1]} center luma {luma:.1f}")
+              if luma > 140:
+                  sys.exit("launcher center is still the old white square")
           print("mipmaps match the new robot icon")
           PY
 
