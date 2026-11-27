@@ -252,12 +252,13 @@ jobs:
           fi
 
           # Release packaging shortens res/ file names. The resource table still
-          # names every mipmap and the notification icon.
-          export AAPT_DUMP="$("$bt/aapt" dump resources "$out")"
-          python3 - "$out" << 'PY'
-          import os, re, sys, zipfile, io
+          # names every mipmap and the notification icon. The dump is a file
+          # because it is too large for the process environment.
+          "$bt/aapt" dump resources "$out" > "${RUNNER_TEMP}/aapt-resources.txt"
+          python3 - "$out" "${RUNNER_TEMP}/aapt-resources.txt" << 'PY'
+          import re, sys, zipfile, io
           from PIL import Image
-          dump = os.environ["AAPT_DUMP"]
+          dump = open(sys.argv[2], encoding="utf-8", errors="replace").read()
           required = [
               "mipmap/ic_launcher:",
               "mipmap/ic_launcher_round:",
