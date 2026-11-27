@@ -46,7 +46,7 @@ export function PageChrome({
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           {mark ? <AppMark className="w-14 shrink-0 landscape:w-12" alt="Grok Voice" /> : null}
           <div className="page-title min-w-0 flex-1">
-          <div className="flex min-w-min flex-wrap items-center gap-1">
+          <div className="title-with-info">
             <h1 data-fit="title" className="masthead text-foreground">{title}</h1>
             {info}
           </div>

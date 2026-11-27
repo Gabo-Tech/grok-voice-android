@@ -777,11 +777,37 @@ h1,
 
 .page-title {
   container-type: inline-size;
-  min-width: min(100%, max-content);
+  min-width: 0;
 }
 
 .page-title h1 {
-  font-size: clamp(1.35rem, 16cqi, 1.85rem);
+  font-size: clamp(1.35rem, 8vw, 1.85rem);
+}
+
+.title-with-info h1 {
+  font-size: clamp(22px, 8vw, 30px);
+}
+
+.title-with-info,
+.title-line {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.title-with-info > :first-child,
+.title-line > :first-child {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.title-with-info .icon-hit,
+.title-line .icon-hit {
+  flex: none;
 }
 
 .masthead-rule {
@@ -2128,9 +2154,6 @@ button.underline:not(.is-link) {
 }
 
 .title-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-height: var(--touch);
 }
 
@@ -2175,16 +2198,6 @@ button.settings-row {
   min-width: min(100%, max-content);
 }
 
-.donut-hole {
-  padding-inline: 22%;
-}
-
-.donut-hole span {
-  max-width: 100%;
-  overflow-wrap: normal;
-  font-size: 13px;
-  line-height: 1.15;
-}
 
 .banner-slim {
   display: flex;
@@ -2377,7 +2390,11 @@ button.settings-row {
   align-items: center;
   justify-content: center;
   gap: 16px;
-  padding-top: 8px;
+  padding-top: 16px;
+}
+
+.talk-chips {
+  margin-bottom: 16px;
 }
 
 .talk-dock .mark {
@@ -2414,6 +2431,28 @@ button.settings-row {
 .talk-empty .grok-mark {
   width: 60px;
   height: 72px;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .talk-empty {
+    gap: 8px;
+    justify-content: center;
+    padding-block: 0;
+  }
+
+  .talk-empty .presence {
+    width: 56px;
+    height: 64px;
+  }
+
+  .talk-empty .grok-mark {
+    width: 44px;
+    height: 52px;
+  }
+
+  .talk-chips {
+    margin-bottom: 0;
+  }
 }
 
 .mark[data-phase="listening"] {
@@ -2491,6 +2530,27 @@ button.settings-row {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+}
+
+.month-grid > * {
+  min-width: 0;
+}
+
+.month-day {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 1;
+  max-height: 3.25rem;
+  padding: 2px 0;
 }
 
 .day-today {

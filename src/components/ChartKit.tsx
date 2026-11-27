@@ -241,9 +241,14 @@ export function Donut({
   });
   const ratio = debtRatio != null && debtRatio > 0 ? Math.min(debtRatio, 1) : 0;
   const label = [caption, center].filter(Boolean).join(" ") || rows.map((row) => row.label).filter(Boolean).join(", ");
+  const hole = 76;
+  const textWidth = (text: string, size: number) => [...text].length * size * 0.56;
+  const captionSize = 11;
+  const showCaption = caption != null && caption.length > 0 && textWidth(caption, captionSize) <= hole;
+  const centerSize = Math.min(22, hole / Math.max([...center].length * 0.56, 1));
   return (
     <div className="relative mx-auto aspect-square w-full max-w-[220px]">
-      <svg viewBox="0 0 200 200" className="block h-full w-full" role="img" aria-label={label}>
+      <svg viewBox="0 0 200 200" className="block h-full w-full" role="img" aria-label={label} data-fit="amount">
         {ratio > 0 ? (
           <>
             <path d={arc(100, 100, 94, 82, -90, 269.2)} fill="var(--fin-line)" />
@@ -255,11 +260,17 @@ export function Donut({
             <title>{slice.label}</title>
           </path>
         ))}
+        {showCaption ? (
+          <text x="100" y="86" textAnchor="middle" dominantBaseline="middle" fontSize={captionSize} fill="currentColor">
+            {caption}
+          </text>
+        ) : null}
+        {center ? (
+          <text x="100" y={showCaption ? 112 : 100} textAnchor="middle" dominantBaseline="middle" fontSize={centerSize} fontWeight="500" fill="currentColor">
+            {center}
+          </text>
+        ) : null}
       </svg>
-      <div className="donut-hole pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        {caption ? <span data-fit="amount">{caption}</span> : null}
-        {center ? <span data-fit="amount" className="fin-num whitespace-nowrap">{center}</span> : null}
-      </div>
     </div>
   );
 }

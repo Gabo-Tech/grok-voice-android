@@ -174,12 +174,12 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-7 px-1 text-center text-xs text-muted-foreground">
+          <div className="month-grid px-1 text-center text-xs text-muted-foreground">
             {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((label) => (
               <span key={label}>{t(label)}</span>
             ))}
           </div>
-          <div className="mt-1 grid grid-cols-7">
+          <div className="month-grid mt-1">
             {cells.map((day, i) => {
               if (!day) return <span key={`pad-${i}`} />;
               const on = sameDay(day, selected);
@@ -193,7 +193,7 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
                   onClick={() => setSelected(day)}
                   aria-label={`${day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}, ${count} ${count === 1 ? t("event") : t("events")}`}
                   aria-pressed={on}
-                  className={`flex h-14 flex-col items-center justify-center text-sm tabular-nums ${
+                  className={`month-day flex flex-col items-center justify-center text-sm tabular-nums ${
                     on ? "bg-foreground text-background" : "text-foreground"
                   } ${today && !on ? "day-today" : ""}`}
                 >

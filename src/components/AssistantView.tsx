@@ -253,7 +253,7 @@ export function AssistantView({
                 <p>{t("Open voice and AI")}</p>
               </InfoTip>
             </div>
-            <div className="flex max-w-full flex-wrap justify-center gap-2">
+            <div className="talk-chips flex max-w-full flex-wrap justify-center gap-2">
               {["What's on today?", "Add reminder", "How much did I spend?"].map((line) => (
                 <button key={line} type="button" className="period-chip" onClick={() => void voice.sendText(t(line))}>
                   {t(line)}
