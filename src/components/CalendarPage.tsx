@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
-import { InfoTip } from "@/components/ds/InfoTip";
+import { CalendarDays, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import { Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
 import { Sheet } from "@/components/Sheet";
@@ -126,21 +125,25 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
     <>
       <PageChrome title={t("Calendar")} bare={!chrome} onAdd={openNew} addLabel={t("New event")} active={active}>
         {monthCalendar !== "granted" && calendarNote ? (
-          <div className="banner-slim">
-            <p className="text-sm text-foreground">{t("Calendar")}</p>
-            <InfoTip label={t("Calendar")} text={t("The phone calendar is not connected. Days below still show events saved in the app.")} />
-            <button type="button" className="min-h-12 shrink-0 px-2 text-sm text-foreground underline underline-offset-4" disabled={agenda.busy || !agenda.inApp} onClick={() => void agenda.requestCalendar()}>
-              {t("Allow calendar access")}
-            </button>
-            <button type="button" className="icon-hit" aria-label={t("Hide")} onClick={() => setCalendarNote(false)}>
-              <X className="size-5" strokeWidth={1.5} />
-            </button>
+          <div className="banner-slim gap-2">
+            <p className="min-w-0 flex-1 text-sm text-foreground">
+              <CalendarDays className="me-2 inline size-5 align-text-top" aria-hidden />
+              {t("Connect your calendar")}
+            </p>
+            <span className="banner-actions">
+              <button type="button" className="min-h-12 shrink-0 px-2 text-sm text-foreground underline underline-offset-4" disabled={agenda.busy || !agenda.inApp} onClick={() => void agenda.requestCalendar()}>
+                {t("Allow")}
+              </button>
+              <button type="button" className="icon-hit" aria-label={t("Hide")} onClick={() => setCalendarNote(false)}>
+                <X className="size-5" strokeWidth={1.5} />
+              </button>
+            </span>
           </div>
         ) : null}
         {agenda.error && <Notice title={t(agenda.error)} />}
 
         <div>
-          <div className="mb-3 flex items-center justify-between gap-2 px-1">
+          <div className="month-bar mb-3 px-1">
             <p className="min-w-0 text-lg leading-6 font-medium text-foreground">
               {cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
             </p>

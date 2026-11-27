@@ -56,7 +56,7 @@ export function CombinedHeadline({
   const split = hero ? moneyParts(head.amountMinor, head.currency) : null;
   return (
     <div className="mt-4 max-w-full">
-      <p className={cn("fin-num leading-none font-medium break-words", hero ? "fin-hero-num" : size, signed === "in" && "fin-in", signed === "out" && "fin-out")}>
+      <p data-fit={hero ? "amount" : undefined} className={cn("fin-num leading-none font-medium", hero ? "fin-hero-num" : cn(size, "break-words"), signed === "in" && "fin-in", signed === "out" && "fin-out")}>
         {split ? (
           <>
             <span className="fin-hero-unit">{split.unit}</span>

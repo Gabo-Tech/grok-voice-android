@@ -122,15 +122,8 @@ export function AssistantView({
     const el = scroller.current;
     if (!el) return;
     const pin = () => {
-      if (voice.lastError && voice.rows.length === 0) {
-        const action = el.querySelector("[role='alert'] button");
-        if (!action) {
-          el.scrollTop = 0;
-          return;
-        }
-        const actionBox = action.getBoundingClientRect();
-        const view = el.getBoundingClientRect();
-        if (actionBox.bottom > view.bottom - 4) el.scrollTop += actionBox.bottom - view.bottom + 12;
+      if (voice.rows.length === 0) {
+        el.scrollTop = 0;
         return;
       }
       el.scrollTop = el.scrollHeight;
@@ -186,32 +179,34 @@ export function AssistantView({
             <p className="text-sm text-muted-foreground">
               {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
             </p>
-            <button
-              type="button"
-              className={cn("stamp min-h-12 gap-2 px-3", voice.wakeEnabled && "stamp-on listen-live")}
-              aria-pressed={voice.wakeEnabled}
-              aria-label={voice.wakeEnabled ? t("Listen is on") : t("Listen is off")}
-              onClick={() => {
-                const next = !voice.wakeEnabled;
-                void voice.toggleWake(next);
-                if (next && localStorage.getItem("grok-listen-hint") !== "1") {
-                  localStorage.setItem("grok-listen-hint", "1");
-                  setListenHint(true);
-                }
-              }}
-            >
-              <Mic className="size-4" aria-hidden />
-              {voice.wakeEnabled ? t("Listen · On") : t("Listen · Off")}
-            </button>
-            <button
-              type="button"
-              className="grid size-12 shrink-0 place-items-center text-muted-foreground"
-              aria-expanded={aboutListen}
-              aria-label={t("About Listen")}
-              onClick={() => setAboutListen((on) => !on)}
-            >
-              <Info className="size-5" aria-hidden />
-            </button>
+            <span className="inline-flex items-center">
+              <button
+                type="button"
+                className={cn("stamp min-h-12 gap-2 px-3", voice.wakeEnabled && "stamp-on listen-live")}
+                aria-pressed={voice.wakeEnabled}
+                aria-label={voice.wakeEnabled ? t("Listen is on") : t("Listen is off")}
+                onClick={() => {
+                  const next = !voice.wakeEnabled;
+                  void voice.toggleWake(next);
+                  if (next && localStorage.getItem("grok-listen-hint") !== "1") {
+                    localStorage.setItem("grok-listen-hint", "1");
+                    setListenHint(true);
+                  }
+                }}
+              >
+                <Mic className="size-4" aria-hidden />
+                {voice.wakeEnabled ? t("Listen · On") : t("Listen · Off")}
+              </button>
+              <button
+                type="button"
+                className="grid size-12 shrink-0 place-items-center text-muted-foreground"
+                aria-expanded={aboutListen}
+                aria-label={t("About Listen")}
+                onClick={() => setAboutListen((on) => !on)}
+              >
+                <Info className="size-5" aria-hidden />
+              </button>
+            </span>
           </div>
           {listenHint ? <p className="pb-3 text-sm leading-5 text-muted-foreground">{t("Stays on in the background until you turn it off.")}</p> : null}
           {aboutListen ? (

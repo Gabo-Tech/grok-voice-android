@@ -256,9 +256,9 @@ export function Donut({
           </path>
         ))}
       </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-12 text-center">
-        {caption ? <span className="text-[13px] leading-4">{caption}</span> : null}
-        {center ? <span className="fin-num text-[15px] leading-5 break-words">{center}</span> : null}
+      <div className="donut-hole pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+        {caption ? <span data-fit="amount">{caption}</span> : null}
+        {center ? <span data-fit="amount" className="fin-num whitespace-nowrap">{center}</span> : null}
       </div>
     </div>
   );

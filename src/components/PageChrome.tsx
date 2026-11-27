@@ -43,11 +43,11 @@ export function PageChrome({
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       {bare ? null : (
       <header className="shrink-0 px-1 pb-4 pt-1">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           {mark ? <AppMark className="w-14 shrink-0 landscape:w-12" alt="Grok Voice" /> : null}
-          <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1">
-            <h1 className="masthead text-[1.85rem] text-foreground">{title}</h1>
+          <div className="page-title min-w-0 flex-1">
+          <div className="flex min-w-min flex-wrap items-center gap-1">
+            <h1 data-fit="title" className="masthead text-foreground">{title}</h1>
             {info}
           </div>
           <div className="masthead-rule" />
@@ -56,7 +56,7 @@ export function PageChrome({
         </div>
       </header>
       )}
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-4">{children}</div>
+      <div className="page-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">{children}</div>
     </div>
   );
 }

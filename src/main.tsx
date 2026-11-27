@@ -23,6 +23,7 @@ if (previewZoom > 100 && previewZoom <= 300) {
     });
     for (const { el, size, line } of measured) {
       if (!Number.isFinite(size) || size <= 0) continue;
+      if (el.closest("[data-fit]")) continue;
       el.style.fontSize = `${(size * factor).toFixed(2)}px`;
       if (line.endsWith("px")) el.style.lineHeight = `${(Number.parseFloat(line) * factor).toFixed(2)}px`;
     }

@@ -505,10 +505,15 @@
 }
 
 .finance .fin-hero-num {
-  font-size: var(--text-display, 48px);
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(1.15rem, 9vw, var(--type-display, 3rem));
   font-weight: 500;
   letter-spacing: -0.04em;
-  line-height: 1;
+  line-height: 1.05;
+  white-space: nowrap;
+  text-overflow: clip;
 }
 
 .finance .fin-hero-unit {
@@ -737,9 +742,11 @@
 
 .finance .fin-tab {
   min-height: var(--touch);
-  padding: 0 16px;
+  padding: 0 8px;
   font-size: var(--type-label);
   font-weight: 500;
+  scroll-snap-align: start;
+  flex: 0 0 auto;
 }
 
 .finance .fin-tab[aria-selected="true"] {
@@ -762,13 +769,15 @@
 }
 
 .hero-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 
 .mini-card {
   display: flex;
+  flex: 1 1 9rem;
+  min-width: min(100%, max-content);
   min-height: var(--touch);
   flex-direction: column;
   align-items: flex-start;
@@ -794,6 +803,7 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .mini-card[data-tone="in"] .mini-value {

@@ -92,6 +92,22 @@ export default function App() {
   const [appearance, setAppearance] = useState<AppearanceChoice>(() => readStoredAppearance());
 
   useEffect(() => {
+    const mark = () => {
+      document.querySelectorAll<HTMLElement>(".m3-tabs, .fin-tabs").forEach((bar) => {
+        bar.toggleAttribute("data-overflow", bar.scrollWidth > bar.clientWidth + 1);
+      });
+    };
+    mark();
+    const observer = new ResizeObserver(mark);
+    document.querySelectorAll(".m3-tabs, .fin-tabs").forEach((bar) => observer.observe(bar));
+    const later = window.setTimeout(mark, 240);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(later);
+    };
+  }, [tab]);
+
+  useEffect(() => {
     if (inApp || typeof window === "undefined") return;
     const asked = new URLSearchParams(window.location.search).get("appearance");
     if (!asked) return;

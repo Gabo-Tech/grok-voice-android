@@ -688,11 +688,6 @@ export function MorePage({
           <ChevronRight className="size-4" aria-hidden />
         </button>
       </div>
-      <button type="button" className="settings-row" onClick={() => setSection("spend")}>
-        <span className="min-w-0 flex-1 truncate text-left text-base text-foreground">{t("Daily voice budget")}</span>
-        <span className="truncate text-sm text-muted-foreground">{settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off")}</span>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      </button>
       <label className="mb-4 block px-1">
         <span className="sr-only">{t("Find a setting")}</span>
         <Input
@@ -1546,9 +1541,11 @@ function ListenStatus() {
   const blocked = health.health === "battery";
   return (
     <div className="app-card mb-6">
-      <div className="title-line gap-2">
-        {blocked ? <TriangleAlert className="size-5 shrink-0 text-[var(--warning)]" aria-hidden /> : null}
-        <p className="min-w-0 flex-1 truncate text-base text-foreground">{blocked ? t("Background listening blocked") : listenTitle(health.health, t)}</p>
+      <div className="flex items-start gap-2">
+        <p className="min-w-0 flex-1 break-words text-base leading-6 text-foreground">
+          {blocked ? <TriangleAlert className="me-2 inline size-5 align-text-top text-[var(--warning)]" aria-hidden /> : null}
+          {blocked ? t("Background listening blocked") : listenTitle(health.health, t)}
+        </p>
         <InfoTip label={t("Listen")} text={blocked ? `${listenTitle(health.health, t)} ${listenBody(health.health, t)}` : listenBody(health.health, t)} />
       </div>
       {blocked ? (

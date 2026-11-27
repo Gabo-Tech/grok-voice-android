@@ -229,13 +229,13 @@ export function FinanceOverview({
               center={rate == null ? "—" : `${Math.round(rate * 1000) / 10}%`}
             />
             <ul>
-              <li className="flex min-h-12 items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2 truncate text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--positive)" }} />{t("Income")}</span>
-                <span className="shrink-0 whitespace-nowrap"><Amount total={income} display={display} book={book} nowMs={nowMs} /></span>
+              <li className="flex min-h-12 flex-col justify-center gap-0.5">
+                <span className="flex items-center gap-2 whitespace-nowrap text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--positive)" }} />{t("Income")}</span>
+                <span className="whitespace-nowrap pl-4"><Amount total={income} display={display} book={book} nowMs={nowMs} /></span>
               </li>
-              <li className="flex min-h-12 items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2 truncate text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--negative)" }} />{t("Expenses")}</span>
-                <span className="shrink-0 whitespace-nowrap"><Amount total={expenses} display={display} book={book} nowMs={nowMs} /></span>
+              <li className="flex min-h-12 flex-col justify-center gap-0.5">
+                <span className="flex items-center gap-2 whitespace-nowrap text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--negative)" }} />{t("Expenses")}</span>
+                <span className="whitespace-nowrap pl-4"><Amount total={expenses} display={display} book={book} nowMs={nowMs} /></span>
               </li>
             </ul>
           </div>
