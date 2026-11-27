@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMoneyFlow, buildSankeyOption, describeFlow, fitValueScale, flowAmountLabel, flowConserved, flowSlices, labelsInside, labelsOverlap, layoutSankey, leafOffsets, placeFlowLabels, portraitLevels, sankeyFrame, sankeyValue, spreadColumn, spreadLevel } from "./moneyFlow.ts";
+import { buildMoneyFlow, buildSankeyOption, describeFlow, fitValueScale, flowAmountLabel, flowConserved, flowSlices, labelsInside, labelsOverlap, layoutSankey, leafOffsets, placeFlowLabels, portraitLevels, sankeyFrame, sankeyLabelPlan, sankeyValue, spreadColumn, spreadLevel } from "./moneyFlow.ts";
 import type { FlowLink, FlowNode, MoneyFlow } from "./moneyFlow.ts";
 import { migrateCategories, mergeCategory, reorderCategories, UNCATEGORIZED } from "./financeCategories.ts";
 import { boundsOf } from "./chartPeriod.ts";
@@ -338,7 +338,7 @@ assert.equal(phone.linkOpacity, 0.45);
 assert.equal(phone.portrait, true);
 assert.equal(phone.vertical, true);
 assert.equal(phone.columnFill, 0.32);
-assert.ok(phone.left <= 16 && phone.right <= 16, `gutters ${phone.left}/${phone.right}`);
+assert.ok(phone.left >= 100 && phone.right >= 100, `gutters ${phone.left}/${phone.right}`);
 assert.equal(phone.flowPx, Math.round(Math.min(48, Math.max(16, 390 * 0.055))));
 assert.ok(phone.flowPx < phone.plot * 0.2, `ribbon ${phone.flowPx} plot ${phone.plot}`);
 assert.equal(phone.layoutIterations, 0);
@@ -439,6 +439,22 @@ const sampleBoxes = placeFlowLabels(
   124,
 );
 assert.equal(labelsOverlap(sampleBoxes), false, JSON.stringify(sampleBoxes));
+const gutter = sankeyLabelPlan(
+  [
+    { id: "salary", label: "Salary", role: "source", kind: "income", amountMinor: 600000, share: 1, color: "", originals: [], members: [], children: [] },
+    { id: "pool", label: "Total income", role: "pool", kind: "pool", amountMinor: 600000, share: 1, color: "", originals: [], members: [], children: [] },
+    { id: "debt", label: "Debt payments", role: "hub", kind: "debts", amountMinor: 35000, share: 0.06, color: "", originals: [], members: [], children: [] },
+    { id: "save", label: "Savings", role: "hub", kind: "savings", amountMinor: 200000, share: 0.3, color: "", originals: [], members: [], children: [] },
+    { id: "rent", label: "Rent", role: "sink", kind: "expense", amountMinor: 140000, share: 0.2, color: "", originals: [], members: [], children: [] },
+    { id: "food", label: "Groceries", role: "sink", kind: "expense", amountMinor: 62000, share: 0.1, color: "", originals: [], members: [], children: [] },
+    { id: "rest", label: "Rest", role: "sink", kind: "expense", amountMinor: 4000, share: 0.01, color: "", originals: [], members: [], children: [] },
+  ],
+  { width: 390, height: 640, left: 120, right: 130, lineHeight: 16 },
+);
+assert.equal(labelsOverlap(gutter.boxes.map((box) => ({ ...box, w: 100, h: 32, text: box.id }))), false);
+assert.ok(gutter.boxes.every((box) => box.x < 20 || box.x >= 390 - 130));
+assert.ok(gutter.quiet.some((node) => node.label === "Rest"));
+assert.ok(gutter.boxes.some((box) => box.id === "debt"));
 assert.equal(labelsInside(sampleBoxes, { width: 390, height: 460 }), true);
 
 const lifted = sankeyValue(10, 10_000, phone.floorShare);

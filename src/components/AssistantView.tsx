@@ -43,6 +43,13 @@ function inline(block: string): ReactNode[] {
   });
 }
 
+function sampleBubbles(): { id: string; role: "user" | "assistant"; text: string }[] {
+  return [
+    { id: "sample-user", role: "user", text: "What did I spend on the card this month?" },
+    { id: "sample-grok", role: "assistant", text: "Housing was the largest expense. The Swisscard payment is still owed, separate from that spending." },
+  ];
+}
+
 function previewQuery(name: string): boolean {
   if (typeof window === "undefined") return false;
   return new URLSearchParams(window.location.search).get(name) === "1";
@@ -139,6 +146,7 @@ export function AssistantView({
     if (!live) void voice.toggleSession();
   };
   const recovery = voice.lastError ? recoveryFor(voice.lastError) : null;
+  const shownRows = voice.rows.length === 0 && previewQuery("bubbles") ? sampleBubbles() : voice.rows;
   const provider = readyProvider(voice.provider, accounts, preferLocal, packsReady);
   const inCall = voice.provider.length > 0;
 
@@ -206,8 +214,8 @@ export function AssistantView({
         />
       )}
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1" onPointerUp={onChatPointerUp}>
-        {voice.rows.length === 0 ? (
+      <div ref={scroller} className="talk-log min-h-0 flex-1 overflow-y-auto px-1" onPointerUp={onChatPointerUp}>
+        {shownRows.length === 0 ? (
           <div className="py-6">
             <p className="text-base leading-6 text-foreground">{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Hearing, the model, the voice, and what is tried next.")}</p>
@@ -222,14 +230,10 @@ export function AssistantView({
                 <Trash2 /> {t("Clear")}
               </Button>
             </div>
-            {voice.rows.map((r) => (
-              <div
-                key={`${r.role}-${r.id}`}
-                className={cn("max-w-[88%] px-0 py-1 text-base leading-6", r.role === "user" ? "ml-auto text-right" : "mr-auto text-left")}
-              >
-                <p className="mb-1 text-xs text-muted-foreground">{r.role === "user" ? t("you") : t("grok")}</p>
+            {shownRows.map((r) => (
+              <div key={`${r.role}-${r.id}`} className={cn("talk-bubble", r.role === "user" ? "talk-bubble-user" : "talk-bubble-grok")} aria-label={r.role === "user" ? t("you") : t("grok")}>
                 {r.role === "user" || !r.text ? (
-                  <p className="whitespace-pre-wrap text-foreground">{r.text || "…"}</p>
+                  <p className="whitespace-pre-wrap">{r.text || "…"}</p>
                 ) : (
                   <RichText text={r.text} />
                 )}
@@ -238,9 +242,8 @@ export function AssistantView({
           </>
         )}
         {(voice.sending || voice.busy) && (
-          <div className="mr-auto py-1 text-base leading-6">
-            <p className="mb-1 text-xs text-muted-foreground">{t("grok")}</p>
-            <p className="text-muted-foreground">{voice.busy ? t(voice.busy) : t("Searching the web…")}</p>
+          <div className="talk-bubble talk-bubble-grok" aria-label={t("grok")}>
+            <p>{voice.busy ? t(voice.busy) : t("Searching the web…")}</p>
           </div>
         )}
       </div>

@@ -258,6 +258,9 @@ const ES_FINANCE: &[(&str, &str)] = &[
     ("forest", "bosque"),
     ("indigo", "índigo"),
     ("rust", "óxido"),
+    ("Set the budget for {month} from recurring bills and recent spending.", "Preparado el presupuesto de {month} con facturas recurrentes y el gasto reciente."),
+    ("Nothing to copy into the budget for {month}.", "Nada que copiar al presupuesto de {month}."),
+    (" Debt payments {amount}.", " Pagos de deuda {amount}."),
 ];
 
 const DE_FINANCE: &[(&str, &str)] = &[
@@ -520,6 +523,9 @@ const DE_FINANCE: &[(&str, &str)] = &[
     ("forest", "Wald"),
     ("indigo", "Indigo"),
     ("rust", "Rost"),
+    ("Set the budget for {month} from recurring bills and recent spending.", "Budget für {month} aus wiederkehrenden Rechnungen und den letzten Ausgaben gesetzt."),
+    ("Nothing to copy into the budget for {month}.", "Nichts für das Budget von {month} zum Übernehmen."),
+    (" Debt payments {amount}.", " Schuldzahlungen {amount}."),
 ];
 
 const PT_FINANCE: &[(&str, &str)] = &[
@@ -782,6 +788,9 @@ const PT_FINANCE: &[(&str, &str)] = &[
     ("forest", "floresta"),
     ("indigo", "índigo"),
     ("rust", "ferrugem"),
+    ("Set the budget for {month} from recurring bills and recent spending.", "Orçamento de {month} preparado com contas recorrentes e os gastos recentes."),
+    ("Nothing to copy into the budget for {month}.", "Nada para copiar no orçamento de {month}."),
+    (" Debt payments {amount}.", " Pagamentos de dívida {amount}."),
 ];
 
 const CA_FINANCE: &[(&str, &str)] = &[
@@ -1044,4 +1053,7 @@ const CA_FINANCE: &[(&str, &str)] = &[
     ("forest", "bosc"),
     ("indigo", "índigo"),
     ("rust", "rovell"),
+    ("Set the budget for {month} from recurring bills and recent spending.", "Pressupost de {month} preparat amb factures recurrents i la despesa recent."),
+    ("Nothing to copy into the budget for {month}.", "Res per copiar al pressupost de {month}."),
+    (" Debt payments {amount}.", " Pagaments de deute {amount}."),
 ];

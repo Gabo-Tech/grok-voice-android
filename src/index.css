@@ -840,6 +840,66 @@ html.keyboard-open .app-safe-bar {
   padding-bottom: var(--keyboard-pad);
 }
 
+.talk-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.talk-bubble {
+  position: relative;
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.talk-bubble-user {
+  align-self: flex-end;
+  margin-right: 8px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  border-bottom-right-radius: 4px;
+}
+
+.talk-bubble-user::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  bottom: 0;
+  width: 12px;
+  height: 14px;
+  background: var(--brand);
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+
+.talk-bubble-grok {
+  align-self: flex-start;
+  margin-left: 8px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.talk-bubble-grok::after {
+  content: "";
+  position: absolute;
+  left: -7px;
+  bottom: 0;
+  width: 12px;
+  height: 14px;
+  background: var(--surface-1);
+  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+}
+
+.talk-bubble a,
+.talk-bubble button {
+  color: inherit;
+}
+
 .talk-head {
   display: grid;
   grid-template-rows: 1fr;
@@ -954,11 +1014,59 @@ html.keyboard-open .sheet-panel {
   min-height: 40vh;
 }
 
-/* Short landscape phones: the bottom bar and the status cutout must not eat the page. */
+/* Short landscape phones: a side rail, a short title, and no subtitle, so the page keeps its height. */
 @media (orientation: landscape) and (max-height: 520px) {
   .app-safe,
   .app-safe.app-safe-bar {
-    padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+    flex-direction: row;
+    align-items: stretch;
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: 0;
+  }
+
+  .bottom-nav {
+    position: relative;
+    order: -1;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 76px;
+    height: auto;
+    align-self: stretch;
+    border-top: 0;
+    border-right: var(--border-width) solid var(--line-soft);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    overflow-y: auto;
+  }
+
+  .bottom-nav ul {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+
+  .bottom-nav > div {
+    flex-direction: column;
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  .page-sub,
+  .masthead-rule,
+  .talk-head .masthead-rule {
+    display: none;
+  }
+
+  .masthead,
+  .talk-head h1 {
+    font-size: 1.2rem;
+  }
+
+  .talk-head .pb-3 {
+    padding-bottom: 4px;
   }
 
   .finance .text-5xl {
@@ -972,8 +1080,70 @@ html.keyboard-open .sheet-panel {
     padding-right: max(16px, env(safe-area-inset-right));
   }
 
+  .finance header.shrink-0,
+  .finance .activity-heading {
+    display: none;
+  }
+
   .finance .fin-tabs {
     position: static;
+  }
+
+  .finance .fin-actions {
+    flex-wrap: nowrap;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  .plan-body {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 8px 24px;
+    align-items: start;
+  }
+
+  .plan-summary .mt-3,
+  .plan-summary .mt-4,
+  .plan-cats h3 {
+    margin-top: 6px;
+  }
+
+  .plan-summary .fin-hero-num {
+    font-size: 28px;
+    margin-top: 2px;
+  }
+
+  .budget-line .fin-num {
+    white-space: normal;
+    text-align: right;
+    max-width: 58%;
+  }
+
+  .flow-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.9fr);
+    gap: 8px 12px;
+    align-items: start;
+  }
+
+  .flow-stage > [data-shot="money-flow"] {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .flow-legend {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 10px;
+    align-content: start;
+  }
+
+  .flow-legend .flow-key {
+    min-height: 0;
+    padding: 3px 0;
   }
 
   .app-stage > header,

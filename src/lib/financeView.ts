@@ -72,6 +72,104 @@ export function inPeriod(date: string, start: string, end: string): boolean {
   return true;
 }
 
+const GENERIC_TITLES = new Set(["expense", "income", "payment", "uncategorized", "transfer", "gasto", "ingreso"]);
+
+/** Category, notes, or name. A bare Expense or Income title is not used when something more specific is known. */
+export function entryTitle(parts: { category?: string; subcategory?: string; notes?: string; name?: string }): string {
+  const category = (parts.category || "").trim();
+  const sub = (parts.subcategory || "").trim();
+  const named = (value: string) => value && !GENERIC_TITLES.has(value.toLowerCase());
+  if (named(sub) && named(category)) return `${category} · ${sub}`;
+  if (named(sub)) return sub;
+  if (named(category)) return category;
+  const notes = (parts.notes || "").trim();
+  if (notes) return notes;
+  const name = (parts.name || "").trim();
+  if (named(name)) return name;
+  return "";
+}
+
+export interface RuleAmountInput {
+  amountMinor: number | null;
+  currency: string;
+  name: string;
+  accountId: string;
+  direction: string;
+}
+
+export interface RuleAmountAccount {
+  id: string;
+  name: string;
+  kind: string;
+  currency: string;
+  shownBalanceMinor: number | null;
+  paymentMinor: number | null;
+}
+
+export interface RuleAmount {
+  amountMinor: number | null;
+  currency: string;
+  /** Saved on the rule, the card statement, the balance due, or nothing to show. */
+  source: "saved" | "statement" | "balance" | "none";
+}
+
+/** A rule with no amount uses the linked card's statement, then the balance due. */
+export function ruleAmount(rule: RuleAmountInput, accounts: RuleAmountAccount[]): RuleAmount {
+  const linked = linkedAccount(rule, accounts);
+  if (rule.amountMinor != null && rule.amountMinor > 0) {
+    return { amountMinor: rule.amountMinor, currency: rule.currency || linked?.currency || "", source: "saved" };
+  }
+  if (!linked || !isDebt(linked.kind)) return { amountMinor: null, currency: rule.currency || linked?.currency || "", source: "none" };
+  if (linked.paymentMinor != null && linked.paymentMinor > 0) {
+    return { amountMinor: linked.paymentMinor, currency: linked.currency || rule.currency, source: "statement" };
+  }
+  if (linked.shownBalanceMinor != null && linked.shownBalanceMinor > 0) {
+    return { amountMinor: linked.shownBalanceMinor, currency: linked.currency || rule.currency, source: "balance" };
+  }
+  return { amountMinor: null, currency: rule.currency || linked.currency, source: "none" };
+}
+
+function linkedAccount(rule: RuleAmountInput, accounts: RuleAmountAccount[]): RuleAmountAccount | undefined {
+  if (rule.accountId) {
+    const byId = accounts.find((account) => account.id === rule.accountId);
+    if (byId) return byId;
+  }
+  const name = rule.name.trim().toLowerCase();
+  if (!name) return undefined;
+  const matches = accounts.filter((account) => {
+    const label = account.name.trim().toLowerCase();
+    return label && (name === label || name.startsWith(label) || label.startsWith(name));
+  });
+  if (rule.direction === "payment") return matches.find((account) => isDebt(account.kind)) || matches[0];
+  return matches[0];
+}
+
+export function filterRules<T extends { id: string; name: string; category: string; notes: string; currency: string; direction: string; accountId: string; cadence: string; purpose?: string }>(
+  rules: T[],
+  opts: { accountId: string; category: string; currency: string; direction: string; recurrence: string; group: string; query?: string; accounts: FinanceAccount[] },
+): T[] {
+  const groupIds = new Set(opts.accounts.filter((account) => opts.group === "all" || groupOf(account.kind) === opts.group).map((account) => account.id));
+  const query = (opts.query || "").trim().toLowerCase();
+  const currency = opts.currency.trim().toUpperCase();
+  return rules.filter((rule) => {
+    if (opts.accountId !== "all" && rule.accountId !== opts.accountId) return false;
+    if (opts.category !== "all" && rule.category !== opts.category && rule.name !== opts.category) return false;
+    if (currency && currency !== "ALL") {
+      const own = (rule.currency || "").toUpperCase();
+      const account = opts.accounts.find((row) => row.id === rule.accountId);
+      const fallback = (account?.currency || "").toUpperCase();
+      if (own !== currency && fallback !== currency) return false;
+    }
+    if (opts.direction !== "all" && rule.direction !== opts.direction) return false;
+    if (opts.recurrence === "once" && rule.purpose !== "one_off" && Boolean(rule.cadence)) return false;
+    if (opts.recurrence === "recurring" && (rule.purpose === "one_off" || !rule.cadence)) return false;
+    if (opts.recurrence === "irregular") return false;
+    if (opts.group !== "all" && rule.accountId && !groupIds.has(rule.accountId)) return false;
+    if (query && !`${rule.name} ${rule.category} ${rule.notes} ${rule.direction}`.toLowerCase().includes(query)) return false;
+    return true;
+  });
+}
+
 export function filterTransactions(
   rows: FinanceTransaction[],
   opts: { start: string; end: string; accountId: string; category: string; currency: string; direction: string; recurrence: string; group: string; accounts: FinanceAccount[] },

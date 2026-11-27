@@ -307,6 +307,7 @@ export function FinanceOverview({
           onFollow={() => setFlowOwn(null)}
           onPaintCategory={(name, color) => finance.editCategory({ action: "color", name, color })}
           flowColors={finance.snapshot.flowColors || []}
+          entityColors={finance.snapshot.entityColors || []}
           flowLayout={finance.snapshot.flowLayout || ""}
           onPaintNode={(id, color) => finance.editCategory({ action: color ? "paint" : "unpaint", name: id, color })}
           onLayout={(layout) => finance.editCategory({ action: "layout", name: layout })}

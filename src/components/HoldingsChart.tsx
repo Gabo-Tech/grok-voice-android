@@ -154,7 +154,7 @@ export function HoldingsChart({
     })),
   ].filter((row): row is { id: string; color: string; points: { date: string; valueMinor: number }[] } => Boolean(row && row.points.length));
   const portRows: LegendRow[] = [
-    { id: "total", label: t("Portfolio value"), color: resolveColor(entityColors, "series", "portfolio:total", ""), amountMinor: totalSeries.length ? totalSeries[totalSeries.length - 1].valueMinor : null, currency: code, className: "total" },
+    { id: "total", label: t("Portfolio value"), color: resolveColor(entityColors, "series", "portfolio:total", ""), amountMinor: totalSeries.length ? totalSeries[totalSeries.length - 1].valueMinor : null, currency: code, className: "total", whole: true },
     ...portfolioItems.map((item) => {
       const points = seriesFor(historyIn, [item.id], from);
       const last = points.length ? points[points.length - 1] : undefined;

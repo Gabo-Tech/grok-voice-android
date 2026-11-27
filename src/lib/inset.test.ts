@@ -446,7 +446,7 @@ assert.deepEqual(financePanels("overview"), ["net-worth", "month", "next"]);
 assert.deepEqual(financePanels("activity"), ["activity"]);
 assert.deepEqual(financePanels("expenses"), ["activity"]);
 assert.deepEqual(financePanels("income"), ["activity", "coming-income", "payouts"]);
-assert.deepEqual(financePanels("plan"), ["coming-expenses", "coming-income", "payouts"]);
+assert.deepEqual(financePanels("plan"), ["budget"]);
 let panelAt = -1;
 for (const id of financePanels("overview")) {
   const token = `data-finance-panel="${id}"`;
