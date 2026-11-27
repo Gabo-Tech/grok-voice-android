@@ -397,6 +397,7 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
           EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" != "push" ] && [ "$EVENT_NAME" != "workflow_dispatch" ]; then
@@ -407,18 +408,19 @@ jobs:
           apk="${RUNNER_TEMP}/${asset}"
           test -f "$apk"
           notes="Signed arm64 sideload APK for ${VERSION}."
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" "$apk" --title "Grok Voice ${VERSION}" --notes "$notes"
+          # This job does not check out the repo. GH_REPO tells gh which release to update.
+          if ! gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release create "$TAG" "$apk" --repo "$GH_REPO" --title "Grok Voice ${VERSION}" --notes "$notes"
             exit 0
           fi
-          names="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          names="$(gh release view "$TAG" --repo "$GH_REPO" --json assets --jq '.assets[].name')"
           if printf '%s\n' "$names" | grep -Fxq "$asset"; then
             if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
               echo "Release asset ${asset} already exists. A tag push does not replace it."
               exit 1
             fi
-            gh release upload "$TAG" "$apk" --clobber
+            gh release upload "$TAG" "$apk" --repo "$GH_REPO" --clobber
           else
-            gh release upload "$TAG" "$apk"
+            gh release upload "$TAG" "$apk" --repo "$GH_REPO"
           fi
           echo "Uploaded ${asset} ($(stat -c%s "$apk") bytes, sha256 $(sha256sum "$apk" | awk '{print $1}'))"
