@@ -93,8 +93,11 @@
 }
 
 .finance {
+  flex: none;
+  width: 100%;
   min-width: 0;
-  overflow: hidden;
+  min-height: 0;
+  overflow: visible;
 }
 
 .finance .fin-tabs {
@@ -664,4 +667,56 @@
   left: 0;
   height: 100%;
   transform: none;
+}
+
+.finance,
+.finance .fin-tabs,
+.finance .fin-swipe,
+.finance .fin-swipe-page {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.finance .fin-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.finance .fin-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.finance .fin-tab {
+  flex: 0 0 auto;
+  max-width: max-content;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: normal;
+}
+
+.app-stage > div:has(> .finance) {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.finance .fin-actions {
+  flex-wrap: wrap;
+}
+
+.finance .fin-actions .fin-chip {
+  flex: 1 1 auto;
+  min-width: min(100%, max-content);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.row-item {
+  flex-wrap: wrap;
+}
+
+.row-item > .min-w-0 {
+  flex: 1 1 10rem;
+  min-width: min(100%, 10rem);
 }

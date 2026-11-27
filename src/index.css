@@ -576,7 +576,7 @@ input[type="time"] {
 }
 
 .app-safe {
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--nav-block, 5.5rem) + env(safe-area-inset-bottom));
 }
 
 .app-safe-bar {
@@ -800,8 +800,13 @@ h1,
 .flow-full-stage {
   min-height: 0;
   flex: 1;
-  overflow: hidden;
-  touch-action: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.flow-full-stage > div {
+  padding-bottom: 24px;
 }
 
 .flow-full-bar {
@@ -1380,33 +1385,74 @@ button.stamp {
   min-width: var(--touch);
 }
 
+.bottom-nav {
+  max-width: 100%;
+  overflow: hidden;
+}
+
 .bottom-nav ul {
-  grid-template-columns: repeat(6, minmax(min-content, 1fr));
-  overflow-x: auto;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
-.bottom-nav button span {
-  hyphens: manual;
-  overflow-wrap: normal;
-  word-break: keep-all;
-  line-height: 1.25;
-  -webkit-line-clamp: unset;
-  line-clamp: unset;
+.bottom-nav button {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.nav-label,
+.nav-active-label {
   display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+  font-size: var(--type-caption);
 }
 
-.talk-head:not(.talk-head-off) {
-  max-height: 46%;
-  overflow: auto;
+.nav-label {
+  margin-top: 2px;
+  text-align: center;
 }
 
+.nav-active-label {
+  margin: 0;
+  padding: 0 8px 8px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.talk-head {
+  flex-shrink: 1;
+  min-height: 0;
+}
+
+.talk-head:not(.talk-head-off),
 .talk-head:not(.talk-head-off) > div {
-  overflow: auto;
+  overflow: visible;
+}
+
+.talk-composer {
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.talk-composer textarea {
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
+  height: auto;
+  overflow-wrap: anywhere;
 }
 
 .talk-head ~ .overflow-y-auto {
-  min-height: 8rem;
-  flex: 1 1 auto;
+  min-height: 28%;
+  flex: 1 1 0%;
+  overflow-y: auto;
 }
 
 .talk-mic-panel.open,
@@ -1424,9 +1470,118 @@ button.stamp {
 }
 
 [data-setup] {
+  max-width: 100%;
+  min-width: 0;
   overflow: auto;
 }
 
+[data-setup] > header,
+[data-setup] > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-setup] h1,
+[data-setup] p {
+  overflow-wrap: anywhere;
+}
+
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  max-width: 100%;
+}
+
+.setup-step-item {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.setup-step-item > span:last-child {
+  white-space: nowrap;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.setup-actions > * {
+  flex: 1 1 14rem;
+  min-width: min(100%, max-content);
+  max-width: 100%;
+}
+
+.setup-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.setup-key > div:first-child {
+  flex: 1 1 8rem;
+  min-width: min(100%, 8rem);
+  max-width: 100%;
+}
+
+.setup-key input {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
 [data-setup] .overflow-y-auto {
-  min-height: 8rem;
+  min-height: 0;
+}
+
+@media (orientation: landscape) and (max-height: 520px), (min-width: 900px) {
+  .bottom-nav ul {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+    grid-template-columns: none;
+  }
+
+  .setup-steps {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .setup-step-item {
+    flex-direction: row;
+  }
+
+  [data-setup] {
+    align-items: flex-start;
+    overflow: auto;
+  }
+
+  [data-setup] > div {
+    flex: 1 0 auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  [data-setup] > div > .overflow-y-auto {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .finance .fin-actions {
+    flex-wrap: wrap;
+  }
 }

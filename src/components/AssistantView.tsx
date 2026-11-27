@@ -215,27 +215,26 @@ export function AssistantView({
         </div>
       </header>
 
-      {voice.lastError && (
-        <div data-open-settings={recovery?.openAppSettings ? "1" : undefined}>
-        <Notice
-          title={recovery?.openAppSettings ? t("Microphone is off") : t(voice.lastError)}
-          body={recovery ? t(recovery.hint) : t("Try again. If it keeps happening, open Settings, then Debug.")}
-          actionLabel={recovery?.openAppSettings ? t("Open settings") : recovery?.go ? t(settingsLabel(recovery.go)) : undefined}
-          onAction={
-            recovery?.openAppSettings
-              ? () => {
-                  if (isTauri()) void api.openAppSettings();
-                }
-              : recovery?.go
-                ? () => onOpenSettings(recovery.go!)
-                : undefined
-          }
-          onDismiss={voice.dismissError}
-        />
-        </div>
-      )}
-
       <div ref={scroller} className="talk-log min-h-0 flex-1 overflow-y-auto px-1" onPointerUp={onChatPointerUp}>
+        {voice.lastError && (
+          <div data-open-settings={recovery?.openAppSettings ? "1" : undefined}>
+            <Notice
+              title={recovery?.openAppSettings ? t("Microphone is off") : t(voice.lastError)}
+              body={recovery ? t(recovery.hint) : t("Try again. If it keeps happening, open Settings, then Debug.")}
+              actionLabel={recovery?.openAppSettings ? t("Open settings") : recovery?.go ? t(settingsLabel(recovery.go)) : undefined}
+              onAction={
+                recovery?.openAppSettings
+                  ? () => {
+                      if (isTauri()) void api.openAppSettings();
+                    }
+                  : recovery?.go
+                    ? () => onOpenSettings(recovery.go!)
+                    : undefined
+              }
+              onDismiss={voice.dismissError}
+            />
+          </div>
+        )}
         {shownRows.length === 0 ? (
           <div className="py-6">
             <p className="text-base leading-6 text-foreground">{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>

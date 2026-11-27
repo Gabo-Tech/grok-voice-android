@@ -519,7 +519,7 @@ export function Onboarding({
     return (
       <>
         <p>{t(item.save)}</p>
-        <div className="flex items-end gap-1">
+        <div className="setup-key">
           <div className="min-w-0 flex-1">
             <Input
               type={showKey ? "text" : "password"}
@@ -579,14 +579,14 @@ export function Onboarding({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-5 landscape:flex-row landscape:gap-8 landscape:px-6 landscape:py-4" data-setup={screen}>
-      <header className="mb-5 shrink-0 landscape:mb-0 landscape:flex landscape:w-52 landscape:flex-col">
+      <header className="mb-5 min-w-0 shrink-0 landscape:mb-0 landscape:flex landscape:max-h-full landscape:w-52 landscape:max-w-[42%] landscape:flex-col landscape:overflow-auto">
         <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
-        <h1 className="masthead mt-2 text-3xl landscape:text-2xl">Grok Voice</h1>
-        <ol className="mt-4 flex items-start gap-3 overflow-x-auto landscape:mt-6 landscape:flex-col landscape:gap-3 landscape:overflow-visible">
+        <h1 className="masthead mt-2 text-3xl break-words landscape:text-2xl">Grok Voice</h1>
+        <ol className="setup-steps mt-4 landscape:mt-6">
           {PROGRESS.map((item, itemIndex) => {
             const state = itemIndex < index ? "done" : itemIndex === index ? "now" : "later";
             return (
-              <li key={item} className="flex w-max shrink-0 flex-col items-center gap-1 landscape:w-auto landscape:flex-row landscape:gap-3">
+              <li key={item} className="setup-step-item">
                 <span
                   className={cn("setup-step grid place-items-center text-sm", state === "now" ? "bg-foreground text-background" : "text-muted-foreground")}
                 >
@@ -783,7 +783,7 @@ export function Onboarding({
         ) : null}
 
         <footer className="mt-3 flex shrink-0 flex-col gap-2 border-t border-border pt-3">
-          <div className="flex gap-2">
+          <div className="setup-actions">
             <Button variant="outline" disabled={screen === "language" || busy} onClick={back}>
               <ChevronLeft /> {t("Back")}
             </Button>
