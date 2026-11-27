@@ -537,7 +537,7 @@
           </article>
           <article class="cmd" id="delete_finance-finance">
             <h3><code>delete_finance</code></h3>
-            <p>Delete one account, transaction, recurring rule, or budget line. Call first with confirmed false. If an account has transactions, it says how many and can move them before removal. Waits for a clear yes.</p>
+            <p>Delete one account, transaction, recurring rule, budget, or budget line. Call first with confirmed false. kind is account, transaction, rule, budget, or budget_line. period is this or YYYY-MM for a budget. name or category selects a budget line. If an account has transactions, it says how many and can move them before removal. Waits for a clear yes.</p>
             <ul class="phrases">
               <li><span>en</span> Delete Swiss card.</li>
               <li><span>es</span> Borra la tarjeta suiza.</li>
@@ -581,7 +581,7 @@
           </article>
           <article class="cmd" id="save_budget-finance">
             <h3><code>save_budget</code></h3>
-            <p>Create or change the monthly budget. role is income, expense, savings, or investment. delete asks first with confirmed false.</p>
+            <p>Add, check, change, or remove the budget for a month. “Set restaurants to 400 euros this month” sets that limit, and saying it again changes the same line. “How much is left for restaurants?” reads it. “Read the budget” says income, spending, savings, and investments. “Am I over the plan?” says whether spending has gone past the plan. Two paydays can stay two lines, such as Salary 1 Nov and Salary 15 Nov. “Fill the budget” or “Set up the budget” fills the month from repeating bills and recent spending. A delete asks first. Nothing is removed until you say yes. Grok does not make up an amount.</p>
             <ul class="phrases">
               <li><span>en</span> Set restaurants to 400 euros this month.</li>
               <li><span>es</span> Pon restaurantes en 400 euros este mes.</li>
@@ -592,7 +592,7 @@
           </article>
           <article class="cmd" id="open_finance-finance">
             <h3><code>open_finance</code></h3>
-            <p>Open a Finance screen and answer with the same numbers the screen shows. view is overview, activity, accounts, holdings, plan, portfolio, or charts. action color paints one saved item on every chart. Resetting every color asks first.</p>
+            <p>Open a Finance screen and answer with the same numbers you see. Plan is the month’s budget. Repeating bills stay in Activity. “Describe the money flow” says income, spending, and debt payments. A card charge is spending. Paying a card or a loan is separate. A color you set is used on every chart that shows that item. Clearing every color asks first.</p>
             <ul class="phrases">
               <li><span>en</span> Show my holdings chart.</li>
               <li><span>es</span> Muestra el gráfico de posiciones.</li>
@@ -762,7 +762,7 @@
       </section>
     </main>
     <footer>
-      <div class="wrap narrow"><p>Tools as of 0.1.64. <a href="./index.html">Guide</a></p></div>
+      <div class="wrap narrow"><p>Tools as of 0.1.65. <a href="./index.html">Guide</a></p></div>
     </footer>
     <script src="../main.js"></script>
   </body>

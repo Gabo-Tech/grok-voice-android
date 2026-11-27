@@ -33,7 +33,7 @@
             <li>The phone must be arm64-v8a and Android 8 (API 26) or newer. A 32-bit device is refused because the native code is arm64 only.</li>
             <li>Allow installs from the app that opened the file. That switch is per app, under Install unknown apps.</li>
             <li><code>adb install -r</code> fails with a signature mismatch when an older copy was signed by a different key. The release certificate SHA-256 is <code>fd400ffe61c9b18654bc40f567275e5a6e13bab8d311355f389f6e46458aafe9</code>. A locally built APK that you did not sign with that keystore will not replace the GitHub release.</li>
-            <li>Check the file size. The 0.1.64 asset is 58,146,206 bytes. A short download is not a complete APK.</li>
+            <li>Check the file size. The 0.1.65 asset is 58,162,590 bytes. A short download is not a complete APK.</li>
           </ul>
 
           <h2>Setup does not finish</h2>
@@ -61,7 +61,7 @@
             <li>“No rate is saved” means refresh rates, or set a manual rate in Settings. The app does not invent a rate and does not assume one-to-one.</li>
             <li>Logging never creates an account or a card. If two names are close, Talk asks. Create one only by asking to add it.</li>
             <li>A card payment is not a second expense. Charging a card raises what it owes and counts as an expense. Paying more than it owes is allowed and leaves a credit.</li>
-            <li>Cancelling a reminder, alarm, or countdown, deleting a person, and deleting a finance row or a budget line ask for a yes first. The first call does not remove them.</li>
+            <li>Cancelling a reminder, alarm, or countdown, deleting a person, and deleting a finance row, a budget, or a budget line ask for a yes first. The first call does not remove them. Filling a month runs only when you ask to set up or fill the budget.</li>
             <li>A chart color is saved on the item. “Reset every chart color” asks, then clears saved colors only after yes. It does not delete the holdings.</li>
           </ul>
 
