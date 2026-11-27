@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ClipboardPaste, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, errorText, type AuthStatus, type OfflinePlan, type PackProgress, type PermissionStatus, type PlanPiece } from "@/lib/api";
@@ -33,6 +33,12 @@ const LANGS = [
 ] as const;
 
 const CLOUD: Array<"xai" | "openai" | "onemin"> = ["xai", "openai", "onemin"];
+
+function askedKeyCheck(): "ok" | "fail" | "" {
+  if (typeof window === "undefined") return "";
+  const value = new URLSearchParams(window.location.search).get("keyCheck") || "";
+  return value === "ok" || value === "fail" ? value : "";
+}
 
 function guessLang(locale: string): (typeof LANGS)[number]["id"] {
   const tag = locale.trim().toLowerCase().replace(/_/g, "-");
@@ -116,14 +122,23 @@ export function Onboarding({
   const [progress, setProgress] = useState<PackProgress | null>(null);
   const [doneBytes, setDoneBytes] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(demoFailed ? "Download stopped. What is already on the phone stays. Try again." : null);
+  const [error, setError] = useState<string | null>(
+    demoFailed ? "Download stopped. What is already on the phone stays. Try again." : askedKeyCheck() === "fail" ? "The key was refused." : null,
+  );
   const [failed, setFailed] = useState(demoFailed);
   const [cloud, setCloud] = useState<"xai" | "openai" | "onemin">(() => {
     const opened = screenFor(initialStep);
     return opened === "openai" || opened === "onemin" ? opened : "xai";
   });
-  const [key, setKey] = useState("");
-  const [keySaved, setKeySaved] = useState(false);
+  const [key, setKey] = useState(() => (askedKeyCheck() === "fail" ? "xai-refused-demo-key" : ""));
+  const [keySaved, setKeySaved] = useState(() => askedKeyCheck() === "ok");
+  const [keyCheck, setKeyCheck] = useState<"idle" | "checking" | "works" | "failed" | "unsaved">(() => {
+    const asked = askedKeyCheck();
+    if (asked === "ok") return "works";
+    if (asked === "fail") return "failed";
+    return "idle";
+  });
+  const [showKey, setShowKey] = useState(false);
   const [perms, setPerms] = useState<PermissionStatus | null>(null);
   const [playing, setPlaying] = useState(false);
   const [cellular, setCellular] = useState(false);
@@ -156,6 +171,12 @@ export function Onboarding({
     if (auth.accounts.some((account) => account.provider === "local")) return;
     void api.addVoiceAccount("local", "on-device").then(onAuth).catch(() => {});
   }, [auth.accounts, onAuth]);
+
+  useEffect(() => {
+    if (!askedKeyCheck()) return;
+    const id = window.setTimeout(() => document.querySelector("[data-key-check]")?.scrollIntoView({ block: "center" }), 200);
+    return () => window.clearTimeout(id);
+  }, [screen]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -315,40 +336,95 @@ export function Onboarding({
     }
   };
 
-  const saveCloud = async () => {
-    const provider = screen === "mixed" ? cloud : screen === "openai" || screen === "onemin" || screen === "xai" ? screen : cloud;
-    if (key.trim().length < 12) {
+  const cloudProvider = (): "xai" | "openai" | "onemin" => {
+    if (screen === "openai" || screen === "onemin" || screen === "xai") return screen;
+    return cloud;
+  };
+
+  const rememberAccount = async (provider: "xai" | "openai" | "onemin", status: AuthStatus) => {
+    onAuth(status);
+    if (!isTauri() || screen === "mixed") return;
+    const list = (await api.authStatus()).accounts;
+    const index = list.findIndex((account) => account.provider === provider);
+    if (index > 0) {
+      const ids = list.map((account) => account.id);
+      const [kept] = ids.splice(index, 1);
+      ids.unshift(kept);
+      onAuth(await api.reorderVoiceAccounts(ids));
+    }
+  };
+
+  const demoAccount = (provider: "xai" | "openai" | "onemin"): AuthStatus => ({
+    ...auth,
+    hasKey: true,
+    accounts: [...auth.accounts.filter((account) => account.provider !== provider), { id: `demo-${provider}`, provider, hint: "demo…key" }],
+  });
+
+  const checkKey = async () => {
+    const provider = cloudProvider();
+    const secret = key.trim();
+    if (secret.length < 12) {
+      setKeySaved(false);
+      setKeyCheck("failed");
+      setError(KEY_GUIDES[provider].short);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setKeyCheck("checking");
+    try {
+      if (preview || !isTauri()) {
+        const forced = new URLSearchParams(window.location.search).get("keyCheck") === "fail";
+        if (forced || /fail|refused|bad/i.test(secret)) throw new Error("The key was refused.");
+        onAuth(demoAccount(provider));
+      } else {
+        await api.probeVoiceAccount(provider, secret);
+        await rememberAccount(provider, await api.commitVoiceAccount(provider, secret));
+      }
+      setKey("");
+      setKeySaved(true);
+      setKeyCheck("works");
+    } catch (err) {
+      setKeySaved(false);
+      setKeyCheck("failed");
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveAnyway = async () => {
+    const provider = cloudProvider();
+    const secret = key.trim();
+    if (secret.length < 12) {
       setError(KEY_GUIDES[provider].short);
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      if (preview || !isTauri()) {
-        onAuth({
-          ...auth,
-          hasKey: true,
-          accounts: [...auth.accounts.filter((account) => account.provider !== provider), { id: `demo-${provider}`, provider, hint: "demo…key" }],
-        });
-      } else {
-        onAuth(await api.addVoiceAccount(provider, key.trim()));
-      }
+      if (preview || !isTauri()) onAuth(demoAccount(provider));
+      else await rememberAccount(provider, await api.commitVoiceAccount(provider, secret));
       setKey("");
       setKeySaved(true);
-      if (isTauri() && screen !== "mixed") {
-        const list = (await api.authStatus()).accounts;
-        const index = list.findIndex((account) => account.provider === provider);
-        if (index > 0) {
-          const ids = list.map((account) => account.id);
-          const [kept] = ids.splice(index, 1);
-          ids.unshift(kept);
-          onAuth(await api.reorderVoiceAccounts(ids));
-        }
-      }
+      setKeyCheck("unsaved");
     } catch (err) {
       setError(errorText(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const pasteKey = async () => {
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (!text) return;
+      setKey(text);
+      setKeySaved(false);
+      setKeyCheck("idle");
+      setError(null);
+    } catch {
+      /* the field stays as it is when the clipboard is closed */
     }
   };
 
@@ -406,6 +482,8 @@ export function Onboarding({
       await download();
       return;
     }
+    if ((screen === "xai" || screen === "openai") && !keySaved) return;
+    if ((screen === "mixed" || screen === "onemin") && key.trim().length > 0 && !keySaved) return;
     await go("test", "test");
   };
 
@@ -441,22 +519,52 @@ export function Onboarding({
     return (
       <>
         <p>{t(item.save)}</p>
-        <Input
-          type="password"
-          autoComplete="off"
-          value={key}
-          placeholder={item.placeholder}
-          aria-label={t(which === "xai" ? "Paste the xAI key" : which === "onemin" ? "Paste the 1min.ai key" : "Paste the OpenAI key")}
-          onChange={(event) => {
-            setKey(event.target.value);
-            setKeySaved(false);
-          }}
-        />
+        <div className="flex items-end gap-1">
+          <div className="min-w-0 flex-1">
+            <Input
+              type={showKey ? "text" : "password"}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={key}
+              placeholder={item.placeholder}
+              aria-label={t(which === "xai" ? "Paste the xAI key" : which === "onemin" ? "Paste the 1min.ai key" : "Paste the OpenAI key")}
+              onChange={(event) => {
+                setKey(event.target.value);
+                setKeySaved(false);
+                setKeyCheck("idle");
+                setError(null);
+              }}
+            />
+          </div>
+          <button type="button" className="grid size-12 shrink-0 place-items-center" aria-label={t("Paste")} onClick={() => void pasteKey()}>
+            <ClipboardPaste className="size-5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="grid size-12 shrink-0 place-items-center"
+            aria-label={showKey ? t("Hide key") : t("Show key")}
+            aria-pressed={showKey}
+            onClick={() => setShowKey((open) => !open)}
+          >
+            {showKey ? <EyeOff className="size-5" aria-hidden /> : <Eye className="size-5" aria-hidden />}
+          </button>
+        </div>
         {key.trim().length > 0 && key.trim().length < 12 ? <p className="text-foreground">{t(item.short)}</p> : null}
-        <Button type="button" className="w-full" disabled={busy || key.trim().length < 12} onClick={() => void saveCloud()}>
-          {t("Save this key")}
+        <Button type="button" className="w-full" data-key-check={keyCheck} disabled={busy || key.trim().length < 12} onClick={() => void checkKey()}>
+          {keyCheck === "checking" ? t("Checking the key…") : t("Check key")}
         </Button>
-        {keySaved ? <p className="text-foreground">{t("Key saved on this phone.")}</p> : null}
+        {keyCheck === "works" ? (
+          <p role="status" className="text-foreground">{t("Key works.")}</p>
+        ) : null}
+        {keyCheck === "unsaved" ? (
+          <p role="status" className="text-foreground">{t("Saved without a check.")}</p>
+        ) : null}
+        {keyCheck === "failed" && key.trim().length >= 12 ? (
+          <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void saveAnyway()}>
+            {t("Save anyway")}
+          </Button>
+        ) : null}
       </>
     );
   };
@@ -474,20 +582,17 @@ export function Onboarding({
       <header className="mb-5 shrink-0 landscape:mb-0 landscape:flex landscape:w-52 landscape:flex-col">
         <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
         <h1 className="masthead mt-2 text-3xl landscape:text-2xl">Grok Voice</h1>
-        <ol className="mt-4 flex items-start gap-1 landscape:mt-6 landscape:flex-col landscape:gap-3">
+        <ol className="mt-4 flex items-start gap-3 overflow-x-auto landscape:mt-6 landscape:flex-col landscape:gap-3 landscape:overflow-visible">
           {PROGRESS.map((item, itemIndex) => {
             const state = itemIndex < index ? "done" : itemIndex === index ? "now" : "later";
             return (
-              <li key={item} className="flex min-w-0 flex-1 flex-col items-center gap-1 landscape:flex-none landscape:flex-row landscape:gap-3">
+              <li key={item} className="flex w-max shrink-0 flex-col items-center gap-1 landscape:w-auto landscape:flex-row landscape:gap-3">
                 <span
-                  className={cn(
-                    "grid size-8 place-items-center rounded-[var(--radius)] text-sm landscape:size-11",
-                    state === "now" ? "bg-foreground text-background" : "text-muted-foreground",
-                  )}
+                  className={cn("setup-step grid place-items-center text-sm", state === "now" ? "bg-foreground text-background" : "text-muted-foreground")}
                 >
                   {state === "done" ? <Check className="size-4" /> : itemIndex + 1}
                 </span>
-                <span className={cn("text-center text-[13px] leading-4 landscape:text-left", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item)}</span>
+                <span className={cn("text-center text-[13px] leading-snug landscape:text-left", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item)}</span>
               </li>
             );
           })}
@@ -565,7 +670,7 @@ export function Onboarding({
               <p className="text-sm leading-6 text-muted-foreground">{t(PATHS.find((item) => item.id === screen)?.blurb || "")}</p>
               <Step n={1} title="Get the key">
                 <p>{t(activeKey.where)}</p>
-                <button type="button" className="min-h-11 text-left text-sm text-foreground underline" onClick={() => void openGuideLink(activeKey.url)}>
+                <button type="button" className="min-h-12 text-left text-sm text-foreground underline" onClick={() => void openGuideLink(activeKey.url)}>
                   {t("Open the key page")}
                 </button>
               </Step>
@@ -612,6 +717,7 @@ export function Onboarding({
                       onClick={() => {
                         setCloud(item);
                         setKeySaved(false);
+                        setKeyCheck("idle");
                       }}
                       className={cn("min-h-12 px-2 text-sm", cloud === item ? "bg-foreground text-background" : "text-muted-foreground")}
                     >
@@ -620,7 +726,7 @@ export function Onboarding({
                   ))}
                 </div>
                 <p>{t(guide.where)}</p>
-                <button type="button" className="min-h-11 text-left text-sm text-foreground underline" onClick={() => void openGuideLink(guide.url)}>
+                <button type="button" className="min-h-12 text-left text-sm text-foreground underline" onClick={() => void openGuideLink(guide.url)}>
                   {t("Open the key page")}
                 </button>
                 <p>{t(guide.cost)}</p>
@@ -681,7 +787,17 @@ export function Onboarding({
             <Button variant="outline" disabled={screen === "language" || busy} onClick={back}>
               <ChevronLeft /> {t("Back")}
             </Button>
-            <Button className="flex-1" disabled={busy || ((screen === "local" || screen === "mixed" || screen === "onemin") && !plan)} onClick={() => void next()}>
+            <Button
+              className="flex-1"
+              disabled={
+                busy ||
+                ((screen === "local" || screen === "mixed" || screen === "onemin") && !plan) ||
+                ((primary === t("Test this setup") || primary === t("Continue anyway")) &&
+                  (((screen === "xai" || screen === "openai") && !keySaved) ||
+                    ((screen === "mixed" || screen === "onemin") && key.trim().length > 0 && !keySaved)))
+              }
+              onClick={() => void next()}
+            >
               {busy ? <Loader2 className="animate-spin" /> : <ChevronRight />}
               {primary}
             </Button>

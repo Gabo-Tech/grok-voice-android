@@ -594,6 +594,18 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   @Command
+  fun openAppSettings(invoke: Invoke) {
+    try {
+      val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", activity.packageName, null))
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      activity.startActivity(intent)
+      invoke.resolve()
+    } catch (err: Exception) {
+      invoke.reject(err.message ?: "Could not open app settings")
+    }
+  }
+
+  @Command
   fun openAccessSettings(invoke: Invoke) {
     val kind = invoke.parseArgs(KindArgs::class.java).kind
     resolveJson(invoke, DeviceExtras.openAccess(activity, kind))

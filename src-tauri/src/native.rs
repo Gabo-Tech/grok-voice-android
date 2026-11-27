@@ -555,6 +555,13 @@ mod imp {
             self.plugin_json("openAccessSettings", Args { kind })
         }
 
+        pub fn open_app_settings(&self) -> Result<()> {
+            self.handle
+                .run_mobile_plugin::<serde_json::Value>("openAppSettings", ())
+                .map_err(|e| msg(e.to_string()))?;
+            Ok(())
+        }
+
         pub fn request_history_access(&self) -> Result<PermissionStatus> {
             self.handle
                 .run_mobile_plugin("requestPermissions", PermArgs { permissions: vec!["callLog", "sms"] })
@@ -895,6 +902,10 @@ mod imp {
 
         pub fn open_access_settings(&self, _kind: &str) -> Result<String> {
             Ok(r#"{"ok":false,"error":"System settings open on the Android phone."}"#.into())
+        }
+
+        pub fn open_app_settings(&self) -> Result<()> {
+            Ok(())
         }
 
         pub fn request_history_access(&self) -> Result<PermissionStatus> {

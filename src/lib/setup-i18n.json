@@ -124,7 +124,20 @@
     "Where to get it": "Dónde conseguirla",
     "Which cloud key": "Qué clave en la nube",
     "xAI bills that key. This app does not charge you. Settings can warn you after a number of minutes.": "xAI cobra esa clave. Esta app no te cobra. Ajustes puede avisarte después de unos minutos.",
-    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} es el recomendado para este teléfono ({fit}). Necesita unos {ram} GB. La primera descarga sigue siendo SmolLM2, unos {size}, para que Talk pueda responder antes de ese archivo más grande. Puedes cambiarlo en Voz e IA."
+    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} es el recomendado para este teléfono ({fit}). Necesita unos {ram} GB. La primera descarga sigue siendo SmolLM2, unos {size}, para que Talk pueda responder antes de ese archivo más grande. Puedes cambiarlo en Voz e IA.",
+    "Check key": "Comprobar la clave",
+    "Checking the key…": "Comprobando la clave…",
+    "Key works.": "La clave funciona.",
+    "The key was refused.": "La clave fue rechazada.",
+    "Save anyway": "Guardar igualmente",
+    "Saved without a check.": "Guardada sin comprobar.",
+    "Paste": "Pegar",
+    "Show key": "Mostrar la clave",
+    "Hide key": "Ocultar la clave",
+    "Clear this talk?": "¿Borrar esta conversación?",
+    "This removes the conversation and the memory Talk keeps.": "Esto quita la conversación y la memoria que Talk guarda.",
+    "Microphone is off": "El micrófono está apagado",
+    "Allow the microphone, then come back to Talk.": "Permite el micrófono y vuelve a Talk."
   },
   "de": {
     "Voice and AI": "Stimme und KI",
@@ -251,7 +264,20 @@
     "Where to get it": "Wo du ihn holst",
     "Which cloud key": "Welcher Cloud-Schlüssel",
     "xAI bills that key. This app does not charge you. Settings can warn you after a number of minutes.": "xAI rechnet diesen Schlüssel ab. Diese App verlangt nichts. Die Einstellungen können dich nach einer Anzahl Minuten warnen.",
-    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} ist für dieses Telefon empfohlen ({fit}). Es braucht etwa {ram} GB. Der erste Download bleibt SmolLM2, etwa {size}, damit Talk antworten kann, bevor diese größere Datei da ist. Du kannst unter Stimme und KI wechseln."
+    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} ist für dieses Telefon empfohlen ({fit}). Es braucht etwa {ram} GB. Der erste Download bleibt SmolLM2, etwa {size}, damit Talk antworten kann, bevor diese größere Datei da ist. Du kannst unter Stimme und KI wechseln.",
+    "Check key": "Schlüssel prüfen",
+    "Checking the key…": "Schlüssel wird geprüft…",
+    "Key works.": "Der Schlüssel funktioniert.",
+    "The key was refused.": "Der Schlüssel wurde abgelehnt.",
+    "Save anyway": "Trotzdem speichern",
+    "Saved without a check.": "Gespeichert ohne Prüfung.",
+    "Paste": "Einfügen",
+    "Show key": "Schlüssel zeigen",
+    "Hide key": "Schlüssel verbergen",
+    "Clear this talk?": "Dieses Gespräch löschen?",
+    "This removes the conversation and the memory Talk keeps.": "Das entfernt das Gespräch und die Erinnerung, die Talk behält.",
+    "Microphone is off": "Das Mikrofon ist aus",
+    "Allow the microphone, then come back to Talk.": "Erlaube das Mikrofon und kehr zu Talk zurück."
   },
   "pt": {
     "Voice and AI": "Voz e IA",
@@ -378,7 +404,20 @@
     "Where to get it": "Onde a obter",
     "Which cloud key": "Qual chave na nuvem",
     "xAI bills that key. This app does not charge you. Settings can warn you after a number of minutes.": "A xAI cobra essa chave. Esta app não te cobra. As Definições podem avisar-te depois de uns minutos.",
-    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} é o recomendado para este telefone ({fit}). Precisa de cerca de {ram} GB. A primeira descarga continua a ser SmolLM2, cerca de {size}, para o Falar poder responder antes desse ficheiro maior. Podes mudar em Voz e IA."
+    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} é o recomendado para este telefone ({fit}). Precisa de cerca de {ram} GB. A primeira descarga continua a ser SmolLM2, cerca de {size}, para o Falar poder responder antes desse ficheiro maior. Podes mudar em Voz e IA.",
+    "Check key": "Verificar a chave",
+    "Checking the key…": "A verificar a chave…",
+    "Key works.": "A chave funciona.",
+    "The key was refused.": "A chave foi recusada.",
+    "Save anyway": "Salvar mesmo assim",
+    "Saved without a check.": "Salva sem verificação.",
+    "Paste": "Colar",
+    "Show key": "Mostrar a chave",
+    "Hide key": "Ocultar a chave",
+    "Clear this talk?": "Limpar esta conversa?",
+    "This removes the conversation and the memory Talk keeps.": "Isto remove a conversa e a memória que o Falar guarda.",
+    "Microphone is off": "O microfone está desligado",
+    "Allow the microphone, then come back to Talk.": "Permita o microfone e volte ao Falar."
   },
   "ca-ES-valencia": {
     "Voice and AI": "Veu i IA",
@@ -505,6 +544,19 @@
     "Where to get it": "On aconseguir-la",
     "Which cloud key": "Quina clau al núvol",
     "xAI bills that key. This app does not charge you. Settings can warn you after a number of minutes.": "xAI cobra eixa clau. Esta app no et cobra. Els Ajustos poden avisar-te després d'uns minuts.",
-    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} és el recomanat per a este telèfon ({fit}). Necessita uns {ram} GB. La primera descàrrega continua sent SmolLM2, uns {size}, perquè Parlar puga respondre abans d'eixe fitxer més gran. Pots canviar-lo a Veu i IA."
+    "{model} is recommended for this phone ({fit}). It needs about {ram} GB. The first download is still SmolLM2, about {size}, so Talk can answer before that larger file. You can switch in Voice and AI.": "{model} és el recomanat per a este telèfon ({fit}). Necessita uns {ram} GB. La primera descàrrega continua sent SmolLM2, uns {size}, perquè Parlar puga respondre abans d'eixe fitxer més gran. Pots canviar-lo a Veu i IA.",
+    "Check key": "Comprova la clau",
+    "Checking the key…": "Comprovant la clau…",
+    "Key works.": "La clau funciona.",
+    "The key was refused.": "Han rebutjat la clau.",
+    "Save anyway": "Guarda igualment",
+    "Saved without a check.": "Guardada sense comprovar.",
+    "Paste": "Enganxa",
+    "Show key": "Mostra la clau",
+    "Hide key": "Amaga la clau",
+    "Clear this talk?": "Esborrar esta conversa?",
+    "This removes the conversation and the memory Talk keeps.": "Açò lleva la conversa i la memòria que Parlar guarda.",
+    "Microphone is off": "El micròfon està apagat",
+    "Allow the microphone, then come back to Talk.": "Permet el micròfon i torna a Parlar."
   }
 }

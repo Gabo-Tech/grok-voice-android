@@ -1,18 +1,19 @@
 ---
-description: Visual contract for Grok Voice screens. Read DESIGN-LANGUAGE.md before any UI change.
+description: Visual contract for Grok Voice screens. Read DESIGN-LANGUAGE.md (v2) before any UI change.
 alwaysApply: true
 ---
 
-Read `DESIGN-LANGUAGE.md` at the repo root before adding or restyling a screen, sheet, dialog, widget, or theme.
+Read `DESIGN-LANGUAGE.md` at the repo root before adding or restyling a screen, sheet, dialog, widget, or theme. It is v2.
 
 Follow it. In particular:
 
 - Themes swap with `data-appearance` and may set only the semantic tokens listed in that file. No raw hex in components.
-- No pure black or white. Minimum text is 13px. Touch targets are at least 44px. Keep WCAG contrast.
-- Radius stays on the 0–4px tokens. Do not outline cards, chips, or secondary buttons. Use tonal surfaces and hairlines. No corner brackets, glass, gradients, or tinted icon boxes.
-- One accent (`--brand`), plus `--positive` and `--negative` for money. Hero numbers use the 2:1 number-to-unit tokens.
-- Primary actions are solid fills. Secondary actions are underlined text.
+- No pure black or white. Minimum text is 13px and scales with Android font size. Touch targets are at least 48px. Keep WCAG contrast. Sand brand text is at least 4.5:1.
+- Radius uses the v2 scale (4, 8, 12, 20). Cards are allowed for an object or a figure group. Do not outline cards, chips, or secondary buttons. No corner brackets, glass, gradients, emoji, or tinted icon boxes.
+- One accent (`--brand`), plus `--positive` and `--negative` for money, and `--warning` for a near limit. Hero numbers use the 2:1 number-to-unit tokens.
+- Primary actions are solid fills. Secondary actions are underlined text. Destructive confirmation uses `--negative`.
 - Motion uses the duration and easing tokens. Page transitions stay opacity-only on Android.
-- User-facing copy is plain in en, es, de, pt, and ca-ES-valencia. Escape apostrophes in Android XML.
+- User-facing copy is one sentence under a title, in en, es, de, pt, and ca-ES-valencia. Escape apostrophes in Android XML.
+- Pull request #132 lands first. Keep its Talk bubbles, landscape rail, Activity, Sankey, and Plan. Restyle them with v2 tokens later. If they clash with a token or the 48px rule, keep their structure and fix the styling.
 
 Finance chart, holdings, and ledger files may be owned by another change. Prefer token and shared-component edits so Finance inherits them.

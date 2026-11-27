@@ -53,7 +53,7 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                 )}
               >
                 <Icon className="size-5 shrink-0" strokeWidth={1.5} />
-                <span className="mt-0.5 line-clamp-2 w-full hyphens-auto text-center text-[13px] leading-4 break-words">{t(label)}</span>
+                <span className="mt-0.5 w-full text-center text-[13px] leading-snug">{t(label)}</span>
               </button>
             </li>
           );

@@ -12,6 +12,23 @@ bootAppearance();
 installKeyboardInset();
 installHistory();
 
+const previewZoom = Number(new URLSearchParams(window.location.search).get("textZoom") || "0");
+if (previewZoom > 100 && previewZoom <= 300) {
+  const factor = previewZoom / 100;
+  window.setTimeout(() => {
+    const nodes = [document.documentElement, document.body, ...document.body.querySelectorAll<HTMLElement>("*")];
+    const measured = nodes.map((el) => {
+      const style = getComputedStyle(el);
+      return { el, size: Number.parseFloat(style.fontSize), line: style.lineHeight };
+    });
+    for (const { el, size, line } of measured) {
+      if (!Number.isFinite(size) || size <= 0) continue;
+      el.style.fontSize = `${(size * factor).toFixed(2)}px`;
+      if (line.endsWith("px")) el.style.lineHeight = `${(Number.parseFloat(line) * factor).toFixed(2)}px`;
+    }
+  }, 80);
+}
+
 const shotParams = new URLSearchParams(window.location.search);
 const shot = shotParams.get("shot");
 if (shot?.startsWith("flow")) {

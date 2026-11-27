@@ -47,9 +47,16 @@
 
 /* Shared scale. Themes do not override these. */
 :root {
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --radius-sharp: 0px;
     --radius: 2px;
     --radius-soft: 4px;
+    /* v2 scale. New surfaces use these. --radius stays for screens not restyled yet. */
+    --radius-xs: 4px;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-full: 9999px;
     --border-width: 1px;
     --space-1: 4px;
     --space-2: 8px;
@@ -59,10 +66,32 @@
     --space-6: 32px;
     --space-7: 48px;
     --space-8: 64px;
-    --text-display: 48px;
-    --text-unit: 24px;
-    --text-min: 13px;
-    --touch: 44px;
+    --gutter: var(--space-4);
+    --type-display: 3rem;
+    --lh-display: 1.05;
+    --type-unit: 1.5rem;
+    --type-headline: 1.75rem;
+    --lh-headline: 1.15;
+    --type-title: 1.25rem;
+    --lh-title: 1.3;
+    --type-body: 1rem;
+    --lh-body: 1.5;
+    --type-label: 0.875rem;
+    --lh-label: 1.35;
+    --type-caption: 0.8125rem;
+    --lh-caption: 1.35;
+    --track-tight: -0.035em;
+    --track-wide: 0.12em;
+    --text-display: var(--type-display);
+    --text-unit: var(--type-unit);
+    --text-min: var(--type-caption);
+    --touch: 48px;
+    --nav-h: 64px;
+    --appbar-h: 56px;
+    --fab: 56px;
+    --e0: none;
+    --e1: none;
+    --e2: none;
     --motion-fast: 120ms;
     --motion-normal: 200ms;
     --motion-slow: 320ms;
@@ -93,6 +122,7 @@ html[data-appearance="graphite"] {
     --surface-0: #0e0f11;
     --surface-1: #17181b;
     --surface-2: #1c1d21;
+    --surface-3: #23252a;
     --text-primary: #eeece8;
     --text-tertiary: #8b8a86;
     --brand: #c4b5a0;
@@ -100,6 +130,7 @@ html[data-appearance="graphite"] {
     --brand-deep: #b8a48a;
     --positive: #7d9a86;
     --negative: #c48984;
+    --warning: #c9a46a;
     --line: #6a6762;
     --line-soft: rgba(232, 230, 227, 0.28);
     --scheme: dark;
@@ -111,6 +142,7 @@ html[data-appearance="ink"] {
     --surface-0: #121214;
     --surface-1: #1a1b1f;
     --surface-2: #222328;
+    --surface-3: #2c2e35;
     --text-primary: #f7f4ee;
     --text-tertiary: #b7b3aa;
     --brand: #c4b5a0;
@@ -118,6 +150,7 @@ html[data-appearance="ink"] {
     --brand-deep: #b8a48a;
     --positive: #8eae98;
     --negative: #d09a96;
+    --warning: #c9a46a;
     --line: #6a6762;
     --line-soft: rgba(247, 244, 238, 0.35);
     --scheme: dark;
@@ -153,6 +186,7 @@ html[data-appearance="stone"] {
     --surface-0: #f4f2ee;
     --surface-1: #fbfaf7;
     --surface-2: #f7f4ef;
+    --surface-3: #ebe6df;
     --text-primary: #1a1b1e;
     --text-tertiary: #5e5a54;
     --brand: #6f5a42;
@@ -160,17 +194,21 @@ html[data-appearance="stone"] {
     --brand-deep: #8c7358;
     --positive: #2f6a48;
     --negative: #8e3f3b;
+    --warning: #7a5a28;
     --line: #7a7268;
     --line-soft: rgba(26, 27, 30, 0.18);
     --scheme: light;
     --text-mix: #161514;
     --elevation: 0 1px 2px rgba(26, 27, 30, 0.04);
+    --e1: 0 1px 2px rgb(0 0 0 / 0.04);
+    --e2: 0 4px 16px rgb(0 0 0 / 0.1);
 }
 
 html[data-appearance="midnight"] {
     --surface-0: #0b1220;
     --surface-1: #121a2b;
     --surface-2: #182236;
+    --surface-3: #223044;
     --text-primary: #e7e4dc;
     --text-tertiary: #8e97a8;
     --brand: #c6b59a;
@@ -178,6 +216,7 @@ html[data-appearance="midnight"] {
     --brand-deep: #a89478;
     --positive: #7f9e8c;
     --negative: #c48b8a;
+    --warning: #c9a46a;
     --line: #6e7c90;
     --line-soft: rgba(231, 228, 220, 0.28);
     --scheme: dark;
@@ -187,6 +226,7 @@ html[data-appearance="carbon"] {
     --surface-0: #141416;
     --surface-1: #1c1c1f;
     --surface-2: #26262a;
+    --surface-3: #303036;
     --text-primary: #f4f1ea;
     --text-tertiary: #9a958c;
     --brand: #c4b5a0;
@@ -194,6 +234,7 @@ html[data-appearance="carbon"] {
     --brand-deep: #b8a48a;
     --positive: #86a892;
     --negative: #c98984;
+    --warning: #c9a46a;
     --line: #6a6762;
     --line-soft: rgba(244, 241, 234, 0.32);
     --scheme: dark;
@@ -203,6 +244,7 @@ html[data-appearance="ivory"] {
     --surface-0: #fbf7f0;
     --surface-1: #f7f3ec;
     --surface-2: #f6f1e8;
+    --surface-3: #ebe4d8;
     --text-primary: #1c1916;
     --text-tertiary: #6b645c;
     --brand: #8a6e49;
@@ -210,35 +252,43 @@ html[data-appearance="ivory"] {
     --brand-deep: #6f5838;
     --positive: #2e6b46;
     --negative: #8c3e3a;
+    --warning: #7a5a28;
     --line: #7a7268;
     --line-soft: rgba(28, 25, 22, 0.16);
     --scheme: light;
     --text-mix: #161514;
     --elevation: 0 1px 2px rgba(26, 27, 30, 0.04);
+    --e1: 0 1px 2px rgb(0 0 0 / 0.04);
+    --e2: 0 4px 16px rgb(0 0 0 / 0.1);
 }
 
 html[data-appearance="sand"] {
     --surface-0: #e7dcc8;
     --surface-1: #f3e9d6;
     --surface-2: #efe4ce;
+    --surface-3: #e0d2b6;
     --text-primary: #3a2e22;
     --text-tertiary: #5c4e3e;
-    --brand: #8c6239;
+    --brand: #6e5634;
     --brand-ink: #f3e9d6;
     --brand-deep: #6e4c2a;
     --positive: #3e6b4f;
     --negative: #8e4a42;
+    --warning: #7a5a28;
     --line: #7a7268;
     --line-soft: rgba(58, 46, 34, 0.2);
     --scheme: light;
     --text-mix: #161514;
     --elevation: 0 1px 2px rgba(26, 27, 30, 0.04);
+    --e1: 0 1px 2px rgb(0 0 0 / 0.04);
+    --e2: 0 4px 16px rgb(0 0 0 / 0.1);
 }
 
 html[data-appearance="forest"] {
     --surface-0: #101612;
     --surface-1: #18201b;
     --surface-2: #1e2922;
+    --surface-3: #28362c;
     --text-primary: #e8e4d8;
     --text-tertiary: #8e9a8e;
     --brand: #c6b48a;
@@ -246,6 +296,7 @@ html[data-appearance="forest"] {
     --brand-deep: #a89468;
     --positive: #8fb59a;
     --negative: #c4928c;
+    --warning: #c9a46a;
     --line: #6e7c72;
     --line-soft: rgba(232, 228, 216, 0.28);
     --scheme: dark;
@@ -255,6 +306,7 @@ html[data-appearance="plum"] {
     --surface-0: #161218;
     --surface-1: #211c24;
     --surface-2: #2a242e;
+    --surface-3: #342e38;
     --text-primary: #f0ebe4;
     --text-tertiary: #a398a4;
     --brand: #c4b09a;
@@ -262,6 +314,7 @@ html[data-appearance="plum"] {
     --brand-deep: #a89078;
     --positive: #86a494;
     --negative: #c48a96;
+    --warning: #c9a46a;
     --line: #7a6e78;
     --line-soft: rgba(240, 235, 228, 0.28);
     --scheme: dark;
@@ -273,6 +326,14 @@ html {
     --text-strong: color-mix(in srgb, var(--text-primary) 72%, var(--text-mix));
     --text-secondary: color-mix(in srgb, var(--text-primary) 46%, var(--text-tertiary));
     --text-disabled: color-mix(in srgb, var(--text-tertiary) 62%, var(--surface-0));
+    --on-brand: var(--brand-ink);
+    --positive-soft: color-mix(in srgb, var(--positive) 16%, transparent);
+    --negative-soft: color-mix(in srgb, var(--negative) 16%, transparent);
+    --brand-soft: color-mix(in srgb, var(--brand) 14%, transparent);
+    --state-listen: var(--brand);
+    --state-speak: var(--text-primary);
+    --state-think: var(--text-secondary);
+    --state-error: var(--negative);
     --canvas: var(--surface-0);
     --panel: var(--surface-1);
     --panel-2: var(--surface-2);
@@ -371,9 +432,59 @@ body,
 body {
   background: var(--surface-0);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   font-size: 100%;
-  line-height: 1.5;
+  line-height: var(--lh-body);
+}
+
+@layer components {
+  .t-display {
+    font-size: var(--type-display);
+    line-height: var(--lh-display);
+    font-weight: 500;
+    letter-spacing: var(--track-tight);
+    font-variant-numeric: tabular-nums;
+  }
+  .t-unit {
+    font-size: var(--type-unit);
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+  .t-headline {
+    font-size: var(--type-headline);
+    line-height: var(--lh-headline);
+    font-weight: 500;
+    letter-spacing: var(--track-tight);
+  }
+  .t-title {
+    font-size: var(--type-title);
+    line-height: var(--lh-title);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+  }
+  .t-body {
+    font-size: var(--type-body);
+    line-height: var(--lh-body);
+  }
+  .t-label {
+    font-size: var(--type-label);
+    line-height: var(--lh-label);
+  }
+  .t-caption {
+    font-size: var(--type-caption);
+    line-height: var(--lh-caption);
+    color: var(--text-tertiary);
+  }
+  .t-overline {
+    font-size: var(--type-caption);
+    letter-spacing: var(--track-wide);
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--text-tertiary);
+  }
+  .t-num {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 .text-xs {
@@ -648,7 +759,7 @@ h1,
   font-size: var(--text-min);
   font-weight: 500;
   letter-spacing: 0.01em;
-  line-height: 18px;
+  line-height: 1.25;
   text-transform: none;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -699,7 +810,7 @@ h1,
   align-items: center;
   gap: 12px;
   z-index: 2;
-  min-height: 44px;
+  min-height: var(--touch);
   padding-top: 8px;
 }
 
@@ -729,8 +840,8 @@ h1,
 
 .flow-zoom {
   display: inline-flex;
-  width: 44px;
-  height: 44px;
+  width: var(--touch);
+  height: var(--touch);
   flex: none;
   align-items: center;
   justify-content: center;
@@ -1156,7 +1267,7 @@ html.keyboard-open .sheet-panel {
   }
 
   .finance .fin-tab {
-    min-height: 44px;
+    min-height: var(--touch);
     padding-top: 4px;
     padding-bottom: 4px;
   }
@@ -1166,7 +1277,7 @@ html.keyboard-open .sheet-panel {
   }
 
   .bottom-nav button {
-    min-height: 44px;
+    min-height: var(--touch);
     padding-top: 2px;
     padding-bottom: 2px;
   }
@@ -1206,7 +1317,7 @@ html.keyboard-open .sheet-panel {
   .bottom-nav {
     position: relative;
     order: -1;
-    width: 112px;
+    width: max(112px, min-content);
     height: auto;
     align-self: stretch;
     border-top: 0;
@@ -1225,4 +1336,97 @@ html.keyboard-open .sheet-panel {
   .sheet-panel {
     width: min(100% - 48px, 640px);
   }
+}
+
+@media (min-width: 600px) {
+  :root {
+    --gutter: var(--space-5);
+  }
+}
+
+html[data-scheme="light"] {
+  --e1: 0 1px 2px rgb(0 0 0 / 0.04);
+  --e2: 0 4px 16px rgb(0 0 0 / 0.1);
+}
+
+/* Targets stay at 48px, and large system text grows the box instead of slicing the glyphs. */
+button,
+[role="button"],
+[role="tab"],
+[role="switch"],
+summary,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+select,
+textarea {
+  min-height: var(--touch);
+  min-width: var(--touch);
+  height: auto;
+  line-height: 1.25;
+  overflow: visible;
+}
+
+button,
+[role="button"] {
+  white-space: normal;
+}
+
+.stamp,
+button.stamp {
+  line-height: 1.25;
+}
+
+button.stamp {
+  min-height: var(--touch);
+  min-width: var(--touch);
+}
+
+.bottom-nav ul {
+  grid-template-columns: repeat(6, minmax(min-content, 1fr));
+  overflow-x: auto;
+}
+
+.bottom-nav button span {
+  hyphens: manual;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  line-height: 1.25;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  display: block;
+}
+
+.talk-head:not(.talk-head-off) {
+  max-height: 46%;
+  overflow: auto;
+}
+
+.talk-head:not(.talk-head-off) > div {
+  overflow: auto;
+}
+
+.talk-head ~ .overflow-y-auto {
+  min-height: 8rem;
+  flex: 1 1 auto;
+}
+
+.talk-mic-panel.open,
+.talk-mic-panel.open > div {
+  max-height: 42vh;
+  overflow: auto;
+}
+
+.setup-step {
+  min-width: var(--touch);
+  min-height: var(--touch);
+  width: auto;
+  height: auto;
+  padding: 4px;
+}
+
+[data-setup] {
+  overflow: auto;
+}
+
+[data-setup] .overflow-y-auto {
+  min-height: 8rem;
 }

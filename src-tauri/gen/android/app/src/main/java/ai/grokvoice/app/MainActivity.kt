@@ -1,6 +1,7 @@
 package ai.grokvoice.app
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -213,6 +214,7 @@ class MainActivity : TauriActivity() {
     }
     val settings = webView.settings
     settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+    applyTextZoom(webView)
     @Suppress("DEPRECATION")
     settings.allowFileAccessFromFileURLs = false
     @Suppress("DEPRECATION")
@@ -225,6 +227,15 @@ class MainActivity : TauriActivity() {
     webView.setLayerType(View.LAYER_TYPE_NONE, null)
     webView.addJavascriptInterface(BackBridge(this), "GrokNav")
     webView.addJavascriptInterface(ThemeBridge(this), "GrokTheme")
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    findWebView(window?.decorView)?.let { applyTextZoom(it) }
+  }
+
+  private fun applyTextZoom(webView: WebView) {
+    webView.settings.textZoom = (resources.configuration.fontScale * 100).toInt().coerceAtLeast(50)
   }
 
   override fun onPause() {

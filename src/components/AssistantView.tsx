@@ -84,6 +84,7 @@ export function AssistantView({
   const [aboutListen, setAboutListen] = useState(false);
   const [listenHint, setListenHint] = useState(false);
   const [focusHint, setFocusHint] = useState(false);
+  const [clearAsk, setClearAsk] = useState(() => previewQuery("clear"));
   const lastTap = useRef(0);
   const clock = sessionClock(voice.usage?.openSinceMs);
   const live = ["connecting", "listening", "thinking", "speaking"].includes(voice.phase);
@@ -119,6 +120,16 @@ export function AssistantView({
     const id = window.setTimeout(() => setFocusHint(false), 2400);
     return () => window.clearTimeout(id);
   }, [focusHint]);
+  useEffect(() => {
+    if (!clearAsk) return;
+    const id = window.setTimeout(() => document.getElementById("clear-talk-title")?.scrollIntoView({ block: "center" }), 200);
+    return () => window.clearTimeout(id);
+  }, [clearAsk]);
+  useEffect(() => {
+    if (!voice.lastError || !recoveryFor(voice.lastError)?.openAppSettings) return;
+    const id = window.setTimeout(() => document.querySelector("[data-open-settings]")?.scrollIntoView({ block: "center" }), 200);
+    return () => window.clearTimeout(id);
+  }, [voice.lastError]);
 
   const onChatPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
@@ -205,13 +216,23 @@ export function AssistantView({
       </header>
 
       {voice.lastError && (
+        <div data-open-settings={recovery?.openAppSettings ? "1" : undefined}>
         <Notice
-          title={t(voice.lastError)}
+          title={recovery?.openAppSettings ? t("Microphone is off") : t(voice.lastError)}
           body={recovery ? t(recovery.hint) : t("Try again. If it keeps happening, open Settings, then Debug.")}
-          actionLabel={recovery?.go ? t(settingsLabel(recovery.go)) : undefined}
-          onAction={recovery?.go ? () => onOpenSettings(recovery.go!) : undefined}
+          actionLabel={recovery?.openAppSettings ? t("Open settings") : recovery?.go ? t(settingsLabel(recovery.go)) : undefined}
+          onAction={
+            recovery?.openAppSettings
+              ? () => {
+                  if (isTauri()) void api.openAppSettings();
+                }
+              : recovery?.go
+                ? () => onOpenSettings(recovery.go!)
+                : undefined
+          }
           onDismiss={voice.dismissError}
         />
+        </div>
       )}
 
       <div ref={scroller} className="talk-log min-h-0 flex-1 overflow-y-auto px-1" onPointerUp={onChatPointerUp}>
@@ -226,7 +247,7 @@ export function AssistantView({
         ) : (
           <>
             <div className="flex justify-end">
-              <Button size="sm" variant="ghost" onClick={voice.clearTranscript}>
+              <Button size="sm" variant="ghost" onClick={() => setClearAsk(true)}>
                 <Trash2 /> {t("Clear")}
               </Button>
             </div>
@@ -272,6 +293,28 @@ export function AssistantView({
           </div>
         </div>
       )}
+
+      {clearAsk ? (
+        <div role="dialog" aria-modal="true" aria-labelledby="clear-talk-title" className="mag-panel mb-3">
+          <p id="clear-talk-title" className="text-base leading-6 text-foreground">{t("Clear this talk?")}</p>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("This removes the conversation and the memory Talk keeps.")}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                voice.clearTranscript();
+                setClearAsk(false);
+              }}
+            >
+              {t("Clear")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setClearAsk(false)}>
+              {t("Not now")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <form
         className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
