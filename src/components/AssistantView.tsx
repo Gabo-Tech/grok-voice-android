@@ -301,7 +301,7 @@ export function AssistantView({
         <div className="mag-panel mb-3">
           <p className="text-sm leading-6 text-foreground">{voice.handoff.summary}</p>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled" || voice.handoff.kind === "listen_off" || voice.handoff.kind === "wipe_memory"
+            {voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled" || voice.handoff.kind === "listen_off" || voice.handoff.kind === "wipe_memory" || voice.handoff.kind === "reply_message" || voice.handoff.kind === "place_call" || voice.handoff.kind === "answer_call" || voice.handoff.kind === "decline_call" || voice.handoff.kind === "end_call"
               ? t("Say yes to finish this.")
               : t("Nothing is sent until you confirm in the other app.")}
           </p>
@@ -313,7 +313,17 @@ export function AssistantView({
                   ? t("Wipe memory")
                   : voice.handoff.kind === "listen_off"
                     ? t("Turn Listen off")
-                    : t("Send the draft")}
+                    : voice.handoff.kind === "reply_message"
+                      ? t("Send")
+                      : voice.handoff.kind === "place_call"
+                        ? t("Call")
+                        : voice.handoff.kind === "answer_call"
+                          ? t("Answer the call")
+                          : voice.handoff.kind === "decline_call"
+                            ? t("Decline the call")
+                            : voice.handoff.kind === "end_call"
+                              ? t("End the call")
+                              : t("Send the draft")}
             </Button>
             <Button type="button" variant="outline" onClick={voice.dismissHandoff}>
               {t("Not now")}

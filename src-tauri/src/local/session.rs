@@ -408,6 +408,7 @@ async fn handle_text(
     text: &str,
     already_recorded: bool,
 ) -> Result<(), String> {
+    crate::consent::note_user_turn(text);
     if !already_recorded {
         remember(app, hub, "user", text);
     }
