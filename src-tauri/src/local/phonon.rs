@@ -495,7 +495,7 @@ fn download_file(
         .redirect(crate::http::pack_redirect())
         .build()
         .map_err(|err| err.to_string())?;
-    let mut request = client.get(url).header("user-agent", "GrokVoice/0.1.66");
+    let mut request = client.get(url).header("user-agent", "GrokVoice/0.1.67");
     if let Some(header) = auth_header(model, token) {
         request = request.header("authorization", header);
     }
