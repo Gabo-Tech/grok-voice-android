@@ -120,7 +120,14 @@ export function AssistantView({
     if (!el) return;
     const pin = () => {
       if (voice.lastError && voice.rows.length === 0) {
-        el.scrollTop = 0;
+        const action = el.querySelector("[role='alert'] button");
+        if (!action) {
+          el.scrollTop = 0;
+          return;
+        }
+        const actionBox = action.getBoundingClientRect();
+        const view = el.getBoundingClientRect();
+        if (actionBox.bottom > view.bottom - 4) el.scrollTop += actionBox.bottom - view.bottom + 12;
         return;
       }
       el.scrollTop = el.scrollHeight;
