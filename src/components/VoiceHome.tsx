@@ -255,7 +255,7 @@ export function VoiceHome({
   if (import.meta.env.DEV && shot === "onemin") {
     return (
       <div className="bg-background px-4 py-4 text-foreground">
-        <h2 className="text-2xl font-medium tracking-tight">{t("1min.ai")}</h2>
+        <h2 className="screen-title">{t("1min.ai")}</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{t("Paste the 1min.ai key")}</p>
         <Input className="mt-3" type="password" autoComplete="off" value="saved-on-this-phone" readOnly />
         <div className="mt-4">
@@ -267,7 +267,7 @@ export function VoiceHome({
   if (import.meta.env.DEV && shot === "picker") {
     return (
       <div className="bg-background px-4 py-4 text-foreground">
-        <h2 className="text-2xl font-medium tracking-tight">{t("Model")}</h2>
+        <h2 className="screen-title">{t("Model")}</h2>
         <ModelChoices
           settings={settings}
           packs={packs}
@@ -291,7 +291,7 @@ export function VoiceHome({
   return (
     <div className="space-y-4 pb-8">
       <div>
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Voice and AI")}</h2>
+        <h2 className="screen-title">{t("Voice and AI")}</h2>
         <p className="mt-1 px-1 text-sm leading-6 text-muted-foreground">
           {t("Hearing, the model, the voice, and what is tried next.")}
         </p>

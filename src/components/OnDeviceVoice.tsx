@@ -236,7 +236,7 @@ export function OnDeviceVoice({
     <div className="space-y-6 pb-8">
       {embedded ? null : (
       <div>
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("On-device voice")}</h2>
+        <h2 className="screen-title">{t("On-device voice")}</h2>
         <p className="mt-1 px-1 text-sm leading-6 text-muted-foreground">
           {t("Pick a language, then an engine, a voice, and a download. Nothing is fetched until you tap Download.")}
         </p>

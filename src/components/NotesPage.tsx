@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { safeHttps } from "@/lib/links";
 import { Trash2 } from "lucide-react";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
 import { Sheet } from "@/components/Sheet";
@@ -74,7 +75,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
 
   return (
     <>
-      <PageChrome title={t("Notes")} onAdd={openNew} addLabel={t("New note")} active={active}>
+      <PageChrome mark title={t("Notes")} info={<InfoTip label={t("Notes")} text={t("Tap + or ask Grok to remember something.")} />} onAdd={openNew} addLabel={t("New note")} active={active}>
         {(agenda.agenda.notes.length > 0 || query) && (
         <div className="mb-6">
           <Field label={t("Search")}>

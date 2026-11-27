@@ -97,7 +97,7 @@ export function ThemePicker({
       <div className="settings-row" data-widget-note="">
         <span className="text-base text-foreground">{t("Theme")}</span>
         {info}
-        <button type="button" className="ml-auto flex min-h-12 items-center gap-2 text-sm text-muted-foreground" onClick={() => setPickerOpen(true)}>
+        <button type="button" className="trail-value ml-auto flex min-h-12 items-center gap-2" onClick={() => setPickerOpen(true)}>
           <span className="theme-dot" style={{ background: currentCanvas }} aria-hidden />
           <span>{currentTitle}</span>
           <ChevronRight className="size-4" aria-hidden />

@@ -246,7 +246,7 @@ export function MorePage({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Back onClick={() => setSection("menu")} />
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Quiet gap")}</h2>
+        <h2 className="screen-title">{t("Quiet gap")}</h2>
         <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
           {t("After this pause, the conversation ends and only the wake word is heard.")}
         </p>
@@ -282,7 +282,7 @@ export function MorePage({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Daily voice budget")}</h2>
+        <h2 className="screen-title">{t("Daily voice budget")}</h2>
         {settings ? (
           <div className="mt-4 space-y-4">
             <div className="border border-border px-3 py-3">
@@ -396,7 +396,7 @@ export function MorePage({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Notification alerts")}</h2>
+        <h2 className="screen-title">{t("Notification alerts")}</h2>
         <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
           {t("Normal shows the notification as it does today. Spoken also reads a short sentence when it fires. The listening notification and downloads stay quiet.")}
         </p>
@@ -454,11 +454,13 @@ export function MorePage({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
-        <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Language")}</h2>
+        <header className="screen-head px-0 pb-2">
+          <h2 className="masthead text-foreground">{t("Language")}</h2>
+          <div className="masthead-rule" />
+        </header>
         {settings ? (
           <div className="mt-4 space-y-6">
             <div>
-              <p className="mb-2 text-sm text-muted-foreground">{t("Language")}</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { id: "", label: t("Follow the phone") },
@@ -476,8 +478,8 @@ export function MorePage({
                       saveBudget({ ...settings, locale: choice.id });
                     }}
                     className={cn(
-                      "min-h-12 h-auto border px-2 py-2 text-center text-sm leading-4 whitespace-normal",
-                      (settings.locale || "") === choice.id ? "border-foreground text-foreground" : "border-border text-muted-foreground",
+                      "min-h-12 h-auto rounded-[var(--radius-sm)] px-2 py-2 text-center text-sm leading-4 whitespace-normal",
+                      (settings.locale || "") === choice.id ? "bg-foreground text-background" : "bg-[var(--surface-2)] text-foreground",
                     )}
                   >
                     {choice.label}
@@ -522,8 +524,10 @@ export function MorePage({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
-        <h2 className="masthead px-1 text-2xl">{t("Finance")}</h2>
-        <div className="masthead-rule mx-1" />
+        <header className="screen-head px-0 pb-2">
+          <h2 className="masthead text-foreground">{t("Finance")}</h2>
+          <div className="masthead-rule" />
+        </header>
         <p className="mt-3 mb-4 px-1 text-sm leading-6 text-muted-foreground">
           {t("Live rate for the day. Native amounts stay on each item.")}
         </p>
@@ -562,25 +566,19 @@ export function MorePage({
       id: "voice",
       title: t("Voice"),
       rows: [
-        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: first ? t(providerLabel(first.provider)) : t("Off") },
+        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), value: first ? t(providerLabel(first.provider)) : t("Off") },
         {
           section: "spend",
           icon: <Wallet className="size-4" />,
           title: t("Daily voice budget"),
-          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off"),
+          value: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off"),
         },
-        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: `${quiet}s` },
-      ],
-    },
-    {
-      id: "listen",
-      title: t("Listen"),
-      rows: [
+        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), value: `${quiet}s` },
         {
           section: "wake",
           icon: <Wand2 className="size-4" />,
           title: t("Wake word"),
-          detail: wake.trained ? t("Hey Grok enrolled") : t("Off"),
+          value: wake.trained ? t("Hey Grok enrolled") : t("Off"),
         },
       ],
     },
@@ -592,13 +590,14 @@ export function MorePage({
           section: "alerts",
           icon: <Bell className="size-4" />,
           title: t("Notification alerts"),
-          detail: settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : t("A notification, or a spoken line that uses your name."),
+          value: settings?.notificationDelivery === "spoken" ? t("Spoken out loud") : undefined,
+          hint: settings?.notificationDelivery === "spoken" ? undefined : t("A notification, or a spoken line that uses your name."),
         },
         {
           section: "access",
           icon: <Bell className="size-4" />,
           title: t("Phone access"),
-          detail: t("Messages, calls, notifications, and Do Not Disturb."),
+          hint: t("Messages, calls, notifications, and Do Not Disturb."),
         },
       ],
     },
@@ -610,7 +609,7 @@ export function MorePage({
           section: "music",
           icon: <Music className="size-4" />,
           title: t("Default music player"),
-          detail: playerDetail(settings?.musicPlayer, t),
+          value: playerDetail(settings?.musicPlayer, t),
         },
       ],
     },
@@ -622,28 +621,25 @@ export function MorePage({
           section: "finance",
           icon: <Wallet className="size-4" />,
           title: t("Default currency"),
-          detail: finance.snapshot.defaultCurrency
-            ? finance.snapshot.defaultCurrency.toUpperCase()
-            : t("Used when you do not name a currency."),
+          value: finance.snapshot.defaultCurrency ? finance.snapshot.defaultCurrency.toUpperCase() : undefined,
+          hint: finance.snapshot.defaultCurrency ? undefined : t("Used when you do not name a currency."),
         },
       ],
     },
     {
-      id: "people",
-      title: t("People"),
-      rows: [{ section: "people", icon: <Users className="size-4" />, title: t("People"), detail: t("Nicknames, birthdays, and how you reach them.") }],
-    },
-    {
-      id: "language",
-      title: t("Language"),
-      rows: [{ section: "language", icon: <Languages className="size-4" />, title: t("Language"), detail: languageDetail }],
+      id: "you",
+      title: t("You"),
+      rows: [
+        { section: "people", icon: <Users className="size-4" />, title: t("People"), hint: t("Nicknames, birthdays, and how you reach them.") },
+        { section: "language", icon: <Languages className="size-4" />, title: t("Language"), value: languageDetail },
+      ],
     },
     {
       id: "privacy",
-      title: t("Backup"),
+      title: t("On this phone"),
       rows: [
-        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("Everything saved on this phone. A passphrase includes keys.") },
-        { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), detail: t("Pinned facts Talk can use on this phone.") },
+        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), hint: t("Everything saved on this phone. A passphrase includes keys.") },
+        { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), hint: t("Pinned facts Talk can use on this phone.") },
       ],
     },
     {
@@ -654,9 +650,10 @@ export function MorePage({
           section: "updates",
           icon: <Download className="size-4" />,
           title: t("Updates"),
-          detail: update?.installed ? `${t("Installed version")} ${update.installed}` : t("Check for a newer version. Nothing installs from here."),
+          value: update?.installed ? update.installed : undefined,
+          hint: update?.installed ? undefined : t("Check for a newer version. Nothing installs from here."),
         },
-        { section: "debug", icon: <Bug className="size-4" />, title: t("Debug"), detail: t("Logs and echo guard, if something sounds wrong.") },
+        { section: "debug", icon: <Bug className="size-4" />, title: t("Debug"), hint: t("Logs and echo guard, if something sounds wrong.") },
       ],
     },
   ];
@@ -664,7 +661,7 @@ export function MorePage({
   const visibleGroups = groups
     .map((group) => ({
       ...group,
-      rows: group.rows.filter((row) => !query || `${group.title} ${group.hint ?? ""} ${row.title} ${row.detail}`.toLowerCase().includes(query)),
+      rows: group.rows.filter((row) => !query || `${group.title} ${group.hint ?? ""} ${row.title} ${row.value ?? ""} ${row.hint ?? ""}`.toLowerCase().includes(query)),
     }))
     .filter((group) => group.rows.length > 0 || (group.extra && (!query || `${group.title} ${group.hint ?? ""}`.toLowerCase().includes(query))));
 
@@ -683,7 +680,7 @@ export function MorePage({
                 : t("Add xAI, OpenAI, or On device.")
           }
         />
-        <button type="button" className="flex h-14 items-center gap-1 text-sm text-muted-foreground" onClick={() => setSection("voice")}>
+        <button type="button" className="trail-value ml-auto flex h-14 items-center gap-1" onClick={() => setSection("voice")}>
           <span>{first ? t(providerLabel(first.provider)) : t("Off")}</span>
           <ChevronRight className="size-4" aria-hidden />
         </button>
@@ -722,7 +719,8 @@ export function MorePage({
                     key={row.section}
                     icon={row.icon}
                     title={row.title}
-                    detail={row.detail}
+                    value={row.value}
+                    hint={row.hint}
                     onClick={() => setSection(row.section)}
                   />
                 ))}
@@ -740,7 +738,7 @@ type SettingsFolder = {
   title: string;
   hint?: string;
   extra?: React.ReactNode;
-  rows: { section: Section; icon: React.ReactNode; title: string; detail: string }[];
+  rows: { section: Section; icon: React.ReactNode; title: string; value?: string; hint?: string }[];
 };
 
 function localeDetail(locale: string | undefined, t: (text: string) => string): string {
@@ -813,7 +811,7 @@ function MusicSettings({ settings, onChange }: { settings: Settings | null; onCh
 
   return (
     <div>
-      <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Default music player")}</h2>
+      <h2 className="screen-title">{t("Default music player")}</h2>
       <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
         {t("Only installed apps can be chosen. Files on this phone and Ask each time are always here.")}
       </p>
@@ -861,7 +859,7 @@ function UpdatesSettings({ installed, available }: { installed: string; availabl
   return (
     <div>
       <AppMark className="mb-4 w-16" alt="Grok Voice" />
-      <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Updates")}</h2>
+      <h2 className="screen-title">{t("Updates")}</h2>
       <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
         {t("When a newer version is published, a banner at the top of the app offers the download.")}{" "}
         {t("Nothing is installed from this screen.")}
@@ -902,7 +900,10 @@ function MemorySection() {
 
   return (
     <div className="space-y-4 pb-6">
-      <h2 className="text-2xl font-medium tracking-tight">{t("Memory")}</h2>
+      <header className="screen-head px-0 pb-0">
+        <h2 className="masthead text-foreground">{t("Memory")}</h2>
+        <div className="masthead-rule" />
+      </header>
       <p className="text-sm leading-6 text-muted-foreground">
         {t("On-device Talk reads these pinned facts and short notes from recent local sessions. Cloud Talk does not. Wiping this does not delete notes, People, Finance, or voice keys.")}
       </p>
@@ -994,7 +995,7 @@ function AccessSection() {
 
   return (
     <div className="space-y-4 pb-6">
-      <h2 className="text-2xl font-medium tracking-tight">{t("Phone access")}</h2>
+      <h2 className="screen-title">{t("Phone access")}</h2>
       <p className="text-sm leading-6 text-muted-foreground">
         {t("These are asked only when you turn them on. Notification access and Do Not Disturb open system settings. Call and text history is a separate permission and is not read until you allow it.")}
       </p>
@@ -1314,7 +1315,10 @@ function BackupPage() {
   return (
     <div className="space-y-6 pb-4 landscape:grid landscape:grid-cols-2 landscape:items-start landscape:gap-8 landscape:space-y-0">
       <section className="space-y-4">
-        <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
+        <header className="screen-head px-0 pb-0">
+          <h2 className="masthead text-foreground">{t("Backup")}</h2>
+          <div className="masthead-rule" />
+        </header>
         <p className="text-sm leading-6 text-muted-foreground">
           {t("A file of everything saved on this phone. A passphrase encrypts it and includes API keys. Without a passphrase, the file has no keys.")}
         </p>
@@ -1436,7 +1440,7 @@ function RestoreSummary({ report }: { report: RestoreReport }) {
   const t = useT();
   return (
     <div className="space-y-4 pb-4">
-      <h2 className="text-2xl font-medium tracking-tight">{t("Restored on this phone.")}</h2>
+      <h2 className="screen-title">{t("Restored on this phone.")}</h2>
       <BackupSummary preview={report} />
       <p className="text-sm leading-6 text-foreground">{t("Talk history and voice time on this phone stay as they are.")}</p>
       {report.errors.length > 0 && (
@@ -1563,20 +1567,27 @@ function listenBody(health: string, t: (text: string) => string): string {
 function MenuRow({
   icon,
   title,
-  detail,
+  value,
+  hint,
   onClick,
 }: {
   icon: React.ReactNode;
   title: string;
-  detail: string;
+  value?: string;
+  hint?: string;
   onClick: () => void;
 }) {
   return (
     <RowButton onClick={onClick} className="settings-row items-center py-0">
       <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">{icon}</span>
-      <p className="min-w-0 flex-1 truncate text-base text-foreground">{title}</p>
-      {detail ? <span className="max-w-[40%] truncate text-sm text-muted-foreground">{detail}</span> : null}
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 text-base text-foreground">{title}</span>
+          {value ? <span className="trail-value">{value}</span> : null}
+        </span>
+        {hint ? <span className="settings-hint">{hint}</span> : null}
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-[var(--text-secondary)]" />
     </RowButton>
   );
 }

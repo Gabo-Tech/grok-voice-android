@@ -106,8 +106,8 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                 aria-current={active ? "page" : undefined}
                 aria-label={t(label)}
                 className={cn(
-                  "flex min-h-12 w-full min-w-0 max-w-full flex-col items-center justify-center gap-1 px-0.5 py-1",
-                  active ? "text-foreground" : "text-muted-foreground",
+                  "nav-item flex min-h-12 w-full min-w-0 max-w-full flex-col items-center justify-center gap-1 px-0.5 py-1.5",
+                  active ? "text-foreground" : "nav-idle",
                 )}
               >
                 <span className="nav-pill">

@@ -225,10 +225,9 @@ export function FinanceOverview({
                 { id: "expense", label: t("Expenses"), color: "var(--negative)", amountMinor: expenses.amountMinor },
               ]}
               hidden={new Set()}
-              caption={t("Savings rate")}
               center={rate == null ? "—" : `${Math.round(rate * 1000) / 10}%`}
             />
-            <ul>
+            <ul className="savings-legend">
               <li className="flex min-h-12 flex-col justify-center gap-0.5">
                 <span className="flex items-center gap-2 whitespace-nowrap text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--positive)" }} />{t("Income")}</span>
                 <span className="whitespace-nowrap pl-4"><Amount total={income} display={display} book={book} nowMs={nowMs} /></span>
@@ -246,7 +245,6 @@ export function FinanceOverview({
       <section className="border-t border-[var(--line-soft)] pt-3" data-finance-panel="result">
         <h2 className="fin-kicker">{t("Net result")}</h2>
         <p className="fin-num mt-2 text-[15px]">{net == null ? "—" : formatMoney(net, display)}</p>
-        {rate != null ? <p className="fin-muted text-[13px] leading-5">{t("Savings rate")} {Math.round(rate * 1000) / 10}%</p> : null}
       </section>
     ),
     change: (

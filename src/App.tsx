@@ -94,7 +94,26 @@ export default function App() {
   useEffect(() => {
     const mark = () => {
       document.querySelectorAll<HTMLElement>(".m3-tabs, .fin-tabs").forEach((bar) => {
-        bar.toggleAttribute("data-overflow", bar.scrollWidth > bar.clientWidth + 1);
+        const sample = bar.querySelector("button");
+        const probe = document.createElement("span");
+        probe.style.position = "absolute";
+        probe.style.visibility = "hidden";
+        probe.style.whiteSpace = "nowrap";
+        probe.style.font = sample ? getComputedStyle(sample).font : "14px system-ui";
+        bar.appendChild(probe);
+        const buttons = [...bar.querySelectorAll("button")];
+        const widest = buttons.reduce((max, button) => {
+          probe.textContent = (button.textContent || "").trim();
+          return Math.max(max, probe.offsetWidth + 16);
+        }, 0);
+        probe.remove();
+        const count = Math.max(buttons.length, 1);
+        const fitsEqual = widest * count <= bar.clientWidth + 1;
+        bar.classList.toggle("tabs-equal", fitsEqual);
+        bar.toggleAttribute("data-overflow", !fitsEqual && bar.scrollWidth > bar.clientWidth + 1);
+        if (bar.classList.contains("fin-tabs")) {
+          document.documentElement.style.setProperty("--fin-tab-block", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+        }
       });
     };
     mark();
