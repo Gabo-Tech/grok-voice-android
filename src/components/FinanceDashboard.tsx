@@ -3,6 +3,7 @@ import { Info, Repeat } from "lucide-react";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { CombinedHeadline, StaticHeadline } from "@/components/CombinedTotal";
+import { Loader } from "@/components/Loader";
 import {
   addDays,
   addMonths,
@@ -268,6 +269,7 @@ export function FinanceDashboard({
 
   return (
     <div className="fin-stack w-full min-w-0 space-y-2" data-finance-place={place}>
+      {finance.refreshing ? <Loader size="block" label={t("Checking rates")} /> : null}
       {panels.includes("net-worth") ? (
         <section className="fin-panel fin-tight" data-finance-panel="net-worth">
           <h2 className="fin-kicker">{t("Net worth")}</h2>
@@ -275,7 +277,7 @@ export function FinanceDashboard({
           {worthShown.length === 0 ? (
             <p className="mt-3 text-base">{t("No balances stated yet")}</p>
           ) : (
-            <CombinedHeadline parts={worthShown} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" />
+            <CombinedHeadline parts={worthShown} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-5xl" />
           )}
           {net.unpriced.length > 0 ? (
             <button type="button" className="fin-chip mt-2" onClick={onRefreshPrices}>
@@ -301,11 +303,11 @@ export function FinanceDashboard({
           <p className="fin-muted mt-2 text-[13px] leading-5">{t("Bills from cash or a bank, and card payments that are due.")}</p>
           <button type="button" className="mt-3 block min-h-11 w-full text-left" onClick={openExpenses}>
             <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Due")}</p>
-            {comingOut.length === 0 ? <p className="fin-muted mt-1 text-[13px]">{t("Nothing due in the next 30 days.")}</p> : <CombinedHeadline parts={comingOutParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="out" />}
+            {comingOut.length === 0 ? <p className="fin-muted mt-1 text-[13px]">{t("Nothing due in the next 30 days.")}</p> : <CombinedHeadline parts={comingOutParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-3xl" tone="out" />}
           </button>
           <button type="button" className="mt-2 block min-h-11 w-full text-left" onClick={openIncome}>
             <p className="text-[13px] font-extrabold tracking-wide uppercase">{t("Coming in")}</p>
-            {comingIn.length === 0 ? <p className="fin-muted mt-1 text-[13px]">{t("Nothing due in the next 30 days.")}</p> : <CombinedHeadline parts={listed(comingIn)} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="in" />}
+            {comingIn.length === 0 ? <p className="fin-muted mt-1 text-[13px]">{t("Nothing due in the next 30 days.")}</p> : <CombinedHeadline parts={listed(comingIn)} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-3xl" tone="in" />}
           </button>
         </section>
       ) : null}
@@ -317,12 +319,12 @@ export function FinanceDashboard({
           {spentParts.length === 0 && paidParts.length === 0 ? (
             <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
           ) : spentParts.length > 0 ? (
-            <CombinedHeadline parts={spentParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="out" />
+            <CombinedHeadline parts={spentParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-5xl" tone="out" />
           ) : null}
           {paidParts.length > 0 ? (
             <div className="mt-4 border-t border-border pt-3">
               <p className="text-sm font-medium">{t("Payments")}</p>
-              <CombinedHeadline parts={paidParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-2xl" tone="out" />
+              <CombinedHeadline parts={paidParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-2xl" tone="out" />
             </div>
           ) : null}
         </section>
@@ -346,7 +348,7 @@ export function FinanceDashboard({
           book={book}
           display={display}
           nowMs={nowMs}
-          busy={finance.busy}
+          busy={finance.refreshing}
           dense={place === "plan"}
           today={today}
           colors={Object.fromEntries(finance.snapshot.categories.map((row) => [row.name, resolveColor(finance.snapshot.entityColors, row.kind === "income" ? "income" : "category", row.name, row.color)]))}
@@ -360,7 +362,7 @@ export function FinanceDashboard({
           {earnedParts.length === 0 ? (
             <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
           ) : (
-            <CombinedHeadline parts={earnedParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="in" />
+            <CombinedHeadline parts={earnedParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-5xl" tone="in" />
           )}
         </section>
       ) : null}
@@ -386,7 +388,7 @@ export function FinanceDashboard({
           book={book}
           display={display}
           nowMs={nowMs}
-          busy={finance.busy}
+          busy={finance.refreshing}
         />
       ) : null}
 
@@ -409,7 +411,7 @@ export function FinanceDashboard({
           book={book}
           display={display}
           nowMs={nowMs}
-          busy={finance.busy}
+          busy={finance.refreshing}
         />
       ) : null}
 
@@ -429,7 +431,7 @@ export function FinanceDashboard({
             <p className="mt-4 text-base">{t("Nothing recorded this month")}</p>
           ) : (
             <>
-              <CombinedHeadline parts={flowParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" tone="auto" />
+              <CombinedHeadline parts={flowParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-5xl" tone="auto" />
               {heads.previous.state === "ready" ? (
                 <p className="fin-muted mt-2 text-sm">{fill("Last month left {amount}", { amount: formatMoney(heads.previous.amountMinor, heads.previous.currency) })}</p>
               ) : null}
@@ -447,7 +449,7 @@ export function FinanceDashboard({
             {comingOut.length === 0 ? (
               <p className="fin-muted mt-1 text-sm">{t("Nothing planned in this window")}</p>
             ) : (
-              <CombinedHeadline parts={comingOutParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="out" />
+              <CombinedHeadline parts={comingOutParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-3xl" tone="out" />
             )}
           </button>
           <button type="button" className="mt-4 block w-full text-left" onClick={openIncome}>
@@ -455,7 +457,7 @@ export function FinanceDashboard({
             {comingIn.length === 0 ? (
               <p className="fin-muted mt-1 text-sm">{t("Nothing planned in this window")}</p>
             ) : (
-              <CombinedHeadline parts={listed(comingIn)} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="in" />
+              <CombinedHeadline parts={listed(comingIn)} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-3xl" tone="in" />
             )}
           </button>
           {heads.plan.state !== "empty" ? (

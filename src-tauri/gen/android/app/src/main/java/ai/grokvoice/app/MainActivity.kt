@@ -1,5 +1,6 @@
 package ai.grokvoice.app
 
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
@@ -227,6 +228,14 @@ class MainActivity : TauriActivity() {
     webView.setLayerType(View.LAYER_TYPE_NONE, null)
     webView.addJavascriptInterface(BackBridge(this), "GrokNav")
     webView.addJavascriptInterface(ThemeBridge(this), "GrokTheme")
+    webView.addJavascriptInterface(MotionBridge(), "GrokMotion")
+    publishMotion()
+  }
+
+  private fun publishMotion() {
+    val on = if (ValueAnimator.areAnimatorsEnabled()) "on" else "off"
+    val root = window?.decorView ?: return
+    dispatchJs(root, "document.documentElement.dataset.animator='$on'")
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {
@@ -260,6 +269,7 @@ class MainActivity : TauriActivity() {
     VoiceListenerService.onAppForeground(this)
     VoiceListenerService.cancelAlert(this)
     resumeWebViews()
+    publishMotion()
     // A living process can outlast the activity. If the window was destroyed
     // with the task, open it again without restarting wake enrollment.
     if (RustBridge.engineAliveSafe()) {
@@ -325,4 +335,9 @@ private class ThemeBridge(private val activity: MainActivity) {
   fun setCanvas(hex: String) {
     activity.paintCanvas(hex)
   }
+}
+
+private class MotionBridge {
+  @JavascriptInterface
+  fun animationsEnabled(): Boolean = ValueAnimator.areAnimatorsEnabled()
 }

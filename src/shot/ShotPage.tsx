@@ -200,6 +200,7 @@ function planFinance(empty: boolean): FinanceState {
     snapshot,
     error: null,
     busy: false,
+    refreshing: false,
     inApp: false,
     load: noop,
     saveAccount: noop,

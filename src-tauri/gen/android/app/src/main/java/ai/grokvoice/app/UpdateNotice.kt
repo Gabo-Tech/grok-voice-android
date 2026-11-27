@@ -37,7 +37,7 @@ object UpdateNotice {
     val action = pendingView(context, url, NOTICE_ID + 1) ?: return
     val text = localized.getString(R.string.update_text, safeVersion)
     val builder = NotificationCompat.Builder(context, channelId)
-      .setSmallIcon(android.R.drawable.stat_sys_download_done)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(localized.getString(R.string.update_title))
       .setContentText(text)
       .setStyle(NotificationCompat.BigTextStyle().bigText(text))

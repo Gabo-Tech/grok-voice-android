@@ -503,7 +503,7 @@ object AlarmSounds {
     val open = contentIntent(context, activeId, alarmTitle, Choice(kind, soundRef, ""))
     val stop = stopIntent(context, activeId)
     val note = Notification.Builder(context, channel)
-      .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(alarmTitle.ifBlank { "Alarm" })
       .setContentText(message)
       .setStyle(Notification.BigTextStyle().bigText(message))
@@ -527,7 +527,7 @@ object AlarmSounds {
     val channel = channelId.ifBlank { "grok_alarm_sound" }
     ensureSilentChannel(localized, channel)
     return Notification.Builder(context, channel)
-      .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(alarmTitle.ifBlank { "Alarm" })
       .setContentText(status.ifBlank { localized.getString(R.string.alarm_file_playing) })
       .setOngoing(true)

@@ -27,7 +27,7 @@ object BudgetNotice {
     )
     val id = NOTICE_BASE + (safeTitle.hashCode() and 0xff)
     val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-      .setSmallIcon(android.R.drawable.stat_notify_error)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(safeTitle)
       .setContentText(safeBody)
       .setStyle(NotificationCompat.BigTextStyle().bigText(safeBody))

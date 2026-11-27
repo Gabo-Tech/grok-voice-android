@@ -2,6 +2,7 @@ import type { RateBook } from "@/lib/financeMath";
 import { headlineOf, nativeParts, type Headline, type MoneyPart } from "@/lib/financeMath";
 import { formatMoney, moneyParts } from "@/lib/money";
 import { fill, useT } from "@/lib/i18n";
+import { Loader } from "@/components/Loader";
 import { cn } from "@/lib/utils";
 
 /** Quiet line under a combined amount. A stale book is labeled. This is not a rate list. */
@@ -41,7 +42,10 @@ export function CombinedHeadline({
     const codes = head.missing.join(", ");
     return (
       <div className="mt-4 max-w-full">
-        <p className="text-base leading-6 break-words">{busy ? fill("Checking the rate for {codes}.", { codes }) : fill("Combined total needs a rate for {codes}.", { codes })}</p>
+        <div className="flex items-start gap-2">
+          {busy ? <Loader size="inline" quiet label={fill("Checking the rate for {codes}.", { codes })} /> : null}
+          <p className="text-base leading-6 break-words">{busy ? fill("Checking the rate for {codes}.", { codes }) : fill("Combined total needs a rate for {codes}.", { codes })}</p>
+        </div>
         {busy ? null : <p className="fin-muted mt-2 text-sm leading-5">{t("Set a manual rate in Settings.")}</p>}
         <NativeAside parts={parts} display={display} />
       </div>

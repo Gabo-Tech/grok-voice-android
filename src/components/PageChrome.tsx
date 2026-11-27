@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ChevronLeft } from "lucide-react";
+import { AppMark } from "@/components/AppMark";
 import { Button } from "@/components/ui/button";
 import { setBarAction } from "@/lib/history";
 import { useT } from "@/lib/i18n";
@@ -10,6 +11,7 @@ export function PageChrome({
   subtitle,
   onAdd,
   addLabel,
+  mark = false,
   active = true,
   children,
   className,
@@ -18,6 +20,7 @@ export function PageChrome({
   subtitle?: string;
   onAdd?: () => void;
   addLabel?: string;
+  mark?: boolean;
   /** Only the visible screen owns the bottom add action. */
   active?: boolean;
   children: React.ReactNode;
@@ -34,10 +37,13 @@ export function PageChrome({
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       <header className="shrink-0 px-1 pb-4 pt-1">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
+          {mark ? <AppMark className="w-14 shrink-0 landscape:w-12" alt="Grok Voice" /> : null}
+          <div className="min-w-0">
           <h1 className="masthead text-[1.85rem] text-foreground">{title}</h1>
           <div className="masthead-rule" />
           {subtitle && <p className="page-sub mt-2 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
+          </div>
         </div>
       </header>
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-4">{children}</div>

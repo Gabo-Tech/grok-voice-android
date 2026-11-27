@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.png" alt="Grok Voice" width="128" />
+</p>
+
 # Grok Voice
 
 **Website:** [gabo-tech.github.io/grok-voice-android](https://gabo-tech.github.io/grok-voice-android/)

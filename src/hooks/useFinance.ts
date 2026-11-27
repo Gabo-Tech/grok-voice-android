@@ -37,6 +37,7 @@ export function useFinance() {
   const [snapshot, setSnapshot] = useState<FinanceSnapshot>(() => (previewSample() ? financeSample(previewSample() || "CHF") : emptyFinance(phoneLocale())));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(() => {
     if (!inApp) return;
@@ -52,7 +53,8 @@ export function useFinance() {
   useEffect(() => {
     load();
     if (!inApp) return;
-    void api.refreshFinanceRates(false).then((next) => setSnapshot(next)).catch(() => {});
+    setRefreshing(true);
+    void api.refreshFinanceRates(false).then((next) => setSnapshot(next)).catch(() => {}).finally(() => setRefreshing(false));
     let unlisten: (() => void) | undefined;
     void listen("voice://finance", () => load()).then((fn) => {
       unlisten = fn;
@@ -245,6 +247,7 @@ export function useFinance() {
         return reason;
       }
       setBusy(true);
+      setRefreshing(true);
       try {
         const next = await api.refreshHoldingPrice(id);
         setSnapshot(next);
@@ -262,6 +265,7 @@ export function useFinance() {
         return reason;
       } finally {
         setBusy(false);
+        setRefreshing(false);
       }
     },
     [inApp, t],
@@ -278,6 +282,7 @@ export function useFinance() {
   const refreshRates = useCallback((force = false) => {
     if (!inApp) return;
     setBusy(true);
+    setRefreshing(true);
     void api
       .refreshFinanceRates(force)
       .then((next) => {
@@ -285,12 +290,16 @@ export function useFinance() {
         setError(null);
       })
       .catch((err) => setError(errorText(err)))
-      .finally(() => setBusy(false));
+      .finally(() => {
+        setBusy(false);
+        setRefreshing(false);
+      });
   }, [inApp]);
 
   const refreshPrices = useCallback(async () => {
     if (!inApp) return t("Refresh prices");
     setBusy(true);
+    setRefreshing(true);
     try {
       const next = await api.refreshFinanceRates(true);
       setSnapshot(next);
@@ -307,6 +316,7 @@ export function useFinance() {
       return reason;
     } finally {
       setBusy(false);
+      setRefreshing(false);
     }
   }, [inApp, t]);
 
@@ -358,6 +368,7 @@ export function useFinance() {
     snapshot,
     error,
     busy,
+    refreshing,
     inApp,
     load,
     saveAccount,

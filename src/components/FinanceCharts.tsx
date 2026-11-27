@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ReactElement } from "react";
 import type { FinanceAccount, FinanceCategory, FinanceFx, FinancePrices, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { todayIso } from "@/components/FinanceDashboard";
 import { ChartCard, Donut, Legend, LineChart, monthName, useChartVisibility, type LegendRow } from "@/components/ChartKit";
+import { Loader } from "@/components/Loader";
 import { ChartColorMenu } from "@/components/ColorSheet";
 import { resolveColor, type EntityColor } from "@/lib/entityColor";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
@@ -369,7 +370,10 @@ function TrendCard({
     return (
       <ChartCard title={title}>
         {period}
-        <p className="text-[15px] leading-5">{busy ? fill("Checking the rate for {codes}.", { codes: missing.join(", ") }) : fill("Combined total needs a rate for {codes}.", { codes: missing.join(", ") })}</p>
+        <div className="flex items-start gap-2">
+          {busy ? <Loader size="inline" quiet label={fill("Checking the rate for {codes}.", { codes: missing.join(", ") })} /> : null}
+          <p className="text-[15px] leading-5">{busy ? fill("Checking the rate for {codes}.", { codes: missing.join(", ") }) : fill("Combined total needs a rate for {codes}.", { codes: missing.join(", ") })}</p>
+        </div>
         {onOpenSettings && !busy ? (
           <button type="button" className="fin-textbtn mt-2" onClick={onOpenSettings}>{t("Settings")}</button>
         ) : null}

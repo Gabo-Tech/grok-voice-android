@@ -376,7 +376,7 @@ object HandOff {
     nm.notify(
       4300 + (kind.hashCode() and 0xff),
       builder
-        .setSmallIcon(android.R.drawable.ic_menu_send)
+        .setSmallIcon(R.drawable.ic_stat_grok)
         .setContentTitle(localized.getString(titleId))
         .setContentText(localized.getString(R.string.handoff_open_text))
         .setContentIntent(pending)

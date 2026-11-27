@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { AudioLines, Loader2, Mic, Square } from "lucide-react";
+import { AudioLines, Mic, Square } from "lucide-react";
+import { Loader } from "@/components/Loader";
 import type { Level, Phase } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
@@ -30,8 +31,8 @@ export function GlowRing({
   const live = LIVE.includes(phase);
   const raw = phase === "speaking" ? level?.out : phase === "idle" ? 0 : level?.mic;
   const amp = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
-  const Icon =
-    phase === "connecting" || phase === "thinking" ? Loader2 : phase === "speaking" ? AudioLines : live ? Square : Mic;
+  const waiting = phase === "connecting" || phase === "thinking";
+  const Icon = phase === "speaking" ? AudioLines : live ? Square : Mic;
 
   return (
     <div className="flex shrink-0 flex-col items-center gap-3 px-1 pb-1">
@@ -51,7 +52,11 @@ export function GlowRing({
         style={{ "--ink": live ? "#f2f2f2" : "#b5b5b5", width: "5.75rem", height: "5.75rem" } as CSSProperties}
       >
         <span className="mark-fill rounded-full" style={{ opacity: 0.12 + amp * 0.7 }} />
-        <Icon className={`relative size-6 ${phase === "connecting" || phase === "thinking" ? "animate-spin" : ""}`} strokeWidth={1.25} />
+        {waiting ? (
+          <Loader size="inline" quiet label={t(phase === "thinking" ? "Thinking" : "Connecting")} />
+        ) : (
+          <Icon className="relative size-6" strokeWidth={1.25} />
+        )}
       </button>
     </div>
   );

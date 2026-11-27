@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Check, ChevronLeft, ChevronRight, ClipboardPaste, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ClipboardPaste, Eye, EyeOff } from "lucide-react";
+import { AppMark } from "@/components/AppMark";
+import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, errorText, type AuthStatus, type OfflinePlan, type PackProgress, type PermissionStatus, type PlanPiece } from "@/lib/api";
@@ -501,11 +503,7 @@ export function Onboarding({
       {cellular ? <p className="text-foreground">{t("You appear to be on mobile data. Wi-Fi is a better way to download this.")}</p> : null}
       <p className="text-base text-foreground">{fill("The first download is about {size}. It is Moonshine, SmolLM2, and Phonon.", { size: formatBytes(totalBytes || advice.storageBytes) })}</p>
       <PackList pieces={pieces} ready={ready} />
-      {totalBytes > 0 ? (
-        <div className="h-2 bg-border" role="progressbar" aria-valuenow={ratio} aria-valuemin={0} aria-valuemax={100}>
-          <div className="h-full bg-foreground" style={{ width: `${ratio}%` }} />
-        </div>
-      ) : null}
+      {totalBytes > 0 ? <Loader size="block" value={ratio} label={t("Downloading")} /> : null}
       {failed ? (
         <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void download()}>
           {t("Retry download")}
@@ -582,6 +580,7 @@ export function Onboarding({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-5 landscape:flex-row landscape:gap-8 landscape:px-6 landscape:py-4" data-setup={screen}>
       <header className="mb-5 min-w-0 shrink-0 landscape:mb-0 landscape:flex landscape:max-h-full landscape:w-52 landscape:max-w-[42%] landscape:flex-col landscape:overflow-auto">
+        <AppMark className="mb-4 w-16 landscape:mb-3 landscape:w-14" alt="" />
         <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
         <h1 className="masthead mt-2 text-3xl break-words landscape:text-2xl">Grok Voice</h1>
         <ol className="setup-steps mt-4 landscape:mt-6">
@@ -800,7 +799,7 @@ export function Onboarding({
               }
               onClick={() => void next()}
             >
-              {busy ? <Loader2 className="animate-spin" /> : <ChevronRight />}
+              {busy ? <Loader size="inline" quiet label={primary} /> : <ChevronRight />}
               {primary}
             </Button>
           </div>

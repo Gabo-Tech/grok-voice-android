@@ -170,7 +170,7 @@ object LocalMusic {
     val style = Notification.MediaStyle().setShowActionsInCompactView(0, 1)
     session?.sessionToken?.let { style.setMediaSession(it) }
     return Notification.Builder(context, CHANNEL)
-      .setSmallIcon(android.R.drawable.ic_media_play)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(title)
       .setContentText(item?.artist.orEmpty())
       .setContentIntent(open)

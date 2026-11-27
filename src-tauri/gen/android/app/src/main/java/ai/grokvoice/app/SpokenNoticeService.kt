@@ -93,7 +93,7 @@ class SpokenNoticeService : Service() {
       PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
     return Notification.Builder(this, channelId)
-      .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(title)
       .setContentText(body)
       .setContentIntent(open)

@@ -204,7 +204,7 @@ export function FinanceOverview({
       <section data-finance-panel="hero">
         <h2 className="fin-kicker">{t("Net worth")}</h2>
         <p className="fin-muted mt-1 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
-        {worthParts.length ? <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-5xl" /> : <p className="mt-3 text-base">{t("No balances stated yet")}</p>}
+        {worthParts.length ? <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-5xl" /> : <p className="mt-3 text-base">{t("No balances stated yet")}</p>}
         <button type="button" className="mt-3 flex min-h-11 w-full items-center justify-between gap-3 text-left" onClick={() => onFocus("owned")}>
           <span className="text-[15px]">{t("Income")}</span>
           <Amount total={income} display={display} book={book} nowMs={nowMs} />
@@ -239,7 +239,7 @@ export function FinanceOverview({
       <section className="border-t border-[var(--line-soft)] pt-3" data-finance-panel="next">
         <h2 className="fin-kicker">{t("Next 30 days")}</h2>
         <p className="fin-muted mt-1 text-[13px] leading-5">{t("Bills from cash or a bank, and card payments that are due.")}</p>
-        {dueParts.length ? <CombinedHeadline parts={dueParts} display={display} book={book} nowMs={nowMs} busy={finance.busy} size="text-3xl" tone="out" /> : <p className="mt-2 text-[15px]">{t("Nothing due in the next 30 days.")}</p>}
+        {dueParts.length ? <CombinedHeadline parts={dueParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-3xl" tone="out" /> : <p className="mt-2 text-[15px]">{t("Nothing due in the next 30 days.")}</p>}
         <ul className="mt-2">
           {coming.slice(0, 6).map((row) => (
             <li key={`${row.id}-${row.date}`} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--line-soft)]">

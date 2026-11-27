@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Loader2 } from "lucide-react";
 import { AssistantView } from "@/components/AssistantView";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { BottomNav, useThumbBar, type AppTab } from "@/components/BottomNav";
 import { CalendarPage } from "@/components/CalendarPage";
 import { FinancePage } from "@/components/FinancePage";
 import { FlowShot } from "@/components/FlowShot";
+import { Loader } from "@/components/Loader";
+import { LoaderShot } from "@/components/LoaderShot";
 import { MorePage, type Section } from "@/components/MorePage";
 import { NotesPage } from "@/components/NotesPage";
 import { Onboarding } from "@/components/Onboarding";
@@ -16,7 +17,7 @@ import { useAgenda } from "@/hooks/useAgenda";
 import { useFinance } from "@/hooks/useFinance";
 import { useVoice } from "@/hooks/useVoice";
 import { api, errorText, type AuthStatus, type Settings, type WakewordStatus } from "@/lib/api";
-import { applyAppearance, choiceFromSettings, prefersLight, readStoredAppearance, rememberAppearance, rememberCustomTheme, type AppearanceChoice } from "@/lib/appearance";
+import { applyAppearance, choiceFromSettings, normalizeAppearance, prefersLight, readStoredAppearance, rememberAppearance, rememberCustomTheme, type AppearanceChoice } from "@/lib/appearance";
 import { popUntil, pushStep } from "@/lib/history";
 import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -89,6 +90,16 @@ export default function App() {
   const t = useT();
   const thumb = useThumbBar();
   const [appearance, setAppearance] = useState<AppearanceChoice>(() => readStoredAppearance());
+
+  useEffect(() => {
+    if (inApp || typeof window === "undefined") return;
+    const asked = new URLSearchParams(window.location.search).get("appearance");
+    if (!asked) return;
+    const choice = normalizeAppearance(asked);
+    rememberAppearance(choice);
+    setAppearance(choice);
+    applyAppearance(choice, prefersLight());
+  }, [inApp]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: light)");
@@ -180,6 +191,10 @@ export default function App() {
     return <FlowShot />;
   }
 
+  const previewSearch = !inApp && typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const loaderShot = previewSearch?.get("loadershot");
+  if (loaderShot) return <LoaderShot which={loaderShot} />;
+
   if (bootError) {
     return (
       <main className="safe-area grid h-full place-items-center p-6 text-center">
@@ -194,10 +209,10 @@ export default function App() {
     );
   }
 
-  if (!auth || onboarded === null || setupStep === null) {
+  if (previewSearch?.has("boot") || !auth || onboarded === null || setupStep === null) {
     return (
-      <main className="grid h-full place-items-center">
-        <Loader2 className="size-6 animate-spin text-primary" />
+      <main className="grid h-full min-h-0">
+        <Loader size="full" label={t("Opening Grok Voice")} />
       </main>
     );
   }

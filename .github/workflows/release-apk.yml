@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config curl unzip bzip2
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config curl unzip bzip2 python3-pil
 
       - name: Set up Java
         uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
@@ -250,6 +250,33 @@ jobs:
             echo "libptts_ffi.so is missing"
             exit 1
           fi
+
+          python3 - "$out" << 'PY'
+          import sys, zipfile, io
+          from PIL import Image
+          apk = zipfile.ZipFile(sys.argv[1])
+          names = [n for n in apk.namelist() if "ic_launcher" in n and n.endswith((".png", ".webp"))]
+          if not names:
+              sys.exit("APK has no ic_launcher images")
+          needed = ["mipmap-mdpi", "mipmap-hdpi", "mipmap-xhdpi", "mipmap-xxhdpi", "mipmap-xxxhdpi"]
+          for density in needed:
+              for kind in ("ic_launcher.png", "ic_launcher_round.png", "ic_launcher_foreground.png", "ic_launcher_monochrome.png"):
+                  hits = [n for n in names if density in n and n.endswith(kind)]
+                  if not hits:
+                      sys.exit(f"APK missing {density}/{kind}")
+          def center_luma(path):
+              im = Image.open(io.BytesIO(apk.read(path))).convert("RGBA")
+              w, h = im.size
+              crop = im.crop((w//2 - w//10, h//2 - h//10, w//2 + w//10, h//2 + h//10))
+              px = list(crop.getdata())
+              return sum((r+g+b)/3 for r, g, b, _a in px) / len(px)
+          launcher = next(n for n in names if n.endswith("mipmap-xxxhdpi/ic_launcher.png") or (n.endswith("ic_launcher.png") and "xxxhdpi" in n))
+          luma = center_luma(launcher)
+          print(f"launcher {launcher} center luma {luma:.1f}")
+          if luma > 140:
+              sys.exit("launcher center is still the old white square")
+          print("mipmaps match the new robot icon")
+          PY
 
           size="$(stat -c%s "$out")"
           hash="$(sha256sum "$out" | awk '{print $1}')"

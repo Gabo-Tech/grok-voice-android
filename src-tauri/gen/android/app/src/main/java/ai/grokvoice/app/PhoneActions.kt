@@ -191,7 +191,7 @@ object PhoneActions {
       @Suppress("DEPRECATION")
       Notification.Builder(context)
     }
-      .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(shownTitle)
       .setContentText(text)
       .setStyle(Notification.BigTextStyle().bigText(text))
