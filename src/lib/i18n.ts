@@ -8,6 +8,8 @@ export type LocaleId = "en" | "es" | "de" | "pt" | "ca-ES-valencia";
 const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   es: {
     Agenda: "Agenda",
+    "You": "Tú",
+    "Calendar, reminders, alarms, and countdowns.": "Calendario, recordatorios, alarmas y cuentas atrás.",
     "Money flow": "Flujo de dinero",
     Provider: "Proveedor",
     Allow: "Permitir",
@@ -1362,6 +1364,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   },
   de: {
     Agenda: "Termine",
+    "You": "Du",
+    "Calendar, reminders, alarms, and countdowns.": "Kalender, Erinnerungen, Wecker und Timer.",
     "Money flow": "Geldfluss",
     Provider: "Anbieter",
     Allow: "Erlauben",
@@ -2716,6 +2720,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   },
   pt: {
     Agenda: "Agenda",
+    "You": "Você",
+    "Calendar, reminders, alarms, and countdowns.": "Calendário, lembretes, alarmes e contagens.",
     "Money flow": "Fluxo de dinheiro",
     Provider: "Provedor",
     Allow: "Permitir",
@@ -4070,6 +4076,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   },
   "ca-ES-valencia": {
     Agenda: "Agenda",
+    "You": "Tu",
+    "Calendar, reminders, alarms, and countdowns.": "Calendari, recordatoris, alarmes i comptes enrere.",
     "Money flow": "Flux de diners",
     Provider: "Proveïdor",
     Allow: "Permet",

@@ -693,10 +693,7 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageChrome title={t("People")} onAdd={openCreate} addLabel={t("Add person")} active={active && screen === "list"}>
-        <p className="mb-6 px-1 text-sm leading-6 text-muted-foreground">
-          {t("Nicknames and how you reach someone. Phone numbers and email still come from Contacts.")}
-        </p>
+      <PageChrome mark title={t("People")} info={<InfoTip label={t("People")} text={t("Nicknames and how you reach someone. Phone numbers and email still come from Contacts.")} />} onAdd={openCreate} addLabel={t("Add person")} active={active && screen === "list"}>
         {(people.length > 0 || query) && (
         <div className="mb-6">
           <Field label={t("Search")}>

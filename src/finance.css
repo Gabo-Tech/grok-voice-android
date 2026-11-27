@@ -107,12 +107,13 @@
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--surface-0, var(--fin-canvas));
   border-bottom: 1px solid var(--line-soft, var(--fin-line));
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: 6;
 }
 
 .finance .fin-tab-indicator {
@@ -126,7 +127,8 @@
 }
 
 .finance .fin-swipe {
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   width: 100%;
   max-width: 100%;
   touch-action: pan-y;
@@ -694,6 +696,10 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--surface-0, var(--fin-canvas));
 }
 
 .finance .fin-tabs::-webkit-scrollbar {
@@ -701,8 +707,9 @@
 }
 
 .finance .fin-tab {
-  flex: 0 0 auto;
-  max-width: max-content;
+  flex: 1 1 0;
+  min-width: max-content;
+  max-width: none;
   white-space: nowrap;
   overflow: visible;
   text-overflow: clip;
@@ -735,18 +742,33 @@
 }
 
 .finance .fin-tabs {
-  position: relative;
+  position: sticky;
+  top: 0;
   gap: 0;
   min-height: var(--touch);
+  background: var(--surface-0, var(--fin-canvas));
 }
 
 .finance .fin-tab {
   min-height: var(--touch);
+  justify-content: center;
   padding: 0 8px;
+  color: var(--text-secondary);
   font-size: var(--type-label);
   font-weight: 500;
+  text-align: center;
   scroll-snap-align: start;
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-width: max-content;
+  max-width: none;
+}
+
+.finance .filter-row {
+  position: relative;
+  z-index: 4;
+  margin-top: 12px;
+  scroll-margin-top: 72px;
+  background: var(--surface-0, var(--fin-canvas));
 }
 
 .finance .fin-tab[aria-selected="true"] {

@@ -4,6 +4,7 @@ import { Info, Keyboard, Mic, Send, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { AppMark } from "@/components/AppMark";
 import { InfoTip } from "@/components/ds/InfoTip";
 import { GlowRing } from "@/components/GlowRing";
 import { Presence, presencePose, previewPhase } from "@/components/Presence";
@@ -168,10 +169,18 @@ export function AssistantView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className={cn("talk-head shrink-0 px-1", focus && "talk-head-off")}>
+      <header className={cn("talk-head screen-head shrink-0", focus && "talk-head-off")}>
         <div>
-          <div className="flex items-start justify-between gap-3 pb-3">
-            <h1 className="masthead text-[1.85rem]">{t("Talk")}</h1>
+          <div className="screen-head-row">
+            <AppMark className="screen-mark" alt="" />
+            <div className="title-with-info min-w-0 flex-1">
+              <h1 data-fit="title" className="masthead">{t("Talk")}</h1>
+              <InfoTip label={t("Talk")}>
+                <p>{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
+                <p>{t("Hearing, the model, the voice, and what is tried next.")}</p>
+                <p>{t("Open voice and AI")}</p>
+              </InfoTip>
+            </div>
             {clock ? <p className="stamp">{clock}</p> : null}
           </div>
           <div className="masthead-rule" />
@@ -245,14 +254,7 @@ export function AssistantView({
         {shownRows.length === 0 ? (
           <div className="talk-empty">
             <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
-            <div className="title-line">
-              <p className="text-base text-foreground">{t("What should we do?")}</p>
-              <InfoTip label={t("Talk")}>
-                <p>{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
-                <p>{t("Hearing, the model, the voice, and what is tried next.")}</p>
-                <p>{t("Open voice and AI")}</p>
-              </InfoTip>
-            </div>
+            <p className="text-base text-foreground">{t("What should we do?")}</p>
             <div className="talk-chips flex max-w-full flex-wrap justify-center gap-2">
               {["What's on today?", "Add reminder", "How much did I spend?"].map((line) => (
                 <button key={line} type="button" className="period-chip" onClick={() => void voice.sendText(t(line))}>
@@ -367,8 +369,8 @@ export function AssistantView({
             void voice.sendText(text);
           }}
         >
-          <button type="button" className="icon-hit" aria-label={t("Start voice session")} onClick={() => setTyping(false)}>
-            <Mic className="size-5" strokeWidth={1.5} />
+          <button type="button" className="talk-side" aria-label={t("Start voice session")} onClick={() => setTyping(false)}>
+            <Mic className="size-6" strokeWidth={1.5} />
           </button>
           <textarea
             ref={draftBox}
@@ -383,19 +385,19 @@ export function AssistantView({
             type="submit"
             disabled={voice.sending || draft.trim().length === 0}
             aria-label={t("Send")}
-            className="grid size-12 shrink-0 place-items-center bg-foreground text-background disabled:opacity-40"
+            className="talk-side talk-side-solid disabled:opacity-40"
           >
             <Send className="size-5" strokeWidth={1.5} />
           </button>
         </form>
       ) : (
         <div className="talk-dock mt-auto shrink-0">
-          <button type="button" className="icon-hit" aria-label={t("Type a message")} onClick={() => setTyping(true)}>
-            <Keyboard className="size-5" strokeWidth={1.5} />
+          <button type="button" className="talk-side" aria-label={t("Type a message")} onClick={() => setTyping(true)}>
+            <Keyboard className="size-6" strokeWidth={1.5} />
           </button>
           <GlowRing phase={shownPhase} level={voice.level} onPress={() => void voice.toggleSession()} />
           {shownRows.length === 0 ? (
-            <span className="icon-hit" aria-hidden />
+            <span className="talk-side talk-side-spacer" aria-hidden />
           ) : (
             <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
           )}

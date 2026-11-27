@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { AppMark } from "@/components/AppMark";
 import { CalendarPage } from "@/components/CalendarPage";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { RemindersPage } from "@/components/RemindersPage";
 import type { AgendaState } from "@/hooks/useAgenda";
 import { useT } from "@/lib/i18n";
@@ -36,8 +38,14 @@ export function AgendaPage({ agenda, active = true }: { agenda: AgendaState; act
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="shrink-0 px-1 pb-2 pt-1">
-        <h1 className="masthead text-[1.85rem] text-foreground">{t("Agenda")}</h1>
+      <header className="screen-head shrink-0">
+        <div className="screen-head-row">
+          <AppMark className="screen-mark" alt="" />
+          <div className="title-with-info min-w-0 flex-1">
+            <h1 data-fit="title" className="masthead text-foreground">{t("Agenda")}</h1>
+            <InfoTip label={t("Agenda")} text={t("Calendar, reminders, alarms, and countdowns.")} />
+          </div>
+        </div>
         <div className="masthead-rule" />
       </header>
       <div role="tablist" aria-label={t("Agenda")} className="m3-tabs mb-3 shrink-0">

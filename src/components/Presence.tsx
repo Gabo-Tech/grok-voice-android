@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { Info } from "lucide-react";
 import { GrokMark } from "@/components/GrokMark";
 import type { Level, Phase } from "@/lib/api";
 import { useLightScheme, useMotionAllowed } from "@/lib/motion";
@@ -57,9 +58,11 @@ export function Presence({
       data-level={live ? "live" : "loop"}
       style={live ? ({ "--b1": bars[0], "--b2": bars[1], "--b3": bars[2], "--b4": bars[3], "--b5": bars[4] } as CSSProperties) : undefined}
       aria-label={t(presenceLabel(phase))}
+      title={t("Voice status")}
       onClick={onOpen}
     >
       <GrokMark scheme={light ? "light" : "dark"} />
+      <Info className="presence-info" strokeWidth={1.5} aria-hidden />
     </button>
   );
 }
