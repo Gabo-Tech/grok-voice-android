@@ -14,7 +14,7 @@ import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { formatQuantity, isHoldingAccount, originalHolding, positionOf } from "@/lib/financeLedger";
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
-import { filterTransactions, groupOf, isDebt, periodBounds, type PeriodId } from "@/lib/financeView";
+import { entryTitle, filterRules, filterTransactions, groupOf, isDebt, periodBounds, ruleAmount, type PeriodId } from "@/lib/financeView";
 import { resolveColor, shownColor } from "@/lib/entityColor";
 import { ColorEditor, ColorSheet } from "@/components/ColorSheet";
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
@@ -85,7 +85,10 @@ export function FinancePage({
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
   const [paying, setPaying] = useState<FinanceAccount | null>(null);
   const [classFilter, setClassFilter] = useState("all");
-  const [directionFilter, setDirectionFilter] = useState("all");
+  const [directionFilter, setDirectionFilter] = useState(() => {
+    const asked = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("dir") || "";
+    return asked === "income" || asked === "expense" || asked === "payment" ? asked : "all";
+  });
   const [query, setQuery] = useState("");
   const [period, setPeriod] = useState<PeriodId>("this");
   const [focusMonth, setFocusMonth] = useState("");
@@ -304,7 +307,19 @@ export function FinancePage({
   const searched = query.trim()
     ? activity.filter((tx) => `${tx.category} ${tx.notes} ${tx.currency} ${tx.direction}`.toLowerCase().includes(query.trim().toLowerCase()))
     : activity;
-  const ledgerRules = (classFilter === "all" || classFilter === "recurring" ? rules : []).filter((rule) => rule.purpose !== "investment_payout" || tab !== "activity");
+  const ledgerRules = filterRules(
+    rules.filter((rule) => rule.purpose !== "investment_payout" || tab !== "activity"),
+    {
+      accountId: accountFilter,
+      category: categoryFilter,
+      currency: currencyFilter,
+      direction: directionFilter,
+      recurrence: classFilter,
+      group: groupFilter,
+      query,
+      accounts,
+    },
+  );
   const empty = accounts.length === 0 && finance.snapshot.transactions.length === 0 && finance.snapshot.rules.length === 0;
 
   const ledger = (lock: "expense" | "income" | "any") => (
@@ -333,6 +348,7 @@ export function FinancePage({
         currencies={currencies}
         onEditCategories={() => setCategorySheet(true)}
         onAdd={openAdd}
+        onProgram={openBill}
         onTransaction={openTransaction}
         onRule={openRule}
         planned={planned}
@@ -578,19 +594,6 @@ export function FinancePage({
           <div ref={(node) => { pageRefs.current[4] = node; }} role="tabpanel" id="finance-panel-plan" aria-labelledby="finance-tab-plan" data-finance-tabpanel="plan" className="fin-swipe-page" inert={tab === "plan" ? undefined : true}>
             <div className="plan-board" data-shot="plan">
               <BudgetSection finance={finance} />
-              <FinanceDashboard
-                finance={finance}
-                accounts={accounts}
-                place="plan"
-                onProgram={openBill}
-                onIncome={openIncome}
-                onPayout={openBill}
-                onOpenRule={(id) => {
-                  const rule = finance.snapshot.rules.find((row) => row.id === id);
-                  if (rule) openRule(rule);
-                }}
-                onFocus={(focus) => (focus === "invested" ? chooseTab("holdings") : chooseTab("accounts", focus))}
-              />
             </div>
           </div>
           </div>
@@ -695,6 +698,7 @@ function Activity({
   currencies,
   onEditCategories,
   onAdd,
+  onProgram,
   onTransaction,
   onRule,
   planned,
@@ -728,6 +732,7 @@ function Activity({
   currencies: string[];
   onEditCategories: () => void;
   onAdd: () => void;
+  onProgram?: () => void;
   onTransaction: (tx: FinanceTransaction) => void;
   onRule: (rule: FinanceRule) => void;
   planned: { scheduleId: string; name: string; date: string; amountMinor: number | null; currency: string }[];
@@ -735,6 +740,10 @@ function Activity({
 }) {
   const t = useT();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView] = useState<"transactions" | "recurring">(() => {
+    const asked = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("act") || "";
+    return asked === "recurring" ? "recurring" : "transactions";
+  });
   const filters: LedgerFilters = {
     account: accountFilter,
     category: categoryFilter,
@@ -846,27 +855,18 @@ function Activity({
             document.body,
           )
         : null}
-      {filtersOnly ? null : rules.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-2 text-sm text-muted-foreground">{t("Rules")}</h2>
-          <div className="divide-y divide-border border-y border-border">
-            {rules.map((rule) => (
-              <RowButton key={rule.id} onClick={() => onRule(rule)}>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-base">{rule.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {rule.cadence ? scheduleLabel(rule.cadence, rule.intervalDays, t) : t("Once")}
-                    {rule.nextDate ? ` · ${rule.nextDate}` : ` · ${t("No date yet")}`}
-                    {rule.calendarEventId ? ` · ${t("On Calendar")}` : ""}
-                  </p>
-                </div>
-                <p className="shrink-0 text-lg tabular-nums">{rule.amountMinor != null ? formatMoney(rule.amountMinor, rule.currency) : ""}</p>
-              </RowButton>
-            ))}
-          </div>
-        </section>
+      {filtersOnly ? null : (
+        <div className="mb-3 flex flex-wrap gap-2" role="tablist" aria-label={t("Activity")}>
+          <button type="button" role="tab" className="fin-choice" aria-selected={view === "transactions"} onClick={() => setView("transactions")}>{t("Transactions")}</button>
+          <button type="button" role="tab" className="fin-choice" aria-selected={view === "recurring"} onClick={() => setView("recurring")}>{t("Recurring")}</button>
+        </div>
       )}
-      {filtersOnly || !showPlanned || planned.length === 0 ? null : (
+      {filtersOnly || view !== "recurring" ? null : rules.length === 0 ? (
+        <EmptyState title={t("Nothing in this filter")} body={t("No recurring bills match. Try another filter, or program one.")} actionLabel={t("Program a bill")} onAction={onProgram || onAdd} />
+      ) : (
+        <RuleRows rules={rules} accounts={accounts} onOpen={onRule} />
+      )}
+      {filtersOnly || view === "recurring" || !showPlanned || planned.length === 0 ? null : (
         <section className="mb-6">
           <h2 className="fin-kicker mb-2">{t("Planned")}</h2>
           <p className="fin-muted mb-2 text-sm">{t("Not actual")}</p>
@@ -886,11 +886,11 @@ function Activity({
           </div>
         </section>
       )}
-      {filtersOnly || directionLock !== "any" || rows.length > 0 || rules.length > 0 || (showPlanned && planned.length > 0) ? null : (
+      {filtersOnly || view !== "transactions" || directionLock !== "any" || rows.length > 0 || (showPlanned && planned.length > 0) ? null : (
         <EmptyState title={t("Nothing in this filter")} body={t("Try another filter, or log it in Talk.")} actionLabel={t("Add transaction")} onAction={onAdd} />
       )}
-      {filtersOnly || rows.length === 0 ? null : (
-        <section>
+      {filtersOnly || view !== "transactions" || rows.length === 0 ? null : (
+        <section className="pb-2">
           {heading ? <h2 className="fin-kicker mb-2">{heading}</h2> : null}
           <TxRows rows={rows} accounts={accounts} onOpen={onTransaction} />
         </section>
@@ -1142,27 +1142,108 @@ function TxRows({
   onOpen: (tx: FinanceTransaction) => void;
 }) {
   const t = useT();
+  const ordered = [...rows].sort((a, b) => b.date.localeCompare(a.date) || b.createdMs - a.createdMs);
+  const groups: { date: string; rows: FinanceTransaction[] }[] = [];
+  for (const tx of ordered) {
+    const last = groups[groups.length - 1];
+    if (!last || last.date !== tx.date) groups.push({ date: tx.date, rows: [tx] });
+    else last.rows.push(tx);
+  }
   return (
-    <div className="divide-y divide-border border-y border-border">
-      {rows.map((tx) => {
-        const account = accounts.find((row) => row.id === tx.accountId);
-        const sign = tx.direction === "income" ? "+" : tx.direction === "expense" ? "−" : "";
-        return (
-          <RowButton key={tx.id} onClick={() => onOpen(tx)}>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-base">{[tx.category, tx.subcategory].filter(Boolean).join(" · ") || t(directionLabel(tx.direction))}</p>
-              <p className="text-sm text-muted-foreground">
-                {tx.date} · {t(classLabel(tx.recurrence))}
-                {account ? ` · ${account.name}` : ""}
-              </p>
-            </div>
-            <p className="shrink-0 text-xl font-medium tabular-nums">
-              {sign}
-              {formatMoney(tx.amountMinor, tx.currency)}
-            </p>
-          </RowButton>
-        );
-      })}
+    <div>
+      {groups.map((group) => (
+        <section key={group.date}>
+          <h3 className="tx-day">{group.date}</h3>
+          <div className="divide-y divide-border border-b border-border">
+            {group.rows.map((tx) => {
+              const account = accounts.find((row) => row.id === tx.accountId);
+              const source = accounts.find((row) => row.id === tx.fromAccountId);
+              const title = entryTitle(tx) || t(directionLabel(tx.direction));
+              const tone = tx.direction === "income" ? "text-[var(--positive)]" : tx.direction === "transfer" ? "" : "text-[var(--negative)]";
+              const sign = tx.direction === "income" ? "+" : tx.direction === "transfer" ? "" : "−";
+              const method = tx.direction === "payment" && source ? `${t("From")} ${source.name}` : account?.name || "";
+              return (
+                <RowButton key={tx.id} onClick={() => onOpen(tx)}>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base">{title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t(classLabel(tx.recurrence))}
+                      {method ? ` · ${method}` : ""}
+                    </p>
+                  </div>
+                  <p className={cn("shrink-0 text-right text-xl font-medium tabular-nums", tone)}>
+                    {sign}
+                    {formatMoney(tx.amountMinor, tx.currency)}
+                    <span className="sr-only">{tx.direction === "income" ? t("Income") : tx.direction === "payment" ? t("Payment") : t("Expense")}</span>
+                  </p>
+                </RowButton>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function RuleRows({
+  rules,
+  accounts,
+  onOpen,
+}: {
+  rules: FinanceRule[];
+  accounts: FinanceAccount[];
+  onOpen: (rule: FinanceRule) => void;
+}) {
+  const t = useT();
+  const ordered = [...rules].sort((a, b) => (a.nextDate || "9999").localeCompare(b.nextDate || "9999") || a.name.localeCompare(b.name));
+  const groups: { date: string; rows: FinanceRule[] }[] = [];
+  for (const rule of ordered) {
+    const date = rule.nextDate || "";
+    const last = groups[groups.length - 1];
+    if (!last || last.date !== date) groups.push({ date, rows: [rule] });
+    else last.rows.push(rule);
+  }
+  return (
+    <div>
+      {groups.map((group) => (
+        <section key={group.date || "none"}>
+          <h3 className="tx-day">{group.date || t("No date yet")}</h3>
+          <div className="divide-y divide-border border-b border-border">
+            {group.rows.map((rule) => {
+              const account = accounts.find((row) => row.id === rule.accountId);
+              const amount = ruleAmount(rule, accounts);
+              const title = entryTitle({ category: rule.category, notes: rule.notes, name: rule.name }) || t(directionLabel(rule.direction));
+              const tone = rule.direction === "income" ? "text-[var(--positive)]" : "text-[var(--negative)]";
+              const sign = rule.direction === "income" ? "+" : "−";
+              const amountLabel = amount.source === "balance" ? t("Balance due") : amount.source === "statement" ? t("Statement amount") : amount.source === "none" ? t("No amount set") : "";
+              return (
+                <RowButton key={rule.id} onClick={() => onOpen(rule)}>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base">{title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {rule.cadence ? scheduleLabel(rule.cadence, rule.intervalDays, t) : t("Once")}
+                      {account ? ` · ${account.name}` : ""}
+                      {rule.calendarEventId ? ` · ${t("On Calendar")}` : ""}
+                    </p>
+                  </div>
+                  <p className={cn("shrink-0 text-right text-xl font-medium tabular-nums", amount.amountMinor == null ? "text-sm font-normal text-muted-foreground" : tone)}>
+                    {amount.amountMinor != null ? (
+                      <>
+                        {sign}
+                        {formatMoney(amount.amountMinor, amount.currency)}
+                      </>
+                    ) : (
+                      amountLabel
+                    )}
+                    {amountLabel && amount.amountMinor != null ? <span className="mt-0.5 block text-[13px] font-normal text-muted-foreground">{amountLabel}</span> : null}
+                  </p>
+                </RowButton>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

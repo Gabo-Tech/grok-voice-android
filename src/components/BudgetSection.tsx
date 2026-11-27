@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import { api } from "@/lib/api";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceBudget, FinanceBudgetLine } from "@/lib/api";
-import { overBudget, resolveBudget, shiftMonth, summarizeBudget, type BudgetRecord, type BudgetRole } from "@/lib/budget";
-import { bookFromStatus, plannedHits } from "@/lib/financeMath";
+import { clampMonth, overBudget, resolveBudget, shiftMonth, suggestBudgetLines, summarizeBudget, type BudgetRecord, type BudgetRole } from "@/lib/budget";
+import { bookFromStatus } from "@/lib/financeMath";
+import { ruleAmount } from "@/lib/financeView";
 import { formatMoney, minorExponent, moneyParts } from "@/lib/money";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 import { ChartColorMenu } from "@/components/ColorSheet";
 import { resolveColor } from "@/lib/entityColor";
 import { todayIso } from "@/components/FinanceDashboard";
 
-const ROLES: BudgetRole[] = ["income", "expense", "savings", "investment"];
+const ROLES: BudgetRole[] = ["income", "expense", "savings"];
 
 function asRecord(row: FinanceBudget): BudgetRecord {
   return {
@@ -35,8 +36,8 @@ function BudgetLineRow({
   warn,
   over,
   onOpen,
-  onSwipe,
   color = "",
+  overLabel,
 }: {
   name: string;
   actual: string;
@@ -45,66 +46,24 @@ function BudgetLineRow({
   warn: boolean;
   over: boolean;
   onOpen: () => void;
-  onSwipe: () => void;
   color?: string;
+  overLabel: string;
 }) {
-  const drag = useRef<{ x: number; y: number } | null>(null);
   return (
-    <div
-      className="budget-line"
-      onPointerDown={(event) => {
-        drag.current = { x: event.clientX, y: event.clientY };
-      }}
-      onPointerUp={(event) => {
-        const origin = drag.current;
-        drag.current = null;
-        if (!origin) return;
-        const dx = event.clientX - origin.x;
-        const dy = event.clientY - origin.y;
-        if (dx < -48 && Math.abs(dx) > Math.abs(dy)) onSwipe();
-      }}
-    >
+    <div className="budget-line">
       <button type="button" className="flex min-h-11 w-full items-baseline justify-between gap-3 text-left" onClick={onOpen}>
-        <span className="flex min-w-0 items-center gap-2 truncate text-[15px]">{color ? <span className="fin-swatch" style={{ background: color }} aria-hidden="true" /> : null}{name}</span>
+        <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-2 truncate text-[15px]">
+            {color ? <span className="fin-swatch" style={{ background: color }} aria-hidden="true" /> : null}
+            {name}
+          </span>
+          {over ? <span className="block text-[13px] text-[var(--negative)]">{overLabel}</span> : null}
+        </span>
         <span className="fin-num shrink-0 text-[13px]">{actual} / {planned}</span>
       </button>
       <div className="budget-bar" data-warn={warn ? "true" : "false"} data-over={over ? "true" : "false"}>
-        <span style={{ width: `${Math.min(100, Math.round(ratio * 100))}%`, background: color || undefined }} />
+        <span style={{ width: `${Math.min(100, Math.round((Number.isFinite(ratio) ? ratio : 1) * 100))}%`, background: over ? "var(--negative)" : color || undefined }} />
       </div>
-    </div>
-  );
-}
-
-function cnLeft(left: number): string {
-  return `fin-hero-num mt-1 ${left < 0 ? "text-[var(--negative)]" : ""}`;
-}
-
-function MonthSwitch({ month, label, onChange }: { month: string; label: string; onChange: (month: string) => void }) {
-  const t = useT();
-  const start = useRef<{ x: number; y: number } | null>(null);
-  return (
-    <div
-      className="plan-month"
-      data-swipe-ignore=""
-      onPointerDown={(event) => {
-        start.current = { x: event.clientX, y: event.clientY };
-      }}
-      onPointerUp={(event) => {
-        if (!start.current) return;
-        const dx = event.clientX - start.current.x;
-        const dy = event.clientY - start.current.y;
-        start.current = null;
-        if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
-        onChange(shiftMonth(month, dx < 0 ? 1 : -1));
-      }}
-    >
-      <button type="button" className="plan-chevron" aria-label={t("Previous month")} onClick={() => onChange(shiftMonth(month, -1))}>
-        <ChevronLeft size={18} strokeWidth={1.5} aria-hidden="true" />
-      </button>
-      <p className="min-w-0 flex-1 text-center text-[16px]">{label}</p>
-      <button type="button" className="plan-chevron" aria-label={t("Next month")} onClick={() => onChange(shiftMonth(month, 1))}>
-        <ChevronRight size={18} strokeWidth={1.5} aria-hidden="true" />
-      </button>
     </div>
   );
 }
@@ -119,26 +78,30 @@ function toMinor(text: string, currency: string): number {
 export function BudgetSection({ finance }: { finance: FinanceState }) {
   const t = useT();
   const display = (finance.snapshot.defaultCurrency || "EUR").toUpperCase();
-  const [month, setMonth] = useState(finance.snapshot.period || todayIso().slice(0, 7));
+  const todayMonth = todayIso().slice(0, 7);
+  const minMonth = shiftMonth(todayMonth, -24);
+  const maxMonth = shiftMonth(todayMonth, 12);
+  const [month, setMonth] = useState(() => clampMonth(finance.snapshot.period || todayMonth, minMonth, maxMonth));
   const [open, setOpen] = useState(false);
+  const [setup, setSetup] = useState(false);
+  const [about, setAbout] = useState(false);
   const [role, setRole] = useState<BudgetRole>("expense");
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [pendingDelete, setPendingDelete] = useState("");
-  const [more, setMore] = useState(false);
   const [editing, setEditing] = useState("");
+  const [setupNote, setSetupNote] = useState("");
   const budgets = useMemo(() => (finance.snapshot.budgets || []).map(asRecord), [finance.snapshot.budgets]);
   const resolved = useMemo(() => resolveBudget(budgets, month), [budgets, month]);
   const book = useMemo(() => bookFromStatus(finance.snapshot.fx), [finance.snapshot.fx]);
   const nowMs = useMemo(() => Date.now(), [finance.snapshot]);
   const today = todayIso();
-  const scheduled = useMemo(() => plannedHits(finance.snapshot.rules, finance.snapshot.transactions, today), [finance.snapshot.rules, finance.snapshot.transactions, today]);
   const kinds = useMemo(() => Object.fromEntries(finance.snapshot.categories.map((row) => [row.name.trim().toLowerCase(), row.kind || ""])), [finance.snapshot.categories]);
   const summary = useMemo(
     () =>
-      summarizeBudget(resolved.budget, finance.snapshot.transactions, scheduled, {
+      summarizeBudget(resolved.budget, finance.snapshot.transactions, [], {
         month,
         display,
         book,
@@ -147,9 +110,10 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
         inherited: resolved.inherited,
         categoryKinds: kinds,
       }),
-    [resolved, finance.snapshot.transactions, scheduled, month, display, book, nowMs, today, kinds],
+    [resolved, finance.snapshot.transactions, month, display, book, nowMs, today, kinds],
   );
-  const roleLabel = (value: string) => (value === "income" ? t("Expected income") : value === "savings" ? t("Planned savings") : value === "investment" ? t("Planned investments") : t("Expense limit"));
+  const roleLabel = (value: string) => (value === "income" ? t("Expected income") : value === "savings" ? t("Savings target") : t("Expense limit"));
+  const goMonth = (by: number) => setMonth((current) => clampMonth(shiftMonth(current, by), minMonth, maxMonth));
 
   useEffect(() => {
     if (!resolved.budget?.notify || summary.warnings.length === 0) return;
@@ -169,12 +133,12 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
   useEffect(() => {
     const onVoice = (event: Event) => {
       const detail = (event as CustomEvent<{ view?: string; period?: string }>).detail || {};
-      if (detail.view === "budget") setMonth(finance.snapshot.period || todayIso().slice(0, 7));
-      if (detail.period && /^\d{4}-\d{2}$/.test(detail.period)) setMonth(detail.period);
+      if (detail.view === "budget" || detail.view === "plan") setMonth(clampMonth(finance.snapshot.period || todayMonth, minMonth, maxMonth));
+      if (detail.period && /^\d{4}-\d{2}$/.test(detail.period)) setMonth(clampMonth(detail.period, minMonth, maxMonth));
     };
     window.addEventListener("grok-finance-voice", onVoice);
     return () => window.removeEventListener("grok-finance-voice", onVoice);
-  }, [finance.snapshot.period]);
+  }, [finance.snapshot.period, todayMonth, minMonth, maxMonth]);
 
   const saveLines = (lines: FinanceBudgetLine[], extra: Record<string, unknown> = {}) => {
     finance.saveBudget({
@@ -214,101 +178,196 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
     setOpen(false);
   };
 
+  const prefill = (source: "rules" | "average" | "both") => {
+    const lines = suggestBudgetLines({
+      source,
+      month,
+      display,
+      book,
+      nowMs,
+      rules: finance.snapshot.rules.map((rule) => {
+        const amount = ruleAmount(rule, finance.snapshot.accounts);
+        return {
+          name: rule.name,
+          amountMinor: amount.amountMinor,
+          currency: amount.currency || rule.currency || display,
+          direction: rule.direction,
+          category: rule.category,
+          cadence: rule.cadence,
+          purpose: rule.purpose,
+          status: rule.status,
+          intervalDays: rule.intervalDays,
+        };
+      }),
+      transactions: finance.snapshot.transactions,
+    });
+    if (lines.length === 0) {
+      setSetupNote(t("Nothing to copy yet. Add a line yourself."));
+      return;
+    }
+    saveLines(lines.map((line) => ({ ...line, id: "" })));
+    setSetupNote("");
+    setSetup(false);
+  };
+
   const locale = activeLocale() === "ca-ES-valencia" ? "ca-ES" : activeLocale();
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString(locale, { month: "long", year: "numeric" });
-  const left = summary.spendingPlanned - summary.spendingActual;
-  const spentRatio = summary.spendingPlanned > 0 ? summary.spendingActual / summary.spendingPlanned : 0;
+  const lines = resolved.budget?.lines || [];
+  const ready = lines.length > 0;
+  const incomeBase = summary.incomePlanned > 0 ? summary.incomePlanned : summary.incomeActual;
+  const left = incomeBase > 0 ? incomeBase - summary.spendingActual - summary.savingsPlanned : summary.spendingPlanned - summary.spendingActual;
   const leftParts = moneyParts(left, display);
+  const incomeRows = summary.rows.filter((row) => row.role === "income");
+  const expenseRows = summary.rows.filter((row) => row.role === "expense");
+  const savingRows = summary.rows.filter((row) => row.role === "savings");
+  const openEditor = (id = "") => {
+    const line = resolved.budget?.lines.find((item) => item.id === id);
+    setEditing(id);
+    setRole((line?.role as BudgetRole) || "expense");
+    setCategory(line?.category || "");
+    setSubcategory(line?.subcategory || "");
+    setLabel(line?.label || "");
+    setAmount(line ? String(line.amountMinor / 10 ** minorExponent(display)) : "");
+    setPendingDelete("");
+    setOpen(true);
+  };
 
   return (
     <section className="fin-panel" data-finance-panel="budget" data-shot="budget">
-      <MonthSwitch month={month} label={monthLabel} onChange={setMonth} />
-      {resolved.inherited ? <p className="mt-2 text-[13px] leading-5">{t("From the template")}</p> : null}
-      {!resolved.budget ? (
-        <button type="button" className="plan-empty mt-4 w-full text-left" onClick={() => finance.saveBudget({ action: "create", period: month, currency: display, copyForward: true })}>
-          <span className="plan-ghost" aria-hidden="true">
-            <i style={{ width: "72%" }} />
-            <i style={{ width: "48%" }} />
-            <i style={{ width: "30%" }} />
-          </span>
-          <span className="mt-3 inline-flex min-h-11 items-center bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]">{fill("Plan {month}", { month: monthLabel })}</span>
+      <div className="plan-month" data-swipe-ignore="">
+        <button type="button" className="plan-chevron" aria-label={t("Previous month")} disabled={month <= minMonth} onClick={() => goMonth(-1)}>
+          <ChevronLeft size={18} strokeWidth={1.5} aria-hidden="true" />
         </button>
+        <p className="min-w-0 flex-1 text-center text-[16px]">{monthLabel}</p>
+        <button type="button" className="plan-chevron" aria-label={t("Next month")} disabled={month >= maxMonth} onClick={() => goMonth(1)}>
+          <ChevronRight size={18} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </div>
+      <p className="mt-3 text-[15px] leading-6">{t("A budget for one month. Recurring bills stay in Activity.")}</p>
+      <button type="button" className="mt-1 min-h-11 text-[15px] underline" aria-expanded={about} onClick={() => setAbout((value) => !value)}>
+        {t("What a budget is")}
+      </button>
+      {about ? (
+        <p className="mt-1 text-[15px] leading-6 text-[var(--text-secondary)]">
+          {t("Plan is a budget for one month. Expected income is what you think will come in. Each expense row is a limit next to what you already spent. Left to spend is expected income, minus spending so far, minus the savings target. Recurring bills and paydays are in Activity, under Recurring.")}
+        </p>
+      ) : null}
+      {!ready ? (
+        <div className="mt-6">
+          <p className="text-[16px] leading-6">{t("No budget for this month yet.")}</p>
+          <p className="mt-2 text-[15px] leading-6 text-[var(--text-secondary)]">
+            {t("Set the income you expect, a limit for each expense, and a savings target. Start from recurring bills, from recent months, or from both.")}
+          </p>
+          <button type="button" className="mt-4 min-h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => { setSetupNote(""); setSetup(true); }}>
+            {t("Set up this month")}
+          </button>
+        </div>
       ) : (
         <>
+          {resolved.inherited ? <p className="mt-4 text-[13px] leading-5">{t("Carried from an earlier month.")}</p> : null}
+          <p className="fin-muted mt-4 text-[13px]">{t("Expected income")}</p>
+          <p className="mt-1 text-[15px] leading-5">
+            {fill("{received} received of {planned}", { received: formatMoney(summary.incomeActual, display), planned: formatMoney(summary.incomePlanned, display) })}
+          </p>
           <p className="fin-muted mt-4 text-[13px]">{t("Left to spend")}</p>
-          <p className={cnLeft(left)}>
+          <p className={`fin-hero-num mt-1 ${left < 0 ? "text-[var(--negative)]" : ""}`}>
             <span className="fin-hero-unit">{leftParts.unit}</span>
             {leftParts.figure}
           </p>
-          <div className="budget-bar mt-3" data-over={overBudget(summary) ? "true" : "false"}>
-            <span style={{ width: `${Math.min(100, Math.round(spentRatio * 100))}%` }} />
-          </div>
-          <div className="mt-3 flex justify-end">
-            <button type="button" className="plan-chevron" aria-label={t("More")} aria-expanded={more} onClick={() => setMore((value) => !value)}>
-              <MoreHorizontal size={18} strokeWidth={1.5} aria-hidden="true" />
-            </button>
-          </div>
-          {more ? (
-            <div className="flex flex-col" data-swipe-ignore="">
-              <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => { setEditing(""); setOpen(true); setMore(false); }}>{t("Add a line")}</button>
-              <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => { finance.saveBudget({ action: "set", period: shiftMonth(month, 1), currency: display, replaceLines: true, copyForward: true, lines: resolved.budget?.lines || [], notify: resolved.budget?.notify || false }); setMore(false); }}>{t("Copy to next month")}</button>
-              <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => { finance.saveBudget({ action: "set", period: "", currency: display, replaceLines: true, copyForward: true, lines: resolved.budget?.lines || [], notify: resolved.budget?.notify || false }); setMore(false); }}>{t("Use as template")}</button>
-              <button type="button" className="min-h-11 text-left text-[15px] underline" aria-pressed={resolved.budget.notify} onClick={() => { saveLines(resolved.budget?.lines || [], { notify: !resolved.budget?.notify }); setMore(false); }}>{t("Notify at 80% and 100%")}</button>
-            </div>
-          ) : null}
+          <p className="mt-2 text-[13px] leading-5 text-[var(--text-secondary)]">{t("Expected income, minus spending so far, minus the savings target.")}</p>
+          {overBudget(summary) ? <p className="mt-1 text-[13px] text-[var(--negative)]">{t("Over the plan")}</p> : null}
+          <h3 className="mt-6 text-[16px]">{t("Expenses")}</h3>
           <div className="mt-1">
-            {summary.rows.map((row) => {
-              const category = finance.snapshot.categories.find((item) => item.name === row.name);
-              const color = resolveColor(finance.snapshot.entityColors, category?.kind === "income" ? "income" : "category", row.name, category?.color || "");
+            {expenseRows.map((row) => {
+              const categoryRow = finance.snapshot.categories.find((item) => item.name === row.name || item.name === row.category);
+              const color = resolveColor(finance.snapshot.entityColors, "category", row.category || row.name, categoryRow?.color || "");
               return (
+                <BudgetLineRow
+                  key={row.id || row.name}
+                  name={row.name}
+                  color={color}
+                  actual={formatMoney(row.actualMinor, display)}
+                  planned={formatMoney(row.plannedMinor, display)}
+                  ratio={row.ratio}
+                  warn={row.warn}
+                  over={row.over}
+                  overLabel={t("Over the plan")}
+                  onOpen={() => openEditor(row.id)}
+                />
+              );
+            })}
+          </div>
+          <h3 className="mt-6 text-[16px]">{t("Savings target")}</h3>
+          {savingRows.length === 0 ? (
+            <button type="button" className="min-h-11 text-[15px] underline" onClick={() => { setRole("savings"); setCategory("Savings"); setEditing(""); setAmount(""); setSubcategory(""); setLabel(""); setOpen(true); }}>
+              {t("Add a savings target")}
+            </button>
+          ) : (
+            savingRows.map((row) => (
               <BudgetLineRow
                 key={row.id || row.name}
                 name={row.name}
-                color={color}
                 actual={formatMoney(row.actualMinor, display)}
                 planned={formatMoney(row.plannedMinor, display)}
-                ratio={Number.isFinite(row.ratio) ? row.ratio : 1}
-                warn={row.warn}
-                over={row.over}
-                onOpen={() => {
-                  const line = resolved.budget?.lines.find((item) => item.id === row.id);
-                  setEditing(row.id);
-                  setRole((line?.role as BudgetRole) || "expense");
-                  setCategory(line?.category || row.name);
-                  setSubcategory(line?.subcategory || "");
-                  setLabel(line?.label || "");
-                  setAmount(line ? String(line.amountMinor / 10 ** minorExponent(display)) : "");
-                  setPendingDelete("");
-                  setOpen(true);
-                }}
-                onSwipe={() => {
-                  const line = resolved.budget?.lines.find((item) => item.id === row.id);
-                  setEditing(row.id);
-                  setRole((line?.role as BudgetRole) || "expense");
-                  setCategory(line?.category || row.name);
-                  setSubcategory(line?.subcategory || "");
-                  setLabel(line?.label || "");
-                  setAmount(line ? String(line.amountMinor / 10 ** minorExponent(display)) : "");
-                  setPendingDelete(row.id);
-                  setOpen(true);
-                }}
+                ratio={row.ratio}
+                warn={false}
+                over={false}
+                overLabel=""
+                onOpen={() => openEditor(row.id)}
               />
-              );
-            })}
-            <ChartColorMenu
-              series={summary.rows.map((row) => {
-                const category = finance.snapshot.categories.find((item) => item.name === row.name);
-                return { id: row.name, label: row.name, color: resolveColor(finance.snapshot.entityColors, category?.kind === "income" ? "income" : "category", row.name, category?.color || "") };
+            ))
+          )}
+          {incomeRows.length > 0 ? (
+            <>
+              <h3 className="mt-6 text-[16px]">{t("Income")}</h3>
+              {incomeRows.map((row) => {
+                const categoryRow = finance.snapshot.categories.find((item) => item.name === row.category || item.name === row.name);
+                const color = resolveColor(finance.snapshot.entityColors, "income", row.category || row.name, categoryRow?.color || "");
+                return (
+                  <BudgetLineRow
+                    key={row.id || row.name}
+                    name={row.name}
+                    color={color}
+                    actual={formatMoney(row.actualMinor, display)}
+                    planned={formatMoney(row.plannedMinor, display)}
+                    ratio={row.ratio}
+                    warn={false}
+                    over={false}
+                    overLabel=""
+                    onOpen={() => openEditor(row.id)}
+                  />
+                );
               })}
-              currency={display}
-              onPaint={(id, color) => {
-                const category = finance.snapshot.categories.find((item) => item.name === id);
-                finance.paintColor(category?.kind === "income" ? "income" : "category", id, color);
-              }}
-            />
+            </>
+          ) : null}
+          <div className="mt-4 flex flex-col">
+            <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => openEditor()}>{t("Add a line")}</button>
+            <button type="button" className="min-h-11 text-left text-[15px] underline" onClick={() => finance.saveBudget({ action: "set", period: clampMonth(shiftMonth(month, 1), minMonth, maxMonth), currency: display, replaceLines: true, copyForward: true, lines: resolved.budget?.lines || [], notify: resolved.budget?.notify || false })}>{t("Copy to next month")}</button>
+            <button type="button" className="min-h-11 text-left text-[15px] underline" aria-pressed={resolved.budget?.copyForward !== false} onClick={() => saveLines(resolved.budget?.lines || [], { copyForward: resolved.budget?.copyForward === false })}>{t("Use this for later months")}</button>
+            <button type="button" className="min-h-11 text-left text-[15px] underline" aria-pressed={Boolean(resolved.budget?.notify)} onClick={() => saveLines(resolved.budget?.lines || [], { notify: !resolved.budget?.notify })}>{t("Notify at 80% and 100%")}</button>
           </div>
+          <ChartColorMenu
+            series={summary.rows.map((row) => {
+              const categoryRow = finance.snapshot.categories.find((item) => item.name === row.name);
+              return { id: row.name, label: row.name, color: resolveColor(finance.snapshot.entityColors, categoryRow?.kind === "income" || row.role === "income" ? "income" : "category", row.name, categoryRow?.color || "") };
+            })}
+            currency={display}
+            onPaint={(id, color) => {
+              const categoryRow = finance.snapshot.categories.find((item) => item.name === id);
+              finance.paintColor(categoryRow?.kind === "income" ? "income" : "category", id, color);
+            }}
+          />
         </>
       )}
+      <Sheet open={setup} title={t("Set up this month")} onClose={() => setSetup(false)} className="finance">
+        <div className="flex flex-col">
+          <button type="button" className="min-h-11 text-left text-[16px] underline" onClick={() => prefill("rules")}>{t("Use recurring bills")}</button>
+          <button type="button" className="min-h-11 text-left text-[16px] underline" onClick={() => prefill("average")}>{t("Use recent months")}</button>
+          <button type="button" className="min-h-11 text-left text-[16px] underline" onClick={() => prefill("both")}>{t("Use both")}</button>
+          <button type="button" className="min-h-11 text-left text-[16px] underline" onClick={() => { setSetup(false); openEditor(); }}>{t("Start blank")}</button>
+          {setupNote ? <p className="mt-2 text-[15px] leading-6">{setupNote}</p> : null}
+        </div>
+      </Sheet>
       <Sheet open={open} title={editing ? t("Edit line") : t("Add a line")} onClose={() => { setOpen(false); setPendingDelete(""); setEditing(""); }} className="finance">
         <form
           className="space-y-3"

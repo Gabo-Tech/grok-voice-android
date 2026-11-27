@@ -3,7 +3,6 @@ import { BudgetSection } from "@/components/BudgetSection";
 import { HoldingsChart } from "@/components/HoldingsChart";
 import { financeSample } from "@/lib/financeSample";
 import { paintColors, type EntityColor } from "@/lib/entityColor";
-import { FinanceDashboard } from "@/components/FinanceDashboard";
 import { MoneyFlowPanel } from "@/components/MoneyFlowChart";
 import { todayIso } from "@/components/FinanceDashboard";
 import type { FinanceState } from "@/hooks/useFinance";
@@ -168,9 +167,11 @@ function planFinance(empty: boolean): FinanceState {
     warned: [],
     updatedMs: 1,
     lines: [
+      { id: "l0", role: "income", category: "Salary", subcategory: "", label: "", amountMinor: 420000, currency: "CHF" },
       { id: "l1", role: "expense", category: "Housing", subcategory: "", label: "", amountMinor: 150000, currency: "CHF" },
       { id: "l2", role: "expense", category: "Food", subcategory: "", label: "", amountMinor: 80000, currency: "CHF" },
       { id: "l3", role: "expense", category: "Transport", subcategory: "", label: "", amountMinor: 40000, currency: "CHF" },
+      { id: "l4", role: "savings", category: "Savings", subcategory: "", label: "", amountMinor: 50000, currency: "CHF" },
     ],
   };
   const snapshot: FinanceSnapshot = {
@@ -181,6 +182,7 @@ function planFinance(empty: boolean): FinanceState {
     transactions: empty
       ? []
       : [
+          tx({ id: "pay-a", amountMinor: 420000, direction: "income", category: "Salary", date: `${month}-01` }),
           tx({ id: "housing-a", amountMinor: 140000, direction: "expense", category: "Housing", date: `${month}-02` }),
           tx({ id: "food-a", amountMinor: 41000, direction: "expense", category: "Food", date: `${month}-04` }),
         ],
@@ -230,7 +232,6 @@ function PlanShot({ empty }: { empty: boolean }) {
     <div className="finance min-h-screen bg-[var(--surface-0)] px-4 py-6 text-[var(--text-primary)]">
       <div className="plan-board" data-shot="plan">
         <BudgetSection finance={finance} />
-        <FinanceDashboard finance={finance} accounts={[]} place="plan" onProgram={() => undefined} onIncome={() => undefined} onFocus={() => undefined} />
       </div>
     </div>
   );

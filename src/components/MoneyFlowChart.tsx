@@ -12,6 +12,7 @@ import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
 import { buildMoneyFlow, buildSankeyOption, fitValueScale, flowSlices, spreadColumn, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
+import { resolveColor } from "@/lib/entityColor";
 import { flowPercent, formatMoney } from "@/lib/money";
 import { pushOverlay } from "@/lib/history";
 import { activeLocale, fill, useT } from "@/lib/i18n";
@@ -80,6 +81,7 @@ export function MoneyFlowPanel({
   onFollow,
   budgets = [],
   flowColors = [],
+  entityColors = [],
   flowLayout = "",
   onPaintNode,
   onLayout,
@@ -97,6 +99,7 @@ export function MoneyFlowPanel({
   onFollow?: () => void;
   budgets?: BudgetRecord[];
   flowColors?: { id: string; color: string }[];
+  entityColors?: { kind: string; id: string; color: string }[];
   flowLayout?: string;
   onPaintNode?: (id: string, color: string) => void;
   onLayout?: (layout: PortraitLayout) => void;
@@ -185,13 +188,18 @@ export function MoneyFlowPanel({
       group: options.group,
       months,
       nodeColors: {
-        ...Object.fromEntries(categories.filter((row) => row.color).map((row) => [row.name, row.color])),
+        ...Object.fromEntries(categories.map((row) => [row.name, resolveColor(entityColors, row.kind === "income" ? "income" : "category", row.name, row.color)])),
         ...Object.fromEntries(flowColors.filter((row) => row.id && row.color).map((row) => [row.id, row.color])),
         ...colors,
       },
       labels: flowLabels,
+      owed: options.planned
+        ? []
+        : accounts
+            .filter((account) => (account.kind === "credit_card" || account.kind === "loan" || account.kind === "other_debt") && (account.shownBalanceMinor || 0) > 0)
+            .map((account) => ({ name: account.name, amountMinor: account.shownBalanceMinor || 0, currency: account.currency })),
     });
-  }, [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, flowColors, options.group, options.planned, budgets, months, flowLabels]);
+  }, [transactions, kinds, names, categories, display, book, nowMs, bounds.start, bounds.end, openOther, colors, flowColors, entityColors, options.group, options.planned, budgets, months, flowLabels, accounts]);
 
   useEffect(() => {
     setColors(Object.fromEntries((flowColors || []).filter((row) => row.id && row.color).map((row) => [row.id, row.color])));
@@ -400,6 +408,31 @@ export function MoneyFlowPanel({
           <p className="text-[15px] leading-5">{fill("This chart needs a rate for {codes}.", { codes: flow.missing.join(", ") })}</p>
         ) : full ? null : chart}
         {flow.state === "ready" && flow.noIncome ? <p className="fin-muted mt-2 text-[13px] leading-5">{t("No income this month. Spending still shows.")}</p> : null}
+        {flow.state === "ready" ? (
+          <div className="mt-3 space-y-1">
+            <p className="text-[15px] leading-5">
+              {t("Income")} {formatMoney(flow.incomeMinor, flow.currency)}
+              {" · "}
+              {t("Expenses")} {formatMoney(flow.spendingMinor, flow.currency)}
+              {flow.debtMinor > 0 ? ` · ${t("Debt payments")} ${formatMoney(flow.debtMinor, flow.currency)}` : ""}
+            </p>
+            <p className="fin-muted text-[13px] leading-5">{t("Same totals as Activity for this period. A card charge is spending. Paying the card is separate.")}</p>
+            {flow.owed.length > 0 ? (
+              <div className="pt-2">
+                <p className="text-[13px] leading-5">{t("Still owed")}</p>
+                <ul>
+                  {flow.owed.map((row) => (
+                    <li key={row.name} className="flex min-h-11 items-center justify-between gap-3 text-[15px]">
+                      <span className="min-w-0 truncate">{row.name}</span>
+                      <span className="fin-num shrink-0 text-[var(--negative)]">{formatMoney(row.amountMinor, flow.currency)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="fin-muted text-[13px] leading-5">{t("Card and loan balances. They are not added to this period's spending.")}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {uncategorized && onReassign ? (
         <button type="button" className="fin-chip mt-2" onClick={onReassign}>

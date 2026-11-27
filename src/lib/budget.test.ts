@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { budgetAsFlow, lineRemaining, overBudget, resolveBudget, shiftMonth, summarizeBudget, type BudgetRecord } from "./budget.ts";
+import { budgetAsFlow, clampMonth, lineRemaining, monthlyMinor, overBudget, resolveBudget, shiftMonth, suggestBudgetLines, summarizeBudget, type BudgetRecord } from "./budget.ts";
 import { buildMoneyFlow, flowConserved } from "./moneyFlow.ts";
 import type { RateBook } from "./financeMath.ts";
 
@@ -99,5 +99,37 @@ const quiet = summarizeBudget(
 );
 assert.equal(quiet.rows[0].warn, false);
 assert.equal(overBudget(quiet), false);
+
+assert.equal(monthlyMinor(1200, "monthly"), 1200);
+assert.equal(monthlyMinor(100, "weekly"), Math.round((100 * 52) / 12));
+assert.equal(clampMonth("2020-01", "2024-11", "2027-11"), "2024-11");
+assert.equal(clampMonth("2030-01", "2024-11", "2027-11"), "2027-11");
+
+const suggested = suggestBudgetLines({
+  source: "both",
+  month: "2026-11",
+  display: "EUR",
+  book,
+  nowMs: now,
+  rules: [
+    { name: "Rent", amountMinor: 80_000, currency: "EUR", direction: "expense", category: "Housing", cadence: "monthly", purpose: "recurring", status: "active" },
+    { name: "Mobile", amountMinor: 3_000, currency: "EUR", direction: "expense", category: "Subscriptions", cadence: "monthly", purpose: "recurring", status: "active" },
+    { name: "Paused", amountMinor: 9_000, currency: "EUR", direction: "expense", category: "Health", cadence: "monthly", purpose: "recurring", status: "paused" },
+  ],
+  transactions: [
+    { amountMinor: 200_000, currency: "EUR", direction: "income", category: "Salary", date: "2026-10-01" },
+    { amountMinor: 200_000, currency: "EUR", direction: "income", category: "Salary", date: "2026-09-01" },
+    { amountMinor: 40_000, currency: "EUR", direction: "expense", category: "Food", date: "2026-10-04" },
+    { amountMinor: 20_000, currency: "EUR", direction: "expense", category: "Food", date: "2026-09-04" },
+    { amountMinor: 80_000, currency: "EUR", direction: "expense", category: "Housing", date: "2026-10-02" },
+  ],
+});
+assert.equal(suggested.find((line) => line.category === "Housing")?.amountMinor, 80_000);
+assert.equal(suggested.find((line) => line.category === "Subscriptions")?.amountMinor, 3_000);
+assert.equal(suggested.some((line) => line.category === "Health"), false);
+assert.equal(suggested.find((line) => line.category === "Salary")?.role, "income");
+assert.ok((suggested.find((line) => line.category === "Food")?.amountMinor || 0) > 0);
+assert.equal(suggested.find((line) => line.role === "savings")?.category, "Savings");
+assert.equal(suggestBudgetLines({ source: "rules", month: "2026-11", display: "EUR", book, nowMs: now, rules: [], transactions: [] }).length, 0);
 
 console.log("budget ok");

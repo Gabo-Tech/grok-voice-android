@@ -840,6 +840,66 @@ html.keyboard-open .app-safe-bar {
   padding-bottom: var(--keyboard-pad);
 }
 
+.talk-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.talk-bubble {
+  position: relative;
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.talk-bubble-user {
+  align-self: flex-end;
+  margin-right: 8px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  border-bottom-right-radius: 4px;
+}
+
+.talk-bubble-user::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  bottom: 0;
+  width: 12px;
+  height: 14px;
+  background: var(--brand);
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+
+.talk-bubble-grok {
+  align-self: flex-start;
+  margin-left: 8px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.talk-bubble-grok::after {
+  content: "";
+  position: absolute;
+  left: -7px;
+  bottom: 0;
+  width: 12px;
+  height: 14px;
+  background: var(--surface-1);
+  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+}
+
+.talk-bubble a,
+.talk-bubble button {
+  color: inherit;
+}
+
 .talk-head {
   display: grid;
   grid-template-rows: 1fr;

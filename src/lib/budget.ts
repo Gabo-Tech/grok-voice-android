@@ -283,6 +283,151 @@ export function shiftMonth(month: string, by: number): string {
   return `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
 }
 
+/** Keep month navigation inside a window. `min` and `max` are YYYY-MM. */
+export function clampMonth(month: string, min: string, max: string): string {
+  if (month < min) return min;
+  if (month > max) return max;
+  return month;
+}
+
+export interface SuggestRule {
+  name: string;
+  amountMinor: number | null;
+  currency: string;
+  direction: string;
+  category: string;
+  cadence: string;
+  purpose?: string;
+  status?: string;
+  intervalDays?: number;
+}
+
+export interface SuggestSource {
+  rules: SuggestRule[];
+  transactions: BudgetActualTx[];
+  month: string;
+  display: string;
+  book: RateBook | null;
+  nowMs: number;
+  /** Rules, the average of the three earlier months, or both. Rules win on a shared category. */
+  source: "rules" | "average" | "both";
+}
+
+/** Monthly lines for a new budget. Amounts are already in the display currency. Nothing is invented when both sources are empty. */
+export function suggestBudgetLines(input: SuggestSource): BudgetLine[] {
+  const display = input.display.trim().toUpperCase();
+  const fromRules = input.source === "average" ? [] : ruleLines(input, display);
+  const fromAverage = input.source === "rules" ? [] : averageLines(input, display);
+  const merged = new Map<string, BudgetLine>();
+  for (const line of fromAverage) merged.set(lineKey(line), line);
+  for (const line of fromRules) merged.set(lineKey(line), line);
+  const lines = [...merged.values()].filter((line) => line.amountMinor > 0);
+  lines.sort((a, b) => roleOrder(a.role) - roleOrder(b.role) || a.category.localeCompare(b.category));
+  return lines;
+}
+
+function lineKey(line: BudgetLine): string {
+  return `${normalize(line.role)}:${fold(line.category)}`;
+}
+
+function roleOrder(role: string): number {
+  if (role === "income") return 0;
+  if (role === "expense") return 1;
+  if (role === "savings") return 2;
+  return 3;
+}
+
+function ruleLines(input: SuggestSource, display: string): BudgetLine[] {
+  const lines: BudgetLine[] = [];
+  for (const rule of input.rules) {
+    const status = (rule.status || "active").toLowerCase();
+    if (status === "paused" || status === "stopped" || status === "completed") continue;
+    if ((rule.purpose || "") === "one_off" || !rule.cadence) continue;
+    if (rule.amountMinor == null || rule.amountMinor <= 0) continue;
+    const monthly = monthlyMinor(rule.amountMinor, rule.cadence, rule.intervalDays || 1);
+    const converted = convertMinor(monthly, rule.currency || display, display, input.book, input.nowMs);
+    if (!converted || converted.amountMinor <= 0) continue;
+    const role = rule.purpose === "investment_payout" || rule.direction === "income" ? "income" : rule.direction === "payment" ? "expense" : "expense";
+    const category = rule.category.trim() || rule.name.trim();
+    if (!category) continue;
+    lines.push({ id: "", role, category, subcategory: "", label: "", amountMinor: converted.amountMinor, currency: display });
+  }
+  return collapse(lines);
+}
+
+function averageLines(input: SuggestSource, display: string): BudgetLine[] {
+  const months = [shiftMonth(input.month, -1), shiftMonth(input.month, -2), shiftMonth(input.month, -3)];
+  const present = new Set(input.transactions.map((tx) => tx.date.slice(0, 7)).filter((month) => months.includes(month)));
+  const span = Math.max(1, present.size);
+  const totals = new Map<string, { role: string; category: string; amount: number }>();
+  let income = 0;
+  let spending = 0;
+  for (const tx of input.transactions) {
+    const month = tx.date.slice(0, 7);
+    if (!months.includes(month) || tx.amountMinor <= 0) continue;
+    const role = tx.direction === "income" ? "income" : tx.direction === "expense" ? "expense" : "";
+    if (!role) continue;
+    const converted = convertMinor(tx.amountMinor, tx.currency, display, input.book, input.nowMs);
+    if (!converted) continue;
+    const category = tx.category.trim() || tx.notes?.trim() || "";
+    if (!category) continue;
+    const key = `${role}:${fold(category)}`;
+    const row = totals.get(key) || { role, category, amount: 0 };
+    row.amount += converted.amountMinor;
+    totals.set(key, row);
+    if (role === "income") income += converted.amountMinor;
+    else spending += converted.amountMinor;
+  }
+  const lines: BudgetLine[] = [...totals.values()].map((row) => ({
+    id: "",
+    role: row.role,
+    category: row.category,
+    subcategory: "",
+    label: "",
+    amountMinor: Math.round(row.amount / span),
+    currency: display,
+  }));
+  const leftover = Math.round((income - spending) / span);
+  if (leftover > 0) {
+    lines.push({ id: "", role: "savings", category: "Savings", subcategory: "", label: "", amountMinor: leftover, currency: display });
+  }
+  return lines.filter((line) => line.amountMinor > 0);
+}
+
+function collapse(lines: BudgetLine[]): BudgetLine[] {
+  const map = new Map<string, BudgetLine>();
+  for (const line of lines) {
+    const key = lineKey(line);
+    const found = map.get(key);
+    if (found) found.amountMinor += line.amountMinor;
+    else map.set(key, { ...line });
+  }
+  return [...map.values()];
+}
+
+/** One month's worth of a repeating amount. */
+export function monthlyMinor(amount: number, cadence: string, interval = 1): number {
+  const step = Math.max(1, interval);
+  switch (cadence) {
+    case "daily":
+      return Math.round(amount * 30);
+    case "weekly":
+      return Math.round((amount * 52) / 12);
+    case "yearly":
+      return Math.round(amount / 12);
+    case "every_n_days":
+      return Math.round((amount * 30) / step);
+    case "every_n_weeks":
+      return Math.round((amount * 52) / 12 / step);
+    case "every_n_months":
+      return Math.round(amount / step);
+    case "every_n_years":
+      return Math.round(amount / (12 * step));
+    default:
+      return amount;
+  }
+}
+
 function fold(value: string): string {
   return value.trim().toLowerCase();
 }

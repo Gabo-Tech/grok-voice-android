@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { nextHidden, readHidden, writeHidden, type ChartItem } from "@/lib/chartPrefs";
+import { legendShares } from "@/lib/legendShare";
 import { compactMoney, formatMoney } from "@/lib/money";
 import { activeLocale, fill, useT } from "@/lib/i18n";
 
@@ -15,6 +16,8 @@ export interface LegendRow {
   unpriced?: boolean;
   /** Shown in the list, left out of the percentage. Debts must not take a share of a net-worth total. */
   omitShare?: boolean;
+  /** The total row. It shows 100% and is not added into the denominator. */
+  whole?: boolean;
 }
 
 export function useChartVisibility(chartId: string, items: ChartItem[]) {
@@ -130,15 +133,23 @@ export function Legend({
   onUnpriced?: (id: string) => void;
 }) {
   const t = useT();
-  const visible = rows.filter((row) => !hidden.has(row.id) && !row.unpriced && row.amountMinor != null && !row.omitShare);
-  const total = visible.reduce((sum, row) => sum + (row.amountMinor || 0), 0);
+  const shares = legendShares(
+    rows.map((row) => ({
+      id: row.id,
+      amount: row.amountMinor,
+      whole: row.whole,
+      omit: row.omitShare,
+      hidden: hidden.has(row.id),
+      unpriced: row.unpriced,
+    })),
+  );
   return (
     <div className="mt-2">
       <ul className="space-y-1">
         {rows.map((row) => {
           const off = hidden.has(row.id);
-          const rawShare = !off && !row.omitShare && row.amountMinor != null && total > 0 ? (row.amountMinor / total) * 100 : null;
-          const share = rawShare == null ? null : rawShare > 0 && rawShare < 0.1 ? "<0.1" : Math.round(rawShare * 10) / 10;
+          const rawShare = shares.get(row.id);
+          const share = rawShare == null ? null : rawShare > 0 && rawShare < 0.1 ? "<0.1" : rawShare;
           return (
             <li key={row.id} className={off ? "opacity-40 transition-opacity" : "transition-opacity"}>
               <div className="flex min-h-11 items-center gap-1">
