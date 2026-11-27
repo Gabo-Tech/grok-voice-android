@@ -13,12 +13,30 @@ export interface TranscriptRow {
 const MAX_ROWS = 40;
 const MAX_LOGS = 300;
 
+function previewTalk(): { rows: TranscriptRow[]; error: string | null } {
+  if (typeof window === "undefined" || isTauri()) return { rows: [], error: null };
+  const params = new URLSearchParams(window.location.search);
+  const error =
+    params.get("voiceError") === "mic"
+      ? "Microphone permission is required for voice. Enable it in Android Settings → Apps → Grok Voice."
+      : null;
+  const rows =
+    params.get("clear") === "1"
+      ? [
+          { id: "preview-user", role: "user" as const, text: "What is on today?", isFinal: true },
+          { id: "preview-grok", role: "assistant" as const, text: "Dentist at 9:30.", isFinal: true },
+        ]
+      : [];
+  return { rows, error };
+}
+
 export function useVoice() {
+  const preview = previewTalk();
   const [phase, setPhase] = useState<Phase>("idle");
   const [wakeEnabled, setWakeEnabled] = useState(false);
-  const [rows, setRows] = useState<TranscriptRow[]>([]);
+  const [rows, setRows] = useState<TranscriptRow[]>(preview.rows);
   const [logs, setLogs] = useState<LogLine[]>([]);
-  const [lastError, setLastError] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<string | null>(preview.error);
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState("");
   const [spend, setSpend] = useState<string | null>(null);

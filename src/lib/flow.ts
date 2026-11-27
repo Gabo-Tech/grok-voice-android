@@ -49,11 +49,12 @@ export function packsReadyForTalk(packs: { id: string; ready: boolean; selected?
   return ready("stt") && voice && Boolean(selected?.ready);
 }
 
-export function recoveryFor(message: string): { hint: string; go?: SettingsDestination } | null {
+export function recoveryFor(message: string): { hint: string; go?: SettingsDestination; openAppSettings?: boolean } | null {
   const text = message.toLowerCase();
-  if (/microphone|permission/.test(text)) {
+  if (/microphone/.test(text)) {
     return {
-      hint: "Allow the microphone in Android Settings, under Apps, then Grok Voice, then Permissions. Come back and try again.",
+      hint: "Allow the microphone, then come back to Talk.",
+      openAppSettings: true,
     };
   }
   if (/pack|not downloaded|cannot load|could not load|low on memory/.test(text)) {

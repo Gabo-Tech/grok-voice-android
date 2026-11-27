@@ -169,6 +169,23 @@ export function FinancePage({
     document.getElementById(`finance-tab-${next}`)?.scrollIntoView({ inline: "nearest", block: "nearest" });
   };
   const swipeRef = useRef<HTMLDivElement>(null);
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const [tabMeasure, setTabMeasure] = useState(0);
+  useEffect(() => {
+    const list = tabListRef.current;
+    if (!list) return;
+    const bump = () => setTabMeasure((n) => n + 1);
+    bump();
+    const soon = window.setTimeout(bump, 180);
+    const later = window.setTimeout(bump, 460);
+    const observer = new ResizeObserver(bump);
+    observer.observe(list);
+    return () => {
+      window.clearTimeout(soon);
+      window.clearTimeout(later);
+      observer.disconnect();
+    };
+  }, [tab]);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const dragOrigin = useRef<{ x: number; y: number; locked: "x" | "y" | null } | null>(null);
   const [dragX, setDragX] = useState(0);
@@ -176,6 +193,22 @@ export function FinancePage({
   const [pageHeight, setPageHeight] = useState(0);
   const [priceNote, setPriceNote] = useState("");
   const tabIndex = Math.max(0, FINANCE_TABS.indexOf(tab));
+  const tabIndicator = (() => {
+    const list = tabListRef.current;
+    const buttons = list ? [...list.querySelectorAll<HTMLElement>(".fin-tab")] : [];
+    const from = buttons[tabIndex];
+    if (!from) return { left: tabIndex * 20, width: 20, unit: "%" as const };
+    const span = swipeRef.current?.clientWidth || 1;
+    const frac = Math.max(-1, Math.min(1, -dragX / span));
+    const toward = buttons[tabIndex + (frac >= 0 ? 1 : -1)] || from;
+    const mix = Math.abs(frac);
+    void tabMeasure;
+    return {
+      left: from.offsetLeft + (toward.offsetLeft - from.offsetLeft) * mix,
+      width: from.offsetWidth + (toward.offsetWidth - from.offsetWidth) * mix,
+      unit: "px" as const,
+    };
+  })();
   useEffect(() => {
     const current = pageRefs.current[tabIndex];
     if (!current) return;
@@ -369,7 +402,7 @@ export function FinancePage({
         active={active}
       >
         {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
-        <div role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10">
+        <div ref={tabListRef} role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10">
           {FINANCE_TABS.map((id) => (
             <button
               key={id}
@@ -387,7 +420,8 @@ export function FinancePage({
           <span
             className="fin-tab-indicator"
             style={{
-              transform: `translateX(${(tabIndex - dragX / (swipeRef.current?.clientWidth || 1)) * 100}%)`,
+              width: tabIndicator.unit === "px" ? tabIndicator.width : "20%",
+              transform: `translateX(${tabIndicator.left}${tabIndicator.unit})`,
               transition: dragging || reducedMotion ? "none" : "transform 180ms var(--ease, ease)",
             }}
           />

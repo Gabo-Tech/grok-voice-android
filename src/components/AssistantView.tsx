@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Info, Mic, Send, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
 import { Notice } from "@/components/PageChrome";
+import { Sheet } from "@/components/Sheet";
 import { Button } from "@/components/ui/button";
 import type { VoiceState } from "@/hooks/useVoice";
 import { api, type Settings, type VoiceAccount } from "@/lib/api";
@@ -84,6 +86,7 @@ export function AssistantView({
   const [aboutListen, setAboutListen] = useState(false);
   const [listenHint, setListenHint] = useState(false);
   const [focusHint, setFocusHint] = useState(false);
+  const [clearAsk, setClearAsk] = useState(() => previewQuery("clear"));
   const lastTap = useRef(0);
   const clock = sessionClock(voice.usage?.openSinceMs);
   const live = ["connecting", "listening", "thinking", "speaking"].includes(voice.phase);
@@ -100,14 +103,43 @@ export function AssistantView({
   useEffect(() => {
     const el = draftBox.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    };
+    fit();
+    const soon = window.setTimeout(fit, 160);
+    const later = window.setTimeout(fit, 480);
+    return () => {
+      window.clearTimeout(soon);
+      window.clearTimeout(later);
+    };
   }, [draft]);
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [voice.rows, voice.busy, voice.sending]);
+    const pin = () => {
+      if (voice.lastError && voice.rows.length === 0) {
+        const action = el.querySelector("[role='alert'] button");
+        if (!action) {
+          el.scrollTop = 0;
+          return;
+        }
+        const actionBox = action.getBoundingClientRect();
+        const view = el.getBoundingClientRect();
+        if (actionBox.bottom > view.bottom - 4) el.scrollTop += actionBox.bottom - view.bottom + 12;
+        return;
+      }
+      el.scrollTop = el.scrollHeight;
+    };
+    pin();
+    const soon = window.setTimeout(pin, 160);
+    const later = window.setTimeout(pin, 480);
+    return () => {
+      window.clearTimeout(soon);
+      window.clearTimeout(later);
+    };
+  }, [voice.rows, voice.busy, voice.sending, voice.lastError]);
   useEffect(() => {
     sessionStorage.setItem("grok-talk-focus", focus ? "1" : "0");
   }, [focus]);
@@ -119,7 +151,6 @@ export function AssistantView({
     const id = window.setTimeout(() => setFocusHint(false), 2400);
     return () => window.clearTimeout(id);
   }, [focusHint]);
-
   const onChatPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
     if (target?.closest("button, a, input, textarea, label, [role='button']")) return;
@@ -204,17 +235,26 @@ export function AssistantView({
         </div>
       </header>
 
-      {voice.lastError && (
-        <Notice
-          title={t(voice.lastError)}
-          body={recovery ? t(recovery.hint) : t("Try again. If it keeps happening, open Settings, then Debug.")}
-          actionLabel={recovery?.go ? t(settingsLabel(recovery.go)) : undefined}
-          onAction={recovery?.go ? () => onOpenSettings(recovery.go!) : undefined}
-          onDismiss={voice.dismissError}
-        />
-      )}
-
       <div ref={scroller} className="talk-log min-h-0 flex-1 overflow-y-auto px-1" onPointerUp={onChatPointerUp}>
+        {voice.lastError && (
+          <div data-open-settings={recovery?.openAppSettings ? "1" : undefined}>
+            <Notice
+              title={recovery?.openAppSettings ? t("Microphone is off") : t(voice.lastError)}
+              body={recovery ? t(recovery.hint) : t("Try again. If it keeps happening, open Settings, then Debug.")}
+              actionLabel={recovery?.openAppSettings ? t("Open settings") : recovery?.go ? t(settingsLabel(recovery.go)) : undefined}
+              onAction={
+                recovery?.openAppSettings
+                  ? () => {
+                      if (isTauri()) void api.openAppSettings();
+                    }
+                  : recovery?.go
+                    ? () => onOpenSettings(recovery.go!)
+                    : undefined
+              }
+              onDismiss={voice.dismissError}
+            />
+          </div>
+        )}
         {shownRows.length === 0 ? (
           <div className="py-6">
             <p className="text-base leading-6 text-foreground">{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
@@ -226,7 +266,7 @@ export function AssistantView({
         ) : (
           <>
             <div className="flex justify-end">
-              <Button size="sm" variant="ghost" onClick={voice.clearTranscript}>
+              <Button size="sm" variant="ghost" onClick={() => setClearAsk(true)}>
                 <Trash2 /> {t("Clear")}
               </Button>
             </div>
@@ -272,6 +312,36 @@ export function AssistantView({
           </div>
         </div>
       )}
+
+      {clearAsk
+        ? createPortal(
+            <Sheet
+              open
+              title={t("Clear this talk?")}
+              onClose={() => setClearAsk(false)}
+              footer={
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      voice.clearTranscript();
+                      setClearAsk(false);
+                    }}
+                  >
+                    {t("Clear")}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setClearAsk(false)}>
+                    {t("Not now")}
+                  </Button>
+                </div>
+              }
+            >
+              <p className="text-base leading-6 text-foreground">{t("This removes the conversation and the memory Talk keeps.")}</p>
+            </Sheet>,
+            document.body,
+          )
+        : null}
 
       <form
         className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"

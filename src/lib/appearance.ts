@@ -22,6 +22,8 @@ export interface Palette {
   kicker: string;
   grain: string;
   onGold: string;
+  surface3: string;
+  warning: string;
   scheme: "light" | "dark";
 }
 
@@ -52,6 +54,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#C4B5A0",
     grain: "rgba(238, 236, 232, 0.55)",
     onGold: "#1A1B1E",
+    surface3: "#23252A",
+    warning: "#C9A46A",
     scheme: "dark",
   },
   ink: {
@@ -70,6 +74,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#F7F4EE",
     grain: "rgba(247, 244, 238, 0.7)",
     onGold: "#121214",
+    surface3: "#2C2E35",
+    warning: "#C9A46A",
     scheme: "dark",
   },
   stone: {
@@ -88,6 +94,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#5C4632",
     grain: "rgba(26, 27, 30, 0.45)",
     onGold: "#F4F2EE",
+    surface3: "#EBE6DF",
+    warning: "#7A5A28",
     scheme: "light",
   },
   midnight: {
@@ -106,6 +114,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#C6B59A",
     grain: "rgba(231, 228, 220, 0.5)",
     onGold: "#0B1220",
+    surface3: "#223044",
+    warning: "#C9A46A",
     scheme: "dark",
   },
   carbon: {
@@ -124,6 +134,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#F4F1EA",
     grain: "rgba(244, 241, 234, 0.65)",
     onGold: "#141416",
+    surface3: "#303036",
+    warning: "#C9A46A",
     scheme: "dark",
   },
   ivory: {
@@ -142,6 +154,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#6F5838",
     grain: "rgba(28, 25, 22, 0.4)",
     onGold: "#FBF7F0",
+    surface3: "#EBE4D8",
+    warning: "#7A5A28",
     scheme: "light",
   },
   sand: {
@@ -150,7 +164,7 @@ export const PRESETS: Record<PresetId, Palette> = {
     panel2: "#EFE4CE",
     ink: "#3A2E22",
     muted: "#5C4E3E",
-    gold: "#8C6239",
+    gold: "#6E5634",
     goldDeep: "#6E4C2A",
     sage: "#3E6B4F",
     rose: "#8E4A42",
@@ -160,6 +174,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#6E4C2A",
     grain: "rgba(58, 46, 34, 0.4)",
     onGold: "#F3E9D6",
+    surface3: "#E0D2B6",
+    warning: "#7A5A28",
     scheme: "light",
   },
   forest: {
@@ -178,6 +194,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#C6B48A",
     grain: "rgba(232, 228, 216, 0.5)",
     onGold: "#101612",
+    surface3: "#28362C",
+    warning: "#C9A46A",
     scheme: "dark",
   },
   plum: {
@@ -196,6 +214,8 @@ export const PRESETS: Record<PresetId, Palette> = {
     kicker: "#C4B09A",
     grain: "rgba(240, 235, 228, 0.5)",
     onGold: "#161218",
+    surface3: "#342E38",
+    warning: "#C9A46A",
     scheme: "dark",
   },
 };
@@ -336,6 +356,8 @@ export function paletteFromCustom(colors: CustomColors): Palette {
     kicker: colors.accent,
     grain: rgba(colors.text, light ? 0.4 : 0.55),
     onGold: accentLight ? "#1A1B1E" : "#F7F4EE",
+    surface3: mix(mix(colors.panel, colors.text, 0.08), colors.text, light ? 0.06 : 0.12),
+    warning: light ? "#7A5A28" : "#C9A46A",
     scheme: light ? "light" : "dark",
   };
 }
@@ -384,6 +406,9 @@ function paintPalette(root: HTMLElement, palette: Palette) {
     "--kicker": palette.muted,
     "--grain": "transparent",
     "--on-gold": palette.onGold,
+    "--surface-3": palette.surface3,
+    "--warning": palette.warning,
+    "--on-brand": palette.onGold,
   };
   for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
   root.style.colorScheme = palette.scheme;
@@ -396,6 +421,7 @@ export function applyAppearance(choice: AppearanceChoice, prefersLight: boolean)
   const root = document.documentElement;
   root.dataset.appearance = resolved;
   root.dataset.appearanceChoice = choice;
+  root.dataset.scheme = palette.scheme;
   root.classList.toggle("dark", palette.scheme === "dark");
   paintPalette(root, palette);
   const meta = document.querySelector('meta[name="theme-color"]');

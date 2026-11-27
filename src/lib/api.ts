@@ -796,6 +796,10 @@ export const api = {
   saveUserToken: (token: string) => invoke<AuthStatus>("save_user_token", { token }),
   addVoiceAccount: (provider: string, secret: string) =>
     invoke<AuthStatus>("add_voice_account", { provider, secret }),
+  probeVoiceAccount: (provider: string, secret: string) =>
+    invoke<void>("probe_voice_account", { provider, secret }),
+  commitVoiceAccount: (provider: string, secret: string) =>
+    invoke<AuthStatus>("commit_voice_account", { provider, secret }),
   updateVoiceAccount: (id: string, provider: string, secret: string) =>
     invoke<AuthStatus>("update_voice_account", { id, provider, secret }),
   removeVoiceAccount: (id: string) => invoke<AuthStatus>("remove_voice_account", { id }),
@@ -805,6 +809,7 @@ export const api = {
   authStatus: () => invoke<AuthStatus>("auth_status"),
   permissionsStatus: () => invoke<PermissionStatus>("permissions_status"),
   requestPermissions: () => invoke<PermissionStatus>("request_permissions"),
+  openAppSettings: () => invoke<void>("open_app_settings"),
   setWakeEnabled: (enabled: boolean) => invoke<boolean>("set_wake_enabled", { enabled }),
   startSession: () => invoke<void>("start_session"),
   askText: (text: string) => invoke<string>("ask_text", { text }),

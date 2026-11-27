@@ -1,15 +1,15 @@
 /* Finance shares the app theme tokens. Print PDF stays on its own paper. */
 .finance {
-  --fin-canvas: var(--canvas);
-  --fin-panel: var(--panel);
-  --fin-panel-2: var(--panel-2);
-  --fin-line: var(--frame-color);
-  --fin-ink: var(--ink);
-  --fin-muted: var(--muted-ink);
-  --fin-gold: var(--gold);
-  --fin-sage: var(--sage);
-  --fin-rose: var(--rose);
-  --fin-shadow: var(--shadow);
+  --fin-canvas: var(--surface-0);
+  --fin-panel: var(--surface-1);
+  --fin-panel-2: var(--surface-2);
+  --fin-line: var(--line-soft);
+  --fin-ink: var(--text-primary);
+  --fin-muted: var(--text-tertiary);
+  --fin-gold: var(--brand);
+  --fin-sage: var(--positive);
+  --fin-rose: var(--negative);
+  --fin-shadow: var(--elevation);
   color: var(--fin-ink);
   background: transparent;
 }
@@ -93,8 +93,11 @@
 }
 
 .finance {
+  flex: none;
+  width: 100%;
   min-width: 0;
-  overflow: hidden;
+  min-height: 0;
+  overflow: visible;
 }
 
 .finance .fin-tabs {
@@ -153,7 +156,7 @@
 }
 
 .finance .fin-primary {
-  min-height: 44px;
+  min-height: var(--touch);
   width: 100%;
   border: 0;
   border-radius: var(--radius, 2px);
@@ -295,7 +298,7 @@
   justify-content: center;
   box-sizing: border-box;
   height: auto;
-  min-height: 22px;
+  min-height: var(--touch);
   overflow: visible;
   border: 0;
   border-radius: var(--radius, 2px);
@@ -306,7 +309,7 @@
   font-size: var(--text-min, 13px);
   font-weight: 500;
   letter-spacing: 0.01em;
-  line-height: 18px;
+  line-height: 1.25;
   text-transform: none;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -317,11 +320,11 @@
 .finance .fin-chip::before {
   content: "";
   position: absolute;
-  left: -4px;
-  right: -4px;
-  top: 50%;
-  height: 44px;
-  transform: translateY(-50%);
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100%;
+  transform: none;
 }
 
 .finance .fin-chip[aria-pressed="true"] {
@@ -409,13 +412,13 @@
 .plan-month {
   display: flex;
   align-items: center;
-  min-height: 44px;
+  min-height: var(--touch);
 }
 
 .plan-chevron {
   display: inline-flex;
-  width: 44px;
-  height: 44px;
+  width: var(--touch);
+  height: var(--touch);
   flex: none;
   align-items: center;
   justify-content: center;
@@ -575,10 +578,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: var(--touch);
+  height: var(--touch);
+  min-width: var(--touch);
+  min-height: var(--touch);
   border: 0;
   background: transparent;
   color: inherit;
@@ -592,7 +595,7 @@
 }
 
 .finance .fin-seg button {
-  min-height: 44px;
+  min-height: var(--touch);
   padding: 0 12px;
   border: 1px solid var(--fin-line);
   background: transparent;
@@ -608,7 +611,7 @@
 }
 
 .finance .fin-textbtn {
-  min-height: 44px;
+  min-height: var(--touch);
   padding: 0 4px;
   border: 0;
   background: transparent;
@@ -630,11 +633,90 @@
 .finance .fin-menu-item {
   display: block;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--touch);
   padding: 0 10px;
   border: 0;
   background: transparent;
   color: inherit;
   font-size: 13px;
   text-align: left;
+}
+
+.finance .fin-chip,
+.finance .fin-actions .fin-chip,
+.finance .fin-choice,
+.finance .fin-primary,
+.finance .fin-icon,
+.finance .plan-chevron,
+.finance button,
+.finance [role="button"] {
+  min-height: var(--touch);
+  min-width: var(--touch);
+}
+
+.finance .fin-chip,
+.finance .fin-actions .fin-chip {
+  height: auto;
+  line-height: 1.25;
+}
+
+.finance .fin-chip::before,
+.finance .fin-actions .fin-chip::before {
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 100%;
+  transform: none;
+}
+
+.finance,
+.finance .fin-tabs,
+.finance .fin-swipe,
+.finance .fin-swipe-page {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.finance .fin-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.finance .fin-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.finance .fin-tab {
+  flex: 0 0 auto;
+  max-width: max-content;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: normal;
+}
+
+.app-stage > div:has(> .finance) {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.finance .fin-actions {
+  flex-wrap: wrap;
+}
+
+.finance .fin-actions .fin-chip {
+  flex: 1 1 auto;
+  min-width: min(100%, max-content);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.row-item {
+  flex-wrap: wrap;
+}
+
+.row-item > .min-w-0 {
+  flex: 1 1 10rem;
+  min-width: min(100%, 10rem);
 }

@@ -119,6 +119,62 @@ pub async fn clear_user_token(
     Ok(status)
 }
 
+async fn probe_voice_secret(provider: &str, secret: &str) -> Result<()> {
+    if !matches!(provider, "xai" | "openai" | "local" | "onemin") {
+        return Err(msg("That provider is not available yet."));
+    }
+    if provider == "local" {
+        return Ok(());
+    }
+    if secret.len() < 12 || secret.contains(char::is_whitespace) {
+        return Err(msg("That key looks too short."));
+    }
+    if provider == "xai" {
+        mint_ephemeral(&http_client(), secret).await?;
+    } else if provider == "openai" {
+        mint_openai(&http_client(), secret).await?;
+    } else if provider == "onemin" {
+        crate::onemin::post_models(&crate::onemin::client(), secret).map_err(|err| msg(err.message))?;
+    }
+    Ok(())
+}
+
+async fn store_voice_secret(app: AppHandle, provider: String, secret: Zeroizing<String>) -> Result<AuthStatus> {
+    blocking(app, move |app| {
+        app.state::<Vault>()
+            .add_account(&app.state::<NativeBridge>(), &provider, &secret)?;
+        vault_status(&app)
+    })
+    .await
+}
+
+/// Real call to the provider. Nothing is written to the vault.
+#[tauri::command]
+pub async fn probe_voice_account(provider: String, secret: String) -> Result<()> {
+    let provider = provider.trim().to_string();
+    let secret = secret.trim().to_string();
+    probe_voice_secret(&provider, &secret).await
+}
+
+/// Stores a key that already passed `probe_voice_account`, or that the person chose to keep anyway.
+#[tauri::command]
+pub async fn commit_voice_account(app: AppHandle, provider: String, secret: String) -> Result<AuthStatus> {
+    let provider = provider.trim().to_string();
+    if !matches!(provider.as_str(), "xai" | "openai" | "local" | "onemin") {
+        return Err(msg("That provider is not available yet."));
+    }
+    let secret = if provider == "local" {
+        Zeroizing::new("on-device".to_string())
+    } else {
+        let secret = secret.trim().to_string();
+        if secret.len() < 12 || secret.contains(char::is_whitespace) {
+            return Err(msg("That key looks too short."));
+        }
+        Zeroizing::new(secret)
+    };
+    store_voice_secret(app, provider, secret).await
+}
+
 #[tauri::command]
 pub async fn add_voice_account(
     app: AppHandle,
@@ -126,35 +182,14 @@ pub async fn add_voice_account(
     secret: String,
 ) -> Result<AuthStatus> {
     let provider = provider.trim().to_string();
-    let secret = Zeroizing::new(secret.trim().to_string());
-    if !matches!(provider.as_str(), "xai" | "openai" | "local" | "onemin") {
-        return Err(msg("That provider is not available yet."));
-    }
-    if provider == "local" {
-        let secret = Zeroizing::new("on-device".to_string());
-        return blocking(app, move |app| {
-            app.state::<Vault>()
-                .add_account(&app.state::<NativeBridge>(), "local", &secret)?;
-            vault_status(&app)
-        })
-        .await;
-    }
-    if secret.len() < 12 || secret.contains(char::is_whitespace) {
-        return Err(msg("That key looks too short."));
-    }
-    if provider == "xai" {
-        mint_ephemeral(&http_client(), &secret).await?;
-    } else if provider == "openai" {
-        mint_openai(&http_client(), &secret).await?;
-    } else if provider == "onemin" {
-        crate::onemin::post_models(&crate::onemin::client(), &secret).map_err(|err| msg(err.message))?;
-    }
-    blocking(app, move |app| {
-        app.state::<Vault>()
-            .add_account(&app.state::<NativeBridge>(), &provider, &secret)?;
-        vault_status(&app)
-    })
-    .await
+    let secret = secret.trim().to_string();
+    probe_voice_secret(&provider, &secret).await?;
+    let stored = if provider == "local" {
+        Zeroizing::new("on-device".to_string())
+    } else {
+        Zeroizing::new(secret)
+    };
+    store_voice_secret(app, provider, stored).await
 }
 
 #[tauri::command]
@@ -244,6 +279,11 @@ pub async fn permissions_status(app: AppHandle) -> Result<PermissionStatus> {
 #[tauri::command]
 pub async fn request_permissions(app: AppHandle) -> Result<PermissionStatus> {
     blocking(app, |app| app.state::<NativeBridge>().request_permissions()).await
+}
+
+#[tauri::command]
+pub fn open_app_settings(app: AppHandle) -> Result<()> {
+    app.state::<NativeBridge>().open_app_settings()
 }
 
 #[tauri::command]

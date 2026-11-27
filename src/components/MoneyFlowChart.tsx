@@ -641,6 +641,9 @@ function FlowChart({
   useEffect(() => {
     const instance = chart.current;
     if (!instance || !flow || flow.state !== "ready" || box.w < 280 || box.h < 160) return;
+    const floor = tall ? Math.max(220, Math.round(window.innerHeight * 0.34)) : 220;
+    const cap = tall ? Math.round(window.innerHeight * 0.5) : Math.max(box.h, floor);
+    const usedHeight = Math.min(Math.max(box.h, floor), Math.max(cap, floor));
     const ink = usedColor("var(--text-primary)", "rgb(58, 52, 44)");
     const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
     const brand = usedColor("var(--brand)", "rgb(125, 107, 88)");
@@ -652,7 +655,7 @@ function FlowChart({
       links: flow.links,
       currency,
       width: box.w,
-      height: box.h,
+      height: usedHeight,
       labels: labelsOn,
       values: valuesOn,
       colors,
@@ -666,7 +669,7 @@ function FlowChart({
       spendingLabel,
     });
     const frame = built.frame;
-    const chartHeight = frame.height;
+    const chartHeight = Math.max(frame.height, usedHeight);
     setDrawn(chartHeight);
     setQuiet(built.quiet);
     setLegend(built.legend);
@@ -745,7 +748,7 @@ function FlowChart({
   }, [drawn, tall, box.h]);
 
   const legendItem = (node: FlowNode) => (
-    <li key={node.id} className="flow-key flex min-h-11 items-baseline justify-between gap-2 text-[13px] leading-5">
+    <li key={node.id} className="flow-key flex min-h-11 items-baseline justify-between gap-2 leading-5">
       <span className="flex min-w-0 items-baseline gap-2">
         <span className="fin-swatch" style={{ background: node.color }} aria-hidden="true" />
         <span className="min-w-0">{node.label}</span>
@@ -1619,6 +1622,7 @@ function FullFlow({
 }) {
   const t = useT();
   const stage = useRef<HTMLDivElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
   const view = useRef({ scale, pan, onScale, onPan });
   view.current = { scale, pan, onScale, onPan };
   const closeRef = useRef(onClose);
@@ -1631,6 +1635,26 @@ function FullFlow({
     void orientation?.lock?.("landscape")?.catch(() => undefined);
     return () => orientation?.unlock?.();
   }, []);
+
+  useEffect(() => {
+    const node = stage.current;
+    if (!node) return;
+    const check = () => {
+      setMoreBelow(node.scrollHeight > node.clientHeight + 12 && node.scrollTop + node.clientHeight < node.scrollHeight - 12);
+    };
+    check();
+    const soon = window.setTimeout(check, 240);
+    const later = window.setTimeout(check, 700);
+    node.addEventListener("scroll", check, { passive: true });
+    const observer = new ResizeObserver(check);
+    observer.observe(node);
+    return () => {
+      window.clearTimeout(soon);
+      window.clearTimeout(later);
+      node.removeEventListener("scroll", check);
+      observer.disconnect();
+    };
+  }, [children, scale]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1755,9 +1779,10 @@ function FullFlow({
   return (
     <div className="flow-full" data-swipe-ignore="" role="dialog" aria-modal="true" aria-label={title}>
       <div ref={stage} className="flow-full-stage">
-        <div className="h-full w-full" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`, transformOrigin: "center center" }}>
+        <div className="w-full" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`, transformOrigin: "center center" }}>
           {children}
         </div>
+        {moreBelow ? <span className="flow-more" aria-hidden="true" /> : null}
       </div>
       <div className="flow-full-bar">
         <button type="button" className="fin-chip" onClick={onClose}>

@@ -39,6 +39,8 @@ for (const id of names as Array<keyof typeof PRESETS>) {
   assert.ok(contrast(PRESETS[id].ink, PRESETS[id].canvas) >= 7, `${id} text`);
   assert.ok(contrast(PRESETS[id].muted, PRESETS[id].canvas) >= 4.5, `${id} muted`);
   assert.ok(contrast(PRESETS[id].frameColor, PRESETS[id].canvas) >= 3, `${id} border`);
+  assert.ok(contrast(PRESETS[id].warning, PRESETS[id].canvas) >= 3, `${id} warning`);
+  assert.ok(contrast(PRESETS[id].ink, PRESETS[id].surface3) >= 4.5, `${id} surface-3`);
   assert.equal(PRESETS[id].frame, "1px", id);
   assert.notEqual(PRESETS[id].panel.toUpperCase(), "#FFFFFF", id);
   assert.notEqual(PRESETS[id].panel2.toUpperCase(), "#FFFFFF", id);
@@ -59,5 +61,7 @@ assert.equal(custom.scheme, "dark");
 const ivory = paletteFromCustom(colorsFromPreset("ivory"));
 assert.equal(ivory.scheme, "light");
 assert.equal(ivory.sage, PRESETS.ivory.sage);
+assert.ok(contrast(PRESETS.sand.gold, PRESETS.sand.canvas) >= 4.5, "sand brand");
+assert.equal(PRESETS.sand.gold.toUpperCase(), "#6E5634");
 
 console.log("appearance ok");

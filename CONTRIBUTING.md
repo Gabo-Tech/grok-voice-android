@@ -4,7 +4,7 @@ Grok Voice is a Tauri and React app for Android. The site at [gabo-tech.github.i
 
 ## Before you edit a screen
 
-Read [DESIGN-LANGUAGE.md](DESIGN-LANGUAGE.md). Themes swap with `data-appearance` and may set only the semantic tokens that file lists. No raw hex in a component. Text is at least 13px. Touch targets are at least 44px. Radius stays on the 0, 2, and 4px tokens. Primary actions are solid fills. Secondary actions are underlined text.
+Read [DESIGN-LANGUAGE.md](DESIGN-LANGUAGE.md) (v2). Themes swap with `data-appearance` and may set only the semantic tokens that file lists. No raw hex in a component. Text is at least 13px and follows the Android font scale. Touch targets are at least 48px. Radius uses the v2 scale (4, 8, 12, 20). Cards, hero figures, and charts are allowed. Primary actions are solid fills. Secondary actions are underlined text. Pull request #132’s Talk bubbles, landscape rail, Activity, Sankey, and Plan stay; v2 restyles them later and does not replace them.
 
 Copy for the interface exists in English, Spanish, German, Portuguese, and Valencian (`en`, `es`, `de`, `pt`, `ca-ES-valencia`). Apostrophes in Android `strings.xml` are written as `\'`.
 

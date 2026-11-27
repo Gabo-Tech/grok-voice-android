@@ -86,6 +86,13 @@ assert.equal(
   "Check the key in Voice and AI. Create a new one if it was refused, then try Talk again.",
 );
 assert.equal(recoveryFor("no voice key yet")?.go, "voice");
+const mic = recoveryFor("Microphone permission is required for voice. Enable it in Android Settings → Apps → Grok Voice.");
+assert.equal(mic?.openAppSettings, true);
+assert.equal(mic?.go, undefined);
+assert.equal(mic?.hint, "Allow the microphone, then come back to Talk.");
+assert.ok(onboarding.includes("Check key"));
+assert.ok(onboarding.includes("Save anyway"));
+assert.ok(onboarding.includes("Key works."));
 
 const planted = "This string is not translated anywhere.";
 assert.equal(translatedSomewhere(planted), false);
