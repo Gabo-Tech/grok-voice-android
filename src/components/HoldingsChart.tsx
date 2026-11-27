@@ -13,6 +13,8 @@ import {
 } from "@/lib/financeLedger";
 import { bookFromStatus } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
+import { InfoTip } from "@/components/ds/InfoTip";
+import { TuneSheet } from "@/components/ds/TuneSheet";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { inBounds } from "@/lib/chartPeriod";
 import { changeOf, completeSeries, seriesFor, type ValuePoint } from "@/lib/portfolio";
@@ -190,13 +192,16 @@ export function HoldingsChart({
   return (
     <div className="space-y-4">
       <ChartCard title={t("Holdings chart")}>
-        <p className="fin-muted text-[13px] leading-4">{fill("By value in {code}.", { code: code || "—" })}</p>
-        <p className="fin-muted text-[13px] leading-4">{t("Latest balances. This period does not rewrite them.")}</p>
-        <ChartPeriodBar period={holdingsPeriod.period} onChange={holdingsPeriod.setPeriod} />
-        <div className="fin-seg mt-2" role="group" aria-label={t("Holdings chart")}>
-          <button type="button" aria-pressed={pref.group === "item"} onClick={() => save({ ...pref, group: "item" })}>{t("By item")}</button>
-          <button type="button" aria-pressed={pref.group === "class"} onClick={() => save({ ...pref, group: "class" })}>{t("By class")}</button>
-          <button type="button" aria-pressed={pref.cash} onClick={() => save({ ...pref, cash: !pref.cash })}>{t("Include cash")}</button>
+        <div className="filter-row">
+          <ChartPeriodBar period={holdingsPeriod.period} onChange={holdingsPeriod.setPeriod} />
+          <InfoTip label={t("Holdings chart")} text={`${fill("By value in {code}.", { code: code || "—" })} ${t("Latest balances. This period does not rewrite them.")}`} />
+          <TuneSheet label={t("Options")}>
+            <div className="tune-sheet" role="group" aria-label={t("Holdings chart")}>
+              <button type="button" className="tune-row" aria-pressed={pref.group === "item"} onClick={() => save({ ...pref, group: "item" })}>{t("By item")}</button>
+              <button type="button" className="tune-row" aria-pressed={pref.group === "class"} onClick={() => save({ ...pref, group: "class" })}>{t("By class")}</button>
+              <button type="button" className="tune-row" aria-pressed={pref.cash} onClick={() => save({ ...pref, cash: !pref.cash })}>{t("Include cash")}</button>
+            </div>
+          </TuneSheet>
         </div>
         {pie.slices.length === 0 ? (
           <p className="mt-3 text-[15px] leading-5">{t("Nothing priced yet")}</p>

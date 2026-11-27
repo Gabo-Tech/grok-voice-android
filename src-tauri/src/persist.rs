@@ -46,7 +46,6 @@ pub const WEB_KEYS: &[&str] = &[
     "grok-flow-colors",
     "grok-chart-period",
     "grok-chart-hidden",
-    "grok-mic-open",
     "grok-listen-hint",
 ];
 

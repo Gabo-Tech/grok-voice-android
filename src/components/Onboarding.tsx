@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Check, ChevronLeft, ChevronRight, ClipboardPaste, Eye, EyeOff } from "lucide-react";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { AppMark } from "@/components/AppMark";
 import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
@@ -71,8 +72,18 @@ async function openGuideLink(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+function Step({ n, title, children, quiet = false }: { n: number; title: string; children: ReactNode; quiet?: boolean }) {
   const t = useT();
+  if (quiet) {
+    return (
+      <div className="flex min-h-12 items-center gap-1">
+        <h2 className="chapter">
+          {n}. {t(title)}
+        </h2>
+        <InfoTip label={t(title)}>{children}</InfoTip>
+      </div>
+    );
+  }
   return (
     <section className="space-y-2">
       <h2 className="chapter">
@@ -604,7 +615,10 @@ export function Onboarding({
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-3">
           {screen === "language" && (
             <>
-              <p className="text-sm leading-6 text-muted-foreground">{t("This sets the screen language. You can change it later in Settings. The first offline voice is English until you add another in Voice and AI.")}</p>
+              <InfoTip label={t("Language")}>
+                <p>{t("This sets the screen language. You can change it later in Settings. The first offline voice is English until you add another in Voice and AI.")}</p>
+                <p>{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
+              </InfoTip>
               <div className="grid grid-cols-2 gap-2">
                 {LANGS.map((item) => (
                   <button
@@ -617,14 +631,13 @@ export function Onboarding({
                   </button>
                 ))}
               </div>
-              <p className="text-sm leading-6 text-muted-foreground">{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
             </>
           )}
 
           {screen === "path" && (
             <>
               <h2 className="text-2xl font-medium tracking-tight">{t("How should Talk answer?")}</h2>
-              <p className="text-sm leading-6 text-muted-foreground">{t("Pick one path. You can add the others later in Voice and AI.")}</p>
+              <InfoTip label={t("How should Talk answer?")} text={t("Pick one path. You can add the others later in Voice and AI.")} />
               <div className="flex flex-col">
                 {PATHS.map((item) => (
                   <button
@@ -638,28 +651,28 @@ export function Onboarding({
                   </button>
                 ))}
               </div>
-              <p className="text-sm leading-6 text-muted-foreground">{t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")}</p>
+              <InfoTip label={t("How should Talk answer?")} text={t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")} />
             </>
           )}
 
           {screen === "local" && (
             <>
               <h2 className="text-2xl font-medium tracking-tight">{t("On this phone")}</h2>
-              <Step n={1} title="What it needs">
+              <Step n={1} title="What it needs" quiet>
                 <p>{t("Nothing to buy. The files download into this phone. No account and no token.")}</p>
                 <p>{t("Moonshine turns speech into text. llama.cpp runs the chat model. Phonon or Piper speaks.")}</p>
               </Step>
-              <Step n={2} title="Memory">
+              <Step n={2} title="Memory" quiet>
                 <p className="text-foreground">{memoryLine}</p>
                 <p>{fill("Piper English is a separate file of about {piper}. Phonon speaks first and needs no account. You can switch to Piper in Voice and AI.", { piper: sized.piper })}</p>
               </Step>
               <Step n={3} title="Storage">
                 {packBlock}
               </Step>
-              <Step n={4} title="Test it">
+              <Step n={4} title="Test it" quiet>
                 <p>{t("Play the voice. Then open Talk and say hello with the network off. A reply means the phone can answer alone.")}</p>
               </Step>
-              <Step n={5} title="If this fails">
+              <Step n={5} title="If this fails" quiet>
                 <p>{t("If the download stops, try it again. What is already on the phone stays. If a model does not fit, keep SmolLM2 or add a cloud key. If there is no reply, check that Moonshine, the chat model, and Phonon or Piper are on this phone.")}</p>
               </Step>
             </>
@@ -675,7 +688,7 @@ export function Onboarding({
                   {t("Open the key page")}
                 </button>
               </Step>
-              <Step n={2} title="What it needs">
+              <Step n={2} title="What it needs" quiet>
                 <p>{t(activeKey.cost)}</p>
               </Step>
               <Step n={3} title="Save the key">
@@ -699,7 +712,7 @@ export function Onboarding({
           {screen === "mixed" && (
             <>
               <h2 className="text-2xl font-medium tracking-tight">{t("Phone, then a cloud key")}</h2>
-              <Step n={1} title="What it needs">
+              <Step n={1} title="What it needs" quiet>
                 <p>{t("Two parts. The phone answers when it can. A cloud key answers when the phone cannot.")}</p>
                 <p>{t("Download the offline pack first. Then save one cloud key: xAI, OpenAI, or 1min.ai.")}</p>
                 <p>{t("Talk tries this phone first when the packs are ready. If a pack is missing, the model will not load, or memory is low, Talk uses the cloud key.")}</p>
@@ -764,7 +777,7 @@ export function Onboarding({
               <p className="text-sm leading-6 text-muted-foreground">{t("Hey Grok can be trained later under Wake word.")}</p>
               <p className="text-sm leading-6 text-foreground">{t("A reply in Talk means this path works. You can change it later in Voice and AI.")}</p>
               {path === "local" && (packsReady || pieces.length === 0) ? <p className="text-sm text-foreground">{t("This phone is ready to talk with no network.")}</p> : null}
-              <Step n={1} title="If this fails">
+              <Step n={1} title="If this fails" quiet>
                 <p>
                   {path === "local"
                     ? t("If the download stops, try it again. What is already on the phone stays. If a model does not fit, keep SmolLM2 or add a cloud key. If there is no reply, check that Moonshine, the chat model, and Phonon or Piper are on this phone.")
@@ -811,7 +824,9 @@ export function Onboarding({
           <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void finish("skipped")}>
             {t("Finish later")}
           </Button>
-          <p className="text-center text-[13px] leading-5 text-muted-foreground">{t("Setup can wait. Open Settings, then Voice and AI, and continue from the same path.")}</p>
+          <div className="flex justify-center">
+            <InfoTip label={t("Finish later")} text={t("Setup can wait. Open Settings, then Voice and AI, and continue from the same path.")} />
+          </div>
         </footer>
       </div>
     </div>

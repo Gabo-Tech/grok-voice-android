@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Sheet } from "@/components/Sheet";
 import type { Settings } from "@/lib/api";
 import {
   PRESETS,
@@ -17,7 +18,6 @@ import {
   type PresetId,
 } from "@/lib/appearance";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 
 const PRESET_CHOICES: Array<{ id: PresetId; title: string; body: string }> = [
   { id: "graphite", title: "Graphite", body: "Warm dark, and the default." },
@@ -52,6 +52,7 @@ export function ThemePicker({
   const selected = normalizeAppearance(settings?.appearance);
   const [colors, setColors] = useState<CustomColors>(() => customFromString(settings?.customTheme) ?? colorsFromPreset("graphite"));
   const [seed, setSeed] = useState<PresetId>("graphite");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const preview = paletteFromCustom(parseHex(colors.canvas) ? colors : colorsFromPreset("graphite"));
   useEffect(() => {
     const parsed = customFromString(settings?.customTheme);
@@ -84,14 +85,23 @@ export function ThemePicker({
     paintCustom({ ...colors, [key]: hex });
   };
 
+  const currentTitle =
+    selected === "system" ? t("System") : selected === "custom" ? t("Custom") : t(PRESET_CHOICES.find((item) => item.id === selected)?.title || "Graphite");
+  const currentCanvas = selected === "custom" ? preview.canvas : selected === "system" ? PRESETS.graphite.canvas : PRESETS[selected].canvas;
+
   return (
     <div className="min-w-0 max-w-full">
-      <div className="grid min-w-0 grid-cols-2 gap-3">
+      <button type="button" className="theme-row" onClick={() => setPickerOpen(true)}>
+        <span className="min-w-0 flex-1 text-base">{t("Theme")}</span>
+        <span className="theme-dot" style={{ background: currentCanvas }} aria-hidden />
+        <span className="text-sm text-muted-foreground">{currentTitle}</span>
+      </button>
+      <Sheet open={pickerOpen} title={t("Theme")} onClose={() => setPickerOpen(false)}>
+      <div className="theme-grid" role="radiogroup" aria-label={t("Theme")}>
         {PRESET_CHOICES.map((choice) => (
           <Swatch
             key={choice.id}
             title={t(choice.title)}
-            body={t(choice.body)}
             pressed={selected === choice.id}
             canvas={PRESETS[choice.id].canvas}
             ink={PRESETS[choice.id].ink}
@@ -100,20 +110,17 @@ export function ThemePicker({
         ))}
         <Swatch
           title={t("System")}
-          body={t("Dark uses Graphite. Light uses Stone.")}
           pressed={selected === "system"}
-          canvas="#0E0F11"
-          ink="#EEECE8"
+          canvas={PRESETS.graphite.canvas}
+          ink={PRESETS.graphite.ink}
           split
           onClick={() => commit("system")}
         />
         <Swatch
           title={t("Custom")}
-          body={t("Pick every color.")}
           pressed={selected === "custom"}
           canvas={preview.canvas}
           ink={preview.ink}
-          wide
           onClick={() => commit("custom", colors)}
         />
       </div>
@@ -176,44 +183,44 @@ export function ThemePicker({
           </button>
         </div>
       ) : null}
+      </Sheet>
     </div>
   );
 }
 
 function Swatch({
   title,
-  body,
   pressed,
   canvas,
   ink,
   split,
-  wide,
   onClick,
 }: {
   title: string;
-  body: string;
   pressed: boolean;
   canvas: string;
   ink: string;
   split?: boolean;
-  wide?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      aria-pressed={pressed}
+      role="radio"
+      aria-checked={pressed}
       onClick={onClick}
-      className={cn("min-h-24 min-w-0 px-3 py-3 text-left", wide && "col-span-2", pressed && "shadow-[inset_0_-2px_0_var(--brand)]")}
-      style={{
-        background: split ? "linear-gradient(135deg, #0E0F11 50%, #F4F2EE 50%)" : canvas,
-        color: split ? "#EEECE8" : ink,
-      }}
+      className="theme-swatch"
+      style={{ background: canvas, color: ink }}
     >
-      <span className="mb-2 flex min-w-0 items-center gap-2">
-        <span className="truncate text-xs tracking-[0.14em] uppercase">{title}</span>
-      </span>
-      <span className="block text-xs leading-4 break-words opacity-80">{body}</span>
+      {split ? (
+        <span className="flex h-7 w-7 overflow-hidden rounded-full" aria-hidden>
+          <span className="h-full w-1/2" style={{ background: PRESETS.graphite.canvas }} />
+          <span className="h-full w-1/2" style={{ background: PRESETS.stone.canvas }} />
+        </span>
+      ) : (
+        <span className="theme-dot" style={{ background: ink }} aria-hidden />
+      )}
+      <span className="text-sm">{pressed ? `${title} ✓` : title}</span>
     </button>
   );
 }

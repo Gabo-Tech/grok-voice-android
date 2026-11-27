@@ -8,6 +8,7 @@ import { Field } from "@/components/Field";
 import { CurrencyEditor } from "@/components/CurrencyEditor";
 import { AppMark } from "@/components/AppMark";
 import { PageChrome, RowButton } from "@/components/PageChrome";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { ThemePicker } from "@/components/ThemePicker";
 import { PeoplePage } from "@/components/PeoplePage";
 import { WakeView } from "@/components/WakeView";
@@ -549,9 +550,9 @@ export function MorePage({
       extra: (
         <>
           <ThemePicker settings={settings} onChange={saveLook} />
-          <p data-widget-note className="px-1 pt-4 text-sm leading-6 text-muted-foreground">
-            {t("Home screen widgets use this theme and the currency in Settings. Add Listen, reminders, the schedule, net worth, this month, or the next 30 days from the phone's home screen.")}
-          </p>
+          <div data-widget-note className="px-1 pt-2">
+            <InfoTip label={t("Theme")} text={t("Home screen widgets use this theme and the currency in Settings. Add Listen, reminders, the schedule, net worth, this month, or the next 30 days from the phone's home screen.")} />
+          </div>
         </>
       ),
       rows: [],
@@ -560,14 +561,14 @@ export function MorePage({
       id: "voice",
       title: t("Voice"),
       rows: [
-        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: t("Hearing, the model, the voice, and what is tried next.") },
+        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: first ? t(providerLabel(first.provider)) : "" },
         {
           section: "spend",
           icon: <Wallet className="size-4" />,
           title: t("Daily voice budget"),
           detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("A soft cap on talk time. Off until you set minutes."),
         },
-        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: t("How long Talk waits before only Hey Grok is heard.") },
+        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: "" },
       ],
     },
     {
@@ -667,31 +668,35 @@ export function MorePage({
     .filter((group) => group.rows.length > 0 || (group.extra && (!query || `${group.title} ${group.hint ?? ""}`.toLowerCase().includes(query))));
 
   return (
-    <PageChrome mark title={t("Settings")} subtitle={t("Voice, music, and this phone")} active={active && section === "menu"}>
+    <PageChrome mark title={t("Settings")} info={<InfoTip label={t("Settings")} text={t("Voice, music, and this phone")} />} active={active && section === "menu"}>
       <ListenStatus />
       <div className="mb-8">
         <p className="text-base text-foreground">
           {first ? `${t("Tried first")}: ${t(providerLabel(first.provider))}` : t("No voice yet")}
         </p>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {accounts.length > 1
-            ? `${t("Then this")} ${accounts
-                .slice(1)
-                .map((account) => t(providerLabel(account.provider)))
-                .join(", ")}.`
-            : first
-              ? t("Add another voice if you want a fallback.")
-              : t("Add xAI, OpenAI, or On device.")}
-        </p>
-        <p className="mt-2 text-sm text-foreground">
-          {usage
-            ? fill("{minutes} min · {count} {unit}", {
-                minutes: usage.minutes,
-                count: usage.sessions,
-                unit: usage.sessions === 1 ? t("session") : t("sessions"),
-              })
-            : t("Today's time is counted on this phone.")}
-        </p>
+        {accounts.length > 1 ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {accounts
+              .slice(1)
+              .map((account) => t(providerLabel(account.provider)))
+              .join(" · ")}
+          </p>
+        ) : first ? (
+          <InfoTip label={t("Voice")} text={t("Add another voice if you want a fallback.")} />
+        ) : (
+          <p className="mt-1 text-sm text-muted-foreground">{t("Add xAI, OpenAI, or On device.")}</p>
+        )}
+        {usage ? (
+          <p className="mt-2 text-sm text-foreground">
+            {fill("{minutes} min · {count} {unit}", {
+              minutes: usage.minutes,
+              count: usage.sessions,
+              unit: usage.sessions === 1 ? t("session") : t("sessions"),
+            })}
+          </p>
+        ) : (
+          <InfoTip label={t("Daily voice budget")} text={t("Today's time is counted on this phone.")} />
+        )}
       </div>
       <label className="mb-4 block px-1">
         <span className="sr-only">{t("Find a setting")}</span>
@@ -1545,8 +1550,10 @@ function ListenStatus() {
   if (!health) return null;
   return (
     <div className="mb-8">
-      <p className="text-base text-foreground">{listenTitle(health.health, t)}</p>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{listenBody(health.health, t)}</p>
+      <div className="flex items-center gap-1">
+        <p className="text-base text-foreground">{listenTitle(health.health, t)}</p>
+        <InfoTip label={t("Listen")} text={listenBody(health.health, t)} />
+      </div>
       {health.health === "battery" ? (
         <Button className="mt-3 w-full" type="button" onClick={() => void api.requestBatteryExemption().then(setHealth).catch(() => {})}>
           {t("Allow unrestricted battery")}
@@ -1589,7 +1596,7 @@ function MenuRow({
       <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">{icon}</span>
       <div className="min-w-0 flex-1">
         <p className="text-base text-foreground">{title}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p>
+        {detail ? <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p> : null}
       </div>
       <ChevronRight className="size-4 text-muted-foreground" />
     </RowButton>

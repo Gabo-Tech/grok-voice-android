@@ -23,7 +23,7 @@
             android:maxLines="1"
             android:textAllCaps="true"
             android:textColor="#C4B5A0"
-            android:textSize="11sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -49,6 +49,6 @@
             android:ellipsize="end"
             android:maxLines="2"
             android:textColor="#8B8A86"
-            android:textSize="12sp" />
+            android:textSize="13sp" />
     </LinearLayout>
 </LinearLayout>

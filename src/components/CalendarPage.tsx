@@ -7,12 +7,12 @@ import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AgendaState } from "@/hooks/useAgenda";
-import { formatClock, formatDay, formatSpan, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
+import { formatClock, formatSpan, fromLocalInput, toLocalInput } from "@/hooks/useAgenda";
 import { RepeatFields, endOfDay, untilInput, type RepeatChoice } from "@/components/RepeatFields";
 import { api, type CalEvent } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
-export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; active?: boolean }) {
+export function CalendarPage({ agenda, active = true, chrome = true }: { agenda: AgendaState; active?: boolean; chrome?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
@@ -126,7 +126,7 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
 
   return (
     <>
-      <PageChrome title={t("Calendar")} subtitle={formatDay()} onAdd={openNew} addLabel={t("New event")} active={active}>
+      <PageChrome title={t("Calendar")} bare={!chrome} onAdd={openNew} addLabel={t("New event")} active={active}>
         {monthCalendar !== "granted" && (
           <Button
             variant="outline"
@@ -209,7 +209,7 @@ export function CalendarPage({ agenda, active = true }: { agenda: AgendaState; a
                   aria-pressed={on}
                   className={`flex h-14 flex-col items-center justify-center text-sm tabular-nums ${
                     on ? "bg-foreground text-background" : "text-foreground"
-                  } ${today && !on ? "underline decoration-[var(--brand)] decoration-1 underline-offset-4" : ""}`}
+                  } ${today && !on ? "day-today" : ""}`}
                 >
                   {day.getDate()}
                   <span className="text-[13px] leading-4">{count > 0 ? count : ""}</span>

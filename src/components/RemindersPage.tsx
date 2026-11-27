@@ -43,7 +43,19 @@ const WEEKDAYS = [
 type Repeat = RepeatChoice | "once";
 type Delivery = "" | "spoken" | "normal";
 
-export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; active?: boolean }) {
+export function RemindersPage({
+  agenda,
+  active = true,
+  chrome = true,
+  showTabs = true,
+  forcedTab,
+}: {
+  agenda: AgendaState;
+  active?: boolean;
+  chrome?: boolean;
+  showTabs?: boolean;
+  forcedTab?: TimeTab;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduledItem | null>(null);
@@ -52,7 +64,10 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
   const [minutes, setMinutes] = useState(10);
   const [note, setNote] = useState("");
   const [kind, setKind] = useState<(typeof KINDS)[number]>("reminder");
-  const [tab, setTab] = useState<TimeTab>("reminders");
+  const [tab, setTab] = useState<TimeTab>(forcedTab ?? "reminders");
+  useEffect(() => {
+    if (forcedTab) setTab(forcedTab);
+  }, [forcedTab]);
   const [queries, setQueries] = useState<Record<TimeTab, string>>({ reminders: "", alarms: "", countdowns: "" });
   const [repeat, setRepeat] = useState<Repeat>("none");
   const [interval, setInterval] = useState(2);
@@ -233,13 +248,13 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
     (kind === "alarm" && agenda.error && SOUND_ERRORS.some((item) => agenda.error?.includes(item)) ? agenda.error : null);
   const query = queryFor(queries, tab);
   const grouped = useMemo(() => groupTimeItems(items, tab, query), [items, query, tab]);
-  const subtitle = waitingLine(grouped, t);
   const setQuery = (value: string) => setQueries((current) => ({ ...current, [tab]: value }));
 
   return (
     <>
-      <PageChrome title={t("Time")} subtitle={subtitle} onAdd={() => openNew(kindForTab(tab))} addLabel={t(addLabel(tab))} active={active}>
-        <div role="tablist" aria-label={t("Time")} className="mb-4 flex flex-wrap gap-x-4 gap-y-1">
+      <PageChrome title={t("Time")} bare={!chrome} onAdd={() => openNew(kindForTab(tab))} addLabel={t(addLabel(tab))} active={active}>
+        {showTabs ? (
+        <div role="tablist" aria-label={t("Time")} className="m3-tabs mb-4">
           {TIME_TABS.map((item) => (
             <button
               key={item}
@@ -249,16 +264,12 @@ export function RemindersPage({ agenda, active = true }: { agenda: AgendaState; 
               aria-selected={tab === item}
               aria-controls={`time-panel-${item}`}
               onClick={() => setTab(item)}
-              className={
-                tab === item
-                  ? "min-h-11 px-0 text-sm text-foreground underline decoration-[var(--brand)] underline-offset-4"
-                  : "min-h-11 px-0 text-sm text-muted-foreground"
-              }
             >
               {t(tabLabel(item))}
             </button>
           ))}
         </div>
+        ) : null}
         <div key={tab} role="tabpanel" id={`time-panel-${tab}`} aria-labelledby={`time-tab-${tab}`} data-time-tabpanel={tab}>
           <button
             type="button"
@@ -662,10 +673,3 @@ function patternLabel(item: ScheduledItem, t: (english: string) => string): stri
   return base;
 }
 
-function waitingLine(grouped: ReturnType<typeof groupTimeItems>, t: (english: string) => string): string {
-  const parts: string[] = [];
-  if (grouped.overdue) parts.push(fill("{n} overdue", { n: grouped.overdue }));
-  if (grouped.today) parts.push(fill("{n} today", { n: grouped.today }));
-  if (!grouped.overdue && !grouped.today && grouped.later) parts.push(fill("{n} later", { n: grouped.later }));
-  return parts.length ? parts.join(" · ") : t("None waiting");
-}

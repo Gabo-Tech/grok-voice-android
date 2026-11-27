@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0E0E0E"
+    android:background="#0E0F11"
     android:fitsSystemWindows="true"
     android:orientation="vertical"
     android:paddingStart="24dp"
@@ -14,8 +14,8 @@
         android:id="@+id/alarm_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#F5F5F5"
-        android:textSize="28sp" />
+        android:textColor="#EEECE8"
+        android:textSize="32sp" />
 
     <TextView
         android:id="@+id/alarm_status"
@@ -23,8 +23,8 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         android:lineSpacingExtra="4dp"
-        android:textColor="#C8C8C8"
-        android:textSize="16sp" />
+        android:textColor="#C4C2BC"
+        android:textSize="20sp" />
 
     <WebView
         android:id="@+id/alarm_player"
@@ -41,10 +41,10 @@
     <Button
         android:id="@+id/alarm_stop"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:backgroundTint="#F5F5F5"
+        android:layout_height="64dp"
+        android:backgroundTint="#EEECE8"
         android:text="@string/alarm_stop"
         android:textAllCaps="false"
-        android:textColor="#0E0E0E"
+        android:textColor="#1A1B1E"
         android:textSize="16sp" />
 </LinearLayout>

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { InfoTip } from "@/components/ds/InfoTip";
+import { PeriodMenu } from "@/components/ds/PeriodMenu";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
-import { Minus, Plus, Repeat } from "lucide-react";
+import { Minus, Plus, Repeat, SlidersHorizontal } from "lucide-react";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -396,7 +398,7 @@ export function FinancePage({
     <div className="finance flex min-h-0 flex-1 flex-col">
       <PageChrome
         title={t("Finance")}
-        subtitle={t("On this phone. No bank login.")}
+        info={<InfoTip label={t("Finance")} text={t("On this phone. No bank login.")} />}
         onAdd={openAdd}
         addLabel={t(addLabel)}
         active={active}
@@ -818,14 +820,14 @@ function Activity({
   };
   return (
     <div className="min-w-0">
-      <div className="chip-scroller mb-2">
-        {PERIODS.map((id) => (
-          <Chip key={id} on={period === id} onClick={() => onPeriod(id)}>{t(periodLabel(id))}</Chip>
-        ))}
-      </div>
-      <div className="mb-2 flex min-w-0 items-center gap-2">
-        <button type="button" className="fin-chip shrink-0" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}>
-          {applied.length > 0 ? `${t("Filters")} ${applied.length}` : t("Filters")}
+      <div className="filter-row mb-2">
+        <PeriodMenu
+          value={period}
+          options={PERIODS.map((id) => ({ id, label: periodLabel(id) }))}
+          onChange={(id) => onPeriod(id as PeriodId)}
+        />
+        <button type="button" className="icon-hit ml-auto" aria-expanded={filtersOpen} aria-label={applied.length > 0 ? `${t("Filters")} ${applied.length}` : t("Filters")} onClick={() => setFiltersOpen(true)}>
+          <SlidersHorizontal className="size-5" strokeWidth={1.5} />
         </button>
       </div>
       {applied.length > 0 ? (
@@ -890,9 +892,9 @@ function Activity({
           )
         : null}
       {filtersOnly ? null : (
-        <div className="mb-3 flex flex-wrap gap-2" role="tablist" aria-label={t("Activity")}>
-          <button type="button" role="tab" className="fin-choice" aria-selected={view === "transactions"} onClick={() => setView("transactions")}>{t("Transactions")}</button>
-          <button type="button" role="tab" className="fin-choice" aria-selected={view === "recurring"} onClick={() => setView("recurring")}>{t("Recurring")}</button>
+        <div className="m3-tabs mb-3" role="tablist" aria-label={t("Activity")}>
+          <button type="button" role="tab" aria-selected={view === "transactions"} onClick={() => setView("transactions")}>{t("Transactions")}</button>
+          <button type="button" role="tab" aria-selected={view === "recurring"} onClick={() => setView("recurring")}>{t("Recurring")}</button>
         </div>
       )}
       {filtersOnly || view !== "recurring" ? null : rules.length === 0 ? (
@@ -2055,7 +2057,7 @@ function PayCardSheet({
       }
     >
       <div className="space-y-4">
-        <p className="text-sm leading-5 text-muted-foreground">{t("A card payment is not a new expense. Cash and the balance owed both fall. Paying more than you owe leaves a credit. Net worth stays the same.")}</p>
+        <InfoTip label={t("Pay card")} text={t("A card payment is not a new expense. Cash and the balance owed both fall. Paying more than you owe leaves a credit. Net worth stays the same.")} />
         {posture === "credit" ? <p className="text-sm leading-5">{t("This card is already in credit. Enter an amount only if you still want to pay more.")}</p> : null}
         {posture === "paid" ? <p className="text-sm leading-5">{t("This card is already paid. Enter an amount only if you want to pay more.")}</p> : null}
         <p className="fin-num text-3xl">{posture === "credit" ? `${owed} ${t("Credit")}` : owed}</p>

@@ -74,7 +74,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
 
   return (
     <>
-      <PageChrome title={t("Notes")} subtitle={`${agenda.agenda.notes.length} ${t("saved")}`} onAdd={openNew} addLabel={t("New note")} active={active}>
+      <PageChrome title={t("Notes")} onAdd={openNew} addLabel={t("New note")} active={active}>
         {(agenda.agenda.notes.length > 0 || query) && (
         <div className="mb-6">
           <Field label={t("Search")}>

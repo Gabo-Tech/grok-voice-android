@@ -7,6 +7,8 @@ export type LocaleId = "en" | "es" | "de" | "pt" | "ca-ES-valencia";
 
 const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   es: {
+    Agenda: "Agenda",
+    "Money flow": "Flujo de dinero",
     Talk: "Hablar",
     Notes: "Notas",
     Calendar: "Calendario",
@@ -1348,6 +1350,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "No language model is on this phone yet.": "Aún no hay un modelo de lenguaje en este teléfono.",
   },
   de: {
+    Agenda: "Termine",
+    "Money flow": "Geldfluss",
     Talk: "Sprechen",
     Notes: "Notizen",
     Calendar: "Kalender",
@@ -2689,6 +2693,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "No language model is on this phone yet.": "Auf diesem Telefon liegt noch kein Sprachmodell.",
   },
   pt: {
+    Agenda: "Agenda",
+    "Money flow": "Fluxo de dinheiro",
     Talk: "Falar",
     Notes: "Notas",
     Calendar: "Calendário",
@@ -4030,6 +4036,8 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "No language model is on this phone yet.": "Ainda não há um modelo de linguagem neste telefone.",
   },
   "ca-ES-valencia": {
+    Agenda: "Agenda",
+    "Money flow": "Flux de diners",
     Talk: "Parlar",
     Notes: "Notes",
     Calendar: "Calendari",

@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { AssistantView } from "@/components/AssistantView";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { BottomNav, useThumbBar, type AppTab } from "@/components/BottomNav";
-import { CalendarPage } from "@/components/CalendarPage";
+import { AgendaPage } from "@/components/AgendaPage";
 import { FinancePage } from "@/components/FinancePage";
 import { FlowShot } from "@/components/FlowShot";
 import { Loader } from "@/components/Loader";
@@ -12,7 +12,6 @@ import { LoaderShot } from "@/components/LoaderShot";
 import { applyBackupResult, MorePage, type Section } from "@/components/MorePage";
 import { NotesPage } from "@/components/NotesPage";
 import { Onboarding } from "@/components/Onboarding";
-import { RemindersPage } from "@/components/RemindersPage";
 import { useAgenda } from "@/hooks/useAgenda";
 import { useFinance } from "@/hooks/useFinance";
 import { useVoice } from "@/hooks/useVoice";
@@ -39,9 +38,9 @@ function previewRoute(inApp: boolean): { app: boolean; tab: AppTab; section: Sec
   if (inApp || !import.meta.env.DEV || typeof window === "undefined") return fallback;
   const params = new URLSearchParams(window.location.search);
   if (!params.has("app")) return fallback;
-  const tabs: AppTab[] = ["talk", "notes", "calendar", "reminders", "finance", "more"];
+  const tabs: AppTab[] = ["talk", "notes", "agenda", "finance", "more"];
   const asked = params.get("tab");
-  const tab = tabs.includes(asked as AppTab) ? (asked as AppTab) : "talk";
+  const tab = asked === "calendar" || asked === "reminders" ? "agenda" : tabs.includes(asked as AppTab) ? (asked as AppTab) : "talk";
   const sections: Section[] = ["menu", "voice", "model", "wake", "people", "spend", "language", "keys", "packs", "music", "updates", "finance", "backup"];
   const sectionAsked = params.get("section");
   const section = sections.includes(sectionAsked as Section) ? (sectionAsked as Section) : "menu";
@@ -77,8 +76,7 @@ export default function App() {
   const [seen, setSeen] = useState({
     talk: true,
     notes: preview.tab === "notes",
-    calendar: preview.tab === "calendar",
-    reminders: preview.tab === "reminders",
+    agenda: preview.tab === "agenda",
     finance: preview.tab === "finance",
     more: restorePending || preview.tab === "more",
   });
@@ -121,8 +119,10 @@ export default function App() {
     if (!inApp) return;
     const onWidget = (ev: Event) => {
       const action = (ev as CustomEvent<string>).detail;
-      if (action === "reminders") goTab.current("reminders");
-      else if (action === "events") goTab.current("calendar");
+      if (action === "reminders" || action === "events") {
+        window.dispatchEvent(new CustomEvent("grok-agenda-pane", { detail: action === "events" ? "calendar" : "reminders" }));
+        goTab.current("agenda");
+      }
       else if (action === "finance") goTab.current("finance");
       else if (action === "talk") {
         goTab.current("talk");
@@ -345,14 +345,9 @@ export default function App() {
           <NotesPage agenda={agenda} active={tab === "notes"} />
         </div>
         ) : null}
-        {seen.calendar ? (
-        <div className={tab === "calendar" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
-          <CalendarPage agenda={agenda} active={tab === "calendar"} />
-        </div>
-        ) : null}
-        {seen.reminders ? (
-        <div className={tab === "reminders" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
-          <RemindersPage agenda={agenda} active={tab === "reminders"} />
+        {seen.agenda ? (
+        <div className={tab === "agenda" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+          <AgendaPage agenda={agenda} active={tab === "agenda"} />
         </div>
         ) : null}
         {seen.finance ? (

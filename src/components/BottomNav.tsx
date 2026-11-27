@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { AlarmClock, CalendarDays, ChevronLeft, Mic, NotebookPen, Plus, Settings, Wallet } from "lucide-react";
+import { CalendarDays, ChevronLeft, Mic, NotebookPen, Plus, Settings, Wallet } from "lucide-react";
 import { getAction, getNav, requestBack, subscribeAction, subscribeNav } from "@/lib/history";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-export type AppTab = "talk" | "notes" | "calendar" | "reminders" | "finance" | "more";
+export type AppTab = "talk" | "notes" | "agenda" | "finance" | "more";
 
 const ITEMS: Array<{ id: AppTab; label: string; icon: typeof Mic }> = [
   { id: "talk", label: "Talk", icon: Mic },
   { id: "notes", label: "Notes", icon: NotebookPen },
-  { id: "calendar", label: "Calendar", icon: CalendarDays },
-  { id: "reminders", label: "Time", icon: AlarmClock },
+  { id: "agenda", label: "Agenda", icon: CalendarDays },
   { id: "finance", label: "Finance", icon: Wallet },
   { id: "more", label: "Settings", icon: Settings },
 ];
@@ -95,7 +94,7 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
           ) : null}
         </div>
       )}
-      <ul ref={listRef} className="grid grid-cols-6">
+      <ul ref={listRef} className="grid grid-cols-5">
         {ITEMS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           const showLabel = !compact;
@@ -107,12 +106,14 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
                 aria-current={active ? "page" : undefined}
                 aria-label={t(label)}
                 className={cn(
-                  "flex min-h-12 w-full min-w-0 max-w-full flex-col items-center justify-center px-0.5 py-1.5",
+                  "flex min-h-12 w-full min-w-0 max-w-full flex-col items-center justify-center gap-1 px-0.5 py-1",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
-                <Icon className="size-5 shrink-0" strokeWidth={1.5} />
-                {showLabel ? <span className="nav-label">{t(label)}</span> : null}
+                <span className="nav-pill">
+                  <Icon className="size-6 shrink-0" strokeWidth={1.5} />
+                </span>
+                {showLabel ? <span className={cn("nav-label", active && "font-medium")}>{t(label)}</span> : null}
               </button>
             </li>
           );

@@ -240,7 +240,7 @@ export function Donut({
     return { ...slice, path };
   });
   const ratio = debtRatio != null && debtRatio > 0 ? Math.min(debtRatio, 1) : 0;
-  const label = caption ? `${caption} ${center}` : center;
+  const label = [caption, center].filter(Boolean).join(" ") || rows.map((row) => row.label).filter(Boolean).join(", ");
   return (
     <div className="relative mx-auto aspect-square w-full max-w-[220px]">
       <svg viewBox="0 0 200 200" className="block h-full w-full" role="img" aria-label={label}>
@@ -258,7 +258,7 @@ export function Donut({
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-12 text-center">
         {caption ? <span className="text-[13px] leading-4">{caption}</span> : null}
-        <span className="fin-num text-[15px] leading-5 break-words">{center}</span>
+        {center ? <span className="fin-num text-[15px] leading-5 break-words">{center}</span> : null}
       </div>
     </div>
   );

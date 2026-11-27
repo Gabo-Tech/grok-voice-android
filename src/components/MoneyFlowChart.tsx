@@ -8,6 +8,8 @@ import type { FinanceAccount, FinanceCategory, FinanceFx, FinanceTransaction } f
 import { ChartCard } from "@/components/ChartKit";
 import { ColorSheet } from "@/components/ColorSheet";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
+import { InfoTip } from "@/components/ds/InfoTip";
+import { TuneSheet } from "@/components/ds/TuneSheet";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
 import { buildMoneyFlow, buildSankeyOption, fitValueScale, flowSlices, spreadColumn, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
@@ -21,7 +23,6 @@ use([SankeyChart, CanvasRenderer, TooltipComponent]);
 
 const COLOR_KEY = "grok-flow-colors";
 const OPTION_KEY = "grok-flow-options";
-const PANEL_KEY = "grok-flow-panel";
 
 type FlowGroupMode = "category" | "entry";
 
@@ -34,18 +35,6 @@ interface FlowOptions {
   mono: boolean;
   planned: boolean;
   portraitLayout: PortraitLayout;
-}
-
-function readPanelOpen(): boolean {
-  if (typeof window === "undefined") return false;
-  const asked = new URLSearchParams(window.location.search).get("options");
-  if (asked === "open") return true;
-  if (asked === "closed") return false;
-  try {
-    return sessionStorage.getItem(PANEL_KEY) === "open";
-  } catch {
-    return false;
-  }
 }
 
 function readOptions(): FlowOptions {
@@ -114,7 +103,6 @@ export function MoneyFlowPanel({
   const bounds = useMemo(() => boundsOf(period), [period]);
   const [colors, setColors] = useState<Record<string, string>>(() => Object.fromEntries((flowColors || []).filter((row) => row.id && row.color).map((row) => [row.id, row.color])));
   const [openOther, setOpenOther] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(readPanelOpen);
   const [colorsOpen, setColorsOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("colors") === "open");
   const [full, setFull] = useState(() => typeof window !== "undefined" && (new URLSearchParams(window.location.search).get("flow") === "full" || new URLSearchParams(window.location.search).get("full") === "1"));
   const [drill, setDrill] = useState("");
@@ -220,14 +208,6 @@ export function MoneyFlowPanel({
   }, [onPaintNode]);
 
   useEffect(() => {
-    try {
-      sessionStorage.setItem(PANEL_KEY, panelOpen ? "open" : "closed");
-    } catch {
-      /* The panel still opens for this visit. */
-    }
-  }, [panelOpen]);
-
-  useEffect(() => {
     if (typeof window === "undefined" || new URLSearchParams(window.location.search).has("portraitLayout")) return;
     try {
       if (localStorage.getItem(OPTION_KEY)) return;
@@ -307,43 +287,21 @@ export function MoneyFlowPanel({
   );
 
   const controls = (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1" data-swipe-ignore="">
-      <button type="button" className="fin-chip" aria-pressed={options.labels} onClick={() => setOptions((current) => ({ ...current, labels: !current.labels }))}>
-        {t("Labels")}
-      </button>
-      <button type="button" className="fin-chip" aria-pressed={options.values} onClick={() => setOptions((current) => ({ ...current, values: !current.values }))}>
-        {t("Values")}
-      </button>
-      <button type="button" className="fin-chip" aria-pressed={options.group === "category" && !options.mono} onClick={() => setOptions((current) => ({ ...current, group: "category", mono: false }))}>
-        {t("By category")}
-      </button>
-      <button type="button" className="fin-chip" aria-pressed={options.group === "entry"} onClick={() => setOptions((current) => ({ ...current, group: "entry", mono: false }))}>
-        {t("By entry")}
-      </button>
-      <button type="button" className="fin-chip" aria-pressed={options.portraitLayout === "vertical"} onClick={() => { setOptions((current) => ({ ...current, portraitLayout: "vertical" })); onLayout?.("vertical"); }}>
-        {t("Top to bottom")}
-      </button>
-      <button type="button" className="fin-chip" aria-pressed={options.portraitLayout === "horizontal"} onClick={() => { setOptions((current) => ({ ...current, portraitLayout: "horizontal" })); onLayout?.("horizontal"); }}>
-        {t("Left to right")}
-      </button>
-      <button type="button" className="fin-chip" aria-pressed={options.mono} onClick={() => setOptions((current) => ({ ...current, mono: !current.mono }))}>
-        {t("One color")}
-      </button>
-      <button type="button" className="fin-chip" aria-pressed={options.planned} onClick={() => setOptions((current) => ({ ...current, planned: !current.planned }))}>
-        {t("Planned")}
-      </button>
-      <button type="button" className="fin-chip min-h-11" onClick={() => setColorsOpen(true)}>
-        {t("Chart colors")}
-      </button>
-      <button type="button" className="fin-chip" onClick={() => setOpenOther((value) => !value)}>
-        {openOther ? t("Group small flows") : t("Show small flows")}
-      </button>
+    <>
+      <button type="button" className="tune-row" aria-pressed={options.labels} onClick={() => setOptions((current) => ({ ...current, labels: !current.labels }))}>{t("Labels")}</button>
+      <button type="button" className="tune-row" aria-pressed={options.values} onClick={() => setOptions((current) => ({ ...current, values: !current.values }))}>{t("Values")}</button>
+      <button type="button" className="tune-row" aria-pressed={options.group === "category" && !options.mono} onClick={() => setOptions((current) => ({ ...current, group: "category", mono: false }))}>{t("By category")}</button>
+      <button type="button" className="tune-row" aria-pressed={options.group === "entry"} onClick={() => setOptions((current) => ({ ...current, group: "entry", mono: false }))}>{t("By entry")}</button>
+      <button type="button" className="tune-row" aria-pressed={options.portraitLayout === "vertical"} onClick={() => { setOptions((current) => ({ ...current, portraitLayout: "vertical" })); onLayout?.("vertical"); }}>{t("Top to bottom")}</button>
+      <button type="button" className="tune-row" aria-pressed={options.portraitLayout === "horizontal"} onClick={() => { setOptions((current) => ({ ...current, portraitLayout: "horizontal" })); onLayout?.("horizontal"); }}>{t("Left to right")}</button>
+      <button type="button" className="tune-row" aria-pressed={options.mono} onClick={() => setOptions((current) => ({ ...current, mono: !current.mono }))}>{t("One color")}</button>
+      <button type="button" className="tune-row" aria-pressed={options.planned} onClick={() => setOptions((current) => ({ ...current, planned: !current.planned }))}>{t("Planned")}</button>
+      <button type="button" className="tune-row" onClick={() => setColorsOpen(true)}>{t("Chart colors")}</button>
+      <button type="button" className="tune-row" aria-pressed={openOther} onClick={() => setOpenOther((value) => !value)}>{openOther ? t("Group small flows") : t("Show small flows")}</button>
       {detached && onFollow ? (
-        <button type="button" className="fin-chip" onClick={onFollow}>
-          {t("Use the dashboard period")}
-        </button>
+        <button type="button" className="tune-row" onClick={onFollow}>{t("Use the dashboard period")}</button>
       ) : null}
-    </div>
+    </>
   );
 
   const title = flowTitle(period, bounds, t);
@@ -356,24 +314,17 @@ export function MoneyFlowPanel({
   };
   return (
     <ChartCard title={title}>
-      <div className="mt-2 flex items-center justify-between gap-2" data-swipe-ignore="">
-        <p className="min-w-0 truncate text-[15px] leading-5">{periodName}</p>
-        <div className="flex shrink-0 items-center">
-          <button type="button" className="grid h-11 w-11 place-items-center" aria-expanded={panelOpen} aria-controls="flow-options" aria-label={t("Options")} onClick={() => setPanelOpen((value) => !value)}>
-            <OptionsIcon />
-          </button>
-          <button type="button" className="grid h-11 w-11 place-items-center" aria-expanded={colorsOpen} aria-label={t("Chart colors")} onClick={() => setColorsOpen((value) => !value)}>
+      <div className="filter-row mt-2" data-swipe-ignore="">
+        <ChartPeriodBar period={period} onChange={setPeriod} />
+        <span className="sr-only">{periodName}</span>
+        <div className="ml-auto flex shrink-0 items-center">
+          <TuneSheet label={t("Options")}>{controls}</TuneSheet>
+          <button type="button" className="icon-hit" aria-expanded={colorsOpen} aria-label={t("Chart colors")} onClick={() => setColorsOpen((value) => !value)}>
             <PaletteIcon />
           </button>
-          <button type="button" className="grid h-11 w-11 place-items-center" aria-label={t("Full screen")} onClick={() => setFull(true)}>
+          <button type="button" className="icon-hit" aria-label={t("Full screen")} onClick={() => setFull(true)}>
             <ExpandIcon />
           </button>
-        </div>
-      </div>
-      <div id="flow-options" className={panelOpen ? "flow-panel open" : "flow-panel"}>
-        <div>
-          <ChartPeriodBar period={period} onChange={setPeriod} />
-          {controls}
         </div>
       </div>
       {colorsOpen && ready ? (
@@ -416,7 +367,7 @@ export function MoneyFlowPanel({
               {t("Expenses")} {formatMoney(flow.spendingMinor, flow.currency)}
               {flow.debtMinor > 0 ? ` · ${t("Debt payments")} ${formatMoney(flow.debtMinor, flow.currency)}` : ""}
             </p>
-            <p className="fin-muted text-[13px] leading-5">{t("Same totals as Activity for this period. A card charge is spending. Paying the card is separate.")}</p>
+            <InfoTip label={t("Money flow")} text={t("Same totals as Activity for this period. A card charge is spending. Paying the card is separate.")} />
             {flow.owed.length > 0 ? (
               <div className="pt-2">
                 <p className="text-[13px] leading-5">{t("Still owed")}</p>
@@ -1572,17 +1523,6 @@ function colorGroup(node: FlowNode): "income" | "spend" | "save" {
   return "spend";
 }
 
-
-function OptionsIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-      <path d="M4 6h14M4 11h14M4 16h14" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="8" cy="6" r="2" fill="var(--surface-0)" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="14" cy="11" r="2" fill="var(--surface-0)" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="9" cy="16" r="2" fill="var(--surface-0)" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
 
 function PaletteIcon() {
   return (

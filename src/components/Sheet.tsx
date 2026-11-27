@@ -36,8 +36,9 @@ export function Sheet({
             (el) => !el.hasAttribute("disabled") && el.tabIndex !== -1,
           )
         : [];
-    const first = focusable()[0];
-    first?.focus();
+    const titleEl = panel?.querySelector("h2");
+    if (titleEl instanceof HTMLElement) titleEl.focus();
+    else focusable()[0]?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onCloseRef.current();
@@ -75,8 +76,9 @@ export function Sheet({
     <div className={`sheet-root ${className ?? ""}`} data-theme={theme} role="dialog" aria-modal="true" aria-label={title}>
       <button type="button" className="sheet-scrim" aria-label={t("Close")} onClick={onClose} />
       <div ref={panelRef} className="sheet-panel">
-        <header className="sheet-head flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <h2 className="sheet-title min-w-0 flex-1 text-lg">{title}</h2>
+        <div className="sheet-handle" aria-hidden />
+        <header className="sheet-head flex shrink-0 items-center justify-between gap-3 px-4 py-3">
+          <h2 tabIndex={-1} className="sheet-title min-w-0 flex-1 text-lg outline-none">{title}</h2>
           <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("Close")}>
             <X />
           </Button>

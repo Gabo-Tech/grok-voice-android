@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Info, Mic, Send, Trash2 } from "lucide-react";
+import { Info, Keyboard, Mic, Send, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { GlowRing } from "@/components/GlowRing";
 import { Presence, presencePose, previewPhase } from "@/components/Presence";
 import { Notice } from "@/components/PageChrome";
@@ -83,7 +84,7 @@ export function AssistantView({
   const [preferLocal, setPreferLocal] = useState(false);
   const [packsReady, setPacksReady] = useState(false);
   const [focus, setFocus] = useState(() => sessionStorage.getItem("grok-talk-focus") === "1" || previewQuery("focus"));
-  const [micOpen, setMicOpen] = useState(() => localStorage.getItem("grok-mic-open") === "1" || previewQuery("mic"));
+  const [typing, setTyping] = useState(() => previewQuery("keyboard"));
   const [aboutListen, setAboutListen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [listenHint, setListenHint] = useState(false);
@@ -92,7 +93,6 @@ export function AssistantView({
   const lastTap = useRef(0);
   const clock = sessionClock(voice.usage?.openSinceMs);
   const shownPhase = previewPhase() ?? voice.phase;
-  const live = ["connecting", "listening", "thinking", "speaking"].includes(shownPhase);
   useEffect(() => {
     if (!isTauri()) return;
     void api.getSettings().then((settings) => setPreferLocal(settings.preferLocalOnWake)).catch(() => {});
@@ -147,9 +147,6 @@ export function AssistantView({
     sessionStorage.setItem("grok-talk-focus", focus ? "1" : "0");
   }, [focus]);
   useEffect(() => {
-    localStorage.setItem("grok-mic-open", micOpen ? "1" : "0");
-  }, [micOpen]);
-  useEffect(() => {
     if (!focusHint) return;
     const id = window.setTimeout(() => setFocusHint(false), 2400);
     return () => window.clearTimeout(id);
@@ -170,14 +167,6 @@ export function AssistantView({
       return;
     }
     lastTap.current = now;
-  };
-  const onMic = () => {
-    if (micOpen) {
-      setMicOpen(false);
-      return;
-    }
-    setMicOpen(true);
-    if (!["connecting", "listening", "thinking", "speaking"].includes(voice.phase)) void voice.toggleSession();
   };
   const recovery = voice.lastError ? recoveryFor(voice.lastError) : null;
   const shownRows = voice.rows.length === 0 && previewQuery("bubbles") ? sampleBubbles() : voice.rows;
@@ -260,11 +249,11 @@ export function AssistantView({
         )}
         {shownRows.length === 0 ? (
           <div className="py-6">
-            <p className="text-base leading-6 text-foreground">{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Hearing, the model, the voice, and what is tried next.")}</p>
-            <Button type="button" variant="outline" className="mt-4" onClick={() => onOpenSettings("voice")}>
-              {t("Open voice and AI")}
-            </Button>
+            <InfoTip label={t("Talk")}>
+              <p>{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
+              <p>{t("Hearing, the model, the voice, and what is tried next.")}</p>
+              <p>{t("Open voice and AI")}</p>
+            </InfoTip>
           </div>
         ) : (
           <>
@@ -352,60 +341,46 @@ export function AssistantView({
           )
         : null}
 
-      <form
-        className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = draft;
-          setDraft("");
-          void voice.sendText(text);
-        }}
-      >
-        <textarea
-          ref={draftBox}
-          value={draft}
-          rows={1}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={t("Type a message")}
-          aria-label={t("Type a message")}
-          className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-0 border-b border-[var(--line)] bg-transparent px-0 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-[var(--text-primary)]"
-        />
-        {draft.trim().length > 0 ? (
+      {typing ? (
+        <form
+          className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = draft;
+            setDraft("");
+            void voice.sendText(text);
+          }}
+        >
+          <button type="button" className="icon-hit" aria-label={t("Start voice session")} onClick={() => setTyping(false)}>
+            <Mic className="size-5" strokeWidth={1.5} />
+          </button>
+          <textarea
+            ref={draftBox}
+            value={draft}
+            rows={1}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={t("Type a message")}
+            aria-label={t("Type a message")}
+            className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-0 border-b border-[var(--line)] bg-transparent px-0 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-[var(--text-primary)]"
+          />
           <button
             type="submit"
-            disabled={voice.sending}
+            disabled={voice.sending || draft.trim().length === 0}
             aria-label={t("Send")}
             className="grid size-12 shrink-0 place-items-center bg-foreground text-background disabled:opacity-40"
           >
-            <Send className="size-5" strokeWidth={1.25} />
+            <Send className="size-5" strokeWidth={1.5} />
           </button>
-        ) : (
-          <button
-            type="button"
-            aria-pressed={micOpen}
-            aria-label={micOpen ? t("Hide voice") : t("Show voice")}
-            onClick={onMic}
-            className={cn("grid size-12 shrink-0 place-items-center text-foreground", micOpen && "bg-foreground text-background")}
-          >
-            <Mic className="size-5" strokeWidth={1.25} />
-          </button>
-        )}
-      </form>
-      {live && !micOpen ? (
-        <button type="button" className="mt-2 min-h-12 w-full text-left text-sm text-foreground" onClick={() => setMicOpen(true)}>
-          {t(shownPhase === "speaking" ? "Speaking" : shownPhase === "thinking" ? "Thinking" : shownPhase === "connecting" ? "Connecting" : "Listening")}
-        </button>
-      ) : null}
-      {focusHint ? <p className="pt-2 text-center text-sm text-muted-foreground">{t("Double-tap to show header")}</p> : null}
-      <div className={cn("talk-mic-panel", micOpen && "open")}>
-        <div>
-          <button type="button" className="mx-auto mt-2 flex min-h-12 items-center gap-1 px-3 text-sm text-muted-foreground" aria-label={t("Hide voice")} onClick={() => setMicOpen(false)}>
-            <ChevronDown className="size-4" aria-hidden />
-            {t("Hide voice")}
+        </form>
+      ) : (
+        <div className="talk-dock mt-auto shrink-0">
+          <button type="button" className="icon-hit" aria-label={t("Type a message")} onClick={() => setTyping(true)}>
+            <Keyboard className="size-5" strokeWidth={1.5} />
           </button>
           <GlowRing phase={shownPhase} level={voice.level} onPress={() => void voice.toggleSession()} />
         </div>
-      </div>
+      )}
+      {focusHint ? <p className="pt-2 text-center text-sm text-muted-foreground">{t("Double-tap to show header")}</p> : null}
       <Sheet open={statusOpen} title={t("Voice status")} onClose={() => setStatusOpen(false)}>
         <p className="text-base text-foreground">
           {t(shownPhase === "speaking" ? "Speaking" : shownPhase === "thinking" ? "Thinking" : shownPhase === "connecting" ? "Connecting" : shownPhase === "listening" ? "Listening" : shownPhase === "recording" ? "Recording" : shownPhase === "wake" ? "Waiting for Hey Grok" : "Ready")}
