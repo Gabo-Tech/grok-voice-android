@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, Languages, Music, Users, Wallet, Wand2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, Languages, Music, TriangleAlert, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { VoiceHome } from "@/components/VoiceHome";
 import { Field } from "@/components/Field";
@@ -562,14 +562,14 @@ export function MorePage({
       id: "voice",
       title: t("Voice"),
       rows: [
-        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: first ? t(providerLabel(first.provider)) : "" },
+        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: first ? t(providerLabel(first.provider)) : t("Off") },
         {
           section: "spend",
           icon: <Wallet className="size-4" />,
           title: t("Daily voice budget"),
-          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("A soft cap on talk time. Off until you set minutes."),
+          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off"),
         },
-        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: "" },
+        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: `${quiet}s` },
       ],
     },
     {
@@ -580,7 +580,7 @@ export function MorePage({
           section: "wake",
           icon: <Wand2 className="size-4" />,
           title: t("Wake word"),
-          detail: wake.trained ? t("Hey Grok enrolled") : t("Hands-free Hey Grok. It can stay on when you leave."),
+          detail: wake.trained ? t("Hey Grok enrolled") : t("Off"),
         },
       ],
     },
@@ -671,8 +671,8 @@ export function MorePage({
   return (
     <PageChrome mark title={t("Settings")} info={<InfoTip label={t("Settings")} text={t("Voice, music, and this phone")} />} active={active && section === "menu"}>
       <ListenStatus />
-      <div className="title-line mb-4">
-        <span className="text-base text-foreground">{t("Provider")}</span>
+      <div className="settings-row">
+        <span className="truncate text-base text-foreground">{t("Provider")}</span>
         <InfoTip
           label={t("Provider")}
           text={
@@ -683,25 +683,16 @@ export function MorePage({
                 : t("Add xAI, OpenAI, or On device.")
           }
         />
-        <button type="button" className="ml-auto flex min-h-12 items-center gap-1 text-sm text-muted-foreground" onClick={() => setSection("voice")}>
-          <span>{first ? t(providerLabel(first.provider)) : t("No voice yet")}</span>
+        <button type="button" className="flex h-14 items-center gap-1 text-sm text-muted-foreground" onClick={() => setSection("voice")}>
+          <span>{first ? t(providerLabel(first.provider)) : t("Off")}</span>
           <ChevronRight className="size-4" aria-hidden />
         </button>
       </div>
-      {usage ? (
-        <p className="mb-4 text-sm text-muted-foreground">
-          {fill("{minutes} min · {count} {unit}", {
-            minutes: usage.minutes,
-            count: usage.sessions,
-            unit: usage.sessions === 1 ? t("session") : t("sessions"),
-          })}
-        </p>
-      ) : (
-        <div className="title-line mb-4">
-          <span className="text-base text-foreground">{t("Daily voice budget")}</span>
-          <InfoTip label={t("Daily voice budget")} text={t("Today's time is counted on this phone.")} />
-        </div>
-      )}
+      <button type="button" className="settings-row" onClick={() => setSection("spend")}>
+        <span className="min-w-0 flex-1 truncate text-left text-base text-foreground">{t("Daily voice budget")}</span>
+        <span className="truncate text-sm text-muted-foreground">{settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off")}</span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
       <label className="mb-4 block px-1">
         <span className="sr-only">{t("Find a setting")}</span>
         <Input
@@ -718,14 +709,14 @@ export function MorePage({
           <section key={group.id} className="mb-8 border-t border-border pt-5">
             <button
               type="button"
-              className="mb-2 flex min-h-12 w-full items-center justify-between gap-3 text-left"
+              className="settings-row text-left"
               aria-expanded={open}
               onClick={() => {
                 if (query) return;
                 setOpenGroups((current) => ({ ...current, [group.id]: current[group.id] === false }));
               }}
             >
-              <span className="chapter">{group.title}</span>
+              <span className="chapter min-w-0 flex-1 text-left">{group.title}</span>
               <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground", !open && "-rotate-90")} />
             </button>
             {open ? (
@@ -1552,15 +1543,17 @@ function ListenStatus() {
     };
   }, []);
   if (!health) return null;
+  const blocked = health.health === "battery";
   return (
-    <div className="app-card mb-6 flex items-center gap-2">
-      <div className="title-line min-w-0 flex-1">
-        <p className="min-w-0 text-base text-foreground">{listenTitle(health.health, t)}</p>
-        <InfoTip label={t("Listen")} text={listenBody(health.health, t)} />
+    <div className="app-card mb-6">
+      <div className="title-line gap-2">
+        {blocked ? <TriangleAlert className="size-5 shrink-0 text-[var(--warning)]" aria-hidden /> : null}
+        <p className="min-w-0 flex-1 truncate text-base text-foreground">{blocked ? t("Background listening blocked") : listenTitle(health.health, t)}</p>
+        <InfoTip label={t("Listen")} text={blocked ? `${listenTitle(health.health, t)} ${listenBody(health.health, t)}` : listenBody(health.health, t)} />
       </div>
-      {health.health === "battery" ? (
-        <button type="button" className="shrink-0 text-sm text-foreground underline underline-offset-4" onClick={() => void api.requestBatteryExemption().then(setHealth).catch(() => {})}>
-          {t("Allow unrestricted battery")}
+      {blocked ? (
+        <button type="button" className="min-h-12 text-sm text-foreground underline underline-offset-4" onClick={() => void api.requestBatteryExemption().then(setHealth).catch(() => {})}>
+          {t("Allow")}
         </button>
       ) : null}
     </div>
@@ -1596,10 +1589,10 @@ function MenuRow({
   onClick: () => void;
 }) {
   return (
-    <RowButton onClick={onClick} className="items-center">
+    <RowButton onClick={onClick} className="settings-row items-center py-0">
       <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">{icon}</span>
-      <p className="min-w-0 flex-1 text-base text-foreground">{title}</p>
-      {detail ? <span className="max-w-[46%] truncate text-sm text-muted-foreground">{detail}</span> : null}
+      <p className="min-w-0 flex-1 truncate text-base text-foreground">{title}</p>
+      {detail ? <span className="max-w-[40%] truncate text-sm text-muted-foreground">{detail}</span> : null}
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
     </RowButton>
   );

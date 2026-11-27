@@ -218,25 +218,27 @@ export function FinanceOverview({
           <div className="title-line">
             <h2 className="fin-kicker">{t("Savings rate")}</h2>
           </div>
-          <Donut
-            rows={[
-              { id: "income", label: t("Income"), color: "var(--positive)", amountMinor: income.amountMinor },
-              { id: "expense", label: t("Expenses"), color: "var(--negative)", amountMinor: expenses.amountMinor },
-            ]}
-            hidden={new Set()}
-            caption={t("Savings rate")}
-            center={rate == null ? "—" : `${Math.round(rate * 1000) / 10}%`}
-          />
-          <ul className="mt-3 space-y-1">
-            <li className="flex min-h-12 items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-base"><span className="size-2 rounded-full" style={{ background: "var(--positive)" }} />{t("Income")}</span>
-              <Amount total={income} display={display} book={book} nowMs={nowMs} />
-            </li>
-            <li className="flex min-h-12 items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-base"><span className="size-2 rounded-full" style={{ background: "var(--negative)" }} />{t("Expenses")}</span>
-              <Amount total={expenses} display={display} book={book} nowMs={nowMs} />
-            </li>
-          </ul>
+          <div className="savings-split">
+            <Donut
+              rows={[
+                { id: "income", label: t("Income"), color: "var(--positive)", amountMinor: income.amountMinor },
+                { id: "expense", label: t("Expenses"), color: "var(--negative)", amountMinor: expenses.amountMinor },
+              ]}
+              hidden={new Set()}
+              caption={t("Savings rate")}
+              center={rate == null ? "—" : `${Math.round(rate * 1000) / 10}%`}
+            />
+            <ul>
+              <li className="flex min-h-12 items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2 truncate text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--positive)" }} />{t("Income")}</span>
+                <span className="shrink-0 whitespace-nowrap"><Amount total={income} display={display} book={book} nowMs={nowMs} /></span>
+              </li>
+              <li className="flex min-h-12 items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2 truncate text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--negative)" }} />{t("Expenses")}</span>
+                <span className="shrink-0 whitespace-nowrap"><Amount total={expenses} display={display} book={book} nowMs={nowMs} /></span>
+              </li>
+            </ul>
+          </div>
         </div>
       </section>
     ),

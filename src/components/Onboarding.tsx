@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Check, ChevronLeft, ChevronRight, ClipboardPaste, Eye, EyeOff } from "lucide-react";
+import { Check, ClipboardPaste, Eye, EyeOff } from "lucide-react";
 import { InfoTip } from "@/components/ds/InfoTip";
 import { AppMark } from "@/components/AppMark";
 import { Loader } from "@/components/Loader";
@@ -589,8 +589,8 @@ export function Onboarding({
   } else if (screen === "xai" || screen === "openai") primary = t("Test this setup");
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-5 landscape:flex-row landscape:gap-8 landscape:px-6 landscape:py-4" data-setup={screen}>
-      <header className="mb-5 min-w-0 shrink-0 landscape:mb-0 landscape:flex landscape:max-h-full landscape:w-52 landscape:max-w-[42%] landscape:flex-col landscape:overflow-auto">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden px-5 py-5" data-setup={screen}>
+      <header className="mb-5 w-full min-w-0 shrink-0">
         <AppMark className="mb-4 w-16 landscape:mb-3 landscape:w-14" alt="" />
         <h1 className="masthead text-3xl break-words landscape:text-2xl">Grok Voice</h1>
         <div className="mt-4 flex items-center gap-2">
@@ -601,8 +601,8 @@ export function Onboarding({
         </div>
       </header>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-3">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+        <div className="min-h-0 w-full flex-1 space-y-3 overflow-y-auto pb-3">
           {screen === "language" && (
             <>
               <div className="title-line">
@@ -612,7 +612,7 @@ export function Onboarding({
                   <p>{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
                 </InfoTip>
               </div>
-              <div className="flex flex-col gap-2" role="radiogroup" aria-label={t("Language")}>
+              <div className="flex w-full flex-col gap-2" role="radiogroup" aria-label={t("Language")}>
                 {LANGS.map((item) => (
                   <button
                     key={item.id}
@@ -639,7 +639,7 @@ export function Onboarding({
                   <p>{t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")}</p>
                 </InfoTip>
               </div>
-              <div className="flex flex-col gap-2" role="radiogroup" aria-label={t("How should Talk answer?")}>
+              <div className="flex w-full flex-col gap-2" role="radiogroup" aria-label={t("How should Talk answer?")}>
                 {PATHS.map((item) => (
                   <button
                     key={item.id}
@@ -798,39 +798,36 @@ export function Onboarding({
           </p>
         ) : null}
 
-        <footer className="mt-3 flex shrink-0 flex-col gap-2 border-t border-border pt-3">
+        <footer className="mt-auto flex w-full shrink-0 flex-col items-stretch gap-2 pb-2 pt-3">
           {(screen === "mixed" || screen === "onemin") && primary !== t("Test this setup") ? (
             <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void go("test", "test")}>
               {t("Skip this key")}
             </Button>
           ) : null}
-          <div className="title-line">
-            <Button type="button" variant="outline" disabled={busy} onClick={() => void finish("skipped")}>
-              {t("Finish later")}
-            </Button>
-            <InfoTip label={t("Finish later")} text={t("Setup can wait. Open Settings, then Voice and AI, and continue from the same path.")} />
+          {screen === "language" ? null : (
+            <button type="button" className="mx-auto min-h-12 px-3 text-sm text-muted-foreground" disabled={busy} onClick={back}>
+              {t("Back")}
+            </button>
+          )}
+          <div className="setup-cta">
+          <Button
+            className="w-full"
+            disabled={
+              busy ||
+              ((screen === "local" || screen === "mixed" || screen === "onemin") && !plan) ||
+              ((primary === t("Test this setup") || primary === t("Continue anyway")) &&
+                (((screen === "xai" || screen === "openai") && !keySaved) ||
+                  ((screen === "mixed" || screen === "onemin") && key.trim().length > 0 && !keySaved)))
+            }
+            onClick={() => void next()}
+          >
+            {busy ? <Loader size="inline" quiet label={primary} /> : null}
+            {primary}
+          </Button>
           </div>
-          <div className="setup-actions">
-            {screen === "language" ? null : (
-              <Button variant="outline" disabled={busy} onClick={back}>
-                <ChevronLeft /> {t("Back")}
-              </Button>
-            )}
-            <Button
-              className="flex-1"
-              disabled={
-                busy ||
-                ((screen === "local" || screen === "mixed" || screen === "onemin") && !plan) ||
-                ((primary === t("Test this setup") || primary === t("Continue anyway")) &&
-                  (((screen === "xai" || screen === "openai") && !keySaved) ||
-                    ((screen === "mixed" || screen === "onemin") && key.trim().length > 0 && !keySaved)))
-              }
-              onClick={() => void next()}
-            >
-              {busy ? <Loader size="inline" quiet label={primary} /> : <ChevronRight />}
-              {primary}
-            </Button>
-          </div>
+          <button type="button" className="mx-auto min-h-12 px-3 text-sm text-muted-foreground" disabled={busy} onClick={() => void finish("skipped")}>
+            {t("Finish later")}
+          </button>
         </footer>
       </div>
     </div>

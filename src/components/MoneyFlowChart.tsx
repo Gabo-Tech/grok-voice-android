@@ -313,7 +313,7 @@ export function MoneyFlowPanel({
     if (category) onPaintCategory?.(category.name, color);
   };
   return (
-    <ChartCard title={title}>
+    <ChartCard title={title} action={<InfoTip label={t("Money flow")} text={t("Same totals as Activity for this period. A card charge is spending. Paying the card is separate.")} />} >
       <div className="filter-row mt-2" data-swipe-ignore="">
         <ChartPeriodBar period={period} onChange={setPeriod} />
         <span className="sr-only">{periodName}</span>
@@ -359,17 +359,8 @@ export function MoneyFlowPanel({
           <p className="text-[15px] leading-5">{fill("This chart needs a rate for {codes}.", { codes: flow.missing.join(", ") })}</p>
         ) : full ? null : chart}
         {flow.state === "ready" && flow.noIncome ? <p className="fin-muted mt-2 text-[13px] leading-5">{t("No income this month. Spending still shows.")}</p> : null}
-        {flow.state === "ready" ? (
+        {flow.state === "ready" && flow.owed.length > 0 ? (
           <div className="mt-3 space-y-1">
-            <p className="title-line text-[15px] leading-5">
-              <span>
-                {t("Income")} {formatMoney(flow.incomeMinor, flow.currency)}
-                {" · "}
-                {t("Expenses")} {formatMoney(flow.spendingMinor, flow.currency)}
-                {flow.debtMinor > 0 ? ` · ${t("Debt payments")} ${formatMoney(flow.debtMinor, flow.currency)}` : ""}
-              </span>
-              <InfoTip label={t("Money flow")} text={t("Same totals as Activity for this period. A card charge is spending. Paying the card is separate.")} />
-            </p>
             {flow.owed.length > 0 ? (
               <div className="pt-2">
                 <p className="text-[13px] leading-5">{t("Still owed")}</p>

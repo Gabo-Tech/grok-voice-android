@@ -94,7 +94,7 @@ export function ThemePicker({
 
   return (
     <div className="min-w-0 max-w-full">
-      <div className="title-line" data-widget-note="">
+      <div className="settings-row" data-widget-note="">
         <span className="text-base text-foreground">{t("Theme")}</span>
         {info}
         <button type="button" className="ml-auto flex min-h-12 items-center gap-2 text-sm text-muted-foreground" onClick={() => setPickerOpen(true)}>

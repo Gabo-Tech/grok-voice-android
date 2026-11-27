@@ -752,10 +752,6 @@
   padding: 0 16px;
 }
 
-.app-card .aspect-square {
-  max-width: 148px;
-}
-
 .app-card,
 .hero-card,
 .mini-card {
