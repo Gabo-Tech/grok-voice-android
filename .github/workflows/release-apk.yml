@@ -164,7 +164,7 @@ jobs:
             if [ "$attempt" -lt 3 ] && grep -Eq "429|Too Many Requests|Could not GET|Could not resolve|Could not find org.jetbrains.kotlin|was not found in any of the following sources|Read timed out|Connection reset" "$log"; then
               echo "Dependency download failed (attempt ${attempt}). Waiting before retry."
               rm -rf src-tauri/gen/android/.gradle src-tauri/gen/android/buildSrc/.gradle
-              sleep $((attempt * 45))
+              sleep $((attempt * 120))
               continue
             fi
             exit "$code"
