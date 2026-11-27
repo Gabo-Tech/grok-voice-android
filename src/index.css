@@ -1014,11 +1014,59 @@ html.keyboard-open .sheet-panel {
   min-height: 40vh;
 }
 
-/* Short landscape phones: the bottom bar and the status cutout must not eat the page. */
+/* Short landscape phones: a side rail, a short title, and no subtitle, so the page keeps its height. */
 @media (orientation: landscape) and (max-height: 520px) {
   .app-safe,
   .app-safe.app-safe-bar {
-    padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+    flex-direction: row;
+    align-items: stretch;
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: 0;
+  }
+
+  .bottom-nav {
+    position: relative;
+    order: -1;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 76px;
+    height: auto;
+    align-self: stretch;
+    border-top: 0;
+    border-right: var(--border-width) solid var(--line-soft);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    overflow-y: auto;
+  }
+
+  .bottom-nav ul {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+
+  .bottom-nav > div {
+    flex-direction: column;
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  .page-sub,
+  .masthead-rule,
+  .talk-head .masthead-rule {
+    display: none;
+  }
+
+  .masthead,
+  .talk-head h1 {
+    font-size: 1.2rem;
+  }
+
+  .talk-head .pb-3 {
+    padding-bottom: 4px;
   }
 
   .finance .text-5xl {

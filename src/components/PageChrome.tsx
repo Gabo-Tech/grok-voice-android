@@ -37,7 +37,7 @@ export function PageChrome({
         <div className="min-w-0">
           <h1 className="masthead text-[1.85rem] text-foreground">{title}</h1>
           <div className="masthead-rule" />
-          {subtitle && <p className="mt-2 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
+          {subtitle && <p className="page-sub mt-2 text-sm leading-5 text-muted-foreground">{subtitle}</p>}
         </div>
       </header>
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-4">{children}</div>

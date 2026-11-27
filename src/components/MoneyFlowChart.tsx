@@ -578,6 +578,8 @@ function FlowChart({
   const safeToReal = useRef(new Map<string, string>());
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [drawn, setDrawn] = useState(460);
+  const [quiet, setQuiet] = useState<FlowNode[]>([]);
+  const t = useT();
 
   useEffect(() => {
     const node = host.current;
@@ -664,6 +666,7 @@ function FlowChart({
     const frame = built.frame;
     const chartHeight = frame.height;
     setDrawn(chartHeight);
+    setQuiet(built.quiet);
     if (host.current) host.current.style.height = `${chartHeight}px`;
     instance.resize({ width: frame.width, height: chartHeight });
     safeToReal.current = new Map(built.ids.map((id, index) => [`n${index}`, id]));
@@ -738,13 +741,30 @@ function FlowChart({
     return () => cancelAnimationFrame(frame);
   }, [drawn, tall, box.h]);
 
-  return <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : drawn }} />;
+  return (
+    <div>
+      <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : drawn }} />
+      {quiet.length > 0 ? (
+        <div className="mt-2">
+          <p className="text-[13px] leading-5">{t("Smaller flows")}</p>
+          <ul>
+            {quiet.map((node) => (
+              <li key={node.id} className="flex min-h-11 items-baseline justify-between gap-3 text-[15px]">
+                <span className="min-w-0 truncate">{node.label}</span>
+                <span className="fin-num shrink-0">{formatMoney(node.amountMinor, currency)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 interface AuditEl {
   ignore?: boolean;
   type?: string;
-  style?: { text?: string; x?: number; y?: number; fill?: string; fontSize?: number; fontWeight?: number; fontStyle?: string };
+  style?: { text?: string; x?: number; y?: number; fill?: string; fontSize?: number; fontWeight?: number; fontStyle?: string; backgroundColor?: string };
   x?: number;
   y?: number;
   parent?: AuditEl;
@@ -1059,6 +1079,8 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
   const idIndex = new Map(nodes.map((node, index) => [node.id, index]));
   stackFlowCurves(curves, links, placed, idIndex, "x");
   zr.refresh();
+  const ink = usedColor("var(--text-primary)", "rgb(58, 52, 44)");
+  const paper = usedColor("var(--surface-0)", "rgb(23, 24, 27)");
   const muted = usedColor("var(--text-tertiary)", "rgb(138, 129, 117)");
   const liveTexts = (zr.storage.getDisplayList?.(true) || []).flatMap((el) => {
     const label = (el.style?.text || "").trim();
@@ -1089,87 +1111,59 @@ function spreadVertical(instance: ECharts, frame: SankeyFrame, nodes: FlowNode[]
     group.push(text);
     groups.set(index, group);
   }
-  const blocks: Array<{ align: "left" | "right" | "above" | "below"; preferX: number; w: number; h: number; y: number; lines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> }> = [];
   for (const item of paired) {
     const box = placed.get(item.index);
     const lines = (groups.get(item.index) || []).sort((a, b) => a.y - b.y);
     if (!box || !lines.length) continue;
-    const blockH = lines.length * frame.lineHeight;
-    const stack = box.stack || 0;
-    const band = blockH + 6;
-    let cursor = box.align === "right"
-      ? box.y + box.h / 2 - blockH / 2
-      : box.align === "below"
-        ? box.y + box.h + 8 + stack * band
-        : box.y - 8 - blockH - stack * band;
-    cursor = Math.max(2, Math.min(cursor, frame.height - blockH - 2));
-    const paintedLines: Array<{ el: AuditEl; x: number; y: number; w: number; h: number }> = [];
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = 0;
     for (const line of lines) {
-      const now = measure(line.el);
-      if (!now) continue;
       const amount = line.text.includes("·");
-      line.el.style = { ...line.el.style, fill: amount ? muted : String(item.el.style?.fill || muted), fontSize: 13, fontWeight: amount ? 400 : 600, fontStyle: item.node.italic ? "italic" : "normal" };
+      line.el.style = {
+        ...line.el.style,
+        fill: amount ? muted : ink,
+        fontSize: 13,
+        fontWeight: amount ? 400 : 600,
+        fontStyle: item.node.italic ? "italic" : "normal",
+        backgroundColor: paper,
+      };
       line.el.dirty?.();
-      zr.refresh();
-      const painted = measure(line.el) || now;
-      const x = box.align === "right"
-        ? Math.min(box.x + box.w + 8, frame.width - painted.w - 2)
-        : Math.max(2, Math.min(box.x + box.w / 2 - painted.w / 2, frame.width - painted.w - 2));
-      line.el.x = (line.el.x || 0) + (x - painted.x);
-      line.el.y = (line.el.y || 0) + (cursor - painted.y);
-      line.el.dirty?.();
-      paintedLines.push({ el: line.el, x, y: cursor, w: painted.w, h: frame.lineHeight });
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x + painted.w);
-      cursor += frame.lineHeight;
     }
-    if (!paintedLines.length) continue;
-    blocks.push({ align: box.align, preferX: minX, w: Math.max(1, maxX - minX), h: blockH, y: paintedLines[0].y, lines: paintedLines });
   }
-  const hits = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
-    a.x < b.x + b.w + 8 && a.x + a.w + 8 > b.x && a.y < b.y + b.h + 8 && a.y + a.h + 8 > b.y;
-  const pack = (align: "above" | "below") => {
-    const group = blocks.filter((block) => block.align === align).sort((a, b) => a.preferX - b.preferX);
-    const taken: Array<{ x: number; y: number; w: number; h: number }> = blocks.filter((block) => block.align === "right").map((block) => ({ x: block.preferX, y: block.y, w: block.w, h: block.h }));
-    for (const block of group) {
-      const dir = align === "below" ? 1 : -1;
-      let y = block.y;
-      let x = Math.max(2, Math.min(block.preferX, frame.width - block.w - 2));
-      let placed = false;
-      for (let row = 0; row < 8 && !placed; row += 1) {
-        const rowY = block.y + dir * row * (block.h + 8);
-        if (rowY < 2 || rowY + block.h > frame.height - 2) continue;
-        if (!taken.some((other) => hits({ x, y: rowY, w: block.w, h: block.h }, other))) {
-          y = rowY;
-          placed = true;
+  const placeColumn = (items: typeof paired, xFor: (width: number) => number) => {
+    const live = items.filter((item) => (groups.get(item.index) || []).length > 0);
+    const total = live.reduce((sum, item) => sum + item.node.amountMinor, 0) || 1;
+    let y = 6;
+    for (const item of live) {
+      const lines = groups.get(item.index) || [];
+      const blockH = lines.length * frame.lineHeight;
+      const small = item.node.role === "sink" && live.length > 2 && item.node.amountMinor / total < 0.07;
+      if (small || y + blockH > frame.height - 4) {
+        for (const line of lines) {
+          line.el.style = { ...line.el.style, text: "" };
+          line.el.dirty?.();
         }
+        continue;
       }
-      if (!placed) {
-        x = Math.max(2, frame.width - block.w - 2);
-        y = align === "below" ? Math.max(2, frame.height - block.h - 2) : 2;
-        for (let row = 0; row < 10 && !placed; row += 1) {
-          const rowY = align === "below" ? y - row * (block.h + 8) : y + row * (block.h + 8);
-          if (rowY < 2 || rowY + block.h > frame.height - 2) continue;
-          if (!taken.some((other) => hits({ x, y: rowY, w: block.w, h: block.h }, other))) {
-            y = rowY;
-            placed = true;
-          }
-        }
-      }
-      const dx = x - block.preferX;
-      const dy = y - block.lines[0].y;
-      for (const line of block.lines) {
-        line.el.x = (line.el.x || 0) + dx;
-        line.el.y = (line.el.y || 0) + dy;
+      for (const line of lines) {
+        zr.refresh();
+        const painted = measure(line.el);
+        if (!painted) continue;
+        const x = Math.max(2, Math.min(xFor(painted.w), frame.width - painted.w - 2));
+        line.el.x = (line.el.x || 0) + (x - painted.x);
+        line.el.y = (line.el.y || 0) + (y - painted.y);
         line.el.dirty?.();
+        y += frame.lineHeight;
       }
-      taken.push({ x, y, w: block.w, h: block.h });
+      y += 8;
     }
   };
-  pack("below");
-  pack("above");
+  placeColumn(
+    paired.filter((item) => item.node.role === "source" || item.node.role === "pool" || item.node.role === "hub"),
+    () => 4,
+  );
+  placeColumn(
+    paired.filter((item) => item.node.role === "sink" || item.node.role === "child"),
+    (width) => frame.width - width - 4,
+  );
   zr.refresh();
 }
 

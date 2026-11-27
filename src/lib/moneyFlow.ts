@@ -652,8 +652,8 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   const compact = width < 640 || (!portrait && reported < 480);
   const flowPx = Math.round(clamp(width * 0.055, 16, 48));
 
-  let top = labels ? (reference ? 16 : portrait ? (vertical ? 112 : 96) : 16) : 8;
-  let bottom = labels ? (reference ? 12 : portrait ? (vertical ? 180 : 88) : 8) : 8;
+  let top = labels ? (reference ? 16 : portrait ? (vertical ? 28 : 96) : 16) : 8;
+  let bottom = labels ? (reference ? 12 : portrait ? (vertical ? 12 : 88) : 8) : 8;
   let plot = reference
     ? Math.max(64, busiest * 64)
     : vertical
@@ -676,8 +676,16 @@ export function sankeyFrame(chartWidth: number, columnCounts: number[], labels =
   let left = labels ? Math.round(clamp(width * 0.24, 84, 188)) : 8;
   let right = labels ? Math.round(clamp(width * 0.28, 96, 210)) : 8;
   if (vertical) {
-    left = labels ? 12 : 8;
-    right = labels ? 12 : 8;
+    const minPlot = 88;
+    let leftG = labels ? Math.round(clamp(width * 0.32, 112, 156)) : 8;
+    let rightG = labels ? Math.round(clamp(width * 0.34, 120, 168)) : 8;
+    if (leftG + rightG + minPlot > width) {
+      const gutters = Math.max(0, width - minPlot);
+      leftG = Math.round(gutters * 0.46);
+      rightG = Math.max(8, gutters - leftG);
+    }
+    left = leftG;
+    right = rightG;
   } else if (reference) {
     let leftG = labels ? 132 : 8;
     let rightG = labels ? 148 : 8;
@@ -859,6 +867,51 @@ function boxesHit(a: LabelBox, b: LabelBox): boolean {
   return a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y < b.y + b.h - 1 && a.y + a.h > b.y + 1;
 }
 
+export interface PlannedLabel {
+  id: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Labels sit in the side gutters, stacked so they cannot touch.
+ * A right-hand label under 7% of that column, once there are several, is left for the legend.
+ */
+export function sankeyLabelPlan(
+  nodes: FlowNode[],
+  frame: { width: number; height: number; left: number; right: number; lineHeight: number },
+): { boxes: PlannedLabel[]; quiet: FlowNode[] } {
+  const slot = Math.max(frame.lineHeight * 2 + 8, 36);
+  const capacity = Math.max(1, Math.floor((frame.height - 8) / slot));
+  const quiet: FlowNode[] = [];
+  const boxes: PlannedLabel[] = [];
+  const place = (column: FlowNode[], x: number) => {
+    const live = column.filter((node) => node.amountMinor > 0);
+    const total = live.reduce((sum, node) => sum + node.amountMinor, 0) || 1;
+    const small = new Set(
+      live.filter((node) => node.role === "sink" && live.length > 2 && node.amountMinor / total < 0.07).map((node) => node.id),
+    );
+    const keep: FlowNode[] = [];
+    for (const node of live) {
+      if (small.has(node.id)) quiet.push(node);
+      else keep.push(node);
+    }
+    quiet.push(...keep.slice(capacity));
+    keep.slice(0, capacity).forEach((node, index) => {
+      boxes.push({ id: node.id, x, y: 6 + index * slot });
+    });
+  };
+  place(
+    nodes.filter((node) => node.role === "source" || node.role === "pool" || node.role === "hub"),
+    4,
+  );
+  place(
+    nodes.filter((node) => node.role === "sink"),
+    Math.max(4, frame.width - frame.right + 6),
+  );
+  return { boxes, quiet };
+}
+
 /** Place two-line labels in the gutters or above a node, then shift any that still touch. */
 export function placeFlowLabels(items: FlowLabelInput[], canvas: { width: number; height: number }, maxWidth: number): LabelBox[] {
   const placed: LabelBox[] = [];
@@ -979,7 +1032,7 @@ export interface SankeyOptionInput {
 }
 
 /** ECharts option. Width is the container. Labels keep a line break between the name and the amount. */
-export function buildSankeyOption(input: SankeyOptionInput): { option: Record<string, unknown>; frame: SankeyFrame; ids: string[]; nodes: FlowNode[]; links: FlowLink[] } {
+export function buildSankeyOption(input: SankeyOptionInput): { option: Record<string, unknown>; frame: SankeyFrame; ids: string[]; nodes: FlowNode[]; links: FlowLink[]; quiet: FlowNode[] } {
   const narrow = (input.height || 0) > input.width && input.width < 520;
   const graph = narrow ? portraitLevels(input.nodes, input.currency, input.spendingLabel || "Spending") : { nodes: input.nodes, links: input.links };
   const present = {
@@ -994,6 +1047,8 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   const compact = frame.compact;
   const labelWidth = Math.max(108, Math.max(frame.left, frame.right) - 8);
   const seen = new Map<number, { x: number; y: number; width: number; height: number }>();
+  const planned = frame.vertical ? sankeyLabelPlan(graph.nodes, frame) : null;
+  const plannedAt = new Map((planned?.boxes || []).map((box) => [box.id, box]));
   const data = graph.nodes.map((node) => {
     const depth = depthOf(node);
     const rawName = node.label.replace(/[{}|]/g, " ");
@@ -1037,7 +1092,9 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
         overflow: "none",
         fontSize: frame.fontSize,
         lineHeight: frame.lineHeight,
-        formatter: [showValue ? `${name}\n${valueLine}` : name, node.caption || ""].filter(Boolean).join("\n"),
+        backgroundColor: input.paper,
+        padding: [2, 4],
+        formatter: planned && !plannedAt.has(node.id) ? "" : [showValue ? `${name}\n${valueLine}` : name, node.caption || ""].filter(Boolean).join("\n"),
       },
       itemStyle: { color: input.mono ? input.brand : input.colors[node.id] || input.brand, borderWidth: 0 },
     };
@@ -1047,6 +1104,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
     ids: graph.nodes.map((node) => node.id),
     nodes: graph.nodes,
     links: graph.links,
+    quiet: planned?.quiet || [],
     option: {
       backgroundColor: input.paper,
       series: [
@@ -1069,6 +1127,10 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
             if (params.dataType !== "node" || params.dataIndex == null || !params.rect) return {};
             const current = params.dataIndex;
             try {
+            if (planned) {
+              const box = plannedAt.get(graph.nodes[current]?.id || "");
+              return box ? { x: box.x, y: box.y, align: "left" as const, verticalAlign: "top" as const } : { x: -200, y: -200, fontSize: 0 };
+            }
             if (current === 0) seen.clear();
             seen.set(current, params.rect);
             const items = [...seen.entries()]
