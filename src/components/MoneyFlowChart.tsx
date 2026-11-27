@@ -361,13 +361,15 @@ export function MoneyFlowPanel({
         {flow.state === "ready" && flow.noIncome ? <p className="fin-muted mt-2 text-[13px] leading-5">{t("No income this month. Spending still shows.")}</p> : null}
         {flow.state === "ready" ? (
           <div className="mt-3 space-y-1">
-            <p className="text-[15px] leading-5">
-              {t("Income")} {formatMoney(flow.incomeMinor, flow.currency)}
-              {" · "}
-              {t("Expenses")} {formatMoney(flow.spendingMinor, flow.currency)}
-              {flow.debtMinor > 0 ? ` · ${t("Debt payments")} ${formatMoney(flow.debtMinor, flow.currency)}` : ""}
+            <p className="title-line text-[15px] leading-5">
+              <span>
+                {t("Income")} {formatMoney(flow.incomeMinor, flow.currency)}
+                {" · "}
+                {t("Expenses")} {formatMoney(flow.spendingMinor, flow.currency)}
+                {flow.debtMinor > 0 ? ` · ${t("Debt payments")} ${formatMoney(flow.debtMinor, flow.currency)}` : ""}
+              </span>
+              <InfoTip label={t("Money flow")} text={t("Same totals as Activity for this period. A card charge is spending. Paying the card is separate.")} />
             </p>
-            <InfoTip label={t("Money flow")} text={t("Same totals as Activity for this period. A card charge is spending. Paying the card is separate.")} />
             {flow.owed.length > 0 ? (
               <div className="pt-2">
                 <p className="text-[13px] leading-5">{t("Still owed")}</p>

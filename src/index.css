@@ -532,11 +532,11 @@ input[type="time"] {
 
 .mark {
   position: relative;
-  width: 4.5rem;
-  height: 4.5rem;
-  border: var(--border-width) solid var(--text-primary);
+  width: 5rem;
+  height: 5rem;
+  border: 2px solid var(--brand);
   border-radius: 9999px;
-  background: var(--surface-0);
+  background: var(--brand-soft);
   color: var(--text-primary);
   display: grid;
   place-items: center;
@@ -2047,7 +2047,7 @@ button.underline:not(.is-link) {
 }
 
 .icon-hit {
-  display: grid;
+  display: inline-grid;
   width: var(--touch);
   height: var(--touch);
   min-width: var(--touch);
@@ -2058,6 +2058,30 @@ button.underline:not(.is-link) {
   background: transparent;
   color: var(--text-primary);
   padding: 0;
+  vertical-align: middle;
+}
+
+.title-line {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-height: var(--touch);
+}
+
+.banner-slim {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--touch);
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  padding-left: 12px;
+}
+
+.banner-slim p {
+  min-width: 0;
+  flex: 1;
 }
 
 .tune-sheet {
@@ -2119,16 +2143,20 @@ button.underline:not(.is-link) {
 }
 
 .choice-row {
-  display: block;
+  display: flex;
   width: 100%;
   min-height: var(--touch);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   border: 0;
   border-radius: var(--radius-md);
-  background: var(--surface-2);
+  background: var(--surface-1);
   color: var(--text-primary);
-  padding: 12px;
+  padding: var(--space-4);
   text-align: left;
   text-transform: none;
+  box-shadow: var(--e1);
 }
 
 .choice-row.is-on {
@@ -2185,17 +2213,58 @@ button.underline:not(.is-link) {
 }
 
 .talk-dock {
-  display: grid;
-  grid-template-columns: var(--touch) minmax(0, 1fr) var(--touch);
-  align-items: end;
-  justify-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
   padding-top: 8px;
 }
 
 .talk-dock .mark {
-  grid-column: 2;
-  width: 7rem;
-  height: 7rem;
+  width: 5rem;
+  height: 5rem;
+}
+
+.talk-empty {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.talk-empty .presence {
+  width: 96px;
+  height: 112px;
+}
+
+.talk-empty .grok-mark {
+  width: 80px;
+  height: 96px;
+}
+
+.mark[data-phase="listening"] {
+  animation: orb-pulse 1.6s ease-in-out infinite;
+}
+
+.mark[data-phase="speaking"]::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: inherit;
+  border: 2px solid var(--text-primary);
+  animation: orb-ring 1.4s var(--ease-out) infinite;
+}
+
+@keyframes orb-pulse {
+  50% { transform: scale(1.06); }
+}
+
+@keyframes orb-ring {
+  from { transform: scale(1); opacity: 0.65; }
+  to { transform: scale(1.4); opacity: 0; }
 }
 
 .mark[data-phase="listening"],

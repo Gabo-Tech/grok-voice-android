@@ -2057,10 +2057,12 @@ function PayCardSheet({
       }
     >
       <div className="space-y-4">
-        <InfoTip label={t("Pay card")} text={t("A card payment is not a new expense. Cash and the balance owed both fall. Paying more than you owe leaves a credit. Net worth stays the same.")} />
         {posture === "credit" ? <p className="text-sm leading-5">{t("This card is already in credit. Enter an amount only if you still want to pay more.")}</p> : null}
         {posture === "paid" ? <p className="text-sm leading-5">{t("This card is already paid. Enter an amount only if you want to pay more.")}</p> : null}
-        <p className="fin-num text-3xl">{posture === "credit" ? `${owed} ${t("Credit")}` : owed}</p>
+        <div className="title-line">
+          <p className="fin-num text-3xl">{posture === "credit" ? `${owed} ${t("Credit")}` : owed}</p>
+          <InfoTip label={t("Pay card")} text={t("A card payment is not a new expense. Cash and the balance owed both fall. Paying more than you owe leaves a credit. Net worth stays the same.")} />
+        </div>
         {card && posture === "owed" && cardDueDate(card, todayIso()) ? (
           <p className="fin-muted text-sm">{t("Next payment")} · {cardDueDate(card, todayIso())}</p>
         ) : null}

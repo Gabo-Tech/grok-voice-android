@@ -59,12 +59,12 @@ export function ChartCard({
 }) {
   return (
     <section className="fin-panel fin-card">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          {kicker ? <p className="fin-kicker">{kicker}</p> : null}
-          <h3 className={kicker ? "mt-1 text-base leading-5" : "fin-kicker"}>{title}</h3>
+      <div>
+        {kicker ? <p className="fin-kicker">{kicker}</p> : null}
+        <div className="title-line">
+          <h3 className={kicker ? "text-base leading-5" : "fin-kicker"}>{title}</h3>
+          {action}
         </div>
-        {action}
       </div>
       <div className="mt-2 min-w-0">{children}</div>
     </section>

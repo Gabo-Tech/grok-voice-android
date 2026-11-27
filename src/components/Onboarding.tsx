@@ -592,42 +592,38 @@ export function Onboarding({
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-5 landscape:flex-row landscape:gap-8 landscape:px-6 landscape:py-4" data-setup={screen}>
       <header className="mb-5 min-w-0 shrink-0 landscape:mb-0 landscape:flex landscape:max-h-full landscape:w-52 landscape:max-w-[42%] landscape:flex-col landscape:overflow-auto">
         <AppMark className="mb-4 w-16 landscape:mb-3 landscape:w-14" alt="" />
-        <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
-        <h1 className="masthead mt-2 text-3xl break-words landscape:text-2xl">Grok Voice</h1>
-        <ol className="setup-steps mt-4 landscape:mt-6">
-          {PROGRESS.map((item, itemIndex) => {
-            const state = itemIndex < index ? "done" : itemIndex === index ? "now" : "later";
-            return (
-              <li key={item} className="setup-step-item">
-                <span
-                  className={cn("setup-step grid place-items-center text-sm", state === "now" ? "bg-foreground text-background" : "text-muted-foreground")}
-                >
-                  {state === "done" ? <Check className="size-4" /> : itemIndex + 1}
-                </span>
-                <span className={cn("text-center text-[13px] leading-snug landscape:text-left", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item)}</span>
-              </li>
-            );
-          })}
-        </ol>
+        <h1 className="masthead text-3xl break-words landscape:text-2xl">Grok Voice</h1>
+        <div className="mt-4 flex items-center gap-2">
+          {PROGRESS.map((item, itemIndex) => (
+            <span key={item} className={cn("size-2 rounded-full", itemIndex === index ? "bg-foreground" : "bg-[var(--line)]")} />
+          ))}
+          <span className="text-sm text-foreground">{t(PROGRESS[index] || "Setup")}</span>
+        </div>
       </header>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-3">
           {screen === "language" && (
             <>
-              <InfoTip label={t("Language")}>
-                <p>{t("This sets the screen language. You can change it later in Settings. The first offline voice is English until you add another in Voice and AI.")}</p>
-                <p>{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
-              </InfoTip>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="title-line">
+                <h2 className="text-xl font-medium">{t("Language")}</h2>
+                <InfoTip label={t("Language")}>
+                  <p>{t("This sets the screen language. You can change it later in Settings. The first offline voice is English until you add another in Voice and AI.")}</p>
+                  <p>{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
+                </InfoTip>
+              </div>
+              <div className="flex flex-col gap-2" role="radiogroup" aria-label={t("Language")}>
                 {LANGS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
+                    role="radio"
+                    aria-checked={lang === item.id}
                     onClick={() => setLang(item.id)}
-                    className={cn("min-h-12 px-3 text-left text-sm", lang === item.id ? "bg-foreground text-background" : "text-muted-foreground")}
+                    className={cn("choice-row flex items-center justify-between", lang === item.id && "is-on")}
                   >
-                    {t(item.label)}
+                    <span className="text-base">{t(item.label)}</span>
+                    {lang === item.id ? <Check className="size-5" aria-hidden /> : null}
                   </button>
                 ))}
               </div>
@@ -636,22 +632,28 @@ export function Onboarding({
 
           {screen === "path" && (
             <>
-              <h2 className="text-2xl font-medium tracking-tight">{t("How should Talk answer?")}</h2>
-              <InfoTip label={t("How should Talk answer?")} text={t("Pick one path. You can add the others later in Voice and AI.")} />
-              <div className="flex flex-col">
+              <div className="title-line">
+                <h2 className="text-xl font-medium">{t("How should Talk answer?")}</h2>
+                <InfoTip label={t("How should Talk answer?")}>
+                  <p>{t("Pick one path. You can add the others later in Voice and AI.")}</p>
+                  <p>{t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")}</p>
+                </InfoTip>
+              </div>
+              <div className="flex flex-col gap-2" role="radiogroup" aria-label={t("How should Talk answer?")}>
                 {PATHS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
+                    role="radio"
+                    aria-checked={path === item.id}
                     onClick={() => setPath(item.id)}
-                    className={cn("min-h-12 px-3 py-2 text-left", path === item.id ? "bg-foreground text-background" : "text-foreground")}
+                    className={cn("choice-row flex items-center justify-between gap-3", path === item.id && "is-on")}
                   >
-                    <span className="block text-base">{t(item.title)}</span>
-                    <span className={cn("mt-1 block text-sm leading-5", path === item.id ? "text-background" : "text-muted-foreground")}>{t(item.blurb)}</span>
+                    <span className="text-base">{t(item.title)}</span>
+                    {path === item.id ? <Check className="size-5 shrink-0" aria-hidden /> : null}
                   </button>
                 ))}
               </div>
-              <InfoTip label={t("How should Talk answer?")} text={t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")} />
             </>
           )}
 
@@ -797,10 +799,23 @@ export function Onboarding({
         ) : null}
 
         <footer className="mt-3 flex shrink-0 flex-col gap-2 border-t border-border pt-3">
-          <div className="setup-actions">
-            <Button variant="outline" disabled={screen === "language" || busy} onClick={back}>
-              <ChevronLeft /> {t("Back")}
+          {(screen === "mixed" || screen === "onemin") && primary !== t("Test this setup") ? (
+            <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void go("test", "test")}>
+              {t("Skip this key")}
             </Button>
+          ) : null}
+          <div className="title-line">
+            <Button type="button" variant="outline" disabled={busy} onClick={() => void finish("skipped")}>
+              {t("Finish later")}
+            </Button>
+            <InfoTip label={t("Finish later")} text={t("Setup can wait. Open Settings, then Voice and AI, and continue from the same path.")} />
+          </div>
+          <div className="setup-actions">
+            {screen === "language" ? null : (
+              <Button variant="outline" disabled={busy} onClick={back}>
+                <ChevronLeft /> {t("Back")}
+              </Button>
+            )}
             <Button
               className="flex-1"
               disabled={
@@ -815,17 +830,6 @@ export function Onboarding({
               {busy ? <Loader size="inline" quiet label={primary} /> : <ChevronRight />}
               {primary}
             </Button>
-          </div>
-          {(screen === "mixed" || screen === "onemin") && primary !== t("Test this setup") ? (
-            <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void go("test", "test")}>
-              {t("Skip this key")}
-            </Button>
-          ) : null}
-          <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void finish("skipped")}>
-            {t("Finish later")}
-          </Button>
-          <div className="flex justify-center">
-            <InfoTip label={t("Finish later")} text={t("Setup can wait. Open Settings, then Voice and AI, and continue from the same path.")} />
           </div>
         </footer>
       </div>

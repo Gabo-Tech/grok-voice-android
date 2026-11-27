@@ -248,12 +248,23 @@ export function AssistantView({
           </div>
         )}
         {shownRows.length === 0 ? (
-          <div className="py-6">
-            <InfoTip label={t("Talk")}>
-              <p>{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
-              <p>{t("Hearing, the model, the voice, and what is tried next.")}</p>
-              <p>{t("Open voice and AI")}</p>
-            </InfoTip>
+          <div className="talk-empty">
+            <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
+            <div className="title-line">
+              <p className="text-base text-foreground">{t("What should we do?")}</p>
+              <InfoTip label={t("Talk")}>
+                <p>{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
+                <p>{t("Hearing, the model, the voice, and what is tried next.")}</p>
+                <p>{t("Open voice and AI")}</p>
+              </InfoTip>
+            </div>
+            <div className="flex max-w-full flex-wrap justify-center gap-2">
+              {["What's on today?", "Add reminder", "How much did I spend?"].map((line) => (
+                <button key={line} type="button" className="period-chip" onClick={() => void voice.sendText(t(line))}>
+                  {t(line)}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <>
@@ -282,10 +293,6 @@ export function AssistantView({
         )}
       </div>
 
-      <div className="talk-presence">
-        <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
-      </div>
-
       {voice.handoff && (
         <div className="mag-panel mb-3">
           <p className="text-sm leading-6 text-foreground">{voice.handoff.summary}</p>
@@ -295,7 +302,11 @@ export function AssistantView({
               : t("Nothing is sent until you confirm in the other app.")}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" onClick={voice.confirmHandoff}>
+            <Button
+              type="button"
+              variant={voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled" || voice.handoff.kind === "wipe_memory" ? "destructive" : "default"}
+              onClick={voice.confirmHandoff}
+            >
               {voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled"
                 ? t("Delete")
                 : voice.handoff.kind === "wipe_memory"
@@ -378,6 +389,11 @@ export function AssistantView({
             <Keyboard className="size-5" strokeWidth={1.5} />
           </button>
           <GlowRing phase={shownPhase} level={voice.level} onPress={() => void voice.toggleSession()} />
+          {shownRows.length === 0 ? (
+            <span className="icon-hit" aria-hidden />
+          ) : (
+            <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
+          )}
         </div>
       )}
       {focusHint ? <p className="pt-2 text-center text-sm text-muted-foreground">{t("Double-tap to show header")}</p> : null}

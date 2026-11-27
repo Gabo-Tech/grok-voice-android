@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import type { Settings } from "@/lib/api";
 import {
@@ -44,9 +45,11 @@ const FIELDS: Array<{ key: keyof CustomColors; label: string }> = [
 export function ThemePicker({
   settings,
   onChange,
+  info,
 }: {
   settings: Settings | null;
   onChange: (next: Settings) => void;
+  info?: ReactNode;
 }) {
   const t = useT();
   const selected = normalizeAppearance(settings?.appearance);
@@ -91,11 +94,15 @@ export function ThemePicker({
 
   return (
     <div className="min-w-0 max-w-full">
-      <button type="button" className="theme-row" onClick={() => setPickerOpen(true)}>
-        <span className="min-w-0 flex-1 text-base">{t("Theme")}</span>
-        <span className="theme-dot" style={{ background: currentCanvas }} aria-hidden />
-        <span className="text-sm text-muted-foreground">{currentTitle}</span>
-      </button>
+      <div className="title-line" data-widget-note="">
+        <span className="text-base text-foreground">{t("Theme")}</span>
+        {info}
+        <button type="button" className="ml-auto flex min-h-12 items-center gap-2 text-sm text-muted-foreground" onClick={() => setPickerOpen(true)}>
+          <span className="theme-dot" style={{ background: currentCanvas }} aria-hidden />
+          <span>{currentTitle}</span>
+          <ChevronRight className="size-4" aria-hidden />
+        </button>
+      </div>
       <Sheet open={pickerOpen} title={t("Theme")} onClose={() => setPickerOpen(false)}>
       <div className="theme-grid" role="radiogroup" aria-label={t("Theme")}>
         {PRESET_CHOICES.map((choice) => (

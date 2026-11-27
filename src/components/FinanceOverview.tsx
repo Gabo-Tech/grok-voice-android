@@ -27,7 +27,6 @@ import { selectDebt } from "@/lib/financeDebt";
 import { isHoldingAccount, positionOf, worthBuckets } from "@/lib/financeLedger";
 import { bookFromStatus, comingCashRows, headlineOf, plannedHits, utilization, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
-import { ChartColorMenu } from "@/components/ColorSheet";
 import { InfoTip } from "@/components/ds/InfoTip";
 import { PeriodMenu } from "@/components/ds/PeriodMenu";
 import { TuneSheet } from "@/components/ds/TuneSheet";
@@ -193,15 +192,6 @@ export function FinanceOverview({
   const rate = income.amountMinor != null && expenses.amountMinor != null ? savingsRate(income.amountMinor, expenses.amountMinor) : null;
   const net = income.amountMinor != null && expenses.amountMinor != null ? income.amountMinor - expenses.amountMinor : null;
   const maxCategory = categories.rows[0]?.amountMinor || 1;
-  const ringRows = buckets.buckets
-    .filter((bucket) => bucket.id !== "debt" && bucket.amountMinor > 0)
-    .map((bucket) => ({
-      id: bucket.id,
-      label: bucket.id,
-      color: resolveColor(finance.snapshot.entityColors, "series", `allocation:${bucket.id}`, ""),
-      amountMinor: bucket.amountMinor,
-    }));
-
   const blocks: Record<DashId, ReactNode> = {
     hero: (
       <section data-finance-panel="hero" className="space-y-3">
@@ -224,12 +214,30 @@ export function FinanceOverview({
             <Trend current={expenses.amountMinor} previous={priorExpenses?.amountMinor ?? null} />
           </button>
         </div>
-        {ringRows.length ? (
-          <>
-            <Donut rows={ringRows} hidden={new Set()} caption="" center="" debtRatio={buckets.assets > 0 ? debt.amountMinor / buckets.assets : debt.amountMinor > 0 ? 1 : 0} />
-            <ChartColorMenu series={ringRows.map((row) => ({ ...row, label: t(row.label === "money" ? "Money" : row.label === "investment" ? "Investments" : "Card credit") }))} currency={display} onPaint={(id, color) => finance.paintColor("series", `allocation:${id}`, color)} />
-          </>
-        ) : null}
+        <div className="app-card">
+          <div className="title-line">
+            <h2 className="fin-kicker">{t("Savings rate")}</h2>
+          </div>
+          <Donut
+            rows={[
+              { id: "income", label: t("Income"), color: "var(--positive)", amountMinor: income.amountMinor },
+              { id: "expense", label: t("Expenses"), color: "var(--negative)", amountMinor: expenses.amountMinor },
+            ]}
+            hidden={new Set()}
+            caption={t("Savings rate")}
+            center={rate == null ? "—" : `${Math.round(rate * 1000) / 10}%`}
+          />
+          <ul className="mt-3 space-y-1">
+            <li className="flex min-h-12 items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-base"><span className="size-2 rounded-full" style={{ background: "var(--positive)" }} />{t("Income")}</span>
+              <Amount total={income} display={display} book={book} nowMs={nowMs} />
+            </li>
+            <li className="flex min-h-12 items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-base"><span className="size-2 rounded-full" style={{ background: "var(--negative)" }} />{t("Expenses")}</span>
+              <Amount total={expenses} display={display} book={book} nowMs={nowMs} />
+            </li>
+          </ul>
+        </div>
       </section>
     ),
     result: (

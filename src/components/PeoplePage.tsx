@@ -472,8 +472,10 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
           ) : phoneRows.length === 0 ? (
             contactsAllowed === null || busy ? (
               <div>
-                <Loader size="block" label={t("Looking up contacts")} />
-                <InfoTip label={t("Phone contacts")} text={t("This stays on the phone.")} />
+                <div className="title-line">
+                  <Loader size="block" label={t("Looking up contacts")} />
+                  <InfoTip label={t("Phone contacts")} text={t("This stays on the phone.")} />
+                </div>
               </div>
             ) : (
               <EmptyState
@@ -523,8 +525,10 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
-          <h2 className="px-1 text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || t("Person") : t("New person")}</h2>
-          <InfoTip label={t("People")} text={t("This record stays on the phone. It does not change the Contacts app.")} />
+          <div className="title-line px-1">
+            <h2 className="text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || t("Person") : t("New person")}</h2>
+            <InfoTip label={t("People")} text={t("This record stays on the phone. It does not change the Contacts app.")} />
+          </div>
           <div className="mt-6 space-y-4">
             <h3 className="text-base text-foreground">{t("Who")}</h3>
             <Field label={t("Name")} error={screen === "edit" && error ? t(error) : null}>

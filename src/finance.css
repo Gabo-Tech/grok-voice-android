@@ -752,7 +752,13 @@
   padding: 0 16px;
 }
 
-.hero-card {
+.app-card .aspect-square {
+  max-width: 148px;
+}
+
+.app-card,
+.hero-card,
+.mini-card {
   background: var(--surface-1);
   border-radius: var(--radius-md);
   padding: var(--space-4);
@@ -775,7 +781,7 @@
   border: 0;
   border-radius: var(--radius-md);
   background: var(--surface-1);
-  padding: 12px;
+  padding: var(--space-4);
   color: var(--text-primary);
   text-align: left;
   box-shadow: var(--e1);

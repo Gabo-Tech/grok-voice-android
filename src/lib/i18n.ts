@@ -9,6 +9,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   es: {
     Agenda: "Agenda",
     "Money flow": "Flujo de dinero",
+    Provider: "Proveedor",
+    "What should we do?": "¿Qué hacemos?",
+    "What's on today?": "¿Qué hay hoy?",
+    "How much did I spend?": "¿Cuánto gasté?",
     Talk: "Hablar",
     Notes: "Notas",
     Calendar: "Calendario",
@@ -1352,6 +1356,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   de: {
     Agenda: "Termine",
     "Money flow": "Geldfluss",
+    Provider: "Anbieter",
+    "What should we do?": "Was sollen wir tun?",
+    "What's on today?": "Was steht heute an?",
+    "How much did I spend?": "Wie viel habe ich ausgegeben?",
     Talk: "Sprechen",
     Notes: "Notizen",
     Calendar: "Kalender",
@@ -2695,6 +2703,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   pt: {
     Agenda: "Agenda",
     "Money flow": "Fluxo de dinheiro",
+    Provider: "Provedor",
+    "What should we do?": "O que fazemos?",
+    "What's on today?": "O que há hoje?",
+    "How much did I spend?": "Quanto gastei?",
     Talk: "Falar",
     Notes: "Notas",
     Calendar: "Calendário",
@@ -4038,6 +4050,10 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
   "ca-ES-valencia": {
     Agenda: "Agenda",
     "Money flow": "Flux de diners",
+    Provider: "Proveïdor",
+    "What should we do?": "Què fem?",
+    "What's on today?": "Què hi ha hui?",
+    "How much did I spend?": "Quant he gastat?",
     Talk: "Parlar",
     Notes: "Notes",
     Calendar: "Calendari",

@@ -224,7 +224,10 @@ export function ProgramSheet({
     >
       {step === 0 ? (
         <div className="space-y-3">
-          <InfoTip label={t("Plan")} text={t("One plan at a time. You can change it later.")} />
+          <div className="title-line">
+            <p className="text-base text-foreground">{t("Plan")}</p>
+            <InfoTip label={t("Plan")} text={t("One plan at a time. You can change it later.")} />
+          </div>
           <div role="radiogroup" aria-label={t("Plan")} className="space-y-2">
           {PRESETS.map((id) => (
             <button key={id} type="button" role="radio" aria-checked={preset === id} className={cn("choice-row", preset === id && "is-on")} onClick={() => choose(id)}>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
-import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
+import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
+import { InfoTip } from "@/components/ds/InfoTip";
+import { Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
@@ -23,11 +24,8 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
   const [repeat, setRepeat] = useState<RepeatChoice>("none");
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [until, setUntil] = useState("");
+  const [calendarNote, setCalendarNote] = useState(true);
 
-  const events = useMemo(
-    () => [...agenda.agenda.events].sort((a, b) => a.startMs - b.startMs),
-    [agenda.agenda.events],
-  );
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState(() => startOfDay(new Date()));
   const [monthEvents, setMonthEvents] = useState<CalEvent[]>([]);
@@ -127,36 +125,21 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
   return (
     <>
       <PageChrome title={t("Calendar")} bare={!chrome} onAdd={openNew} addLabel={t("New event")} active={active}>
-        {monthCalendar !== "granted" && (
-          <Button
-            variant="outline"
-            className="mb-4 w-full"
-            disabled={agenda.busy || !agenda.inApp}
-            onClick={() => void agenda.requestCalendar()}
-          >
-            {t("Allow calendar access")}
-          </Button>
-        )}
-        {monthCalendar !== "granted" && (
-          <p className="mb-4 px-1 text-xs leading-5 text-muted-foreground">
-            {t("The phone calendar is not connected. Days below still show events saved in the app.")}
-          </p>
-        )}
+        {monthCalendar !== "granted" && calendarNote ? (
+          <div className="banner-slim">
+            <p className="text-sm text-foreground">{t("Calendar")}</p>
+            <InfoTip label={t("Calendar")} text={t("The phone calendar is not connected. Days below still show events saved in the app.")} />
+            <button type="button" className="min-h-12 shrink-0 px-2 text-sm text-foreground underline underline-offset-4" disabled={agenda.busy || !agenda.inApp} onClick={() => void agenda.requestCalendar()}>
+              {t("Allow calendar access")}
+            </button>
+            <button type="button" className="icon-hit" aria-label={t("Hide")} onClick={() => setCalendarNote(false)}>
+              <X className="size-5" strokeWidth={1.5} />
+            </button>
+          </div>
+        ) : null}
         {agenda.error && <Notice title={t(agenda.error)} />}
 
-        <p className="mb-2 px-1 text-sm text-muted-foreground">{t("Today")}</p>
-        {events.length === 0 ? (
-          <EmptyState
-            title={t("Nothing today")}
-            body={t("Tap + to add an event, or ask Grok to schedule one.")}
-            actionLabel={t("New event")}
-            onAction={openNew}
-          />
-        ) : (
-          <EventList events={events} onOpen={openEdit} />
-        )}
-
-        <div className="mt-8">
+        <div>
           <div className="mb-3 flex items-center justify-between gap-2 px-1">
             <p className="min-w-0 text-lg leading-6 font-medium text-foreground">
               {cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
@@ -221,12 +204,7 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
             {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </p>
           {selectedEvents.length === 0 ? (
-            <EmptyState
-              title={t("Nothing this day")}
-              body={t("Choose another day, or tap + to add an event here.")}
-              actionLabel={t("New event")}
-              onAction={openNew}
-            />
+            <p className="px-1 text-base text-foreground">{t("Nothing this day")}</p>
           ) : (
             <EventList events={selectedEvents} onOpen={openEdit} />
           )}
@@ -241,7 +219,7 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
           <div className="flex flex-wrap items-center gap-2">
             <ShareButton title={title} text={[start, end, location].filter(Boolean).join("\n")} />
             {editing?.id && (
-              <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
+              <Button variant="destructive" disabled={agenda.busy} onClick={remove}>
                 <Trash2 /> {t("Delete")}
               </Button>
             )}

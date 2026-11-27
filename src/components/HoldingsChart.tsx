@@ -191,10 +191,12 @@ export function HoldingsChart({
 
   return (
     <div className="space-y-4">
-      <ChartCard title={t("Holdings chart")}>
+      <ChartCard
+        title={t("Holdings chart")}
+        action={<InfoTip label={t("Holdings chart")} text={`${fill("By value in {code}.", { code: code || "—" })} ${t("Latest balances. This period does not rewrite them.")}`} />}
+      >
         <div className="filter-row">
           <ChartPeriodBar period={holdingsPeriod.period} onChange={holdingsPeriod.setPeriod} />
-          <InfoTip label={t("Holdings chart")} text={`${fill("By value in {code}.", { code: code || "—" })} ${t("Latest balances. This period does not rewrite them.")}`} />
           <TuneSheet label={t("Options")}>
             <div className="tune-sheet" role="group" aria-label={t("Holdings chart")}>
               <button type="button" className="tune-row" aria-pressed={pref.group === "item"} onClick={() => save({ ...pref, group: "item" })}>{t("By item")}</button>
