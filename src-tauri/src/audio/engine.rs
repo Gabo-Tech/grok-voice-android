@@ -1003,6 +1003,7 @@ mod tests {
         assert!(manifest.contains("RECEIVE_BOOT_COMPLETED"));
         assert!(manifest.contains("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"));
         assert!(manifest.contains("enableOnBackInvokedCallback=\"true\""));
+        assert!(manifest.contains("android:roundIcon=\"@mipmap/ic_launcher_round\""));
         assert!(manifest.contains("MY_PACKAGE_REPLACED"));
         assert!(boot.contains("ACTION_BOOT_COMPLETED"));
         assert!(boot.contains("ACTION_MY_PACKAGE_REPLACED"));
