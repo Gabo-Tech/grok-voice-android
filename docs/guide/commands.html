@@ -537,7 +537,7 @@
           </article>
           <article class="cmd" id="delete_finance-finance">
             <h3><code>delete_finance</code></h3>
-            <p>Delete one account, transaction, recurring rule, or budget line. Call first with confirmed false. If an account has transactions, it says how many and can move them before removal. Waits for a clear yes.</p>
+            <p>Delete one account, transaction, recurring rule, budget, or budget line. Call first with confirmed false. kind is account, transaction, rule, budget, or budget_line. period is this or YYYY-MM for a budget. name or category selects a budget line. If an account has transactions, it says how many and can move them before removal. Waits for a clear yes.</p>
             <ul class="phrases">
               <li><span>en</span> Delete Swiss card.</li>
               <li><span>es</span> Borra la tarjeta suiza.</li>
@@ -581,7 +581,7 @@
           </article>
           <article class="cmd" id="save_budget-finance">
             <h3><code>save_budget</code></h3>
-            <p>Create or change the monthly budget. role is income, expense, savings, or investment. delete asks first with confirmed false.</p>
+            <p>Create, read, update, or delete the monthly budget on this phone. action is create, set, read, delete, or suggest. period is this, next, previous, YYYY-MM, or template. role is income, expense, savings, or investment. category is the type, such as Salary or Restaurants. label is an optional expected entry, such as Salary 1 Nov, so two paydays stay two lines under Salary. suggest fills the month from recurring rules and the average of the three earlier months, only when you ask to set up or fill the budget. question left with a category answers how much is left. question over answers whether spending is over the plan. read with no category speaks income, spending, savings, and investments. Saying the same category again changes that line. delete asks first with confirmed false, then removes only after a clear yes. It does not invent an amount.</p>
             <ul class="phrases">
               <li><span>en</span> Set restaurants to 400 euros this month.</li>
               <li><span>es</span> Pon restaurantes en 400 euros este mes.</li>
@@ -592,7 +592,7 @@
           </article>
           <article class="cmd" id="open_finance-finance">
             <h3><code>open_finance</code></h3>
-            <p>Open a Finance screen and answer with the same numbers the screen shows. view is overview, activity, accounts, holdings, plan, portfolio, or charts. action color paints one saved item on every chart. Resetting every color asks first.</p>
+            <p>Open a Finance screen and answer with the same numbers the screen shows. view is overview, activity, accounts, holdings, plan, portfolio, or charts. activity is transactions. plan is the monthly budget: expected income, expense limits, what is left to spend, and the savings target. Recurring bills are on activity, not plan. chart flow with action describe speaks income, spending, and debt payments. A card charge stays in spending. Paying a card or a loan is separate. action color paints one saved item on every chart. Resetting every color asks first.</p>
             <ul class="phrases">
               <li><span>en</span> Show my holdings chart.</li>
               <li><span>es</span> Muestra el gráfico de posiciones.</li>
@@ -762,7 +762,7 @@
       </section>
     </main>
     <footer>
-      <div class="wrap narrow"><p>Tools as of 0.1.64. <a href="./index.html">Guide</a></p></div>
+      <div class="wrap narrow"><p>Tools as of 0.1.65. <a href="./index.html">Guide</a></p></div>
     </footer>
     <script src="../main.js"></script>
   </body>

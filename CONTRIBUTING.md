@@ -51,7 +51,7 @@ pnpm tauri android build --target aarch64 --apk
 
 ## Version and release
 
-`versionCode` is `major * 1000000 + minor * 1000 + patch`. 0.1.64 is 1064.
+`versionCode` is `major * 1000000 + minor * 1000 + patch`. 0.1.65 is 1065.
 
 A version bump touches `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, the `GrokVoice/` user-agent in `src-tauri/src/local/phonon.rs`, and the user-facing copy in `README.md` and `docs/index.html`. Tag `vX.Y.Z` on main. The tag workflow uploads `GrokVoice-X.Y.Z.apk`. See [RELEASING.md](RELEASING.md).
 

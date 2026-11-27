@@ -27,7 +27,7 @@
         <div class="wrap narrow">
           <p class="chapter">Develop</p>
           <h1>How the app is put together.</h1>
-          <p>These notes match the tree on main at 0.1.64. The short contributor path is <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>. Release signing steps also live in <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/RELEASING.md">RELEASING.md</a>. Screen rules are <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/DESIGN-LANGUAGE.md">DESIGN-LANGUAGE.md</a>.</p>
+          <p>These notes match the tree on main at 0.1.65. The short contributor path is <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>. Release signing steps also live in <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/RELEASING.md">RELEASING.md</a>. Screen rules are <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/DESIGN-LANGUAGE.md">DESIGN-LANGUAGE.md</a>.</p>
 
           <h2 id="architecture">Architecture</h2>
           <p>The UI is React and Vite. Tauri 2 hosts it. On Android the WebView sits in <code>ai.grokvoice.app</code>. Rust owns the microphone, the vault, the stores, and the model runtimes.</p>
@@ -45,13 +45,17 @@
             <thead><tr><th>Path</th><th>What it is</th></tr></thead>
             <tbody>
               <tr><td data-label="Path"><code>src/App.tsx</code></td><td data-label="What it is">Tab shell: Talk, Notes, Calendar, Time, Finance, Settings.</td></tr>
-              <tr><td data-label="Path"><code>src/components/</code></td><td data-label="What it is">Screens. <code>Onboarding.tsx</code> is the setup tour. <code>FinancePage.tsx</code> and the chart files are money. <code>LocalPacks.tsx</code> is the pack list.</td></tr>
+              <tr><td data-label="Path"><code>src/components/</code></td><td data-label="What it is">Screens. <code>Onboarding.tsx</code> is the setup tour. <code>AssistantView.tsx</code> draws Talk bubbles. <code>FinancePage.tsx</code>, <code>BudgetSection.tsx</code>, and the chart files are money. <code>LocalPacks.tsx</code> is the pack list.</td></tr>
+              <tr><td data-label="Path"><code>src/lib/budget.ts</code></td><td data-label="What it is">The month budget: expected income, expense limits, left to spend, and the savings target. The month range is 24 back and 12 ahead.</td></tr>
+              <tr><td data-label="Path"><code>src/lib/moneyFlow.ts</code></td><td data-label="What it is">The money-flow chart. Card charges stay in spending. Card and loan payments are a separate debt flow. Still owed is not added to the period.</td></tr>
+              <tr><td data-label="Path"><code>src/lib/legendShare.ts</code></td><td data-label="What it is">Holdings shares. Parts add to 100. The portfolio value row reads 100 and is not part of the denominator.</td></tr>
+              <tr><td data-label="Path"><code>src/index.css</code></td><td data-label="What it is">Theme tokens, Talk bubbles, and the short-landscape side rail at max-height 520px.</td></tr>
               <tr><td data-label="Path"><code>src/lib/setupGuide.ts</code></td><td data-label="What it is">The five paths and the key copy. <code>stack.ts</code> is the first-run byte total.</td></tr>
               <tr><td data-label="Path"><code>src/lib/i18n.ts</code></td><td data-label="What it is">Screen strings for en, es, de, pt, and ca-ES-valencia. <code>financeCopy.ts</code>, <code>setup-i18n.json</code>, and <code>phonon-i18n.json</code> add more.</td></tr>
               <tr><td data-label="Path"><code>src/lib/appearance.ts</code></td><td data-label="What it is">Theme presets and the custom palette. The attribute is <code>data-appearance</code>.</td></tr>
               <tr><td data-label="Path"><code>src-tauri/src/lib.rs</code></td><td data-label="What it is">Rust crate root. Commands are registered from here.</td></tr>
               <tr><td data-label="Path"><code>src-tauri/src/actions.rs</code></td><td data-label="What it is">Notes, Time, Calendar, People, music, settings, calls, and messages.</td></tr>
-              <tr><td data-label="Path"><code>src-tauri/src/finance.rs</code></td><td data-label="What it is">Money tools, including colors, budgets, and the PDF.</td></tr>
+              <tr><td data-label="Path"><code>src-tauri/src/finance.rs</code></td><td data-label="What it is">Money tools, including colors, <code>save_budget</code>, and the PDF. <code>suggest</code> fills a month only when Talk is asked to set up or fill the budget. A budget delete waits for <code>confirmed</code>.</td></tr>
               <tr><td data-label="Path"><code>src-tauri/src/local/</code></td><td data-label="What it is">Packs, llama.cpp, Moonshine, Piper, Phonon, and the on-device turn.</td></tr>
               <tr><td data-label="Path"><code>src-tauri/src/realtime.rs</code></td><td data-label="What it is">xAI and OpenAI voice sessions.</td></tr>
               <tr><td data-label="Path"><code>src-tauri/src/onemin.rs</code></td><td data-label="What it is">1min.ai text provider.</td></tr>
@@ -99,16 +103,16 @@ pnpm tauri android build --target aarch64 --apk</code></pre>
           </ul>
           <p>Before the native build, the job runs:</p>
           <pre><code>node --experimental-strip-types --test src/lib/setupGuide.test.ts src/lib/i18nCoverage.test.ts</code></pre>
-          <p>Verify checks versionName, versionCode, minSdk 26, the arm64-v8a ABI, v2 signing, the certificate, and <code>libptts_ffi.so</code>. The 0.1.64 release asset is 58,146,206 bytes, sha256 <code>932f66af1bb2f6e4784d8e5e665a716b5a96a8392ea03e221cb3b467cf94a2c0</code>.</p>
+          <p>Verify checks versionName, versionCode, minSdk 26, the arm64-v8a ABI, v2 signing, the certificate, and <code>libptts_ffi.so</code>. The 0.1.65 release asset is 58,162,590 bytes, sha256 <code>a1d569de0c02c9a81eedd6f15cd5931472dc8d5284754f3107216db534821313</code>.</p>
 
           <h2 id="versioning">Versioning</h2>
-          <p><code>versionName</code> is the version string. <code>versionCode</code> is <code>major * 1000000 + minor * 1000 + patch</code>. For 0.1.64 that is 1064. The workflow computes it the same way and compares it to <code>aapt dump badging</code>. Gradle reads <code>tauri.android.versionCode</code> and <code>tauri.android.versionName</code> from the generated <code>tauri.properties</code>.</p>
-          <p>The 0.1.64 bump changed these files:</p>
+          <p><code>versionName</code> is the version string. <code>versionCode</code> is <code>major * 1000000 + minor * 1000 + patch</code>. For 0.1.65 that is 1065. The workflow computes it the same way and compares it to <code>aapt dump badging</code>. Gradle reads <code>tauri.android.versionCode</code> and <code>tauri.android.versionName</code> from the generated <code>tauri.properties</code>.</p>
+          <p>The 0.1.65 bump changed these files:</p>
           <ul>
             <li><code>package.json</code></li>
             <li><code>src-tauri/tauri.conf.json</code></li>
             <li><code>src-tauri/Cargo.toml</code> and <code>src-tauri/Cargo.lock</code></li>
-            <li><code>src-tauri/src/local/phonon.rs</code> (the Hugging Face user-agent <code>GrokVoice/0.1.64</code>)</li>
+            <li><code>src-tauri/src/local/phonon.rs</code> (the Hugging Face user-agent <code>GrokVoice/0.1.65</code>)</li>
             <li><code>README.md</code> and <code>docs/index.html</code>, where the user-facing copy names the version</li>
           </ul>
           <p>Merge the bump to <code>main</code>, tag that commit <code>vX.Y.Z</code>, and push the tag. See <a href="https://github.com/Gabo-Tech/grok-voice-android/blob/main/RELEASING.md">RELEASING.md</a>.</p>

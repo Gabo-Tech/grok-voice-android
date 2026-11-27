@@ -110,7 +110,9 @@
       <li>O valor que dizes é o teu número. Não é uma taxa inventada. Se a moeda do bem não for a do ecrã, o património combinado continua a precisar de uma taxa real.</li>
       <li>«A Nitroeggs paga 14 dólares a cada 10 dias em monero.» Um pagamento programado. Fica planeado até o marcares.</li>
       <li>«Mostra o gráfico das posições.» Abre Posições. O círculo é o valor na tua moeda principal.</li>
-      <li>«Que percentagem da minha carteira é XMR.» A parte das posições com preço, o mesmo total do gráfico.</li>
+      <li>«Que percentagem da minha carteira é XMR.» A parte das posições com preço. Essas partes somam 100. O valor da carteira lê 100 e não entra outra vez nessa soma. O dinheiro fica de fora até você incluí-lo.</li>
+      <li>«Descreva o fluxo de dinheiro.» Diz receitas, gastos e pagamentos de dívida do período. Um lançamento no cartão é gasto. Pagar o cartão ou um empréstimo é um pagamento de dívida, não um segundo gasto. O que ainda deve não entra no período.</li>
+      <li>«Mostre o plano.» Abre Plan. Essa tela é o orçamento do mês. As contas recorrentes ficam em Atividade.</li>
       <li>«Põe a prata cinza.» Guarda essa cor na posição. Aparece no círculo, nas barras e na lista.</li>
       <li>«Comprei um Rolex por 12000 CHF.» «O meu Rolex vale agora 14000.» É a tua estimativa, não um preço ao vivo.</li>
     </ul>
@@ -125,10 +127,20 @@
       <li>«Liga Não incomodar.» Se o acesso às notificações estiver desligado, o Grok diz.</li>
       <li>«Exporta o PDF das Finanças deste mês.» O Grok pergunta e abre para partilhar. Nada é enviado.</li>
     </ul>
-    <h2>Orçamento, um fato fixo e qual modelo</h2>
+    <h2>Finanças — o orçamento do mês</h2>
+    <p>Plan é o orçamento de um mês. As contas recorrentes ficam em Atividade. O Talk usa o mesmo registro. Apagar espera um sim claro. Encher um mês só acontece quando você pede para preparar ou preencher o orçamento. Usa as regras recorrentes e depois a média dos três meses anteriores para as categorias que essas regras não nomearam. Não inventa um valor.</p>
     <ul>
-      <li>«Defina restaurantes em 400 euros este mês.» É o orçamento mensal. Apagar uma linha pede um sim.</li>
-      <li>«Quanto falta para restaurantes?»</li>
+      <li>«Defina restaurantes em 400 euros este mês.» Cria esse limite de gasto. Dizer outra vez para Restaurantes muda a mesma linha.</li>
+      <li>«Defina salário em 2000 euros este mês, com o rótulo Salário 1 nov.» É uma receita. Um segundo rótulo, como Salário 15 nov, continua sendo outra linha sob Salário.</li>
+      <li>«Quanto falta para restaurantes?» Lê essa linha: o previsto, o gasto e o que falta.</li>
+      <li>«Leia o orçamento deste mês.» Diz receitas, gastos, poupança e investimentos. «Passei do plano?» diz se os gastos passaram do plano.</li>
+      <li>«Leia o orçamento do mês passado.» O período pode ser este, o seguinte, o anterior, ou um mês como 2026-11.</li>
+      <li>«Apague a linha de restaurantes.» O Talk pergunta. Diga que sim e essa linha sai. «Apague o orçamento deste mês» pergunta igual e depois tira o mês.</li>
+      <li>«Preencha o orçamento.» Também «Prepare o orçamento.» Preenche este mês com as contas recorrentes e os gastos recentes.</li>
+    </ul>
+
+    <h2>Um fato fixo e qual modelo</h2>
+    <ul>
       <li>«Marque o aluguel como pago.» Regista o pagamento e avança a data seguinte.</li>
       <li>«Que modelo estou usando?» A resposta não inclui uma chave.</li>
       <li>«Lembre que eu pego o trem às 8.» Só quando o Talk está neste telefone. «Esqueça isso» não apaga notas, Pessoas, lembretes nem eventos.</li>

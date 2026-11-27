@@ -110,7 +110,9 @@
       <li>El valor que dices es tu cifra. No es un tipo de cambio inventado. Si la moneda del bien no es la de la pantalla, el patrimonio combinado sigue necesitando un tipo real.</li>
       <li>«Nitroeggs paga 14 dólares cada 10 días en monero.» Un pago programado. Sigue previsto hasta que lo marques.</li>
       <li>«Enséñame el gráfico de posiciones.» Abre Posiciones. El círculo es el valor en tu moneda principal.</li>
-      <li>«Qué porcentaje de mi cartera es XMR.» La parte de las posiciones con precio, el mismo total que el gráfico.</li>
+      <li>«Qué porcentaje de mi cartera es XMR.» La parte de las posiciones con precio. Esas partes suman 100. El total de la cartera lee 100 y no se vuelve a contar en esa suma. El efectivo queda fuera hasta que lo incluyas.</li>
+      <li>«Describe el flujo de dinero.» Dice ingresos, gasto y pagos de deuda del periodo. Un cargo en la tarjeta es gasto. Pagar la tarjeta o un préstamo es un pago de deuda, no un segundo gasto. Lo que aún debes no se suma al periodo.</li>
+      <li>«Muestra el plan.» Abre Plan. Esa pantalla es el presupuesto del mes. Las facturas recurrentes siguen en Actividad.</li>
       <li>«Pon la plata gris.» Guarda ese color en la posición. Sale en el círculo, las barras y la lista.</li>
       <li>«Compré un Rolex por 12000 CHF.» «Mi Rolex vale ahora 14000.» Es tu estimación, no un precio en vivo.</li>
     </ul>
@@ -125,10 +127,20 @@
       <li>«Activa No molestar.» Si no hay acceso a notificaciones, Grok lo dice.</li>
       <li>«Exporta el PDF de Finanzas de este mes.» Grok pregunta y abre para compartir. No se sube nada.</li>
     </ul>
-    <h2>Presupuesto, un dato fijado y qué modelo</h2>
+    <h2>Finanzas — el presupuesto del mes</h2>
+    <p>Plan es el presupuesto de un mes. Las facturas recurrentes siguen en Actividad. Talk usa el mismo registro. Borrar espera un sí claro. Rellenar un mes solo ocurre cuando pides preparar o rellenar el presupuesto. Usa las reglas recurrentes y luego la media de los tres meses anteriores para las categorías que esas reglas no nombraron. No inventa un importe.</p>
     <ul>
-      <li>«Pon restaurantes en 400 euros este mes.» Es el presupuesto mensual. Borrar una línea pide un sí.</li>
-      <li>«¿Cuánto queda para restaurantes?»</li>
+      <li>«Pon restaurantes en 400 euros este mes.» Crea ese límite de gasto. Decirlo otra vez para Restaurantes cambia la misma línea.</li>
+      <li>«Pon salario en 2000 euros este mes, etiquetado Salario 1 nov.» Es un ingreso. Una segunda etiqueta, como Salario 15 nov, sigue siendo otra línea bajo Salario.</li>
+      <li>«¿Cuánto queda para restaurantes?» Lee esa línea: lo previsto, lo gastado y lo que queda.</li>
+      <li>«Lee el presupuesto de este mes.» Dice ingresos, gasto, ahorro e inversiones. «¿Me he pasado del plan?» dice si el gasto se ha pasado del plan.</li>
+      <li>«Lee el presupuesto del mes pasado.» El periodo puede ser este, el siguiente, el anterior, o un mes como 2026-11.</li>
+      <li>«Borra la línea de restaurantes.» Talk pregunta. Di que sí y esa línea se quita. «Borra el presupuesto de este mes» pregunta igual y luego quita el mes.</li>
+      <li>«Rellena el presupuesto.» También «Prepara el presupuesto.» Rellena este mes con las facturas recurrentes y el gasto reciente.</li>
+    </ul>
+
+    <h2>Un dato fijado y qué modelo</h2>
+    <ul>
       <li>«Marca el alquiler como pagado.» Anota el pago y mueve la siguiente fecha.</li>
       <li>«¿Qué modelo estoy usando?» La respuesta no incluye una clave.</li>
       <li>«Recuerda que tomo el tren a las 8.» Solo cuando Talk está en este teléfono. «Olvida eso» no borra notas, Personas, recordatorios ni eventos.</li>

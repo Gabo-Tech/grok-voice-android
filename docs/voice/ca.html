@@ -110,7 +110,9 @@
       <li>El valor que dius és la teua xifra. No és un tipus de canvi inventat. Si la moneda del bé no és la de la pantalla, el patrimoni combinat continua necessitant un tipus real.</li>
       <li>«Nitroeggs paga 14 dòlars cada 10 dies en monero.» Un pagament programat. Continua previst fins que el marques.</li>
       <li>«Mostra'm el gràfic de posicions.» Obri Posicions. El cercle és el valor en la teua moneda principal.</li>
-      <li>«Quin percentatge de la meua cartera és XMR.» La part de les posicions amb preu, el mateix total que el gràfic.</li>
+      <li>«Quin percentatge de la meua cartera és XMR.» La part de les posicions amb preu. Eixes parts sumen 100. El valor de la cartera llig 100 i no es torna a comptar en eixa suma. L’efectiu queda fora fins que l’inclogues.</li>
+      <li>«Descriu el flux de diners.» Diu ingressos, despesa i pagaments de deute del període. Un càrrec en la targeta és despesa. Pagar la targeta o un préstec és un pagament de deute, no una segona despesa. El que encara deus no se suma al període.</li>
+      <li>«Mostra el pla.» Obri Plan. Eixa pantalla és el pressupost del mes. Les factures recurrents continuen en Activitat.</li>
       <li>«Fes la plata grisa.» Guarda eixe color en la posició. Ix al cercle, a les barres i a la llista.</li>
       <li>«He comprat un Rolex per 12000 CHF.» «El meu Rolex val ara 14000.» És la teua estimació, no un preu en viu.</li>
     </ul>
@@ -125,10 +127,20 @@
       <li>«Activa No molestar.» Si no hi ha accés a les notificacions, Grok ho diu.</li>
       <li>«Exporta el PDF de Finances d’este mes.» Grok pregunta i obri per a compartir. No es puja res.</li>
     </ul>
-    <h2>Pressupost, un fet fixat i quin model</h2>
+    <h2>Finances — el pressupost del mes</h2>
+    <p>Plan és el pressupost d’un mes. Les factures recurrents continuen en Activitat. Talk usa el mateix registre. Esborrar espera un sí clar. Omplir un mes només passa quan demanes preparar o omplir el pressupost. Usa les regles recurrents i després la mitjana dels tres mesos anteriors per a les categories que eixes regles no han nomenat. No inventa un import.</p>
     <ul>
-      <li>«Posa restaurants a 400 euros este mes.» És el pressupost mensual. Esborrar una línia demana un sí.</li>
-      <li>«Quant queda per a restaurants?»</li>
+      <li>«Posa restaurants a 400 euros este mes.» Crea eixe límit de despesa. Dir-ho una altra volta per a Restaurants canvia la mateixa línia.</li>
+      <li>«Posa el salari a 2000 euros este mes, etiquetat Salari 1 nov.» És un ingrés. Una segona etiqueta, com Salari 15 nov, continua sent una altra línia sota Salari.</li>
+      <li>«Quant queda per a restaurants?» Llig eixa línia: el previst, el gastat i el que queda.</li>
+      <li>«Llig el pressupost d’este mes.» Diu ingressos, despesa, estalvi i inversions. «M’he passat del pla?» diu si la despesa s’ha passat del pla.</li>
+      <li>«Llig el pressupost del mes passat.» El període pot ser este, el següent, l’anterior, o un mes com 2026-11.</li>
+      <li>«Esborra la línia de restaurants.» Talk pregunta. Digues que sí i eixa línia se’n va. «Esborra el pressupost d’este mes» pregunta igual i després lleva el mes.</li>
+      <li>«Ompli el pressupost.» També «Prepara el pressupost.» Ompli este mes amb les factures recurrents i la despesa recent.</li>
+    </ul>
+
+    <h2>Un fet fixat i quin model</h2>
+    <ul>
       <li>«Marca el lloguer com a pagat.» Anota el pagament i mou la data següent.</li>
       <li>«Quin model estic fent servir?» La resposta no inclou cap clau.</li>
       <li>«Recorda que agafe el tren a les 8.» Només quan Talk és en este telèfon. «Oblida això» no esborra notes, Persones, recordatoris ni esdeveniments.</li>

@@ -110,7 +110,9 @@
       <li>Der genannte Wert ist deine Zahl. Kein erfundener Kurs. Weicht die Währung von der Anzeige ab, braucht das gemeinsame Vermögen trotzdem einen echten Kurs.</li>
       <li>„Nitroeggs zahlt alle 10 Tage 14 Dollar in Monero.“ Eine geplante Auszahlung. Sie bleibt geplant, bis du sie markierst.</li>
       <li>„Zeig mein Positionsdiagramm.“ Öffnet Positionen. Der Kreis ist der Wert in deiner Hauptwährung.</li>
-      <li>„Wie viel Prozent meines Portfolios ist XMR?“ Der Anteil der bewerteten Positionen, dieselbe Summe wie im Diagramm.</li>
+      <li>„Wie viel Prozent meines Portfolios ist XMR?“ Der Anteil der bewerteten Positionen. Diese Anteile ergeben 100. Der Portfoliowert liest 100 und wird in dieser Summe nicht noch einmal gezählt. Bargeld bleibt draußen, bis du es einschließt.</li>
+      <li>„Beschreibe den Geldfluss.“ Sagt Einnahmen, Ausgaben und Schuldzahlungen für den Zeitraum. Eine Kartenbelastung ist eine Ausgabe. Eine Karte oder ein Kredit zu zahlen ist eine Schuldzahlung, keine zweite Ausgabe. Offene Salden sind noch geschuldet und kommen nicht in den Zeitraum.</li>
+      <li>„Zeig den Plan.“ Öffnet Plan. Das ist das Monatsbudget. Wiederkehrende Rechnungen bleiben unter Aktivität.</li>
       <li>„Mach Silber grau.“ Speichert die Farbe. Sie gilt im Kreis, in den Balken und in der Liste.</li>
       <li>„Ich habe eine Rolex für 12000 CHF gekauft.“ „Meine Rolex ist jetzt 14000 wert.“ Deine Schätzung, kein Live-Preis.</li>
     </ul>
@@ -125,10 +127,20 @@
       <li>„Bitte nicht stören an.“ Fehlt der Zugriff auf Mitteilungen, sagt Grok das.</li>
       <li>„Exportiere das Finanz-PDF für diesen Monat.“ Grok fragt, dann öffnet sich das Teilen. Nichts wird hochgeladen.</li>
     </ul>
-    <h2>Budget, ein gemerkter Satz, welches Modell</h2>
+    <h2>Finanzen — das Monatsbudget</h2>
+    <p>Plan ist das Budget für einen Monat. Wiederkehrende Rechnungen bleiben unter Aktivität. Talk benutzt denselben Eintrag. Löschen wartet auf ein klares Ja. Einen Monat füllen passiert nur, wenn du bittest, das Budget einzurichten oder zu füllen. Es nimmt wiederkehrende Regeln und danach den Durchschnitt der drei früheren Monate für Kategorien, die diese Regeln nicht genannt haben. Es erfindet keinen Betrag.</p>
     <ul>
-      <li>„Setze Restaurants diesen Monat auf 400 Euro.“ Das ist das Monatsbudget. Eine Budgetzeile löschen fragt zuerst.</li>
-      <li>„Wie viel bleibt für Restaurants?“</li>
+      <li>„Setze Restaurants diesen Monat auf 400 Euro.“ Legt dieses Ausgabenlimit an. Noch einmal für Restaurants gesagt, ändert es dieselbe Zeile.</li>
+      <li>„Setze Gehalt diesen Monat auf 2000 Euro, beschriftet Gehalt 1. Nov.“ Das ist eine Einnahme. Eine zweite Beschriftung, etwa Gehalt 15. Nov, bleibt eine zweite Zeile unter Gehalt.</li>
+      <li>„Wie viel bleibt für Restaurants?“ Liest diese Zeile: geplant, ausgegeben und was bleibt.</li>
+      <li>„Lies das Budget für diesen Monat.“ Sagt Einnahmen, Ausgaben, Sparen und Anlagen. „Bin ich über dem Plan?“ sagt, ob die Ausgaben über dem Plan liegen.</li>
+      <li>„Lies das Budget für den letzten Monat.“ Der Zeitraum kann dieser, der nächste, der vorige oder ein Monat wie 2026-11 sein.</li>
+      <li>„Lösche die Restaurants-Zeile.“ Talk fragt. Sag ja, dann ist die Zeile weg. „Lösche das Budget für diesen Monat“ fragt genauso und entfernt dann den Monat.</li>
+      <li>„Fülle das Budget.“ Auch „Richte das Budget ein.“ Füllt diesen Monat aus wiederkehrenden Rechnungen und den letzten Ausgaben.</li>
+    </ul>
+
+    <h2>Ein gemerkter Satz und welches Modell</h2>
+    <ul>
       <li>„Markiere die Miete als bezahlt.“ Das bucht die Zahlung und schiebt das nächste Datum.</li>
       <li>„Welches Modell benutze ich?“ Die Antwort enthält keinen Schlüssel.</li>
       <li>„Merk dir, dass ich um 8 den Zug nehme.“ Nur wenn Talk auf diesem Telefon läuft. „Vergiss das“ löscht keine Notizen, Personen, Erinnerungen oder Termine.</li>

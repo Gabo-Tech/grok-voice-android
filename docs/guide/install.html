@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Install Grok Voice</title>
-    <meta name="description" content="Sideload GrokVoice-0.1.64.apk on Android 8 or newer, arm64-v8a." />
+    <meta name="description" content="Sideload GrokVoice-0.1.65.apk on Android 8 or newer, arm64-v8a." />
     <link rel="canonical" href="https://gabo-tech.github.io/grok-voice-android/guide/install.html" />
     <link rel="stylesheet" href="../styles.css" />
   </head>
@@ -29,13 +29,13 @@
           <h1>Sideload the APK.</h1>
           <p class="lead">The current release is an arm64 package for Android 8 and newer. It is not a Play Store upload.</p>
           <p>
-            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.64/GrokVoice-0.1.64.apk">GrokVoice-0.1.64.apk</a>
+            <a class="download" href="https://github.com/Gabo-Tech/grok-voice-android/releases/download/v0.1.65/GrokVoice-0.1.65.apk">GrokVoice-0.1.65.apk</a>
           </p>
-          <p class="fine">58,146,206 bytes. sha256 <code>932f66af1bb2f6e4784d8e5e665a716b5a96a8392ea03e221cb3b467cf94a2c0</code>. versionName 0.1.64. versionCode 1064. ABI arm64-v8a. minSdk 26.</p>
+          <p class="fine">58,162,590 bytes. sha256 <code>a1d569de0c02c9a81eedd6f15cd5931472dc8d5284754f3107216db534821313</code>. versionName 0.1.65. versionCode 1065. ABI arm64-v8a. minSdk 26.</p>
 
           <h2>On the phone</h2>
           <ol>
-            <li>Download <code>GrokVoice-0.1.64.apk</code> from the link above, or from the <a href="https://github.com/Gabo-Tech/grok-voice-android/releases/latest">latest release</a> when that asset is this file.</li>
+            <li>Download <code>GrokVoice-0.1.65.apk</code> from the link above, or from the <a href="https://github.com/Gabo-Tech/grok-voice-android/releases/latest">latest release</a> when that asset is this file.</li>
             <li>Open the file. If Android blocks it, allow installs from this source for the browser or the files app. The wording is “Install unknown apps” on Android 8 and newer.</li>
             <li>Confirm the install. An update over an older Grok Voice uses the same sideload certificate, so Android replaces the existing app and keeps its data.</li>
           </ol>
@@ -43,7 +43,7 @@
 
           <h2>From a computer</h2>
           <p>With the phone in developer mode and USB debugging on:</p>
-          <pre><code id="install-cmd">adb install -r GrokVoice-0.1.64.apk</code></pre>
+          <pre><code id="install-cmd">adb install -r GrokVoice-0.1.65.apk</code></pre>
           <p><button type="button" class="quiet" id="copy-cmd">Copy command</button> <span class="fine" id="copy-status" role="status"></span></p>
           <p><code>-r</code> replaces an existing install signed with the same certificate. A different signature is refused. Uninstalling first deletes the on-phone data.</p>
 

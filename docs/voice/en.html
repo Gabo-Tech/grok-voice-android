@@ -125,7 +125,9 @@
       <li>A stated worth is your figure. It is not an invented exchange rate. If the asset’s currency differs from the display currency, the combined net worth still needs a real rate.</li>
       <li>“Nitroeggs pays 14 dollars every 10 days in monero.” A scheduled payout. It stays planned until you mark it.</li>
       <li>“Show my holdings chart.” Opens Holdings. The pie is value in your main currency. Cash is off until you include it.</li>
-      <li>“What percent of my portfolio is XMR?” The share of priced holdings, same total as the chart.</li>
+      <li>“What percent of my portfolio is XMR?” The share of priced holdings. Those shares add to 100. The portfolio total reads 100 and is not counted again in that sum. Cash stays out until you include it.</li>
+      <li>“Describe the money flow.” Speaks income, spending, and debt payments for the period. A card charge is spending. Paying a card or a loan is a debt payment, not a second expense. Unpaid balances are still owed and are not added to the period.</li>
+      <li>“Show the plan.” Opens Plan. That screen is the month budget. Recurring bills stay on Activity.</li>
       <li>“Make silver gray.” Saves that color on the holding. It is used in the pie, the bars, and the list.</li>
       <li>“I bought a Rolex for 12000 CHF.” “My Rolex is now worth 14000.” Your estimate, not a live price.</li>
     </ul>
@@ -143,10 +145,20 @@
       <li>“Export this month’s finance PDF.” Grok asks, then opens the share sheet. Nothing is uploaded.</li>
     </ul>
 
-    <h2>Budget, a pinned fact, and which model</h2>
+    <h2>Finance — the month budget</h2>
+    <p>Plan is one month’s budget. Recurring bills stay in Activity. Talk uses the same record. A delete waits for a clear yes. Filling a month runs only when you ask to set up or fill the budget. It uses recurring rules, then the average of the three earlier months for categories those rules did not name. It does not invent an amount.</p>
     <ul>
-      <li>“Set restaurants to 400 euros this month.” That is the monthly budget. Deleting a budget line asks first.</li>
-      <li>“How much is left for restaurants?”</li>
+      <li>“Set restaurants to 400 euros this month.” Creates that expense limit. Saying it again for Restaurants changes the same line.</li>
+      <li>“Set salary to 2000 euros this month, labeled Salary 1 Nov.” Income. A second label, such as Salary 15 Nov, stays a second line under Salary.</li>
+      <li>“How much is left for restaurants?” Reads that line: what you planned, what you spent, and what is left.</li>
+      <li>“Read the budget for this month.” Speaks income, spending, savings, and investments. “Am I over the plan?” says whether spending is over the plan.</li>
+      <li>“Read the budget for last month.” The period can be this, next, previous, or a month such as 2026-11.</li>
+      <li>“Delete the restaurants line.” Talk asks. Say yes, and that line is removed. “Delete the budget for this month” asks the same way, then removes the month.</li>
+      <li>“Fill the budget.” Also “Set up the budget.” Fills this month from recurring bills and recent spending.</li>
+    </ul>
+
+    <h2>A pinned fact and which model</h2>
+    <ul>
       <li>“Mark rent paid.” That logs the payment and moves the next date.</li>
       <li>“Which model am I using?” The answer never includes a key.</li>
       <li>“Remember that I take the train at 8.” Only when Talk is on this phone. “Forget that” does not delete notes, People, reminders, or events.</li>
