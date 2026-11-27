@@ -9,6 +9,7 @@ mod android_notice;
 mod audio;
 mod backup;
 mod commands;
+mod consent;
 mod diagnostics;
 mod error;
 mod files;

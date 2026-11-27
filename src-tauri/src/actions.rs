@@ -630,17 +630,17 @@ pub fn tool_definitions() -> Value {
             },
             "required": ["confirmed"]
         })),
-        fn_tool("answer_call", "Only if they say answer. Pass confirmed true. Do not ask twice and do not answer just because a phone is ringing.", json!({
+        fn_tool("answer_call", "Ask first with confirmed false. After a new spoken yes, call again with confirmed true. One call never answers.", json!({
             "type": "object",
             "properties": { "confirmed": { "type": "boolean" } },
             "required": ["confirmed"]
         })),
-        fn_tool("decline_call", "Only if they say decline. Pass confirmed true. Do not decline just because a phone is ringing.", json!({
+        fn_tool("decline_call", "Ask first with confirmed false. After a new spoken yes, call again with confirmed true. One call never declines.", json!({
             "type": "object",
             "properties": { "confirmed": { "type": "boolean" } },
             "required": ["confirmed"]
         })),
-        fn_tool("end_call", "Only if they say hang up. Pass confirmed true. Do not hang up unless they ask.", json!({
+        fn_tool("end_call", "Ask first with confirmed false. After a new spoken yes, call again with confirmed true. One call never hangs up.", json!({
             "type": "object",
             "properties": { "confirmed": { "type": "boolean" } },
             "required": ["confirmed"]
@@ -1203,8 +1203,20 @@ pub fn run(app: &AppHandle, name: &str, arguments: &str) -> String {
     out
 }
 
+fn handoff_key(name: &str, args: &Value) -> String {
+    let field = |key: &str| args[key].as_str().unwrap_or("").trim().to_string();
+    match name {
+        "open_browser" | "open_youtube" => format!("{name}\n{}\n{}", field("query"), field("url")),
+        "open_whatsapp" | "open_signal" | "open_sms" => format!("{name}\n{}\n{}", field("phone"), field("text")),
+        "open_call" => format!("{name}\n{}", field("phone")),
+        "open_email" => format!("{name}\n{}\n{}\n{}", field("to"), field("subject"), field("body")),
+        other => other.to_string(),
+    }
+}
+
 fn unconfirmed_handoff(name: &str, args: &Value) -> Option<Value> {
-    if args["confirmed"] == true {
+    let key = handoff_key(name, args);
+    if args["confirmed"] == true && crate::consent::try_consume(&key) {
         return None;
     }
     let plan = match name {
@@ -1247,6 +1259,7 @@ fn unconfirmed_handoff(name: &str, args: &Value) -> Option<Value> {
         ),
         _ => return None,
     };
+    crate::consent::stage(&key);
     Some(json!({
         "ok": true,
         "opened": false,
@@ -1268,6 +1281,9 @@ pub struct HandoffDraft {
     pub to: String,
     pub subject: String,
     pub body: String,
+    /// Raw consent key for an open_* handoff. Empty for other confirm sheets.
+    #[serde(skip)]
+    pub consent_key: String,
 }
 
 #[derive(Default)]
@@ -1302,6 +1318,7 @@ fn stage_handoff(app: &AppHandle, kind: &str, summary: &str, args: &Value) -> Re
         to: prepared.to,
         subject: prepared.subject,
         body: prepared.body,
+        consent_key: handoff_key(&format!("open_{kind}"), args),
     };
     if let Some(handoffs) = app.try_state::<Handoffs>() {
         handoffs.stage(draft.clone());
@@ -1328,6 +1345,12 @@ pub fn confirm_pending(app: &AppHandle) -> Result<Value, String> {
     let Some(draft) = handoffs.take() else {
         return Err("Nothing is waiting to send.".into());
     };
+    if !draft.consent_key.is_empty() {
+        crate::consent::note_tap();
+        if !crate::consent::try_consume(&draft.consent_key) {
+            return Err("That confirmation expired. Ask again.".into());
+        }
+    }
     if let Some(done) = confirm_local(app, &draft) {
         clear_handoff(app);
         return done;
@@ -1365,7 +1388,58 @@ fn locale_of(app: &AppHandle) -> String {
     app.try_state::<crate::settings::SettingsStore>().map(|store| store.get().locale).unwrap_or_default()
 }
 
+fn stage_phone_confirm(app: &AppHandle, kind: &str, summary: &str, args: &Value) {
+    let field = |key: &str| args[key].as_str().unwrap_or("").trim().to_string();
+    let draft = HandoffDraft {
+        id: format!("h{}", crate::diagnostics::now_ms()),
+        summary: summary.to_string(),
+        kind: kind.to_string(),
+        query: if kind == "reply_message" { field("id") } else { field("name") },
+        url: String::new(),
+        phone: field("phone"),
+        text: field("text"),
+        to: field("sender"),
+        subject: String::new(),
+        body: String::new(),
+        consent_key: String::new(),
+    };
+    if let Some(handoffs) = app.try_state::<Handoffs>() {
+        handoffs.stage(draft.clone());
+    }
+    if let Some(hub) = app.try_state::<Arc<Hub>>() {
+        hub.emit("voice://handoff", &draft);
+    }
+}
+
+fn confirm_phone(app: &AppHandle, draft: &HandoffDraft) -> Option<Result<Value, String>> {
+    let args = json!({
+        "id": draft.query,
+        "text": draft.text,
+        "sender": draft.to,
+        "name": draft.query,
+        "phone": draft.phone,
+        "confirmed": true,
+    });
+    let result = match draft.kind.as_str() {
+        "reply_message" | "place_call" | "answer_call" | "decline_call" | "end_call" => {
+            crate::consent::note_tap();
+            match draft.kind.as_str() {
+                "reply_message" => crate::inbox::tool_reply(app, &args),
+                "place_call" => crate::inbox::tool_place(app, &args),
+                "answer_call" => crate::inbox::tool_answer(app, &args),
+                "decline_call" => crate::inbox::tool_decline(app, &args),
+                _ => crate::inbox::tool_end(app, &args),
+            }
+        }
+        _ => return None,
+    };
+    Some(result)
+}
+
 fn confirm_local(app: &AppHandle, draft: &HandoffDraft) -> Option<Result<Value, String>> {
+    if let Some(result) = confirm_phone(app, draft) {
+        return Some(result);
+    }
     match draft.kind.as_str() {
         "delete_person" => Some(commit_people(app, crate::people::delete_from_tool(&app.state::<crate::people::People>(), &json!({"id": draft.query, "confirmed": true})))),
         "cancel_scheduled" => {
@@ -1401,6 +1475,7 @@ fn stage_confirm(app: &AppHandle, kind: &str, summary: &str, id: &str) {
         to: String::new(),
         subject: String::new(),
         body: String::new(),
+        consent_key: String::new(),
     };
     if let Some(handoffs) = app.try_state::<Handoffs>() {
         handoffs.stage(draft.clone());
@@ -2045,11 +2120,21 @@ fn phone_tool(app: &AppHandle, name: &str, args: &Value) -> Result<Option<Value>
         "find_contact" => return crate::people::find_contact(app, args["name"].as_str().unwrap_or("")).map(Some),
         "get_person" => return crate::people::describe_person(app, args["name"].as_str().unwrap_or("")).map(Some),
         "read_notifications" => return crate::inbox::tool_read(app).map(Some),
-        "reply_message" => return crate::inbox::tool_reply(app, args).map(Some),
-        "place_call" => return crate::inbox::tool_place(app, args).map(Some),
-        "answer_call" => return crate::inbox::tool_answer(app, args).map(Some),
-        "decline_call" => return crate::inbox::tool_decline(app, args).map(Some),
-        "end_call" => return crate::inbox::tool_end(app, args).map(Some),
+        "reply_message" | "place_call" | "answer_call" | "decline_call" | "end_call" => {
+            let value = match name {
+                "reply_message" => crate::inbox::tool_reply(app, args)?,
+                "place_call" => crate::inbox::tool_place(app, args)?,
+                "answer_call" => crate::inbox::tool_answer(app, args)?,
+                "decline_call" => crate::inbox::tool_decline(app, args)?,
+                _ => crate::inbox::tool_end(app, args)?,
+            };
+            if value["needsConfirm"] == true {
+                stage_phone_confirm(app, name, value["detail"].as_str().unwrap_or(""), args);
+            } else if value["sent"] == true || value["placed"] == true || value["done"] == true || value["ended"] == true {
+                clear_handoff(app);
+            }
+            return Ok(Some(value));
+        }
         "set_dnd" => bridge.set_dnd(args["mode"].as_str().unwrap_or("")).map_err(|e| e.to_string())?,
         "go_home" => bridge.go_home().map_err(|e| e.to_string())?,
         "phone_status" => bridge.phone_status().map_err(|e| e.to_string())?,
@@ -4287,11 +4372,14 @@ mod tests {
 
     #[test]
     fn call_and_sms_wait_for_confirmation() {
+        let _guard = crate::consent::hold_for_test();
         let call = unconfirmed_handoff("open_call", &json!({"phone": "+1555", "confirmed": false})).unwrap();
         assert_eq!(call["opened"], false);
         assert!(call["detail"].as_str().unwrap().contains("not placed"));
         let sms = unconfirmed_handoff("open_sms", &json!({"phone": "+1555", "text": "running late", "confirmed": false})).unwrap();
         assert!(sms["detail"].as_str().unwrap().contains("Nothing is sent"));
+        assert!(unconfirmed_handoff("open_call", &json!({"phone": "+1555", "confirmed": true})).is_some(), "the model cannot skip the question");
+        crate::consent::note_user_turn("yes");
         assert!(unconfirmed_handoff("open_call", &json!({"phone": "+1555", "confirmed": true})).is_none());
         assert!(unconfirmed_handoff("set_alarm", &json!({})).is_none());
     }
