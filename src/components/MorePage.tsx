@@ -640,7 +640,7 @@ export function MorePage({
       id: "privacy",
       title: t("Backup"),
       rows: [
-        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("Everything saved on this phone, including keys.") },
+        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("Everything saved on this phone. A passphrase includes keys.") },
         { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), detail: t("Pinned facts Talk can use on this phone.") },
       ],
     },
@@ -1242,10 +1242,9 @@ function BackupPage() {
     setError(null);
     try {
       const file = await api.exportBackup(typed, readPersistedWeb());
-      const ready = file.encrypted ? "Backup saved." : "Backup ready.";
+      const ready = file.keysIncluded ? "Backup saved." : "Backup saved without API keys. Set a passphrase to include them.";
       setNotice(file.shared ? "Share sheet opened. The file stays on this phone." : ready);
       setWarnings((file.warnings ?? []).filter(Boolean));
-      if (!file.shared && file.dataB64) downloadBase64(file.fileName, file.dataB64);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -1322,7 +1321,7 @@ function BackupPage() {
       <section className="space-y-4">
         <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
         <p className="text-sm leading-6 text-muted-foreground">
-          {t("A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.")}
+          {t("A file of everything saved on this phone. A passphrase encrypts it and includes API keys. Without a passphrase, the file has no keys.")}
         </p>
         <PassphraseFields
           passphrase={passphrase}
@@ -1333,7 +1332,7 @@ function BackupPage() {
           onReveal={() => setReveal((on) => !on)}
         />
         {!typed && (
-          <p className="text-sm leading-6 text-foreground">{t("Leave this blank only if you accept an unencrypted file. That file contains your API keys.")}</p>
+          <p className="text-sm leading-6 text-foreground">{t("Without a passphrase, this file does not include API keys.")}</p>
         )}
         <Button className="w-full" disabled={busy} onClick={() => void exportFile()}>
           {t("Export backup")}
@@ -1500,19 +1499,6 @@ function BackupSummary({ preview }: { preview: BackupPreview }) {
     </div>
   );
 }
-
-function downloadBase64(name: string, data: string) {
-  const binary = atob(data);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  const url = URL.createObjectURL(new Blob([bytes]));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 
 function Back(_: { onClick: () => void }) {
   return null;

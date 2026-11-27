@@ -752,6 +752,7 @@ export interface ExportedBackup {
   shared: boolean;
   warnings?: string[];
   encrypted?: boolean;
+  keysIncluded?: boolean;
 }
 
 export interface SpendCue {

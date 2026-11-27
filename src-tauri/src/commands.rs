@@ -937,6 +937,7 @@ pub struct ExportedBackup {
     pub shared: bool,
     pub warnings: Vec<String>,
     pub encrypted: bool,
+    pub keys_included: bool,
 }
 
 #[tauri::command]
@@ -954,8 +955,8 @@ pub fn export_backup(
     passphrase: Option<String>,
     web: Option<std::collections::BTreeMap<String, String>>,
 ) -> Result<ExportedBackup> {
-    let (payload, warnings) = crate::backup::capture(&app, web);
     let pass = passphrase.as_deref().map(str::trim).filter(|pass| !pass.is_empty());
+    let (payload, warnings) = crate::backup::capture(&app, web, pass.is_some());
     let bytes = crate::backup::seal(&payload, pass).map_err(msg)?;
     let path = crate::backup::write_backup_file(&app, &bytes).map_err(msg)?;
     let file_name = path
@@ -970,14 +971,11 @@ pub fn export_backup(
     });
     Ok(ExportedBackup {
         file_name,
-        data_b64: if shared {
-            String::new()
-        } else {
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
-        },
+        data_b64: String::new(),
         shared,
         warnings,
         encrypted: pass.is_some(),
+        keys_included: pass.is_some(),
     })
 }
 
