@@ -581,7 +581,7 @@
           </article>
           <article class="cmd" id="save_budget-finance">
             <h3><code>save_budget</code></h3>
-            <p>Create, read, update, or delete the monthly budget on this phone. action is create, set, read, delete, or suggest. period is this, next, previous, YYYY-MM, or template. role is income, expense, savings, or investment. category is the type, such as Salary or Restaurants. label is an optional expected entry, such as Salary 1 Nov, so two paydays stay two lines under Salary. suggest fills the month from recurring rules and the average of the three earlier months, only when you ask to set up or fill the budget. question left with a category answers how much is left. question over answers whether spending is over the plan. read with no category speaks income, spending, savings, and investments. Saying the same category again changes that line. delete asks first with confirmed false, then removes only after a clear yes. It does not invent an amount.</p>
+            <p>Add, check, change, or remove the budget for a month. “Set restaurants to 400 euros this month” sets that limit, and saying it again changes the same line. “How much is left for restaurants?” reads it. “Read the budget” says income, spending, savings, and investments. “Am I over the plan?” says whether spending has gone past the plan. Two paydays can stay two lines, such as Salary 1 Nov and Salary 15 Nov. “Fill the budget” or “Set up the budget” fills the month from repeating bills and recent spending. A delete asks first. Nothing is removed until you say yes. Grok does not make up an amount.</p>
             <ul class="phrases">
               <li><span>en</span> Set restaurants to 400 euros this month.</li>
               <li><span>es</span> Pon restaurantes en 400 euros este mes.</li>
@@ -592,7 +592,7 @@
           </article>
           <article class="cmd" id="open_finance-finance">
             <h3><code>open_finance</code></h3>
-            <p>Open a Finance screen and answer with the same numbers the screen shows. view is overview, activity, accounts, holdings, plan, portfolio, or charts. activity is transactions. plan is the monthly budget: expected income, expense limits, what is left to spend, and the savings target. Recurring bills are on activity, not plan. chart flow with action describe speaks income, spending, and debt payments. A card charge stays in spending. Paying a card or a loan is separate. action color paints one saved item on every chart. Resetting every color asks first.</p>
+            <p>Open a Finance screen and answer with the same numbers you see. Plan is the month’s budget. Repeating bills stay in Activity. “Describe the money flow” says income, spending, and debt payments. A card charge is spending. Paying a card or a loan is separate. A color you set is used on every chart that shows that item. Clearing every color asks first.</p>
             <ul class="phrases">
               <li><span>en</span> Show my holdings chart.</li>
               <li><span>es</span> Muestra el gráfico de posiciones.</li>

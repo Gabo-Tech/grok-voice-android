@@ -218,6 +218,10 @@ p, li, dd { font-size: 16px; }
   font-size: 14px;
 }
 
+.hero h2 {
+  margin-top: var(--space-6);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
