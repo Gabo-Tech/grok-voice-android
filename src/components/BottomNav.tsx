@@ -73,9 +73,17 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
       {(nav.showBack || action) && (
         <div className="flex items-center gap-1 border-b border-border px-1">
           {nav.showBack ? (
-            <button type="button" onClick={() => requestBack()} className="flex min-h-12 min-w-0 flex-1 items-center gap-1 px-2 text-left text-base text-foreground">
+            <button
+              type="button"
+              onClick={() => requestBack()}
+              aria-label={t(nav.label)}
+              className={cn(
+                "flex min-h-12 items-center justify-center gap-1 text-left text-base text-foreground",
+                rail ? "size-12 shrink-0 px-0" : "min-w-0 flex-1 px-2",
+              )}
+            >
               <ChevronLeft className="size-5 shrink-0" aria-hidden />
-              <span className="truncate">{t(nav.label)}</span>
+              {rail ? null : <span className="truncate">{t(nav.label)}</span>}
             </button>
           ) : (
             <span className="flex-1" />

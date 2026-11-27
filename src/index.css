@@ -575,12 +575,20 @@ input[type="time"] {
   padding-left: env(safe-area-inset-left);
 }
 
-.app-safe {
-  padding-bottom: calc(var(--nav-block, 5.5rem) + env(safe-area-inset-bottom));
+.app-safe,
+.app-safe-bar {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-.app-safe-bar {
-  padding-bottom: calc(9rem + env(safe-area-inset-bottom));
+.backup-pad {
+  padding-bottom: 1.5rem;
+}
+
+.backup-actions button[data-slot="button"]:disabled {
+  background: var(--surface-2) !important;
+  color: var(--text-tertiary) !important;
+  text-decoration: none !important;
+  box-shadow: none !important;
 }
 
 .thumb-actions {
@@ -611,11 +619,10 @@ input[type="time"] {
 }
 
 .bottom-nav {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  position: relative;
+  flex: none;
   z-index: 30;
+  width: 100%;
   border-top: var(--border-width) solid var(--line-soft);
   background: var(--surface-0);
   padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
@@ -1008,6 +1015,11 @@ select {
 html.keyboard-open .bottom-nav {
   visibility: hidden;
   pointer-events: none;
+  position: absolute;
+  height: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
 }
 
 html.keyboard-open .app-safe,

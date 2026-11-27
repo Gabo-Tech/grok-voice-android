@@ -12,9 +12,7 @@ pub const STORES: &[&str] = &[
     "agenda.json",
     "people.json",
     "finance.json",
-    "memory.json",
     "local-memory.json",
-    "usage.json",
     "vault",
     "wakeword",
     "local-models",
@@ -23,10 +21,20 @@ pub const STORES: &[&str] = &[
 ];
 
 /// `dir.join` targets that are not a person's data.
-pub const EXCLUDED_JOINS: &[(&str, &str)] = &[(
-    "update-check.json",
-    "last update check, not something the person entered",
-)];
+pub const EXCLUDED_JOINS: &[(&str, &str)] = &[
+    (
+        "update-check.json",
+        "last update check, not something the person entered",
+    ),
+    (
+        "memory.json",
+        "Talk conversation history is left on the phone and is not part of a backup",
+    ),
+    (
+        "usage.json",
+        "voice-time counters are left on the phone and are not part of a backup",
+    ),
+];
 
 /// localStorage keys the backup writes back. Session-only keys are listed separately.
 pub const WEB_KEYS: &[&str] = &[

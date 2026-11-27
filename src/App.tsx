@@ -208,6 +208,9 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     void listen<RestoreReport>("voice://restored", (event) => {
       applyBackupResult(event.payload);
+      show("more");
+      setTab("more");
+      setMoreFocus("backup");
     }).then((fn) => {
       unlisten = fn;
     });

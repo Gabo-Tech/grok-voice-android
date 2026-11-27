@@ -206,7 +206,7 @@ export function MorePage({
 
   if (section === "backup") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="backup-pad flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Back onClick={() => setSection("menu")} />
         <BackupPage />
       </div>
@@ -1137,27 +1137,82 @@ export function applyBackupResult(report: RestoreReport) {
     applyAppearance(choice, prefersLight());
   }
   setAppLocale(report.locale || "");
+  shownRestore = report;
   try {
     sessionStorage.setItem("grok-restore-summary", JSON.stringify(report));
   } catch {
-    /* The summary still shows if reload is slow. */
+    /* The summary is still on screen. */
   }
-  window.location.reload();
+  window.dispatchEvent(new CustomEvent("grok-restore-summary", { detail: report }));
 }
+
+function previewBackupQuery() {
+  if (typeof window === "undefined" || isTauri()) return { file: "", encrypted: false, summary: false };
+  const params = new URLSearchParams(window.location.search);
+  return { file: params.get("file") || "", encrypted: params.get("encrypted") === "1", summary: params.get("summary") === "1" };
+}
+
+const SAMPLE_RESTORE: RestoreReport = {
+  notes: 2,
+  people: 1,
+  reminders: 1,
+  keys: 4,
+  facts: 1,
+  sessions: 0,
+  hasMemory: true,
+  accounts: 1,
+  transactions: 1,
+  rules: 1,
+  hasFinance: true,
+  version: 2,
+  encrypted: false,
+  events: 1,
+  alarms: 1,
+  countdowns: 1,
+  hasSettings: true,
+  talkTurns: 0,
+  hasTalk: false,
+  hasUsage: false,
+  hasAgenda: true,
+  webKeys: 4,
+  hasWeb: true,
+  hasPacks: true,
+  wakeFiles: 1,
+  alarmFiles: 1,
+  referenced: ["on-device models not included: llm-gemma"],
+  restored: ["settings.json", "local-memory.json", "vault"],
+  errors: [],
+  web: {},
+  appearance: "graphite",
+  customTheme: "",
+  locale: "en",
+};
 
 function BackupPage() {
   const t = useT();
+  const previewQuery = previewBackupQuery();
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
-  const [fileB64, setFileB64] = useState("");
-  const [fileName, setFileName] = useState("");
+  const [reveal, setReveal] = useState(false);
+  const [fileB64, setFileB64] = useState(previewQuery.file ? "preview" : "");
+  const [fileName, setFileName] = useState(previewQuery.file);
+  const [fileEncrypted, setFileEncrypted] = useState(previewQuery.encrypted);
   const [preview, setPreview] = useState<BackupPreview | null>(null);
-  const [report, setReport] = useState<RestoreReport | null>(takeRestoreSummary);
+  const [report, setReport] = useState<RestoreReport | null>(previewQuery.summary ? SAMPLE_RESTORE : takeRestoreSummary);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onSummary = (event: Event) => {
+      const detail = (event as CustomEvent<RestoreReport>).detail;
+      if (detail) setReport(detail);
+    };
+    window.addEventListener("grok-restore-summary", onSummary);
+    return () => window.removeEventListener("grok-restore-summary", onSummary);
+  }, []);
 
   const exportFile = async () => {
     const typed = passphrase.trim();
@@ -1187,11 +1242,14 @@ function BackupPage() {
   const readFile = async (file: File | undefined) => {
     if (!file) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const magic = String.fromCharCode(bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0, bytes[3] ?? 0);
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
     setFileB64(btoa(binary));
     setFileName(file.name);
+    setFileEncrypted(magic === "GVB1");
     setPreview(null);
+    setConfirming(false);
     setReport(null);
     setError(null);
     setNotice("");
@@ -1217,9 +1275,10 @@ function BackupPage() {
     setError(null);
     try {
       const next = await api.restoreBackup(fileB64, passphrase.trim(), true);
-      setReport(next);
-      setNotice("Restored on this phone.");
       applyBackupResult(next);
+      setReport(next);
+      setConfirming(false);
+      setNotice("");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -1227,22 +1286,33 @@ function BackupPage() {
     }
   };
 
-  const summary = report ?? preview;
+  const typed = passphrase.trim();
+  const needsPass = fileEncrypted || preview?.encrypted === true;
+  const passReady = !needsPass || typed.length >= 8;
+  const onPass = (value: string) => {
+    setPassphrase(value);
+    setPreview(null);
+    setConfirming(false);
+  };
+
+  if (report) return <RestoreSummary report={report} />;
 
   return (
-    <div className="space-y-6 pb-6 landscape:grid landscape:grid-cols-2 landscape:gap-8 landscape:space-y-0">
+    <div className="space-y-6 pb-4 landscape:grid landscape:grid-cols-2 landscape:items-start landscape:gap-8 landscape:space-y-0">
       <section className="space-y-4">
         <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
         <p className="text-sm leading-6 text-muted-foreground">
           {t("A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.")}
         </p>
-        <Field label={t("Optional passphrase")}>
-          <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
-        </Field>
-        <Field label={t("Passphrase again")}>
-          <Input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
-        </Field>
-        {!passphrase.trim() && (
+        <PassphraseFields
+          passphrase={passphrase}
+          again={again}
+          reveal={reveal}
+          onPass={onPass}
+          onAgain={setAgain}
+          onReveal={() => setReveal((on) => !on)}
+        />
+        {!typed && (
           <p className="text-sm leading-6 text-foreground">{t("Leave this blank only if you accept an unencrypted file. That file contains your API keys.")}</p>
         )}
         <Button className="w-full" disabled={busy} onClick={() => void exportFile()}>
@@ -1252,7 +1322,11 @@ function BackupPage() {
       <section className="space-y-4 border-t border-border pt-4 landscape:border-t-0 landscape:pt-0">
         <p className="text-[13px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
         <p className="text-sm leading-6 text-muted-foreground">{t("This replaces everything saved on this phone, then reloads.")}</p>
-        <button type="button" className="flex min-h-12 w-full items-center text-left text-sm underline underline-offset-4" onClick={() => fileRef.current?.click()}>
+        <button
+          type="button"
+          className="flex min-h-12 w-full items-center rounded-sm bg-[var(--surface-2)] px-3 text-left text-base text-foreground"
+          onClick={() => fileRef.current?.click()}
+        >
           <span className="truncate">{fileName || t("Choose a .gvb file")}</span>
         </button>
         <input
@@ -1262,30 +1336,94 @@ function BackupPage() {
           className="sr-only"
           onChange={(e) => void readFile(e.target.files?.[0])}
         />
-        <div className="flex flex-wrap items-center gap-4">
-          <Button variant="outline" disabled={busy || !fileB64 || (passphrase.trim().length > 0 && passphrase.trim().length < 8)} onClick={() => void review()}>
+        {needsPass && !passReady && (
+          <p className="text-sm leading-6 text-foreground">{t("Type a passphrase of at least 8 characters to open this file.")}</p>
+        )}
+        <div className="backup-actions flex flex-wrap items-center gap-3">
+          <Button variant="outline" disabled={busy || !fileB64 || !passReady} onClick={() => void review()}>
             {t("Review")}
           </Button>
-          <Button variant="destructive" className="min-h-12" disabled={busy || !preview} onClick={() => void restore()}>
+          <Button variant="destructive" disabled={busy || !preview || !passReady} onClick={() => setConfirming(true)}>
             {t("Replace everything on this phone")}
           </Button>
         </div>
-        {summary && <BackupSummary preview={summary} />}
-        {report && report.errors.length > 0 && (
-          <div className="space-y-1">
-            <p className="text-sm text-foreground">{t("Could not restore everything.")}</p>
-            {report.errors.map((line) => (
-              <p key={line} className="text-sm leading-6 text-foreground">{line}</p>
-            ))}
+        {confirming && preview && (
+          <div className="space-y-3">
+            <p className="text-sm leading-6 text-foreground">{t("Replace everything on this phone?")}</p>
+            <div className="backup-actions flex flex-wrap items-center gap-3">
+              <Button variant="destructive" disabled={busy || !passReady} onClick={() => void restore()}>
+                {t("Yes, replace everything")}
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => setConfirming(false)}>
+                {t("Cancel")}
+              </Button>
+            </div>
           </div>
         )}
-        {report && report.errors.length === 0 && <p className="text-sm text-foreground">{t("Restored on this phone.")}</p>}
+        {preview && <BackupSummary preview={preview} />}
       </section>
       {error && <p className="text-sm text-foreground landscape:col-span-2">{t(error)}</p>}
       {notice && <p className="text-sm text-muted-foreground landscape:col-span-2">{t(notice)}</p>}
       {warnings.map((line) => (
         <p key={line} className="text-sm text-foreground landscape:col-span-2">{line}</p>
       ))}
+    </div>
+  );
+}
+
+function PassphraseFields({
+  passphrase,
+  again,
+  reveal,
+  onPass,
+  onAgain,
+  onReveal,
+}: {
+  passphrase: string;
+  again: string;
+  reveal: boolean;
+  onPass: (value: string) => void;
+  onAgain: (value: string) => void;
+  onReveal: () => void;
+}) {
+  const t = useT();
+  const type = reveal ? "text" : "password";
+  return (
+    <div className="space-y-4">
+      <label className="block">
+        <span className="mb-2 block text-sm leading-5 text-foreground">{t("Optional passphrase")}</span>
+        <div className="flex flex-wrap items-end gap-2">
+          <Input className="min-w-0 flex-1 basis-40 border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={passphrase} onChange={(e) => onPass(e.target.value)} />
+          <button type="button" className="min-h-12 shrink-0 px-1 text-sm text-foreground underline underline-offset-4" aria-pressed={reveal} onClick={onReveal}>
+            {reveal ? t("Hide passphrase") : t("Show passphrase")}
+          </button>
+        </div>
+      </label>
+      <label className="block">
+        <span className="mb-2 block text-sm leading-5 text-foreground">{t("Passphrase again")}</span>
+        <Input className="border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={again} onChange={(e) => onAgain(e.target.value)} />
+      </label>
+    </div>
+  );
+}
+
+function RestoreSummary({ report }: { report: RestoreReport }) {
+  const t = useT();
+  return (
+    <div className="space-y-4 pb-4">
+      <h2 className="text-2xl font-medium tracking-tight">{t("Restored on this phone.")}</h2>
+      <BackupSummary preview={report} />
+      <p className="text-sm leading-6 text-foreground">{fill("{facts} pinned facts.", { facts: report.facts })}</p>
+      <p className="text-sm leading-6 text-foreground">{t("Talk history and voice time on this phone stay as they are.")}</p>
+      {report.errors.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-sm text-foreground">{t("Could not restore everything.")}</p>
+          {report.errors.map((line) => (
+            <p key={line} className="text-sm leading-6 text-foreground">{line}</p>
+          ))}
+        </div>
+      )}
+      <Button className="w-full" onClick={() => window.location.reload()}>{t("Done")}</Button>
     </div>
   );
 }

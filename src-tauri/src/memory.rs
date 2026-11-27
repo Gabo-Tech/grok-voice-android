@@ -71,16 +71,6 @@ impl Memory {
         self.turns.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// Every stored turn, including ones prune would drop. Backup uses this.
-    pub fn snapshot_all(&self) -> Vec<Turn> {
-        self.turns.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
-
-    pub fn replace(&self, turns: Vec<Turn>) {
-        *self.turns.lock().unwrap_or_else(|e| e.into_inner()) = turns;
-        self.prune_and_save();
-    }
-
     pub fn clear(&self) {
         if let Ok(mut turns) = self.turns.lock() {
             turns.clear();

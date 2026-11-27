@@ -1,7 +1,10 @@
 //! On-device backup of everything the person saved.
 //!
-//! Version 2 is the whole phone: settings, agenda, people, finance, talk,
-//! usage, keys, wake word, model choice, alarm audio, and web preferences.
+//! Version 2 is the saved phone: settings, agenda, people, finance, pinned
+//! facts, keys, wake word, model choice, alarm audio, and web preferences.
+//! Talk history (`memory.json`) and voice-time counters (`usage.json`) stay
+//! on the phone. An older file that still has them opens, and restore ignores
+//! those sections.
 //! Version 1 files still open. Sections they lack are left as they are.
 //!
 //! A passphrase seals the file with AES-256-GCM. The key is PBKDF2-HMAC-SHA256.
@@ -461,12 +464,14 @@ pub fn capture(
         notes,
         people: app.state::<crate::people::People>().list(),
         keys,
-        memory: Some(app.state::<crate::local_memory::LocalMemory>().snapshot()),
+        memory: Some(pinned_facts(
+            app.state::<crate::local_memory::LocalMemory>().snapshot(),
+        )),
         finance: Some(app.state::<crate::finance::Finance>().bundle()),
         settings: Some(app.state::<crate::settings::SettingsStore>().get()),
         agenda: Some(agenda),
-        talk: Some(app.state::<crate::memory::Memory>().snapshot_all()),
-        usage: Some(app.state::<crate::usage::UsageStore>().snapshot()),
+        talk: None,
+        usage: None,
         web: Some(app.state::<crate::persist::WebPrefs>().get()),
         packs: Some(read_packs(&root.join("local-models"))),
         wakeword: Some(read_blobs(&root.join("wakeword"), "wakeword")),
@@ -482,7 +487,26 @@ pub fn capture(
     (payload, warnings)
 }
 
+/// Drops Talk history, voice-time counters, and local session notes.
+/// Pinned facts, keys, and the other saved stores stay.
+pub fn without_history(payload: &Payload) -> Payload {
+    let mut next = payload.clone();
+    next.talk = None;
+    next.usage = None;
+    if let Some(memory) = next.memory.as_mut() {
+        memory.sessions.clear();
+    }
+    next
+}
+
+fn pinned_facts(mut bundle: crate::local_memory::Bundle) -> crate::local_memory::Bundle {
+    bundle.sessions.clear();
+    bundle
+}
+
 pub fn restore_app(app: &AppHandle, payload: &Payload) -> RestoreReport {
+    let payload = without_history(payload);
+    let payload = &payload;
     let mut restored = Vec::new();
     let mut errors = Vec::new();
     let mut appearance = String::new();
@@ -540,16 +564,8 @@ pub fn restore_app(app: &AppHandle, payload: &Payload) -> RestoreReport {
 
     if let Some(memory) = payload.memory.clone() {
         app.state::<crate::local_memory::LocalMemory>()
-            .replace(memory);
+            .replace(pinned_facts(memory));
         restored.push("local-memory.json".into());
-    }
-    if let Some(turns) = payload.talk.clone() {
-        app.state::<crate::memory::Memory>().replace(turns);
-        restored.push("memory.json".into());
-    }
-    if let Some(usage) = payload.usage.clone() {
-        app.state::<crate::usage::UsageStore>().replace(usage);
-        restored.push("usage.json".into());
     }
 
     if let Ok(root) = app.path().app_data_dir() {
@@ -706,10 +722,16 @@ pub fn voice_restore(app: &AppHandle, confirmed: bool) -> Result<serde_json::Val
     let opened = open(&bytes, None)?;
     let report = restore_app(app, &opened.payload);
     let summary = format!(
-        "{} notes, {} people, {} events, {} keys.",
-        report.preview.notes, report.preview.people, report.preview.events, report.preview.keys
+        "{} notes, {} people, {} events, {} keys, {} pinned facts.",
+        report.preview.notes,
+        report.preview.people,
+        report.preview.events,
+        report.preview.keys,
+        report.preview.facts
     );
     let mut detail = crate::i18n::fill(&locale, "backup-restored", &[("summary", &summary)]);
+    detail.push(' ');
+    detail.push_str(&crate::i18n::line(&locale, "backup-history-kept"));
     if !report.errors.is_empty() {
         detail.push(' ');
         detail.push_str(&crate::i18n::fill(
@@ -1096,11 +1118,7 @@ mod tests {
                 text: "I live in Zurich".into(),
                 updated_ms: 1,
             }],
-            sessions: vec![crate::local_memory::SessionNote {
-                id: "s1".into(),
-                at_ms: 2,
-                text: "You said hello.".into(),
-            }],
+            sessions: Vec::new(),
             next_id: 2,
         });
         payload.finance = Some(serde_json::from_str(
@@ -1140,18 +1158,6 @@ mod tests {
             events: vec![event],
             next_id: 8,
             recent: None,
-        });
-        payload.talk = Some(vec![crate::memory::Turn {
-            at_ms: 9,
-            role: "user".into(),
-            text: "remember the backup".into(),
-        }]);
-        payload.usage = Some(crate::usage::Usage {
-            day: "2099-03-01".into(),
-            session_ms: 60_000,
-            sessions: 2,
-            warned: true,
-            ..crate::usage::Usage::default()
         });
         let mut web = BTreeMap::new();
         for key in crate::persist::WEB_KEYS {
@@ -1204,15 +1210,9 @@ mod tests {
                     && !row.fx.manual.is_empty()
                     && !row.budgets.is_empty()
             }),
-            "memory.json" => payload
-                .talk
-                .as_ref()
-                .is_some_and(|rows| rows.iter().any(|turn| turn.text.contains("backup"))),
-            "local-memory.json" => payload
-                .memory
-                .as_ref()
-                .is_some_and(|row| row.facts.iter().any(|fact| fact.text.contains("Zurich"))),
-            "usage.json" => payload.usage.as_ref().is_some_and(|row| row.sessions == 2),
+            "local-memory.json" => payload.memory.as_ref().is_some_and(|row| {
+                row.facts.iter().any(|fact| fact.text.contains("Zurich")) && row.sessions.is_empty()
+            }),
             "vault" => {
                 payload.keys.iter().any(|key| key.provider == "xai")
                     && payload.keys.iter().any(|key| key.provider == "openai")
@@ -1321,6 +1321,9 @@ mod tests {
         let before = fingerprint(&dir);
         assert!(before.iter().any(|(name, _)| name == "settings.json"));
         assert!(before.iter().any(|(name, _)| name == "web-prefs.json"));
+        assert!(!before.iter().any(|(name, _)| name == "memory.json" || name == "usage.json"));
+        assert!(plain.windows(b"I live in Zurich".len()).any(|window| window == b"I live in Zurich"));
+        assert!(!plain.windows(b"remember the backup".len()).any(|window| window == b"remember the backup"));
         assert!(
             before
                 .iter()
@@ -1379,6 +1382,38 @@ mod tests {
                 out.push((name, bytes));
             }
         }
+    }
+
+    #[test]
+    fn older_backup_with_history_opens_and_history_is_not_restored() {
+        let mut payload = sample_full();
+        payload.talk = Some(vec![crate::memory::Turn {
+            at_ms: 9,
+            role: "user".into(),
+            text: "remember the backup".into(),
+        }]);
+        payload.usage = Some(crate::usage::Usage {
+            day: "2099-03-01".into(),
+            session_ms: 60_000,
+            sessions: 4,
+            warned: true,
+            ..crate::usage::Usage::default()
+        });
+        payload.memory.as_mut().unwrap().sessions.push(crate::local_memory::SessionNote {
+            id: "s1".into(),
+            at_ms: 2,
+            text: "You said hello.".into(),
+        });
+        let opened = open(&seal(&payload, None).unwrap(), None).unwrap();
+        assert_eq!(opened.payload.talk.as_ref().unwrap()[0].text, "remember the backup");
+        assert_eq!(opened.payload.usage.as_ref().unwrap().sessions, 4);
+        let kept = without_history(&opened.payload);
+        assert!(kept.talk.is_none());
+        assert!(kept.usage.is_none());
+        let memory = kept.memory.unwrap();
+        assert!(memory.sessions.is_empty());
+        assert_eq!(memory.facts[0].text, "I live in Zurich");
+        assert!(kept.keys.iter().any(|key| key.provider == "onemin"));
     }
 
     #[test]

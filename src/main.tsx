@@ -26,6 +26,12 @@ if (previewZoom > 100 && previewZoom <= 300) {
       el.style.fontSize = `${(size * factor).toFixed(2)}px`;
       if (line.endsWith("px")) el.style.lineHeight = `${(Number.parseFloat(line) * factor).toFixed(2)}px`;
     }
+    const measureBar = () => {
+      const bar = document.querySelector(".bottom-nav");
+      if (bar) document.documentElement.style.setProperty("--nav-block", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+    };
+    window.setTimeout(measureBar, 50);
+    window.setTimeout(measureBar, 500);
   }, 80);
 }
 

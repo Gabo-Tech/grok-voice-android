@@ -215,6 +215,7 @@ const EN: &[(&str, &str, &str)] = &[
     ("backup-encrypted", "", "That backup is encrypted. Open Settings and type the passphrase there."),
     ("backup-restored", "", "Restored. {summary}"),
     ("backup-failed", "", "Could not restore the backup. {error}"),
+    ("backup-history-kept", "", "Talk history and voice time on this phone stay as they are."),
 ];
 
 const ES: &[(&str, &str, &str)] = &[
@@ -370,6 +371,7 @@ const ES: &[(&str, &str, &str)] = &[
     ("backup-encrypted", "", "Esa copia está cifrada. Ábrela en Ajustes y escribe allí la contraseña."),
     ("backup-restored", "", "Restaurado. {summary}"),
     ("backup-failed", "", "No se ha podido restaurar la copia. {error}"),
+    ("backup-history-kept", "", "El historial de Hablar y el tiempo de voz de este teléfono se quedan como están."),
 ];
 
 const DE: &[(&str, &str, &str)] = &[
@@ -525,6 +527,7 @@ const DE: &[(&str, &str, &str)] = &[
     ("backup-encrypted", "", "Diese Sicherung ist verschlüsselt. Öffne die Einstellungen und gib dort das Passwort ein."),
     ("backup-restored", "", "Wiederhergestellt. {summary}"),
     ("backup-failed", "", "Die Sicherung konnte nicht wiederhergestellt werden. {error}"),
+    ("backup-history-kept", "", "Der Gesprächsverlauf und die Sprachzeit auf diesem Telefon bleiben, wie sie sind."),
 ];
 
 const PT: &[(&str, &str, &str)] = &[
@@ -680,6 +683,7 @@ const PT: &[(&str, &str, &str)] = &[
     ("backup-encrypted", "", "Essa cópia está cifrada. Abra Ajustes e digite a senha lá."),
     ("backup-restored", "", "Restaurado. {summary}"),
     ("backup-failed", "", "Não foi possível restaurar a cópia. {error}"),
+    ("backup-history-kept", "", "O histórico do Falar e o tempo de voz deste telefone ficam como estão."),
 ];
 
 const CA: &[(&str, &str, &str)] = &[
@@ -835,6 +839,7 @@ const CA: &[(&str, &str, &str)] = &[
     ("backup-encrypted", "", "Eixa còpia està xifrada. Obri Ajusts i escriu allí la contrasenya."),
     ("backup-restored", "", "Restaurat. {summary}"),
     ("backup-failed", "", "No s'ha pogut restaurar la còpia. {error}"),
+    ("backup-history-kept", "", "L'historial de Parlar i el temps de veu d'este telèfon es queden com estan."),
 ];
 
 include!("finance_phrases.rs");

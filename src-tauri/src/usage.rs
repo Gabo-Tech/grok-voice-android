@@ -144,16 +144,6 @@ impl UsageStore {
         }
     }
 
-    pub fn snapshot(&self) -> Usage {
-        self.lock().clone()
-    }
-
-    /// Writes the backed-up counters. An open session is kept so the day still matches.
-    pub fn replace(&self, usage: Usage) {
-        Self::persist(&self.path, &usage);
-        *self.lock() = usage;
-    }
-
     pub fn status(&self, caps: Caps, locale: &str) -> UsageStatus {
         let now = Local::now();
         let mut usage = self.lock().clone();
