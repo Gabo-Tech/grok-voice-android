@@ -159,37 +159,64 @@ fn find_cxx_shared(ndk: &std::path::Path) -> Result<std::path::PathBuf, String> 
 
 const SHERPA_TAG: &str = "v1.13.8";
 const LLAMA_TAG: &str = "b12774";
+const SHERPA_ARCHIVE_SHA256: &str = "2ff63469a71cb6009aa2e3ed5f4a670f8abdcbe4bb9ffd23776afc792a6b4f44";
+const SHERPA_HEADER_SHA256: &str = "2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce";
+const LLAMA_ARCHIVE_SHA256: &str = "615a08fa4154fbc8febdb470b33d8aa48111bc8651aba95f457e7e6cc32f7aaf";
+/// Commit that v0.7.1 of xn-ptts points at. The tag itself is not trusted.
+const PHONON_COMMIT: &str = "5f9522b3e245846d312caaeb460d3dcae5d1a991";
 
-/// Official Phonon CPU library, built from the v0.7.1 tag in its own Cargo
-/// project. It is not a dependency of this crate: its `half` version would
-/// clash with the one candle needs.
+/// Official Phonon CPU library, built from a pinned commit of xn-ptts in its
+/// own Cargo project. It is not a dependency of this crate: its `half` version
+/// would clash with the one candle needs.
 fn prepare_phonon(
     cache: &std::path::Path,
     ndk: &std::path::Path,
 ) -> Result<std::path::PathBuf, String> {
     let repo = cache.join("xn-ptts");
     let marker = repo.join("target/aarch64-linux-android/release/libptts_ffi.so");
-    if !marker.is_file() {
-        if repo.join(".git").is_dir() {
+    if git_head(&repo).as_deref() != Some(PHONON_COMMIT) {
+        if repo.exists() {
             std::fs::remove_dir_all(&repo).map_err(|err| err.to_string())?;
         }
-        if !repo.exists() {
-            let status = std::process::Command::new("git")
-                .args([
-                    "clone",
-                    "--depth",
-                    "1",
-                    "--branch",
-                    "v0.7.1",
-                    "https://github.com/gradium-ai/xn-ptts.git",
-                ])
-                .arg(&repo)
-                .status()
-                .map_err(|err| format!("git clone phonon: {err}"))?;
-            if !status.success() {
-                return Err("could not clone the Phonon runtime".into());
-            }
+        std::fs::create_dir_all(&repo).map_err(|err| err.to_string())?;
+        let init = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["init"])
+            .status()
+            .map_err(|err| format!("git init phonon: {err}"))?;
+        if !init.success() {
+            return Err("could not prepare the Phonon checkout".into());
         }
+        let remote = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["remote", "add", "origin", "https://github.com/gradium-ai/xn-ptts.git"])
+            .status()
+            .map_err(|err| format!("git remote phonon: {err}"))?;
+        if !remote.success() {
+            return Err("could not set the Phonon remote".into());
+        }
+        let fetched = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["fetch", "--depth", "1", "origin", PHONON_COMMIT])
+            .status()
+            .map_err(|err| format!("git fetch phonon: {err}"))?;
+        if !fetched.success() {
+            return Err("could not fetch the pinned Phonon commit".into());
+        }
+        let checkout = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["checkout", "--detach", "FETCH_HEAD"])
+            .status()
+            .map_err(|err| format!("git checkout phonon: {err}"))?;
+        if !checkout.success() || git_head(&repo).as_deref() != Some(PHONON_COMMIT) {
+            return Err(format!("Phonon checkout is not {PHONON_COMMIT}"));
+        }
+    }
+    if !marker.is_file() {
         let clang = ndk_tool(ndk, "aarch64-linux-android26-clang")?;
         let ar = ndk_tool(ndk, "llvm-ar")?;
         let status = std::process::Command::new("cargo")
@@ -226,17 +253,19 @@ fn prepare_sherpa(cache: &std::path::Path) -> Result<std::path::PathBuf, String>
     let dest = cache.join(format!("sherpa-onnx-{SHERPA_TAG}"));
     let marker = dest.join("libsherpa-onnx-c-api.so");
     let header = dest.join("include/c-api.h");
+    let archive = cache.join(format!("sherpa-onnx-{SHERPA_TAG}-android.tar.bz2"));
+    let archive_url = format!(
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/{SHERPA_TAG}/sherpa-onnx-{SHERPA_TAG}-android.tar.bz2"
+    );
+    ensure_pinned(&archive_url, &archive, SHERPA_ARCHIVE_SHA256)?;
     if marker.is_file() && header.is_file() {
+        let header_url = format!(
+            "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/{SHERPA_TAG}/sherpa-onnx/c-api/c-api.h"
+        );
+        ensure_pinned(&header_url, &header, SHERPA_HEADER_SHA256)?;
         return Ok(dest);
     }
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    let archive = cache.join(format!("sherpa-onnx-{SHERPA_TAG}-android.tar.bz2"));
-    if !archive.is_file() {
-        let url = format!(
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/{SHERPA_TAG}/sherpa-onnx-{SHERPA_TAG}-android.tar.bz2"
-        );
-        download(&url, &archive)?;
-    }
     let status = std::process::Command::new("tar")
         .args([
             "-xjf",
@@ -256,13 +285,11 @@ fn prepare_sherpa(cache: &std::path::Path) -> Result<std::path::PathBuf, String>
         &extracted.join("libonnxruntime.so"),
         &dest.join("libonnxruntime.so"),
     )?;
-    if !header.is_file() {
-        std::fs::create_dir_all(dest.join("include")).map_err(|e| e.to_string())?;
-        let url = format!(
-            "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/{SHERPA_TAG}/sherpa-onnx/c-api/c-api.h"
-        );
-        download(&url, &header)?;
-    }
+    std::fs::create_dir_all(dest.join("include")).map_err(|e| e.to_string())?;
+    let header_url = format!(
+        "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/{SHERPA_TAG}/sherpa-onnx/c-api/c-api.h"
+    );
+    ensure_pinned(&header_url, &header, SHERPA_HEADER_SHA256)?;
     Ok(dest)
 }
 
@@ -272,17 +299,13 @@ fn prepare_llama(
 ) -> Result<std::path::PathBuf, String> {
     let dest = cache.join(format!("llama.cpp-{LLAMA_TAG}"));
     let stamp = dest.join("build/built.stamp");
-    if stamp.is_file() {
+    let archive = cache.join(format!("llama.cpp-{LLAMA_TAG}.tar.gz"));
+    let url = format!("https://github.com/ggml-org/llama.cpp/archive/refs/tags/{LLAMA_TAG}.tar.gz");
+    ensure_pinned(&url, &archive, LLAMA_ARCHIVE_SHA256)?;
+    if stamp.is_file() && dest.join("CMakeLists.txt").is_file() {
         return Ok(dest);
     }
     if !dest.join("CMakeLists.txt").is_file() {
-        let archive = cache.join(format!("llama.cpp-{LLAMA_TAG}.tar.gz"));
-        if !archive.is_file() {
-            let url = format!(
-                "https://github.com/ggml-org/llama.cpp/archive/refs/tags/{LLAMA_TAG}.tar.gz"
-            );
-            download(&url, &archive)?;
-        }
         std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
         let status = std::process::Command::new("tar")
             .args([
@@ -363,6 +386,51 @@ fn collect_static_libs(
         } else if path.extension().and_then(|ext| ext.to_str()) == Some("a") {
             out.push(path);
         }
+    }
+    Ok(())
+}
+
+fn git_head(repo: &std::path::Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn sha256_file(path: &std::path::Path) -> Result<String, String> {
+    let output = std::process::Command::new("sha256sum")
+        .arg(path)
+        .output()
+        .map_err(|err| format!("sha256sum {}: {err}", path.display()))?;
+    if !output.status.success() {
+        return Err(format!("sha256sum failed for {}", path.display()));
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.split_whitespace()
+        .next()
+        .map(str::to_string)
+        .filter(|hash| hash.len() == 64)
+        .ok_or_else(|| format!("sha256sum returned nothing for {}", path.display()))
+}
+
+fn ensure_pinned(url: &str, dest: &std::path::Path, expected: &str) -> Result<(), String> {
+    if dest.is_file() && sha256_file(dest)? == expected {
+        return Ok(());
+    }
+    if dest.exists() {
+        std::fs::remove_file(dest).map_err(|err| err.to_string())?;
+    }
+    download(url, dest)?;
+    let got = sha256_file(dest)?;
+    if got != expected {
+        let _ = std::fs::remove_file(dest);
+        return Err(format!("{url} sha256 was {got}, expected {expected}"));
     }
     Ok(())
 }
