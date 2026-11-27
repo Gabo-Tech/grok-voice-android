@@ -857,6 +857,16 @@ fn spec_by_id(id: &str) -> Option<&'static Spec> {
     PACKS.iter().find(|spec| spec.id == id)
 }
 
+/// Name shown to the person. Unknown ids stay as stored so a custom file is not renamed.
+pub fn pack_label(id: &str) -> String {
+    if id == CUSTOM_LLM {
+        return "Custom model".into();
+    }
+    spec_by_id(id)
+        .map(|spec| spec.label.to_string())
+        .unwrap_or_else(|| id.to_string())
+}
+
 pub fn download_size(id: &str) -> Option<u64> {
     spec_by_id(id).map(|spec| spec.download_bytes)
 }

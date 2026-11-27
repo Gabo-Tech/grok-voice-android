@@ -129,6 +129,8 @@ pub struct Preview {
     #[serde(default)]
     pub rules: usize,
     #[serde(default)]
+    pub budgets: usize,
+    #[serde(default)]
     pub has_finance: bool,
     #[serde(default)]
     pub version: u32,
@@ -162,6 +164,9 @@ pub struct Preview {
     pub alarm_files: usize,
     #[serde(default)]
     pub referenced: Vec<String>,
+    /// Display names of on-device packs whose weight files were not copied.
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -242,6 +247,11 @@ impl Payload {
                 .as_ref()
                 .map(|bundle| bundle.rules.len())
                 .unwrap_or(0),
+            budgets: self
+                .finance
+                .as_ref()
+                .map(|bundle| bundle.budgets.len())
+                .unwrap_or(0),
             has_finance: self.finance.is_some(),
             version: self.version,
             encrypted: false,
@@ -267,6 +277,11 @@ impl Payload {
                 .map(|rows| rows.len())
                 .unwrap_or(0),
             referenced: referenced_names(self),
+            models: self
+                .packs
+                .as_ref()
+                .map(model_labels)
+                .unwrap_or_default(),
         }
     }
 }
@@ -286,15 +301,62 @@ pub fn referenced_names(payload: &Payload) -> Vec<String> {
             ));
         }
     }
-    if let Some(packs) = &payload.packs {
-        if !packs.installed.is_empty() {
-            names.push(format!(
-                "on-device models not included: {}",
-                packs.installed.join(", ")
-            ));
-        }
-    }
     names
+}
+
+fn spoken_summary(locale: &str, preview: &Preview) -> String {
+    let counts = [
+        crate::i18n::count_phrase(locale, "note", preview.notes),
+        crate::i18n::count_phrase(locale, "person", preview.people),
+        crate::i18n::count_phrase(locale, "event", preview.events),
+        crate::i18n::count_phrase(locale, "reminder", preview.reminders),
+        crate::i18n::count_phrase(locale, "alarm", preview.alarms),
+        crate::i18n::count_phrase(locale, "countdown", preview.countdowns),
+        crate::i18n::count_phrase(locale, "key", preview.keys),
+        crate::i18n::count_phrase(locale, "fact", preview.facts),
+    ]
+    .join(", ");
+    let mut text = format!("{counts}.");
+    if preview.has_settings {
+        text.push(' ');
+        text.push_str(&crate::i18n::line(locale, "backup-settings"));
+    }
+    if preview.has_finance {
+        let money = format!(
+            "{}, {}, {}",
+            crate::i18n::count_phrase(locale, "account", preview.accounts),
+            crate::i18n::count_phrase(locale, "transaction", preview.transactions),
+            crate::i18n::count_phrase(locale, "schedule", preview.rules),
+        );
+        text.push(' ');
+        text.push_str(&crate::i18n::fill(locale, "backup-finance", &[("detail", &money)]));
+    }
+    text
+}
+
+fn model_labels(packs: &PackRecord) -> Vec<String> {
+    packs
+        .installed
+        .iter()
+        .map(|id| {
+            if id == crate::local::CUSTOM_LLM {
+                custom_model_name(&packs.custom_meta)
+                    .unwrap_or_else(|| crate::local::pack_label(id))
+            } else {
+                crate::local::pack_label(id)
+            }
+        })
+        .collect()
+}
+
+fn custom_model_name(meta: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(meta).ok()?;
+    let name = value.get("name")?.as_str()?.trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 pub fn seal(payload: &Payload, passphrase: Option<&str>) -> Result<Vec<u8>, String> {
@@ -721,14 +783,7 @@ pub fn voice_restore(app: &AppHandle, confirmed: bool) -> Result<serde_json::Val
     }
     let opened = open(&bytes, None)?;
     let report = restore_app(app, &opened.payload);
-    let summary = format!(
-        "{} notes, {} people, {} events, {} keys, {} pinned facts.",
-        report.preview.notes,
-        report.preview.people,
-        report.preview.events,
-        report.preview.keys,
-        report.preview.facts
-    );
+    let summary = spoken_summary(&locale, &report.preview);
     let mut detail = crate::i18n::fill(&locale, "backup-restored", &[("summary", &summary)]);
     detail.push(' ');
     detail.push_str(&crate::i18n::line(&locale, "backup-history-kept"));
@@ -743,6 +798,14 @@ pub fn voice_restore(app: &AppHandle, confirmed: bool) -> Result<serde_json::Val
     if !report.preview.referenced.is_empty() {
         detail.push(' ');
         detail.push_str(&report.preview.referenced.join(" "));
+    }
+    if !report.preview.models.is_empty() {
+        detail.push(' ');
+        detail.push_str(&crate::i18n::fill(
+            &locale,
+            "backup-models",
+            &[("names", &report.preview.models.join(", "))],
+        ));
     }
     Ok(json!({ "ok": report.errors.is_empty(), "changed": true, "detail": detail }))
 }
@@ -1166,7 +1229,7 @@ mod tests {
         payload.web = Some(web);
         payload.packs = Some(PackRecord {
             selected: "llm-custom".into(),
-            installed: vec!["llm-custom".into(), "llm-gemma".into()],
+            installed: vec!["llm-custom".into(), "llm-gemma3-1b".into()],
             custom_meta: r#"{"name":"Mine"}"#.into(),
         });
         payload.wakeword = Some(vec![Blob {
@@ -1324,6 +1387,12 @@ mod tests {
         assert!(!before.iter().any(|(name, _)| name == "memory.json" || name == "usage.json"));
         assert!(plain.windows(b"I live in Zurich".len()).any(|window| window == b"I live in Zurich"));
         assert!(!plain.windows(b"remember the backup".len()).any(|window| window == b"remember the backup"));
+        let labels = original.preview().models;
+        assert_eq!(
+            labels,
+            vec!["Mine".to_string(), "Gemma 3 1B Instruct".to_string()]
+        );
+        assert!(original.preview().referenced.iter().all(|line| !line.contains("llm-")));
         assert!(
             before
                 .iter()

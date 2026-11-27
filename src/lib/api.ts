@@ -360,6 +360,7 @@ export interface BackupPreview {
   accounts?: number;
   transactions?: number;
   rules?: number;
+  budgets?: number;
   hasFinance?: boolean;
   version?: number;
   encrypted?: boolean;
@@ -377,6 +378,7 @@ export interface BackupPreview {
   wakeFiles?: number;
   alarmFiles?: number;
   referenced?: string[];
+  models?: string[];
 }
 
 export interface RestoreReport extends BackupPreview {

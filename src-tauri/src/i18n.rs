@@ -62,6 +62,127 @@ pub fn fill(locale: &str, key: &str, pairs: &[(&str, &str)]) -> String {
     text
 }
 
+/// `{n}` filled for 0, 1, and many. English, Spanish, German, Portuguese, and Valencian.
+pub fn count_phrase(locale: &str, kind: &str, count: usize) -> String {
+    phrase(normalize(locale), kind, count == 1).replace("{n}", &count.to_string())
+}
+
+fn phrase(locale: &str, kind: &str, one: bool) -> &'static str {
+    match (locale, kind, one) {
+        ("es", "note", true) => "{n} nota",
+        ("es", "note", false) => "{n} notas",
+        ("es", "person", true) => "{n} persona",
+        ("es", "person", false) => "{n} personas",
+        ("es", "event", true) => "{n} evento",
+        ("es", "event", false) => "{n} eventos",
+        ("es", "reminder", true) => "{n} recordatorio",
+        ("es", "reminder", false) => "{n} recordatorios",
+        ("es", "alarm", true) => "{n} alarma",
+        ("es", "alarm", false) => "{n} alarmas",
+        ("es", "countdown", true) => "{n} cuenta atrás",
+        ("es", "countdown", false) => "{n} cuentas atrás",
+        ("es", "account", true) => "{n} cuenta",
+        ("es", "account", false) => "{n} cuentas",
+        ("es", "key", true) => "{n} clave",
+        ("es", "key", false) => "{n} claves",
+        ("es", "fact", true) => "{n} dato fijado",
+        ("es", "fact", false) => "{n} datos fijados",
+        ("es", "transaction", true) => "{n} movimiento",
+        ("es", "transaction", false) => "{n} movimientos",
+        ("es", "schedule", true) => "{n} programación",
+        ("es", "schedule", false) => "{n} programaciones",
+        ("de", "note", true) => "{n} Notiz",
+        ("de", "note", false) => "{n} Notizen",
+        ("de", "person", true) => "{n} Person",
+        ("de", "person", false) => "{n} Personen",
+        ("de", "event", true) => "{n} Termin",
+        ("de", "event", false) => "{n} Termine",
+        ("de", "reminder", true) => "{n} Erinnerung",
+        ("de", "reminder", false) => "{n} Erinnerungen",
+        ("de", "alarm", true) => "{n} Wecker",
+        ("de", "alarm", false) => "{n} Wecker",
+        ("de", "countdown", true) => "{n} Countdown",
+        ("de", "countdown", false) => "{n} Countdowns",
+        ("de", "account", true) => "{n} Konto",
+        ("de", "account", false) => "{n} Konten",
+        ("de", "key", true) => "{n} Schlüssel",
+        ("de", "key", false) => "{n} Schlüssel",
+        ("de", "fact", true) => "{n} festgehaltener Fakt",
+        ("de", "fact", false) => "{n} festgehaltene Fakten",
+        ("de", "transaction", true) => "{n} Buchung",
+        ("de", "transaction", false) => "{n} Buchungen",
+        ("de", "schedule", true) => "{n} Plan",
+        ("de", "schedule", false) => "{n} Pläne",
+        ("pt", "note", true) => "{n} nota",
+        ("pt", "note", false) => "{n} notas",
+        ("pt", "person", true) => "{n} pessoa",
+        ("pt", "person", false) => "{n} pessoas",
+        ("pt", "event", true) => "{n} evento",
+        ("pt", "event", false) => "{n} eventos",
+        ("pt", "reminder", true) => "{n} lembrete",
+        ("pt", "reminder", false) => "{n} lembretes",
+        ("pt", "alarm", true) => "{n} alarme",
+        ("pt", "alarm", false) => "{n} alarmes",
+        ("pt", "countdown", true) => "{n} contagem regressiva",
+        ("pt", "countdown", false) => "{n} contagens regressivas",
+        ("pt", "account", true) => "{n} conta",
+        ("pt", "account", false) => "{n} contas",
+        ("pt", "key", true) => "{n} chave",
+        ("pt", "key", false) => "{n} chaves",
+        ("pt", "fact", true) => "{n} dado fixado",
+        ("pt", "fact", false) => "{n} dados fixados",
+        ("pt", "transaction", true) => "{n} movimento",
+        ("pt", "transaction", false) => "{n} movimentos",
+        ("pt", "schedule", true) => "{n} programação",
+        ("pt", "schedule", false) => "{n} programações",
+        ("ca-ES-valencia", "note", true) => "{n} nota",
+        ("ca-ES-valencia", "note", false) => "{n} notes",
+        ("ca-ES-valencia", "person", true) => "{n} persona",
+        ("ca-ES-valencia", "person", false) => "{n} persones",
+        ("ca-ES-valencia", "event", true) => "{n} esdeveniment",
+        ("ca-ES-valencia", "event", false) => "{n} esdeveniments",
+        ("ca-ES-valencia", "reminder", true) => "{n} recordatori",
+        ("ca-ES-valencia", "reminder", false) => "{n} recordatoris",
+        ("ca-ES-valencia", "alarm", true) => "{n} alarma",
+        ("ca-ES-valencia", "alarm", false) => "{n} alarmes",
+        ("ca-ES-valencia", "countdown", true) => "{n} compte enrere",
+        ("ca-ES-valencia", "countdown", false) => "{n} comptes enrere",
+        ("ca-ES-valencia", "account", true) => "{n} compte",
+        ("ca-ES-valencia", "account", false) => "{n} comptes",
+        ("ca-ES-valencia", "key", true) => "{n} clau",
+        ("ca-ES-valencia", "key", false) => "{n} claus",
+        ("ca-ES-valencia", "fact", true) => "{n} dada fixada",
+        ("ca-ES-valencia", "fact", false) => "{n} dades fixades",
+        ("ca-ES-valencia", "transaction", true) => "{n} moviment",
+        ("ca-ES-valencia", "transaction", false) => "{n} moviments",
+        ("ca-ES-valencia", "schedule", true) => "{n} programació",
+        ("ca-ES-valencia", "schedule", false) => "{n} programacions",
+        (_, "note", true) => "{n} note",
+        (_, "note", false) => "{n} notes",
+        (_, "person", true) => "{n} person",
+        (_, "person", false) => "{n} people",
+        (_, "event", true) => "{n} event",
+        (_, "event", false) => "{n} events",
+        (_, "reminder", true) => "{n} reminder",
+        (_, "reminder", false) => "{n} reminders",
+        (_, "alarm", true) => "{n} alarm",
+        (_, "alarm", false) => "{n} alarms",
+        (_, "countdown", true) => "{n} countdown",
+        (_, "countdown", false) => "{n} countdowns",
+        (_, "account", true) => "{n} account",
+        (_, "account", false) => "{n} accounts",
+        (_, "key", true) => "{n} key",
+        (_, "key", false) => "{n} keys",
+        (_, "fact", true) => "{n} pinned fact",
+        (_, "fact", false) => "{n} pinned facts",
+        (_, "transaction", true) => "{n} transaction",
+        (_, "transaction", false) => "{n} transactions",
+        (_, "schedule", true) => "{n} schedule",
+        (_, "schedule", false) => "{n} schedules",
+        _ => "{n}",
+    }
+}
+
 const EN: &[(&str, &str, &str)] = &[
     ("fact-empty", "", "Say the fact to remember."),
     ("fact-missing", "", "That pinned fact is not on this phone."),
@@ -216,6 +337,9 @@ const EN: &[(&str, &str, &str)] = &[
     ("backup-restored", "", "Restored. {summary}"),
     ("backup-failed", "", "Could not restore the backup. {error}"),
     ("backup-history-kept", "", "Talk history and voice time on this phone stay as they are."),
+    ("backup-settings", "", "Settings, theme and language."),
+    ("backup-finance", "", "Finance: {detail}."),
+    ("backup-models", "", "On-device models not included: {names}."),
 ];
 
 const ES: &[(&str, &str, &str)] = &[
@@ -372,6 +496,9 @@ const ES: &[(&str, &str, &str)] = &[
     ("backup-restored", "", "Restaurado. {summary}"),
     ("backup-failed", "", "No se ha podido restaurar la copia. {error}"),
     ("backup-history-kept", "", "El historial de Hablar y el tiempo de voz de este teléfono se quedan como están."),
+    ("backup-settings", "", "Ajustes, tema e idioma."),
+    ("backup-finance", "", "Dinero: {detail}."),
+    ("backup-models", "", "Modelos en el teléfono no incluidos: {names}."),
 ];
 
 const DE: &[(&str, &str, &str)] = &[
@@ -528,6 +655,9 @@ const DE: &[(&str, &str, &str)] = &[
     ("backup-restored", "", "Wiederhergestellt. {summary}"),
     ("backup-failed", "", "Die Sicherung konnte nicht wiederhergestellt werden. {error}"),
     ("backup-history-kept", "", "Der Gesprächsverlauf und die Sprachzeit auf diesem Telefon bleiben, wie sie sind."),
+    ("backup-settings", "", "Einstellungen, Thema und Sprache."),
+    ("backup-finance", "", "Finanzen: {detail}."),
+    ("backup-models", "", "Modelle auf dem Telefon nicht enthalten: {names}."),
 ];
 
 const PT: &[(&str, &str, &str)] = &[
@@ -684,6 +814,9 @@ const PT: &[(&str, &str, &str)] = &[
     ("backup-restored", "", "Restaurado. {summary}"),
     ("backup-failed", "", "Não foi possível restaurar a cópia. {error}"),
     ("backup-history-kept", "", "O histórico do Falar e o tempo de voz deste telefone ficam como estão."),
+    ("backup-settings", "", "Ajustes, tema e idioma."),
+    ("backup-finance", "", "Finanças: {detail}."),
+    ("backup-models", "", "Modelos no telefone não incluídos: {names}."),
 ];
 
 const CA: &[(&str, &str, &str)] = &[
@@ -840,6 +973,9 @@ const CA: &[(&str, &str, &str)] = &[
     ("backup-restored", "", "Restaurat. {summary}"),
     ("backup-failed", "", "No s'ha pogut restaurar la còpia. {error}"),
     ("backup-history-kept", "", "L'historial de Parlar i el temps de veu d'este telèfon es queden com estan."),
+    ("backup-settings", "", "Ajustos, tema i llengua."),
+    ("backup-finance", "", "Diners: {detail}."),
+    ("backup-models", "", "Models al telèfon no inclosos: {names}."),
 ];
 
 include!("finance_phrases.rs");
@@ -862,6 +998,24 @@ mod tests {
         assert!(line("pt", "keys-refused").contains("Ajustes"));
         assert!(fill("ca-ES-valencia", "person-delete-ask", &[("name", "Ana")]).contains("Ana"));
         assert!(fill("ca-ES-valencia", "listen-off-ask", &[]).contains("s'atura"));
+        assert_eq!(count_phrase("en", "person", 0), "0 people");
+        assert_eq!(count_phrase("en", "person", 1), "1 person");
+        assert_eq!(count_phrase("en", "person", 5), "5 people");
+        assert_eq!(count_phrase("en", "key", 1), "1 key");
+        assert_eq!(count_phrase("en", "fact", 1), "1 pinned fact");
+        assert_eq!(count_phrase("es", "event", 1), "1 evento");
+        assert_eq!(count_phrase("es", "event", 0), "0 eventos");
+        assert_eq!(count_phrase("de", "account", 1), "1 Konto");
+        assert_eq!(count_phrase("de", "account", 3), "3 Konten");
+        assert_eq!(count_phrase("pt", "reminder", 1), "1 lembrete");
+        assert_eq!(count_phrase("ca-ES-valencia", "alarm", 1), "1 alarma");
+        assert_eq!(count_phrase("ca-ES-valencia", "alarm", 4), "4 alarmes");
+        assert_eq!(count_phrase("ca-ES-valencia", "countdown", 1), "1 compte enrere");
+        assert!(line("en", "backup-models").starts_with("On-device"));
+        assert!(line("es", "backup-models").starts_with("Modelos"));
+        assert!(line("de", "backup-settings").contains("Einstellungen"));
+        assert!(line("pt", "backup-finance").contains("Finanças"));
+        assert!(line("ca-ES-valencia", "backup-settings").contains("Ajustos"));
     }
 
     #[test]

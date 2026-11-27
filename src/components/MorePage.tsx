@@ -20,7 +20,8 @@ import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview,
 import { applyAppearance, choiceFromSettings, normalizeAppearance, prefersLight, rememberAppearance, rememberCustomTheme } from "@/lib/appearance";
 import { providerLabel } from "@/lib/flow";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
-import { fill, setAppLocale, useT } from "@/lib/i18n";
+import { activeLocale, fill, setAppLocale, useT } from "@/lib/i18n";
+import { countPhrase, type CountKind } from "@/lib/plurals";
 import { readPersistedWeb, writePersistedWeb } from "@/lib/persistedKeys";
 import { cn } from "@/lib/utils";
 
@@ -1179,7 +1180,9 @@ const SAMPLE_RESTORE: RestoreReport = {
   hasPacks: true,
   wakeFiles: 1,
   alarmFiles: 1,
-  referenced: ["on-device models not included: llm-gemma"],
+  budgets: 0,
+  referenced: [],
+  models: ["Gemma 3 1B Instruct"],
   restored: ["settings.json", "local-memory.json", "vault"],
   errors: [],
   web: {},
@@ -1194,6 +1197,8 @@ function BackupPage() {
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
   const [reveal, setReveal] = useState(false);
+  const [openPass, setOpenPass] = useState("");
+  const [revealOpen, setRevealOpen] = useState(false);
   const [fileB64, setFileB64] = useState(previewQuery.file ? "preview" : "");
   const [fileName, setFileName] = useState(previewQuery.file);
   const [fileEncrypted, setFileEncrypted] = useState(previewQuery.encrypted);
@@ -1213,6 +1218,15 @@ function BackupPage() {
     window.addEventListener("grok-restore-summary", onSummary);
     return () => window.removeEventListener("grok-restore-summary", onSummary);
   }, []);
+  useEffect(() => {
+    if (!previewQuery.file) return;
+    const node = document.querySelector(".backup-pad");
+    if (!(node instanceof HTMLElement)) return;
+    const show = () => node.scrollTo({ top: node.scrollHeight });
+    show();
+    const later = window.setTimeout(show, 120);
+    return () => window.clearTimeout(later);
+  }, [previewQuery.file]);
 
   const exportFile = async () => {
     const typed = passphrase.trim();
@@ -1248,6 +1262,7 @@ function BackupPage() {
     setFileB64(btoa(binary));
     setFileName(file.name);
     setFileEncrypted(magic === "GVB1");
+    setOpenPass("");
     setPreview(null);
     setConfirming(false);
     setReport(null);
@@ -1259,7 +1274,7 @@ function BackupPage() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.previewBackup(fileB64, passphrase.trim());
+      const next = await api.previewBackup(fileB64, fileEncrypted ? openPass.trim() : "");
       setPreview(next);
       setNotice("");
     } catch (e) {
@@ -1274,7 +1289,7 @@ function BackupPage() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.restoreBackup(fileB64, passphrase.trim(), true);
+      const next = await api.restoreBackup(fileB64, fileEncrypted ? openPass.trim() : "", true);
       applyBackupResult(next);
       setReport(next);
       setConfirming(false);
@@ -1287,10 +1302,15 @@ function BackupPage() {
   };
 
   const typed = passphrase.trim();
-  const needsPass = fileEncrypted || preview?.encrypted === true;
-  const passReady = !needsPass || typed.length >= 8;
+  const openTyped = openPass.trim();
+  const openReady = !fileEncrypted || openTyped.length >= 8;
+  const canAct = Boolean(fileB64) && !busy && openReady;
   const onPass = (value: string) => {
     setPassphrase(value);
+    setConfirming(false);
+  };
+  const onOpen = (value: string) => {
+    setOpenPass(value);
     setPreview(null);
     setConfirming(false);
   };
@@ -1336,22 +1356,35 @@ function BackupPage() {
           className="sr-only"
           onChange={(e) => void readFile(e.target.files?.[0])}
         />
-        {needsPass && !passReady && (
-          <p className="text-sm leading-6 text-foreground">{t("Type a passphrase of at least 8 characters to open this file.")}</p>
+        {fileEncrypted && (
+          <label className="block">
+            <span className="mb-2 block text-sm leading-5 text-foreground">{t("This file is encrypted.")}</span>
+            <p className="mb-2 text-sm leading-6 text-foreground">{t("Type a passphrase of at least 8 characters to open this file.")}</p>
+            <Input
+              className="w-full border-b-2 border-[var(--text-tertiary)]"
+              type={revealOpen ? "text" : "password"}
+              autoComplete="current-password"
+              value={openPass}
+              onChange={(e) => onOpen(e.target.value)}
+            />
+            <button type="button" className="mt-1 min-h-12 px-1 text-sm text-foreground underline underline-offset-4" aria-pressed={revealOpen} onClick={() => setRevealOpen((on) => !on)}>
+              {revealOpen ? t("Hide passphrase") : t("Show passphrase")}
+            </button>
+          </label>
         )}
         <div className="backup-actions flex flex-wrap items-center gap-3">
-          <Button variant="outline" disabled={busy || !fileB64 || !passReady} onClick={() => void review()}>
+          <Button variant="outline" disabled={!canAct} onClick={() => void review()}>
             {t("Review")}
           </Button>
-          <Button variant="destructive" disabled={busy || !preview || !passReady} onClick={() => setConfirming(true)}>
+          <Button variant="destructive" className="bg-[var(--negative)] text-[var(--surface-0)]" disabled={!canAct} onClick={() => setConfirming(true)}>
             {t("Replace everything on this phone")}
           </Button>
         </div>
-        {confirming && preview && (
+        {confirming && (
           <div className="space-y-3">
             <p className="text-sm leading-6 text-foreground">{t("Replace everything on this phone?")}</p>
             <div className="backup-actions flex flex-wrap items-center gap-3">
-              <Button variant="destructive" disabled={busy || !passReady} onClick={() => void restore()}>
+              <Button variant="destructive" className="bg-[var(--negative)] text-[var(--surface-0)]" disabled={!canAct} onClick={() => void restore()}>
                 {t("Yes, replace everything")}
               </Button>
               <Button variant="outline" disabled={busy} onClick={() => setConfirming(false)}>
@@ -1392,16 +1425,14 @@ function PassphraseFields({
     <div className="space-y-4">
       <label className="block">
         <span className="mb-2 block text-sm leading-5 text-foreground">{t("Optional passphrase")}</span>
-        <div className="flex flex-wrap items-end gap-2">
-          <Input className="min-w-0 flex-1 basis-40 border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={passphrase} onChange={(e) => onPass(e.target.value)} />
-          <button type="button" className="min-h-12 shrink-0 px-1 text-sm text-foreground underline underline-offset-4" aria-pressed={reveal} onClick={onReveal}>
-            {reveal ? t("Hide passphrase") : t("Show passphrase")}
-          </button>
-        </div>
+        <Input className="w-full border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={passphrase} onChange={(e) => onPass(e.target.value)} />
+        <button type="button" className="mt-1 min-h-12 px-1 text-sm text-foreground underline underline-offset-4" aria-pressed={reveal} onClick={onReveal}>
+          {reveal ? t("Hide passphrase") : t("Show passphrase")}
+        </button>
       </label>
       <label className="block">
         <span className="mb-2 block text-sm leading-5 text-foreground">{t("Passphrase again")}</span>
-        <Input className="border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={again} onChange={(e) => onAgain(e.target.value)} />
+        <Input className="w-full border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={again} onChange={(e) => onAgain(e.target.value)} />
       </label>
     </div>
   );
@@ -1413,7 +1444,6 @@ function RestoreSummary({ report }: { report: RestoreReport }) {
     <div className="space-y-4 pb-4">
       <h2 className="text-2xl font-medium tracking-tight">{t("Restored on this phone.")}</h2>
       <BackupSummary preview={report} />
-      <p className="text-sm leading-6 text-foreground">{fill("{facts} pinned facts.", { facts: report.facts })}</p>
       <p className="text-sm leading-6 text-foreground">{t("Talk history and voice time on this phone stay as they are.")}</p>
       {report.errors.length > 0 && (
         <div className="space-y-1">
@@ -1430,28 +1460,41 @@ function RestoreSummary({ report }: { report: RestoreReport }) {
 
 function BackupSummary({ preview }: { preview: BackupPreview }) {
   const t = useT();
+  const locale = activeLocale();
+  const phrase = (kind: CountKind, count: number) => countPhrase(locale, kind, count);
+  const models = preview.models ?? [];
+  const files = (preview.referenced ?? []).filter((name) => !name.startsWith("on-device models"));
   return (
     <div className="space-y-2 text-sm leading-6 text-foreground">
       <p>
-        {fill("{notes} notes, {people} people, {events} events, {reminders} reminders, {alarms} alarms, {countdowns} countdowns, {accounts} accounts, {keys} keys.", {
-          notes: preview.notes,
-          people: preview.people,
-          events: preview.events ?? 0,
-          reminders: preview.reminders,
-          alarms: preview.alarms ?? 0,
-          countdowns: preview.countdowns ?? 0,
-          accounts: preview.accounts ?? 0,
-          keys: preview.keys,
-        })}
+        {[
+          phrase("note", preview.notes),
+          phrase("person", preview.people),
+          phrase("event", preview.events ?? 0),
+          phrase("reminder", preview.reminders),
+          phrase("alarm", preview.alarms ?? 0),
+          phrase("countdown", preview.countdowns ?? 0),
+        ].join(", ")}
+        .
       </p>
+      {preview.hasSettings && <p>{t("Settings, theme and language.")}</p>}
+      {preview.hasFinance && (
+        <p>
+          {fill("Finance: {accounts}, {transactions}, {schedules}.", {
+            accounts: phrase("account", preview.accounts ?? 0),
+            transactions: phrase("transaction", preview.transactions ?? 0),
+            schedules: phrase("schedule", preview.rules ?? 0),
+          })}
+        </p>
+      )}
+      {preview.hasMemory && <p>{phrase("fact", preview.facts)}.</p>}
+      <p>{phrase("key", preview.keys)}.</p>
       <p>{preview.encrypted ? t("This file is encrypted.") : t("This file is not encrypted and contains API keys.")}</p>
-      {(preview.referenced ?? []).some((name) => name.startsWith("on-device models")) && (
-        <p>{t("On-device model files stay on the phone that downloaded them. This backup names them and does not include the files.")}</p>
+      {models.length > 0 && (
+        <p>{fill("On-device models not included: {names}.", { names: models.join(", ") })}</p>
       )}
-      {(preview.referenced ?? []).some((name) => !name.startsWith("on-device models")) && (
-        <p>{t("Some files were too large to include. They are named below.")}</p>
-      )}
-      {preview.referenced?.map((name) => (
+      {files.length > 0 && <p>{t("Some files were too large to include. They are named below.")}</p>}
+      {files.map((name) => (
         <p key={name}>{name}</p>
       ))}
     </div>

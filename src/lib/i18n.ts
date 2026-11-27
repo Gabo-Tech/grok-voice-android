@@ -694,6 +694,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Type a passphrase of at least 8 characters to open this file.": "Escribe una contraseña de al menos 8 caracteres para abrir este archivo.",
     "{facts} pinned facts.": "{facts} datos fijados.",
     "Talk history and voice time on this phone stay as they are.": "El historial de Hablar y el tiempo de voz de este teléfono se quedan como están.",
+    "Settings, theme and language.": "Ajustes, tema e idioma.",
+    "Finance: {accounts}, {transactions}, {schedules}.": "Dinero: {accounts}, {transactions}, {schedules}.",
+    "On-device models not included: {names}.": "Modelos en el teléfono no incluidos: {names}.",
     "Done": "Hecho",
 
     "A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.": "Un archivo de todo lo guardado en este teléfono, incluidas las claves de API. Una contraseña cifra el archivo. Sin ella, quien abra el archivo puede leer las claves.",
@@ -2032,6 +2035,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Type a passphrase of at least 8 characters to open this file.": "Gib ein Passwort mit mindestens 8 Zeichen ein, um diese Datei zu öffnen.",
     "{facts} pinned facts.": "{facts} festgehaltene Fakten.",
     "Talk history and voice time on this phone stay as they are.": "Der Gesprächsverlauf und die Sprachzeit auf diesem Telefon bleiben, wie sie sind.",
+    "Settings, theme and language.": "Einstellungen, Thema und Sprache.",
+    "Finance: {accounts}, {transactions}, {schedules}.": "Finanzen: {accounts}, {transactions}, {schedules}.",
+    "On-device models not included: {names}.": "Modelle auf dem Telefon nicht enthalten: {names}.",
     "Done": "Fertig",
 
     "A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.": "Eine Datei mit allem, was auf diesem Telefon gespeichert ist, einschließlich API-Schlüsseln. Ein Passwort verschlüsselt die Datei. Ohne Passwort kann jeder, der die Datei öffnet, die Schlüssel lesen.",
@@ -3370,6 +3376,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Type a passphrase of at least 8 characters to open this file.": "Digite uma senha de pelo menos 8 caracteres para abrir este arquivo.",
     "{facts} pinned facts.": "{facts} dados fixados.",
     "Talk history and voice time on this phone stay as they are.": "O histórico do Falar e o tempo de voz deste telefone ficam como estão.",
+    "Settings, theme and language.": "Ajustes, tema e idioma.",
+    "Finance: {accounts}, {transactions}, {schedules}.": "Finanças: {accounts}, {transactions}, {schedules}.",
+    "On-device models not included: {names}.": "Modelos no telefone não incluídos: {names}.",
     "Done": "Pronto",
 
     "A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.": "Um arquivo de tudo o que está neste telefone, incluindo chaves de API. Uma senha cifra o arquivo. Sem ela, quem abrir o arquivo pode ler as chaves.",
@@ -4708,6 +4717,9 @@ const catalogs: Record<Exclude<LocaleId, "en">, Record<string, string>> = {
     "Type a passphrase of at least 8 characters to open this file.": "Escriu una contrasenya d'almenys 8 caràcters per a obrir este fitxer.",
     "{facts} pinned facts.": "{facts} dades fixades.",
     "Talk history and voice time on this phone stay as they are.": "L'historial de Parlar i el temps de veu d'este telèfon es queden com estan.",
+    "Settings, theme and language.": "Ajustos, tema i llengua.",
+    "Finance: {accounts}, {transactions}, {schedules}.": "Diners: {accounts}, {transactions}, {schedules}.",
+    "On-device models not included: {names}.": "Models al telèfon no inclosos: {names}.",
     "Done": "Fet",
 
     "A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.": "Un fitxer de tot el que hi ha en este telèfon, incloses les claus d'API. Una contrasenya xifra el fitxer. Sense ella, qui obri el fitxer pot llegir les claus.",

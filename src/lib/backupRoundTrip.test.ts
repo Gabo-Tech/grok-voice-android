@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PERSISTED_WEB_KEYS, readPersistedWeb, writePersistedWeb } from "./persistedKeys.ts";
+import { countPhrase } from "./plurals.ts";
 
 const root = new URL("../../", import.meta.url);
 
@@ -126,5 +127,36 @@ assert.deepEqual(readPersistedWeb(), {});
 localStorage.setItem(PERSISTED_WEB_KEYS[0], "keep");
 writePersistedWeb(undefined, false);
 assert.equal(localStorage.getItem(PERSISTED_WEB_KEYS[0]), "keep");
+
+const kinds = ["note", "person", "event", "reminder", "alarm", "countdown", "account", "key", "fact", "transaction", "schedule"] as const;
+for (const locale of ["en", "es", "de", "pt", "ca-ES-valencia"]) {
+  for (const kind of kinds) {
+    const zero = countPhrase(locale, kind, 0);
+    const one = countPhrase(locale, kind, 1);
+    const many = countPhrase(locale, kind, 5);
+    assert.match(zero, /^0 /);
+    assert.match(one, /^1 /);
+    assert.match(many, /^5 /);
+    assert.notEqual(one, many);
+  }
+}
+assert.equal(countPhrase("en", "person", 1), "1 person");
+assert.equal(countPhrase("en", "event", 1), "1 event");
+assert.equal(countPhrase("en", "reminder", 1), "1 reminder");
+assert.equal(countPhrase("en", "alarm", 1), "1 alarm");
+assert.equal(countPhrase("en", "countdown", 1), "1 countdown");
+assert.equal(countPhrase("en", "account", 1), "1 account");
+assert.equal(countPhrase("en", "key", 1), "1 key");
+assert.equal(countPhrase("en", "fact", 1), "1 pinned fact");
+assert.equal(countPhrase("en", "person", 0), "0 people");
+assert.equal(countPhrase("es", "person", 1), "1 persona");
+assert.equal(countPhrase("es", "person", 4), "4 personas");
+assert.equal(countPhrase("de", "account", 1), "1 Konto");
+assert.equal(countPhrase("de", "account", 2), "2 Konten");
+assert.equal(countPhrase("pt", "key", 1), "1 chave");
+assert.equal(countPhrase("ca-ES-valencia", "fact", 1), "1 dada fixada");
+assert.equal(countPhrase("ca-ES-valencia", "fact", 3), "3 dades fixades");
+assert.equal(new Intl.PluralRules("en").select(1), "one");
+assert.equal(new Intl.PluralRules("ca").select(5), "other");
 
 console.log("backupRoundTrip.test.ts ok");
