@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, Languages, Music, Users, Wallet, Wand2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, Languages, Music, TriangleAlert, Users, Wallet, Wand2 } from "lucide-react";
 import { DebugPanel } from "@/components/DebugPanel";
 import { VoiceHome } from "@/components/VoiceHome";
 import { Field } from "@/components/Field";
 import { CurrencyEditor } from "@/components/CurrencyEditor";
 import { AppMark } from "@/components/AppMark";
 import { PageChrome, RowButton } from "@/components/PageChrome";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { ThemePicker } from "@/components/ThemePicker";
 import { PeoplePage } from "@/components/PeoplePage";
 import { WakeView } from "@/components/WakeView";
@@ -548,10 +549,11 @@ export function MorePage({
       hint: `${t("Theme")} ${t("Graphite")} ${t("Ink")} ${t("Stone")} ${t("Midnight")} ${t("Carbon")} ${t("Ivory")} ${t("Sand")} ${t("Forest")} ${t("Plum")} ${t("System")} ${t("Custom")}`,
       extra: (
         <>
-          <ThemePicker settings={settings} onChange={saveLook} />
-          <p data-widget-note className="px-1 pt-4 text-sm leading-6 text-muted-foreground">
-            {t("Home screen widgets use this theme and the currency in Settings. Add Listen, reminders, the schedule, net worth, this month, or the next 30 days from the phone's home screen.")}
-          </p>
+          <ThemePicker
+            settings={settings}
+            onChange={saveLook}
+            info={<InfoTip label={t("Theme")} text={t("Home screen widgets use this theme and the currency in Settings. Add Listen, reminders, the schedule, net worth, this month, or the next 30 days from the phone's home screen.")} />}
+          />
         </>
       ),
       rows: [],
@@ -560,14 +562,14 @@ export function MorePage({
       id: "voice",
       title: t("Voice"),
       rows: [
-        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: t("Hearing, the model, the voice, and what is tried next.") },
+        { section: "voice", icon: <AudioLines className="size-4" />, title: t("Voice and AI"), detail: first ? t(providerLabel(first.provider)) : t("Off") },
         {
           section: "spend",
           icon: <Wallet className="size-4" />,
           title: t("Daily voice budget"),
-          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("A soft cap on talk time. Off until you set minutes."),
+          detail: settings?.dailyBudgetMinutes ? fill("{n} min", { n: settings.dailyBudgetMinutes }) : t("Off"),
         },
-        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: t("How long Talk waits before only Hey Grok is heard.") },
+        { section: "quiet", icon: <Hourglass className="size-4" />, title: t("Quiet gap"), detail: `${quiet}s` },
       ],
     },
     {
@@ -578,7 +580,7 @@ export function MorePage({
           section: "wake",
           icon: <Wand2 className="size-4" />,
           title: t("Wake word"),
-          detail: wake.trained ? t("Hey Grok enrolled") : t("Hands-free Hey Grok. It can stay on when you leave."),
+          detail: wake.trained ? t("Hey Grok enrolled") : t("Off"),
         },
       ],
     },
@@ -667,31 +669,24 @@ export function MorePage({
     .filter((group) => group.rows.length > 0 || (group.extra && (!query || `${group.title} ${group.hint ?? ""}`.toLowerCase().includes(query))));
 
   return (
-    <PageChrome mark title={t("Settings")} subtitle={t("Voice, music, and this phone")} active={active && section === "menu"}>
+    <PageChrome mark title={t("Settings")} info={<InfoTip label={t("Settings")} text={t("Voice, music, and this phone")} />} active={active && section === "menu"}>
       <ListenStatus />
-      <div className="mb-8">
-        <p className="text-base text-foreground">
-          {first ? `${t("Tried first")}: ${t(providerLabel(first.provider))}` : t("No voice yet")}
-        </p>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {accounts.length > 1
-            ? `${t("Then this")} ${accounts
-                .slice(1)
-                .map((account) => t(providerLabel(account.provider)))
-                .join(", ")}.`
-            : first
-              ? t("Add another voice if you want a fallback.")
-              : t("Add xAI, OpenAI, or On device.")}
-        </p>
-        <p className="mt-2 text-sm text-foreground">
-          {usage
-            ? fill("{minutes} min · {count} {unit}", {
-                minutes: usage.minutes,
-                count: usage.sessions,
-                unit: usage.sessions === 1 ? t("session") : t("sessions"),
-              })
-            : t("Today's time is counted on this phone.")}
-        </p>
+      <div className="settings-row">
+        <span className="truncate text-base text-foreground">{t("Provider")}</span>
+        <InfoTip
+          label={t("Provider")}
+          text={
+            accounts.length > 1
+              ? `${accounts.slice(1).map((account) => t(providerLabel(account.provider))).join(" · ")}. ${t("Add another voice if you want a fallback.")}`
+              : first
+                ? t("Add another voice if you want a fallback.")
+                : t("Add xAI, OpenAI, or On device.")
+          }
+        />
+        <button type="button" className="flex h-14 items-center gap-1 text-sm text-muted-foreground" onClick={() => setSection("voice")}>
+          <span>{first ? t(providerLabel(first.provider)) : t("Off")}</span>
+          <ChevronRight className="size-4" aria-hidden />
+        </button>
       </div>
       <label className="mb-4 block px-1">
         <span className="sr-only">{t("Find a setting")}</span>
@@ -709,14 +704,14 @@ export function MorePage({
           <section key={group.id} className="mb-8 border-t border-border pt-5">
             <button
               type="button"
-              className="mb-2 flex min-h-12 w-full items-center justify-between gap-3 text-left"
+              className="settings-row text-left"
               aria-expanded={open}
               onClick={() => {
                 if (query) return;
                 setOpenGroups((current) => ({ ...current, [group.id]: current[group.id] === false }));
               }}
             >
-              <span className="chapter">{group.title}</span>
+              <span className="chapter min-w-0 flex-1 text-left">{group.title}</span>
               <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground", !open && "-rotate-90")} />
             </button>
             {open ? (
@@ -1529,14 +1524,20 @@ function ListenStatus() {
     };
   }, []);
   if (!health) return null;
+  const blocked = health.health === "battery";
   return (
-    <div className="mb-8">
-      <p className="text-base text-foreground">{listenTitle(health.health, t)}</p>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{listenBody(health.health, t)}</p>
-      {health.health === "battery" ? (
-        <Button className="mt-3 w-full" type="button" onClick={() => void api.requestBatteryExemption().then(setHealth).catch(() => {})}>
-          {t("Allow unrestricted battery")}
-        </Button>
+    <div className="app-card mb-6">
+      <div className="flex items-start gap-2">
+        <p className="min-w-0 flex-1 break-words text-base leading-6 text-foreground">
+          {blocked ? <TriangleAlert className="me-2 inline size-5 align-text-top text-[var(--warning)]" aria-hidden /> : null}
+          {blocked ? t("Background listening blocked") : listenTitle(health.health, t)}
+        </p>
+        <InfoTip label={t("Listen")} text={blocked ? `${listenTitle(health.health, t)} ${listenBody(health.health, t)}` : listenBody(health.health, t)} />
+      </div>
+      {blocked ? (
+        <button type="button" className="min-h-12 text-sm text-foreground underline underline-offset-4" onClick={() => void api.requestBatteryExemption().then(setHealth).catch(() => {})}>
+          {t("Allow")}
+        </button>
       ) : null}
     </div>
   );
@@ -1571,13 +1572,11 @@ function MenuRow({
   onClick: () => void;
 }) {
   return (
-    <RowButton onClick={onClick} className="items-center">
+    <RowButton onClick={onClick} className="settings-row items-center py-0">
       <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-base text-foreground">{title}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p>
-      </div>
-      <ChevronRight className="size-4 text-muted-foreground" />
+      <p className="min-w-0 flex-1 truncate text-base text-foreground">{title}</p>
+      {detail ? <span className="max-w-[40%] truncate text-sm text-muted-foreground">{detail}</span> : null}
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
     </RowButton>
   );
 }

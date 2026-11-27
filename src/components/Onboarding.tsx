@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Check, ChevronLeft, ChevronRight, ClipboardPaste, Eye, EyeOff } from "lucide-react";
+import { Check, ClipboardPaste, Eye, EyeOff } from "lucide-react";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { AppMark } from "@/components/AppMark";
 import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
@@ -71,8 +72,18 @@ async function openGuideLink(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+function Step({ n, title, children, quiet = false }: { n: number; title: string; children: ReactNode; quiet?: boolean }) {
   const t = useT();
+  if (quiet) {
+    return (
+      <div className="flex min-h-12 items-center gap-1">
+        <h2 className="chapter">
+          {n}. {t(title)}
+        </h2>
+        <InfoTip label={t(title)}>{children}</InfoTip>
+      </div>
+    );
+  }
   return (
     <section className="space-y-2">
       <h2 className="chapter">
@@ -578,88 +589,92 @@ export function Onboarding({
   } else if (screen === "xai" || screen === "openai") primary = t("Test this setup");
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden px-5 py-5 landscape:flex-row landscape:gap-8 landscape:px-6 landscape:py-4" data-setup={screen}>
-      <header className="mb-5 min-w-0 shrink-0 landscape:mb-0 landscape:flex landscape:max-h-full landscape:w-52 landscape:max-w-[42%] landscape:flex-col landscape:overflow-auto">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden px-5 py-5" data-setup={screen}>
+      <header className="mb-5 w-full min-w-0 shrink-0">
         <AppMark className="mb-4 w-16 landscape:mb-3 landscape:w-14" alt="" />
-        <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
-        <h1 className="masthead mt-2 text-3xl break-words landscape:text-2xl">Grok Voice</h1>
-        <ol className="setup-steps mt-4 landscape:mt-6">
-          {PROGRESS.map((item, itemIndex) => {
-            const state = itemIndex < index ? "done" : itemIndex === index ? "now" : "later";
-            return (
-              <li key={item} className="setup-step-item">
-                <span
-                  className={cn("setup-step grid place-items-center text-sm", state === "now" ? "bg-foreground text-background" : "text-muted-foreground")}
-                >
-                  {state === "done" ? <Check className="size-4" /> : itemIndex + 1}
-                </span>
-                <span className={cn("text-center text-[13px] leading-snug landscape:text-left", state === "now" ? "text-foreground" : "text-muted-foreground")}>{t(item)}</span>
-              </li>
-            );
-          })}
-        </ol>
+        <h1 className="masthead text-3xl break-words landscape:text-2xl">Grok Voice</h1>
+        <div className="mt-4 flex items-center gap-2">
+          {PROGRESS.map((item, itemIndex) => (
+            <span key={item} className={cn("size-2 rounded-full", itemIndex === index ? "bg-foreground" : "bg-[var(--line)]")} />
+          ))}
+          <span className="text-sm text-foreground">{t(PROGRESS[index] || "Setup")}</span>
+        </div>
       </header>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-3">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+        <div className="min-h-0 w-full flex-1 space-y-3 overflow-y-auto pb-3">
           {screen === "language" && (
             <>
-              <p className="text-sm leading-6 text-muted-foreground">{t("This sets the screen language. You can change it later in Settings. The first offline voice is English until you add another in Voice and AI.")}</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="title-line">
+                <h2 className="text-xl font-medium">{t("Language")}</h2>
+                <InfoTip label={t("Language")}>
+                  <p>{t("This sets the screen language. You can change it later in Settings. The first offline voice is English until you add another in Voice and AI.")}</p>
+                  <p>{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
+                </InfoTip>
+              </div>
+              <div className="flex w-full flex-col gap-2" role="radiogroup" aria-label={t("Language")}>
                 {LANGS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
+                    role="radio"
+                    aria-checked={lang === item.id}
                     onClick={() => setLang(item.id)}
-                    className={cn("min-h-12 px-3 text-left text-sm", lang === item.id ? "bg-foreground text-background" : "text-muted-foreground")}
+                    className={cn("choice-row flex items-center justify-between", lang === item.id && "is-on")}
                   >
-                    {t(item.label)}
+                    <span className="text-base">{t(item.label)}</span>
+                    {lang === item.id ? <Check className="size-5" aria-hidden /> : null}
                   </button>
                 ))}
               </div>
-              <p className="text-sm leading-6 text-muted-foreground">{t("Come back to this screen from Settings, Voice and AI, whenever you want.")}</p>
             </>
           )}
 
           {screen === "path" && (
             <>
-              <h2 className="text-2xl font-medium tracking-tight">{t("How should Talk answer?")}</h2>
-              <p className="text-sm leading-6 text-muted-foreground">{t("Pick one path. You can add the others later in Voice and AI.")}</p>
-              <div className="flex flex-col">
+              <div className="title-line">
+                <h2 className="text-xl font-medium">{t("How should Talk answer?")}</h2>
+                <InfoTip label={t("How should Talk answer?")}>
+                  <p>{t("Pick one path. You can add the others later in Voice and AI.")}</p>
+                  <p>{t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")}</p>
+                </InfoTip>
+              </div>
+              <div className="flex w-full flex-col gap-2" role="radiogroup" aria-label={t("How should Talk answer?")}>
                 {PATHS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
+                    role="radio"
+                    aria-checked={path === item.id}
                     onClick={() => setPath(item.id)}
-                    className={cn("min-h-12 px-3 py-2 text-left", path === item.id ? "bg-foreground text-background" : "text-foreground")}
+                    className={cn("choice-row flex items-center justify-between gap-3", path === item.id && "is-on")}
                   >
-                    <span className="block text-base">{t(item.title)}</span>
-                    <span className={cn("mt-1 block text-sm leading-5", path === item.id ? "text-background" : "text-muted-foreground")}>{t(item.blurb)}</span>
+                    <span className="text-base">{t(item.title)}</span>
+                    {path === item.id ? <Check className="size-5 shrink-0" aria-hidden /> : null}
                   </button>
                 ))}
               </div>
-              <p className="text-sm leading-6 text-muted-foreground">{t("Each path explains where to get a key, what it costs or needs, how to test it, and what to do if it fails.")}</p>
             </>
           )}
 
           {screen === "local" && (
             <>
               <h2 className="text-2xl font-medium tracking-tight">{t("On this phone")}</h2>
-              <Step n={1} title="What it needs">
+              <Step n={1} title="What it needs" quiet>
                 <p>{t("Nothing to buy. The files download into this phone. No account and no token.")}</p>
                 <p>{t("Moonshine turns speech into text. llama.cpp runs the chat model. Phonon or Piper speaks.")}</p>
               </Step>
-              <Step n={2} title="Memory">
+              <Step n={2} title="Memory" quiet>
                 <p className="text-foreground">{memoryLine}</p>
                 <p>{fill("Piper English is a separate file of about {piper}. Phonon speaks first and needs no account. You can switch to Piper in Voice and AI.", { piper: sized.piper })}</p>
               </Step>
               <Step n={3} title="Storage">
                 {packBlock}
               </Step>
-              <Step n={4} title="Test it">
+              <Step n={4} title="Test it" quiet>
                 <p>{t("Play the voice. Then open Talk and say hello with the network off. A reply means the phone can answer alone.")}</p>
               </Step>
-              <Step n={5} title="If this fails">
+              <Step n={5} title="If this fails" quiet>
                 <p>{t("If the download stops, try it again. What is already on the phone stays. If a model does not fit, keep SmolLM2 or add a cloud key. If there is no reply, check that Moonshine, the chat model, and Phonon or Piper are on this phone.")}</p>
               </Step>
             </>
@@ -675,7 +690,7 @@ export function Onboarding({
                   {t("Open the key page")}
                 </button>
               </Step>
-              <Step n={2} title="What it needs">
+              <Step n={2} title="What it needs" quiet>
                 <p>{t(activeKey.cost)}</p>
               </Step>
               <Step n={3} title="Save the key">
@@ -699,7 +714,7 @@ export function Onboarding({
           {screen === "mixed" && (
             <>
               <h2 className="text-2xl font-medium tracking-tight">{t("Phone, then a cloud key")}</h2>
-              <Step n={1} title="What it needs">
+              <Step n={1} title="What it needs" quiet>
                 <p>{t("Two parts. The phone answers when it can. A cloud key answers when the phone cannot.")}</p>
                 <p>{t("Download the offline pack first. Then save one cloud key: xAI, OpenAI, or 1min.ai.")}</p>
                 <p>{t("Talk tries this phone first when the packs are ready. If a pack is missing, the model will not load, or memory is low, Talk uses the cloud key.")}</p>
@@ -764,7 +779,7 @@ export function Onboarding({
               <p className="text-sm leading-6 text-muted-foreground">{t("Hey Grok can be trained later under Wake word.")}</p>
               <p className="text-sm leading-6 text-foreground">{t("A reply in Talk means this path works. You can change it later in Voice and AI.")}</p>
               {path === "local" && (packsReady || pieces.length === 0) ? <p className="text-sm text-foreground">{t("This phone is ready to talk with no network.")}</p> : null}
-              <Step n={1} title="If this fails">
+              <Step n={1} title="If this fails" quiet>
                 <p>
                   {path === "local"
                     ? t("If the download stops, try it again. What is already on the phone stays. If a model does not fit, keep SmolLM2 or add a cloud key. If there is no reply, check that Moonshine, the chat model, and Phonon or Piper are on this phone.")
@@ -783,35 +798,36 @@ export function Onboarding({
           </p>
         ) : null}
 
-        <footer className="mt-3 flex shrink-0 flex-col gap-2 border-t border-border pt-3">
-          <div className="setup-actions">
-            <Button variant="outline" disabled={screen === "language" || busy} onClick={back}>
-              <ChevronLeft /> {t("Back")}
-            </Button>
-            <Button
-              className="flex-1"
-              disabled={
-                busy ||
-                ((screen === "local" || screen === "mixed" || screen === "onemin") && !plan) ||
-                ((primary === t("Test this setup") || primary === t("Continue anyway")) &&
-                  (((screen === "xai" || screen === "openai") && !keySaved) ||
-                    ((screen === "mixed" || screen === "onemin") && key.trim().length > 0 && !keySaved)))
-              }
-              onClick={() => void next()}
-            >
-              {busy ? <Loader size="inline" quiet label={primary} /> : <ChevronRight />}
-              {primary}
-            </Button>
-          </div>
+        <footer className="mt-auto flex w-full shrink-0 flex-col items-stretch gap-2 pb-2 pt-3">
           {(screen === "mixed" || screen === "onemin") && primary !== t("Test this setup") ? (
             <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void go("test", "test")}>
               {t("Skip this key")}
             </Button>
           ) : null}
-          <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void finish("skipped")}>
-            {t("Finish later")}
+          {screen === "language" ? null : (
+            <button type="button" className="mx-auto min-h-12 px-3 text-sm text-muted-foreground" disabled={busy} onClick={back}>
+              {t("Back")}
+            </button>
+          )}
+          <div className="setup-cta">
+          <Button
+            className="w-full"
+            disabled={
+              busy ||
+              ((screen === "local" || screen === "mixed" || screen === "onemin") && !plan) ||
+              ((primary === t("Test this setup") || primary === t("Continue anyway")) &&
+                (((screen === "xai" || screen === "openai") && !keySaved) ||
+                  ((screen === "mixed" || screen === "onemin") && key.trim().length > 0 && !keySaved)))
+            }
+            onClick={() => void next()}
+          >
+            {busy ? <Loader size="inline" quiet label={primary} /> : null}
+            {primary}
           </Button>
-          <p className="text-center text-[13px] leading-5 text-muted-foreground">{t("Setup can wait. Open Settings, then Voice and AI, and continue from the same path.")}</p>
+          </div>
+          <button type="button" className="mx-auto min-h-12 px-3 text-sm text-muted-foreground" disabled={busy} onClick={() => void finish("skipped")}>
+            {t("Finish later")}
+          </button>
         </footer>
       </div>
     </div>

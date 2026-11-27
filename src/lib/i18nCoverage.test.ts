@@ -179,6 +179,7 @@ const sameSpelling = new Set([
   "Symbol",
   "Rest",
   "Budget",
+  "Agenda",
 ]);
 
 const leftovers: string[] = [];

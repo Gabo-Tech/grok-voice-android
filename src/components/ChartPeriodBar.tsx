@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PeriodMenu } from "@/components/ds/PeriodMenu";
 import { boundsOf, emptyPeriod, periodFromVoice, readPeriod, writePeriod, type ChartPeriod, type PeriodPreset } from "@/lib/chartPeriod";
 import { useT } from "@/lib/i18n";
 
@@ -47,26 +48,24 @@ export function ChartPeriodBar({
 }) {
   const t = useT();
   return (
-    <div className="mt-2" data-swipe-ignore="">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1" role="group" aria-label={t("Period")}>
-        {PRESETS.map((item) => (
-          <button key={item.id} type="button" className="fin-chip" aria-pressed={period.preset === item.id} onClick={() => onChange(item.id === "custom" ? { ...period, preset: "custom" } : emptyPeriod(item.id))}>
-            {t(item.label)}
-          </button>
-        ))}
-      </div>
-      {period.preset === "custom" ? (
-        <div className="mt-2 flex min-w-0 flex-wrap gap-2">
-          <label className="min-w-0 flex-1 text-[13px] leading-4">
-            {t("From")}
-            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--fin-line)] bg-transparent px-0 text-[15px]" value={period.start} onChange={(event) => onChange({ ...period, preset: "custom", start: event.target.value })} />
-          </label>
-          <label className="min-w-0 flex-1 text-[13px] leading-4">
-            {t("To")}
-            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--fin-line)] bg-transparent px-0 text-[15px]" value={period.end} onChange={(event) => onChange({ ...period, preset: "custom", end: event.target.value })} />
-          </label>
-        </div>
-      ) : null}
+    <div data-swipe-ignore="">
+      <PeriodMenu
+        value={period.preset}
+        options={PRESETS}
+        onChange={(id) => onChange(id === "custom" ? { ...period, preset: "custom" } : emptyPeriod(id as PeriodPreset))}
+        custom={
+          <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+            <label className="min-w-0 flex-1 text-[13px] leading-4">
+              {t("From")}
+              <input type="date" className="mt-1 block h-12 w-full min-w-0 max-w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-base" value={period.start} onChange={(event) => onChange({ ...period, preset: "custom", start: event.target.value })} />
+            </label>
+            <label className="min-w-0 flex-1 text-[13px] leading-4">
+              {t("To")}
+              <input type="date" className="mt-1 block h-12 w-full min-w-0 max-w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-base" value={period.end} onChange={(event) => onChange({ ...period, preset: "custom", end: event.target.value })} />
+            </label>
+          </div>
+        }
+      />
     </div>
   );
 }

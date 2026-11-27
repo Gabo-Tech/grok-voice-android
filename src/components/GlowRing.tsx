@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { AudioLines, Mic, Square } from "lucide-react";
 import type { Level, Phase } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -28,29 +27,27 @@ export function GlowRing({
     speaking: { label: t("Speaking"), hint: t("Tap the circle to hang up.") },
   }[phase] ?? { label: t("Ready"), hint: t("Tap the circle to talk") };
   const live = LIVE.includes(phase);
-  const raw = phase === "speaking" ? level?.out : phase === "idle" ? 0 : level?.mic;
+  const raw = phase === "speaking" ? level?.out : phase === "listening" ? level?.mic : 0;
   const amp = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+  const userTalking = phase === "listening" && amp >= 0.08;
+  const shown = userTalking ? "user" : phase;
   const Icon = phase === "speaking" ? AudioLines : live ? Square : Mic;
 
   return (
-    <div className="flex shrink-0 flex-col items-center gap-3 px-1 pb-1">
-      <div className="text-center">
-        <p className="text-lg leading-6 font-medium text-foreground" role="status">
-          {copy.label}
-        </p>
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">{copy.hint}</p>
-      </div>
+    <div className="flex shrink-0 flex-col items-center">
+      <p className="sr-only" role="status">{copy.label}</p>
       <button
         type="button"
         onClick={onPress}
         disabled={disabled}
         aria-pressed={live}
+        data-phase={shown}
         aria-label={live ? t("End voice session") : t("Start voice session")}
         className="mark shrink-0 rounded-full disabled:opacity-50"
-        style={{ "--ink": live ? "#f2f2f2" : "#b5b5b5", width: "5.75rem", height: "5.75rem" } as CSSProperties}
+        style={{ transform: userTalking || phase === "speaking" ? `scale(${(1 + amp * 0.12).toFixed(3)})` : undefined }}
       >
-        <span className="mark-fill rounded-full" style={{ opacity: 0.12 + amp * 0.7 }} />
-        <Icon className="relative size-6" strokeWidth={1.25} />
+        <span className="mark-fill rounded-full" style={{ opacity: phase === "idle" ? 0 : 0.12 + amp * 0.7 }} />
+        <Icon className="relative size-6" strokeWidth={1.5} />
       </button>
     </div>
   );

@@ -59,12 +59,12 @@ export function ChartCard({
 }) {
   return (
     <section className="fin-panel fin-card">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          {kicker ? <p className="fin-kicker">{kicker}</p> : null}
-          <h3 className={kicker ? "mt-1 text-base leading-5" : "fin-kicker"}>{title}</h3>
+      <div>
+        {kicker ? <p className="fin-kicker">{kicker}</p> : null}
+        <div className="title-line">
+          <h3 className={kicker ? "text-base leading-5" : "fin-kicker"}>{title}</h3>
+          {action}
         </div>
-        {action}
       </div>
       <div className="mt-2 min-w-0">{children}</div>
     </section>
@@ -240,10 +240,15 @@ export function Donut({
     return { ...slice, path };
   });
   const ratio = debtRatio != null && debtRatio > 0 ? Math.min(debtRatio, 1) : 0;
-  const label = caption ? `${caption} ${center}` : center;
+  const label = [caption, center].filter(Boolean).join(" ") || rows.map((row) => row.label).filter(Boolean).join(", ");
+  const hole = 76;
+  const textWidth = (text: string, size: number) => [...text].length * size * 0.56;
+  const captionSize = 11;
+  const showCaption = caption != null && caption.length > 0 && textWidth(caption, captionSize) <= hole;
+  const centerSize = Math.min(22, hole / Math.max([...center].length * 0.56, 1));
   return (
     <div className="relative mx-auto aspect-square w-full max-w-[220px]">
-      <svg viewBox="0 0 200 200" className="block h-full w-full" role="img" aria-label={label}>
+      <svg viewBox="0 0 200 200" className="block h-full w-full" role="img" aria-label={label} data-fit="amount">
         {ratio > 0 ? (
           <>
             <path d={arc(100, 100, 94, 82, -90, 269.2)} fill="var(--fin-line)" />
@@ -255,11 +260,17 @@ export function Donut({
             <title>{slice.label}</title>
           </path>
         ))}
+        {showCaption ? (
+          <text x="100" y="86" textAnchor="middle" dominantBaseline="middle" fontSize={captionSize} fill="currentColor">
+            {caption}
+          </text>
+        ) : null}
+        {center ? (
+          <text x="100" y={showCaption ? 112 : 100} textAnchor="middle" dominantBaseline="middle" fontSize={centerSize} fontWeight="500" fill="currentColor">
+            {center}
+          </text>
+        ) : null}
       </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-12 text-center">
-        {caption ? <span className="text-[13px] leading-4">{caption}</span> : null}
-        <span className="fin-num text-[15px] leading-5 break-words">{center}</span>
-      </div>
     </div>
   );
 }

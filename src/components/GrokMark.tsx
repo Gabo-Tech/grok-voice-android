@@ -25,11 +25,11 @@ export function GrokMark({ className, scheme }: { className?: string; scheme: "l
         <ellipse className="paper" cx="40" cy="74" rx="22" ry="13" />
         <path className="paper" d="M48 84 L42 93 L54 85 Z" />
         <g className="presence-bars">
-          <rect className="ink bar" x="22" y="70" width="3.2" height="8" rx="1.4" />
-          <rect className="ink bar" x="28.5" y="66" width="3.2" height="16" rx="1.4" />
-          <rect className="ink bar" x="35" y="64" width="3.2" height="20" rx="1.4" />
-          <rect className="ink bar" x="41.5" y="67" width="3.2" height="14" rx="1.4" />
-          <rect className="ink bar" x="48" y="70" width="3.2" height="8" rx="1.4" />
+          <rect className="ink bar" x="22.4" y="70" width="3.2" height="8" rx="1.4" />
+          <rect className="ink bar" x="30.4" y="67" width="3.2" height="14" rx="1.4" />
+          <rect className="ink bar" x="38.4" y="64" width="3.2" height="20" rx="1.4" />
+          <rect className="ink bar" x="46.4" y="67" width="3.2" height="14" rx="1.4" />
+          <rect className="ink bar" x="54.4" y="70" width="3.2" height="8" rx="1.4" />
         </g>
       </g>
     </svg>

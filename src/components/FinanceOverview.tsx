@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount } from "@/lib/api";
 import { Donut } from "@/components/ChartKit";
@@ -26,7 +27,9 @@ import { selectDebt } from "@/lib/financeDebt";
 import { isHoldingAccount, positionOf, worthBuckets } from "@/lib/financeLedger";
 import { bookFromStatus, comingCashRows, headlineOf, plannedHits, utilization, type RateBook } from "@/lib/financeMath";
 import { formatMoney } from "@/lib/money";
-import { ChartColorMenu } from "@/components/ColorSheet";
+import { InfoTip } from "@/components/ds/InfoTip";
+import { PeriodMenu } from "@/components/ds/PeriodMenu";
+import { TuneSheet } from "@/components/ds/TuneSheet";
 import { resolveColor } from "@/lib/entityColor";
 import { fill, useT } from "@/lib/i18n";
 
@@ -96,7 +99,6 @@ export function FinanceOverview({
 }) {
   const t = useT();
   const [layout, setLayout] = useState<Layout>(readLayout);
-  const [customizing, setCustomizing] = useState(false);
   const [flowOwn, setFlowOwn] = useState<ChartPeriod | null>(null);
   const today = todayIso();
   const display = (finance.snapshot.defaultCurrency || "").trim().toUpperCase();
@@ -190,35 +192,54 @@ export function FinanceOverview({
   const rate = income.amountMinor != null && expenses.amountMinor != null ? savingsRate(income.amountMinor, expenses.amountMinor) : null;
   const net = income.amountMinor != null && expenses.amountMinor != null ? income.amountMinor - expenses.amountMinor : null;
   const maxCategory = categories.rows[0]?.amountMinor || 1;
-  const ringRows = buckets.buckets
-    .filter((bucket) => bucket.id !== "debt" && bucket.amountMinor > 0)
-    .map((bucket) => ({
-      id: bucket.id,
-      label: bucket.id,
-      color: resolveColor(finance.snapshot.entityColors, "series", `allocation:${bucket.id}`, ""),
-      amountMinor: bucket.amountMinor,
-    }));
-
   const blocks: Record<DashId, ReactNode> = {
     hero: (
-      <section data-finance-panel="hero">
-        <h2 className="fin-kicker">{t("Net worth")}</h2>
-        <p className="fin-muted mt-1 text-sm leading-5">{t("Right now. What you own minus what you owe.")}</p>
-        {worthParts.length ? <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-5xl" /> : <p className="mt-3 text-base">{t("No balances stated yet")}</p>}
-        <button type="button" className="mt-3 flex min-h-11 w-full items-center justify-between gap-3 text-left" onClick={() => onFocus("owned")}>
-          <span className="text-[15px]">{t("Income")}</span>
-          <Amount total={income} display={display} book={book} nowMs={nowMs} />
-        </button>
-        <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 border-t border-[var(--line-soft)] text-left" onClick={onOpenActivity}>
-          <span className="text-[15px]">{t("Expenses")}</span>
-          <Amount total={expenses} display={display} book={book} nowMs={nowMs} />
-        </button>
-        {ringRows.length ? (
-          <>
-            <Donut rows={ringRows} hidden={new Set()} caption={t("Net worth")} center={formatMoney(buckets.assets - debt.amountMinor, display)} debtRatio={buckets.assets > 0 ? debt.amountMinor / buckets.assets : debt.amountMinor > 0 ? 1 : 0} />
-            <ChartColorMenu series={ringRows.map((row) => ({ ...row, label: t(row.label === "money" ? "Money" : row.label === "investment" ? "Investments" : "Card credit") }))} currency={display} onPaint={(id, color) => finance.paintColor("series", `allocation:${id}`, color)} />
-          </>
-        ) : null}
+      <section data-finance-panel="hero" className="space-y-3">
+        <div className="hero-card">
+          <div className="flex items-center gap-1">
+            <h2 className="fin-kicker">{t("Net worth")}</h2>
+            <InfoTip label={t("Net worth")} text={t("Right now. What you own minus what you owe.")} />
+          </div>
+          {worthParts.length ? <CombinedHeadline parts={worthParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-5xl" /> : <p className="mt-3 text-base">{t("No balances stated yet")}</p>}
+        </div>
+        <div className="hero-split">
+          <button type="button" className="mini-card" data-tone="in" onClick={() => onFocus("owned")}>
+            <span className="mini-label">{t("Income")}</span>
+            <Amount total={income} display={display} book={book} nowMs={nowMs} prominent />
+            <Trend current={income.amountMinor} previous={priorIncome?.amountMinor ?? null} />
+          </button>
+          <button type="button" className="mini-card" data-tone="out" onClick={onOpenActivity}>
+            <span className="mini-label">{t("Expenses")}</span>
+            <Amount total={expenses} display={display} book={book} nowMs={nowMs} prominent />
+            <Trend current={expenses.amountMinor} previous={priorExpenses?.amountMinor ?? null} />
+          </button>
+        </div>
+        <div className="app-card">
+          <div className="title-line">
+            <h2 className="fin-kicker">{t("Savings rate")}</h2>
+          </div>
+          <div className="savings-split">
+            <Donut
+              rows={[
+                { id: "income", label: t("Income"), color: "var(--positive)", amountMinor: income.amountMinor },
+                { id: "expense", label: t("Expenses"), color: "var(--negative)", amountMinor: expenses.amountMinor },
+              ]}
+              hidden={new Set()}
+              caption={t("Savings rate")}
+              center={rate == null ? "—" : `${Math.round(rate * 1000) / 10}%`}
+            />
+            <ul>
+              <li className="flex min-h-12 flex-col justify-center gap-0.5">
+                <span className="flex items-center gap-2 whitespace-nowrap text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--positive)" }} />{t("Income")}</span>
+                <span className="whitespace-nowrap pl-4"><Amount total={income} display={display} book={book} nowMs={nowMs} /></span>
+              </li>
+              <li className="flex min-h-12 flex-col justify-center gap-0.5">
+                <span className="flex items-center gap-2 whitespace-nowrap text-base"><span className="size-2 shrink-0 rounded-full" style={{ background: "var(--negative)" }} />{t("Expenses")}</span>
+                <span className="whitespace-nowrap pl-4"><Amount total={expenses} display={display} book={book} nowMs={nowMs} /></span>
+              </li>
+            </ul>
+          </div>
+        </div>
       </section>
     ),
     result: (
@@ -237,8 +258,10 @@ export function FinanceOverview({
     ),
     next: (
       <section className="border-t border-[var(--line-soft)] pt-3" data-finance-panel="next">
-        <h2 className="fin-kicker">{t("Next 30 days")}</h2>
-        <p className="fin-muted mt-1 text-[13px] leading-5">{t("Bills from cash or a bank, and card payments that are due.")}</p>
+        <div className="flex items-center gap-1">
+          <h2 className="fin-kicker">{t("Next 30 days")}</h2>
+          <InfoTip label={t("Next 30 days")} text={t("Bills from cash or a bank, and card payments that are due.")} />
+        </div>
         {dueParts.length ? <CombinedHeadline parts={dueParts} display={display} book={book} nowMs={nowMs} busy={finance.refreshing} size="text-3xl" tone="out" /> : <p className="mt-2 text-[15px]">{t("Nothing due in the next 30 days.")}</p>}
         <ul className="mt-2">
           {coming.slice(0, 6).map((row) => (
@@ -343,54 +366,53 @@ export function FinanceOverview({
 
   return (
     <div className="fin-stack w-full min-w-0">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-swipe-ignore="" role="group" aria-label={t("Period")}>
-        {PRESETS.map((item) => (
-          <button key={item.id} type="button" className="fin-chip" aria-pressed={layout.preset === item.id} onClick={() => setLayout((current) => ({ ...current, preset: item.id }))}>
-            {t(item.label)}
-          </button>
-        ))}
-        <button type="button" className="fin-chip" aria-pressed={customizing} onClick={() => setCustomizing((value) => !value)}>{t("Customize dashboard")}</button>
+      <div className="filter-row" data-swipe-ignore="">
+        <PeriodMenu
+          value={layout.preset}
+          options={PRESETS}
+          onChange={(id) => setLayout((current) => ({ ...current, preset: id as DashPreset }))}
+          custom={
+            <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+              <label className="min-w-0 flex-1 text-[13px] leading-4">
+                {t("From")}
+                <input type="date" className="mt-1 block h-12 w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-base" value={layout.start} onChange={(event) => setLayout((current) => ({ ...current, start: event.target.value }))} />
+              </label>
+              <label className="min-w-0 flex-1 text-[13px] leading-4">
+                {t("To")}
+                <input type="date" className="mt-1 block h-12 w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-base" value={layout.end} onChange={(event) => setLayout((current) => ({ ...current, end: event.target.value }))} />
+              </label>
+            </div>
+          }
+        />
+        <TuneSheet label={t("Customize dashboard")}>
+          <ul>
+            {layout.order.map((id) => (
+              <li key={id} className="flex min-h-12 items-center justify-between gap-2 border-b border-[var(--line-soft)]">
+                <span className="text-base">{t(LABELS[id])}</span>
+                <span className="flex gap-1">
+                  <button type="button" className="icon-hit" aria-label={t("Move up")} onClick={() => setLayout((current) => ({ ...current, order: moveSection(current.order, id, -1) }))}><ChevronUp className="size-5" strokeWidth={1.5} /></button>
+                  <button type="button" className="icon-hit" aria-label={t("Move down")} onClick={() => setLayout((current) => ({ ...current, order: moveSection(current.order, id, 1) }))}><ChevronDown className="size-5" strokeWidth={1.5} /></button>
+                  <button
+                    type="button"
+                    className="period-chip"
+                    aria-pressed={!hidden.has(id)}
+                    onClick={() =>
+                      setLayout((current) => {
+                        const next = new Set(current.hidden);
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        return { ...current, hidden: [...next] };
+                      })
+                    }
+                  >
+                    {hidden.has(id) ? t("Show") : t("Hide")}
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </TuneSheet>
       </div>
-      {layout.preset === "custom" ? (
-        <div className="mt-2 flex min-w-0 flex-wrap gap-2" data-swipe-ignore="">
-          <label className="min-w-0 flex-1 text-[13px] leading-4">
-            {t("From")}
-            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-[15px]" value={layout.start} onChange={(event) => setLayout((current) => ({ ...current, start: event.target.value }))} />
-          </label>
-          <label className="min-w-0 flex-1 text-[13px] leading-4">
-            {t("To")}
-            <input type="date" className="mt-1 block h-11 w-full min-w-0 max-w-full border-0 border-b border-[var(--line)] bg-transparent px-0 text-[15px]" value={layout.end} onChange={(event) => setLayout((current) => ({ ...current, end: event.target.value }))} />
-          </label>
-        </div>
-      ) : null}
-      {customizing ? (
-        <ul className="mt-3" data-swipe-ignore="">
-          {layout.order.map((id) => (
-            <li key={id} className="flex min-h-11 items-center justify-between gap-2 border-t border-[var(--line-soft)]">
-              <span className="text-[15px]">{t(LABELS[id])}</span>
-              <span className="flex gap-2">
-                <button type="button" className="fin-chip" onClick={() => setLayout((current) => ({ ...current, order: moveSection(current.order, id, -1) }))}>{t("Move up")}</button>
-                <button type="button" className="fin-chip" onClick={() => setLayout((current) => ({ ...current, order: moveSection(current.order, id, 1) }))}>{t("Move down")}</button>
-                <button
-                  type="button"
-                  className="fin-chip"
-                  aria-pressed={!hidden.has(id)}
-                  onClick={() =>
-                    setLayout((current) => {
-                      const next = new Set(current.hidden);
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return { ...current, hidden: [...next] };
-                    })
-                  }
-                >
-                  {hidden.has(id) ? t("Show") : t("Hide")}
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
       <div className="mt-4 space-y-4">
         {layout.order.filter((id) => !hidden.has(id)).map((id) => (
           <div key={id}>{blocks[id]}</div>
@@ -400,12 +422,20 @@ export function FinanceOverview({
   );
 }
 
-function Amount({ total, display, book, nowMs }: { total: { amountMinor: number | null; missing: string[] }; display: string; book: RateBook | null; nowMs: number }) {
+function Amount({ total, display, book, nowMs, prominent = false }: { total: { amountMinor: number | null; missing: string[] }; display: string; book: RateBook | null; nowMs: number; prominent?: boolean }) {
+  const className = prominent ? "mini-value" : "fin-num text-[15px]";
   if (total.amountMinor == null) {
     const head = headlineOf(total.missing.map((code) => ({ amountMinor: 1, currency: code })), display, book, nowMs);
-    return <span className="fin-num text-[15px]">{head.state === "needs-rate" ? head.missing.join(", ") : "—"}</span>;
+    return <span className={className}>{head.state === "needs-rate" ? head.missing.join(", ") : "—"}</span>;
   }
-  return <span className="fin-num text-[15px]">{formatMoney(total.amountMinor, display)}</span>;
+  return <span className={className}>{formatMoney(total.amountMinor, display)}</span>;
+}
+
+function Trend({ current, previous }: { current: number | null; previous: number | null }) {
+  if (current == null || previous == null) return null;
+  const ratio = changeRatio(current, previous);
+  if (ratio == null) return null;
+  return <span className="mini-delta">{formatChange(ratio)}</span>;
 }
 
 function Compare({ label, current, previous, preset, display }: { label: string; current: number | null; previous: number | null; preset: DashPreset; display: string }) {
@@ -415,7 +445,7 @@ function Compare({ label, current, previous, preset, display }: { label: string;
   return (
     <p className="mt-2 text-[15px]">
       {label} {formatMoney(current, display)}
-      {ratio == null ? <span className="fin-muted"> · {t("No earlier amount to compare")}</span> : <span className="fin-muted"> {formatChange(ratio)} {t(comparisonKey(preset))}</span>}
+      {ratio == null ? null : <span className="fin-muted"> {formatChange(ratio)} {t(comparisonKey(preset))}</span>}
     </p>
   );
 }

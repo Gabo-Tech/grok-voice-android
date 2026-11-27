@@ -8,7 +8,6 @@ export const PERSISTED_WEB_KEYS = [
   "grok-flow-colors",
   "grok-chart-period",
   "grok-chart-hidden",
-  "grok-mic-open",
   "grok-listen-hint",
 ] as const;
 

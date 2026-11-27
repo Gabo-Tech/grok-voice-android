@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Trash2 } from "lucide-react";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Loader } from "@/components/Loader";
 import { hasTag, popTags, pushStep, requestBack } from "@/lib/history";
@@ -449,7 +450,7 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
   if (screen === "pick") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageChrome title={t("Phone contacts")} subtitle={t("Pick someone. Their number stays in Contacts.")} active={false}>
+        <PageChrome title={t("Phone contacts")} info={<InfoTip label={t("Phone contacts")} text={t("Pick someone. Their number stays in Contacts.")} />} active={false}>
           <div className="mb-6">
             <Field label={t("Search")}>
               <Input
@@ -471,8 +472,10 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
           ) : phoneRows.length === 0 ? (
             contactsAllowed === null || busy ? (
               <div>
-                <Loader size="block" label={t("Looking up contacts")} />
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("This stays on the phone.")}</p>
+                <div className="title-line">
+                  <Loader size="block" label={t("Looking up contacts")} />
+                  <InfoTip label={t("Phone contacts")} text={t("This stays on the phone.")} />
+                </div>
               </div>
             ) : (
               <EmptyState
@@ -522,10 +525,10 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
-          <h2 className="px-1 text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || t("Person") : t("New person")}</h2>
-          <p className="mt-1 px-1 text-xs leading-5 text-muted-foreground">
-            {t("This record stays on the phone. It does not change the Contacts app.")}
-          </p>
+          <div className="title-line px-1">
+            <h2 className="text-2xl font-medium tracking-tight">{draft.id ? draft.displayName || t("Person") : t("New person")}</h2>
+            <InfoTip label={t("People")} text={t("This record stays on the phone. It does not change the Contacts app.")} />
+          </div>
           <div className="mt-6 space-y-4">
             <h3 className="text-base text-foreground">{t("Who")}</h3>
             <Field label={t("Name")} error={screen === "edit" && error ? t(error) : null}>
@@ -690,7 +693,7 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageChrome title={t("People")} subtitle={`${people.length} ${t("saved on this phone")}`} onAdd={openCreate} addLabel={t("Add person")} active={active && screen === "list"}>
+      <PageChrome title={t("People")} onAdd={openCreate} addLabel={t("Add person")} active={active && screen === "list"}>
         <p className="mb-6 px-1 text-sm leading-6 text-muted-foreground">
           {t("Nicknames and how you reach someone. Phone numbers and email still come from Contacts.")}
         </p>

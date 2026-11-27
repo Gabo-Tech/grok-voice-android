@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
@@ -223,13 +224,18 @@ export function ProgramSheet({
     >
       {step === 0 ? (
         <div className="space-y-3">
-          <p className="fin-muted text-sm leading-5">{t("One plan at a time. You can change it later.")}</p>
+          <div className="title-line">
+            <p className="text-base text-foreground">{t("Plan")}</p>
+            <InfoTip label={t("Plan")} text={t("One plan at a time. You can change it later.")} />
+          </div>
+          <div role="radiogroup" aria-label={t("Plan")} className="space-y-2">
           {PRESETS.map((id) => (
-            <button key={id} type="button" className={cn("fin-panel w-full text-left", preset === id && "outline outline-1")} onClick={() => choose(id)}>
-              <p className="text-base font-extrabold tracking-wide uppercase">{t(presetTitle(id))}</p>
-              <p className="fin-muted mt-1 text-sm leading-5">{t(presetBody(id))}</p>
+            <button key={id} type="button" role="radio" aria-checked={preset === id} className={cn("choice-row", preset === id && "is-on")} onClick={() => choose(id)}>
+              <p className="text-base">{t(presetTitle(id))}</p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">{t(presetBody(id))}</p>
             </button>
           ))}
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Info, Mic, Send, Trash2 } from "lucide-react";
+import { Info, Keyboard, Mic, Send, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { GlowRing } from "@/components/GlowRing";
 import { Presence, presencePose, previewPhase } from "@/components/Presence";
 import { Notice } from "@/components/PageChrome";
@@ -83,7 +84,7 @@ export function AssistantView({
   const [preferLocal, setPreferLocal] = useState(false);
   const [packsReady, setPacksReady] = useState(false);
   const [focus, setFocus] = useState(() => sessionStorage.getItem("grok-talk-focus") === "1" || previewQuery("focus"));
-  const [micOpen, setMicOpen] = useState(() => localStorage.getItem("grok-mic-open") === "1" || previewQuery("mic"));
+  const [typing, setTyping] = useState(() => previewQuery("keyboard"));
   const [aboutListen, setAboutListen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [listenHint, setListenHint] = useState(false);
@@ -92,7 +93,6 @@ export function AssistantView({
   const lastTap = useRef(0);
   const clock = sessionClock(voice.usage?.openSinceMs);
   const shownPhase = previewPhase() ?? voice.phase;
-  const live = ["connecting", "listening", "thinking", "speaking"].includes(shownPhase);
   useEffect(() => {
     if (!isTauri()) return;
     void api.getSettings().then((settings) => setPreferLocal(settings.preferLocalOnWake)).catch(() => {});
@@ -122,15 +122,8 @@ export function AssistantView({
     const el = scroller.current;
     if (!el) return;
     const pin = () => {
-      if (voice.lastError && voice.rows.length === 0) {
-        const action = el.querySelector("[role='alert'] button");
-        if (!action) {
-          el.scrollTop = 0;
-          return;
-        }
-        const actionBox = action.getBoundingClientRect();
-        const view = el.getBoundingClientRect();
-        if (actionBox.bottom > view.bottom - 4) el.scrollTop += actionBox.bottom - view.bottom + 12;
+      if (voice.rows.length === 0) {
+        el.scrollTop = 0;
         return;
       }
       el.scrollTop = el.scrollHeight;
@@ -146,9 +139,6 @@ export function AssistantView({
   useEffect(() => {
     sessionStorage.setItem("grok-talk-focus", focus ? "1" : "0");
   }, [focus]);
-  useEffect(() => {
-    localStorage.setItem("grok-mic-open", micOpen ? "1" : "0");
-  }, [micOpen]);
   useEffect(() => {
     if (!focusHint) return;
     const id = window.setTimeout(() => setFocusHint(false), 2400);
@@ -171,14 +161,6 @@ export function AssistantView({
     }
     lastTap.current = now;
   };
-  const onMic = () => {
-    if (micOpen) {
-      setMicOpen(false);
-      return;
-    }
-    setMicOpen(true);
-    if (!["connecting", "listening", "thinking", "speaking"].includes(voice.phase)) void voice.toggleSession();
-  };
   const recovery = voice.lastError ? recoveryFor(voice.lastError) : null;
   const shownRows = voice.rows.length === 0 && previewQuery("bubbles") ? sampleBubbles() : voice.rows;
   const provider = readyProvider(voice.provider, accounts, preferLocal, packsReady);
@@ -197,32 +179,34 @@ export function AssistantView({
             <p className="text-sm text-muted-foreground">
               {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
             </p>
-            <button
-              type="button"
-              className={cn("stamp min-h-12 gap-2 px-3", voice.wakeEnabled && "stamp-on listen-live")}
-              aria-pressed={voice.wakeEnabled}
-              aria-label={voice.wakeEnabled ? t("Listen is on") : t("Listen is off")}
-              onClick={() => {
-                const next = !voice.wakeEnabled;
-                void voice.toggleWake(next);
-                if (next && localStorage.getItem("grok-listen-hint") !== "1") {
-                  localStorage.setItem("grok-listen-hint", "1");
-                  setListenHint(true);
-                }
-              }}
-            >
-              <Mic className="size-4" aria-hidden />
-              {voice.wakeEnabled ? t("Listen · On") : t("Listen · Off")}
-            </button>
-            <button
-              type="button"
-              className="grid size-12 shrink-0 place-items-center text-muted-foreground"
-              aria-expanded={aboutListen}
-              aria-label={t("About Listen")}
-              onClick={() => setAboutListen((on) => !on)}
-            >
-              <Info className="size-5" aria-hidden />
-            </button>
+            <span className="inline-flex items-center">
+              <button
+                type="button"
+                className={cn("stamp min-h-12 gap-2 px-3", voice.wakeEnabled && "stamp-on listen-live")}
+                aria-pressed={voice.wakeEnabled}
+                aria-label={voice.wakeEnabled ? t("Listen is on") : t("Listen is off")}
+                onClick={() => {
+                  const next = !voice.wakeEnabled;
+                  void voice.toggleWake(next);
+                  if (next && localStorage.getItem("grok-listen-hint") !== "1") {
+                    localStorage.setItem("grok-listen-hint", "1");
+                    setListenHint(true);
+                  }
+                }}
+              >
+                <Mic className="size-4" aria-hidden />
+                {voice.wakeEnabled ? t("Listen · On") : t("Listen · Off")}
+              </button>
+              <button
+                type="button"
+                className="grid size-12 shrink-0 place-items-center text-muted-foreground"
+                aria-expanded={aboutListen}
+                aria-label={t("About Listen")}
+                onClick={() => setAboutListen((on) => !on)}
+              >
+                <Info className="size-5" aria-hidden />
+              </button>
+            </span>
           </div>
           {listenHint ? <p className="pb-3 text-sm leading-5 text-muted-foreground">{t("Stays on in the background until you turn it off.")}</p> : null}
           {aboutListen ? (
@@ -259,12 +243,23 @@ export function AssistantView({
           </div>
         )}
         {shownRows.length === 0 ? (
-          <div className="py-6">
-            <p className="text-base leading-6 text-foreground">{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Hearing, the model, the voice, and what is tried next.")}</p>
-            <Button type="button" variant="outline" className="mt-4" onClick={() => onOpenSettings("voice")}>
-              {t("Open voice and AI")}
-            </Button>
+          <div className="talk-empty">
+            <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
+            <div className="title-line">
+              <p className="text-base text-foreground">{t("What should we do?")}</p>
+              <InfoTip label={t("Talk")}>
+                <p>{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
+                <p>{t("Hearing, the model, the voice, and what is tried next.")}</p>
+                <p>{t("Open voice and AI")}</p>
+              </InfoTip>
+            </div>
+            <div className="talk-chips flex max-w-full flex-wrap justify-center gap-2">
+              {["What's on today?", "Add reminder", "How much did I spend?"].map((line) => (
+                <button key={line} type="button" className="period-chip" onClick={() => void voice.sendText(t(line))}>
+                  {t(line)}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <>
@@ -293,10 +288,6 @@ export function AssistantView({
         )}
       </div>
 
-      <div className="talk-presence">
-        <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
-      </div>
-
       {voice.handoff && (
         <div className="mag-panel mb-3">
           <p className="text-sm leading-6 text-foreground">{voice.handoff.summary}</p>
@@ -306,7 +297,11 @@ export function AssistantView({
               : t("Nothing is sent until you confirm in the other app.")}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" onClick={voice.confirmHandoff}>
+            <Button
+              type="button"
+              variant={voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled" || voice.handoff.kind === "wipe_memory" ? "destructive" : "default"}
+              onClick={voice.confirmHandoff}
+            >
               {voice.handoff.kind === "delete_person" || voice.handoff.kind === "cancel_scheduled"
                 ? t("Delete")
                 : voice.handoff.kind === "wipe_memory"
@@ -362,60 +357,51 @@ export function AssistantView({
           )
         : null}
 
-      <form
-        className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = draft;
-          setDraft("");
-          void voice.sendText(text);
-        }}
-      >
-        <textarea
-          ref={draftBox}
-          value={draft}
-          rows={1}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={t("Type a message")}
-          aria-label={t("Type a message")}
-          className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-0 border-b border-[var(--line)] bg-transparent px-0 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-[var(--text-primary)]"
-        />
-        {draft.trim().length > 0 ? (
+      {typing ? (
+        <form
+          className="talk-composer mt-auto flex shrink-0 items-end gap-2 border-t border-border pt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = draft;
+            setDraft("");
+            void voice.sendText(text);
+          }}
+        >
+          <button type="button" className="icon-hit" aria-label={t("Start voice session")} onClick={() => setTyping(false)}>
+            <Mic className="size-5" strokeWidth={1.5} />
+          </button>
+          <textarea
+            ref={draftBox}
+            value={draft}
+            rows={1}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={t("Type a message")}
+            aria-label={t("Type a message")}
+            className="max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-0 border-b border-[var(--line)] bg-transparent px-0 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-[var(--text-primary)]"
+          />
           <button
             type="submit"
-            disabled={voice.sending}
+            disabled={voice.sending || draft.trim().length === 0}
             aria-label={t("Send")}
             className="grid size-12 shrink-0 place-items-center bg-foreground text-background disabled:opacity-40"
           >
-            <Send className="size-5" strokeWidth={1.25} />
+            <Send className="size-5" strokeWidth={1.5} />
           </button>
-        ) : (
-          <button
-            type="button"
-            aria-pressed={micOpen}
-            aria-label={micOpen ? t("Hide voice") : t("Show voice")}
-            onClick={onMic}
-            className={cn("grid size-12 shrink-0 place-items-center text-foreground", micOpen && "bg-foreground text-background")}
-          >
-            <Mic className="size-5" strokeWidth={1.25} />
-          </button>
-        )}
-      </form>
-      {live && !micOpen ? (
-        <button type="button" className="mt-2 min-h-12 w-full text-left text-sm text-foreground" onClick={() => setMicOpen(true)}>
-          {t(shownPhase === "speaking" ? "Speaking" : shownPhase === "thinking" ? "Thinking" : shownPhase === "connecting" ? "Connecting" : "Listening")}
-        </button>
-      ) : null}
-      {focusHint ? <p className="pt-2 text-center text-sm text-muted-foreground">{t("Double-tap to show header")}</p> : null}
-      <div className={cn("talk-mic-panel", micOpen && "open")}>
-        <div>
-          <button type="button" className="mx-auto mt-2 flex min-h-12 items-center gap-1 px-3 text-sm text-muted-foreground" aria-label={t("Hide voice")} onClick={() => setMicOpen(false)}>
-            <ChevronDown className="size-4" aria-hidden />
-            {t("Hide voice")}
+        </form>
+      ) : (
+        <div className="talk-dock mt-auto shrink-0">
+          <button type="button" className="icon-hit" aria-label={t("Type a message")} onClick={() => setTyping(true)}>
+            <Keyboard className="size-5" strokeWidth={1.5} />
           </button>
           <GlowRing phase={shownPhase} level={voice.level} onPress={() => void voice.toggleSession()} />
+          {shownRows.length === 0 ? (
+            <span className="icon-hit" aria-hidden />
+          ) : (
+            <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
+          )}
         </div>
-      </div>
+      )}
+      {focusHint ? <p className="pt-2 text-center text-sm text-muted-foreground">{t("Double-tap to show header")}</p> : null}
       <Sheet open={statusOpen} title={t("Voice status")} onClose={() => setStatusOpen(false)}>
         <p className="text-base text-foreground">
           {t(shownPhase === "speaking" ? "Speaking" : shownPhase === "thinking" ? "Thinking" : shownPhase === "connecting" ? "Connecting" : shownPhase === "listening" ? "Listening" : shownPhase === "recording" ? "Recording" : shownPhase === "wake" ? "Waiting for Hey Grok" : "Ready")}

@@ -35,7 +35,7 @@
             android:maxLines="1"
             android:text="@string/widget_listen_off"
             android:textColor="#8B8A86"
-            android:textSize="12sp" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/widget_next"
@@ -56,7 +56,7 @@
             <TextView
                 android:id="@+id/widget_listen_toggle"
                 android:layout_width="0dp"
-                android:layout_height="40dp"
+                android:layout_height="48dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
                 android:background="#C4B5A0"
@@ -67,13 +67,13 @@
                 android:paddingEnd="6dp"
                 android:text="@string/widget_listen_start"
                 android:textColor="#1A1B1E"
-                android:textSize="12sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/widget_listen_now"
                 android:layout_width="0dp"
-                android:layout_height="40dp"
+                android:layout_height="48dp"
                 android:layout_weight="1"
                 android:background="#17181B"
                 android:ellipsize="end"
@@ -83,7 +83,7 @@
                 android:paddingEnd="6dp"
                 android:text="@string/widget_listen_now"
                 android:textColor="#EEECE8"
-                android:textSize="12sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>

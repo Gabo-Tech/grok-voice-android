@@ -25,10 +25,12 @@
 
 .finance .fin-kicker,
 .finance .chapter {
-  color: var(--text-tertiary, var(--kicker));
-  font-size: var(--text-min, 13px);
+  color: var(--text-primary);
+  font-size: var(--type-title);
   font-weight: 500;
-  letter-spacing: 0;
+  letter-spacing: -0.015em;
+  line-height: var(--lh-title);
+  text-decoration: none;
   text-transform: none;
 }
 
@@ -203,9 +205,9 @@
   border-radius: var(--radius, 2px);
   background: transparent;
   color: var(--text-primary, var(--fin-ink));
-  font-size: 15px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  font-size: var(--type-label);
+  font-weight: 500;
+  text-decoration: none;
 }
 
 .finance .fin-choice[aria-selected="true"] {
@@ -311,9 +313,7 @@
   letter-spacing: 0.01em;
   line-height: 1.25;
   text-transform: none;
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
+  text-decoration: none;
   vertical-align: middle;
 }
 
@@ -505,10 +505,15 @@
 }
 
 .finance .fin-hero-num {
-  font-size: var(--text-display, 48px);
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(1.15rem, 9vw, var(--type-display, 3rem));
   font-weight: 500;
   letter-spacing: -0.04em;
-  line-height: 1;
+  line-height: 1.05;
+  white-space: nowrap;
+  text-overflow: clip;
 }
 
 .finance .fin-hero-unit {
@@ -594,20 +599,28 @@
   gap: 8px;
 }
 
+.finance .fin-seg {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
 .finance .fin-seg button {
   min-height: var(--touch);
-  padding: 0 12px;
-  border: 1px solid var(--fin-line);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-xs);
   background: transparent;
-  color: var(--fin-ink);
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--text-primary);
+  font-size: var(--type-label);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .finance .fin-seg button[aria-pressed="true"] {
-  background: var(--fin-gold);
-  border-color: var(--fin-gold);
-  color: var(--on-gold);
+  background: var(--surface-3);
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
 .finance .fin-textbtn {
@@ -719,4 +732,90 @@
 .row-item > .min-w-0 {
   flex: 1 1 10rem;
   min-width: min(100%, 10rem);
+}
+
+.finance .fin-tabs {
+  position: relative;
+  gap: 0;
+  min-height: var(--touch);
+}
+
+.finance .fin-tab {
+  min-height: var(--touch);
+  padding: 0 8px;
+  font-size: var(--type-label);
+  font-weight: 500;
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+}
+
+.finance .fin-tab[aria-selected="true"] {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.finance .fin-choice {
+  min-height: var(--touch);
+  padding: 0 16px;
+}
+
+.app-card,
+.hero-card,
+.mini-card {
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: var(--e1);
+}
+
+.hero-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.mini-card {
+  display: flex;
+  flex: 1 1 9rem;
+  min-width: min(100%, max-content);
+  min-height: var(--touch);
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  padding: var(--space-4);
+  color: var(--text-primary);
+  text-align: left;
+  box-shadow: var(--e1);
+}
+
+.mini-card .mini-label {
+  color: var(--text-tertiary);
+  font-size: var(--type-caption);
+  font-weight: 500;
+}
+
+.mini-card .mini-value {
+  font-size: var(--type-title);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.mini-card[data-tone="in"] .mini-value {
+  color: var(--positive);
+}
+
+.mini-card[data-tone="out"] .mini-value {
+  color: var(--negative);
+}
+
+.mini-delta {
+  color: var(--text-secondary);
+  font-size: var(--type-caption);
+  font-variant-numeric: tabular-nums;
 }
