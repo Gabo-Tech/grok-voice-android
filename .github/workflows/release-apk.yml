@@ -275,6 +275,10 @@ jobs:
           print(f"launcher {launcher} center luma {luma:.1f}")
           if luma > 140:
               sys.exit("launcher center is still the old white square")
+          mono = [n for n in names if n.endswith("ic_launcher_monochrome.png")]
+          stat = [n for n in apk.namelist() if n.endswith("ic_stat_grok.png")]
+          if len(mono) < 5 or len(stat) < 5:
+              sys.exit(f"expected monochrome and notification icons, got mono={len(mono)} stat={len(stat)}")
           print("mipmaps match the new robot icon")
           PY
 

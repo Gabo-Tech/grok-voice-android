@@ -14,22 +14,20 @@ export function LoaderShot({ which }: { which: string }) {
             <p>{t("Say “Hey Grok”, tap the microphone, or type when you can't.")}</p>
           </div>
           <div className="talk-bubble talk-bubble-grok">
-            <Loader size="inline" quiet label={t("Thinking")} />
-            <p className="mt-2">{t("Thinking")}</p>
+            <p>{t("Connecting")}</p>
           </div>
         </div>
         <div className="talk-presence mt-auto">
-          <Presence phase="thinking" onOpen={() => undefined} />
+          <Presence phase="connecting" onOpen={() => undefined} />
         </div>
-        <Loader size="block" label={t("Connecting")} />
       </div>
     );
   }
   if (which === "pack") {
     return (
-      <main className="flex h-full flex-col px-5 py-6">
+      <main className="flex h-full min-w-0 flex-col px-5 py-6">
         <p className="text-[13px] tracking-[0.18em] text-muted-foreground uppercase">{t("Setup")}</p>
-        <h1 className="masthead mt-2 text-3xl">{t("Downloading")}</h1>
+        <h1 className="masthead mt-2">{t("Downloading")}</h1>
         <p className="mt-3 text-base leading-6 text-muted-foreground">{t("Use Wi-Fi. If the download stops, what is already here stays, and setup continues from this screen.")}</p>
         <div className="mt-6">
           <Loader size="block" value={42} label={t("Downloading")} />
@@ -41,9 +39,8 @@ export function LoaderShot({ which }: { which: string }) {
     return (
       <main className="flex h-full flex-col px-5 py-6">
         <h1 className="masthead text-[1.85rem]">{t("Finance")}</h1>
-        <div className="mt-6">
-          <Loader size="inline" label={t("Checking rates")} />
-          <p className="mt-3 text-base leading-6">{t("Checking rates")}</p>
+        <div className="mt-6 max-w-full">
+          <Loader size="block" label={t("Checking rates")} />
         </div>
       </main>
     );

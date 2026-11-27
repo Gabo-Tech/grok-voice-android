@@ -5,7 +5,6 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
-import { Loader } from "@/components/Loader";
 import { Presence, presencePose, previewPhase } from "@/components/Presence";
 import { Notice } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
@@ -287,8 +286,7 @@ export function AssistantView({
         )}
         {(voice.sending || voice.busy || presencePose(shownPhase) === "thinking") && (
           <div className="talk-bubble talk-bubble-grok" aria-label={t("grok")}>
-            <Loader size="inline" quiet label={voice.busy ? t(voice.busy) : t(shownPhase === "connecting" ? "Connecting" : "Thinking")} />
-            <p className="mt-2">
+            <p>
               {voice.busy ? t(voice.busy) : voice.sending ? t("Searching the web…") : t(shownPhase === "connecting" ? "Connecting" : "Thinking")}
             </p>
           </div>
