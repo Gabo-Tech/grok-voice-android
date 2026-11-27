@@ -579,6 +579,7 @@ function FlowChart({
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [drawn, setDrawn] = useState(460);
   const [quiet, setQuiet] = useState<FlowNode[]>([]);
+  const [legend, setLegend] = useState<{ left: FlowNode[]; right: FlowNode[] } | null>(null);
   const t = useT();
 
   useEffect(() => {
@@ -667,6 +668,7 @@ function FlowChart({
     const chartHeight = frame.height;
     setDrawn(chartHeight);
     setQuiet(built.quiet);
+    setLegend(built.legend);
     if (host.current) host.current.style.height = `${chartHeight}px`;
     instance.resize({ width: frame.width, height: chartHeight });
     safeToReal.current = new Map(built.ids.map((id, index) => [`n${index}`, id]));
@@ -744,6 +746,23 @@ function FlowChart({
   return (
     <div>
       <div ref={host} data-shot="money-flow" style={{ width: "100%", maxWidth: "100%", height: tall ? "100%" : drawn }} />
+      {legend ? (
+        <div className="mt-2 grid grid-cols-2 gap-x-4">
+          {[legend.left, legend.right].map((column, index) => (
+            <ul key={index}>
+              {column.map((node) => (
+                <li key={node.id} className="flex min-h-11 items-baseline justify-between gap-2 text-[13px] leading-5">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="fin-swatch" style={{ background: node.color }} aria-hidden="true" />
+                    <span className="min-w-0">{node.label}</span>
+                  </span>
+                  <span className="fin-num shrink-0">{formatMoney(node.amountMinor, currency)}</span>
+                </li>
+              ))}
+            </ul>
+          ))}
+        </div>
+      ) : null}
       {quiet.length > 0 ? (
         <div className="mt-2">
           <p className="text-[13px] leading-5">{t("Smaller flows")}</p>

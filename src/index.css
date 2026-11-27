@@ -1080,8 +1080,19 @@ html.keyboard-open .sheet-panel {
     padding-right: max(16px, env(safe-area-inset-right));
   }
 
+  .finance header.shrink-0,
+  .finance .activity-heading {
+    display: none;
+  }
+
   .finance .fin-tabs {
     position: static;
+  }
+
+  .finance .fin-actions {
+    flex-wrap: nowrap;
+    padding-top: 2px;
+    padding-bottom: 2px;
   }
 
   .app-stage > header,

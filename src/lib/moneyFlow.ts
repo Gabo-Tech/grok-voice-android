@@ -880,12 +880,13 @@ export interface PlannedLabel {
 export function sankeyLabelPlan(
   nodes: FlowNode[],
   frame: { width: number; height: number; left: number; right: number; lineHeight: number },
-): { boxes: PlannedLabel[]; quiet: FlowNode[] } {
+): { boxes: PlannedLabel[]; left: FlowNode[]; right: FlowNode[]; quiet: FlowNode[] } {
   const slot = Math.max(frame.lineHeight * 2 + 8, 36);
   const capacity = Math.max(1, Math.floor((frame.height - 8) / slot));
   const quiet: FlowNode[] = [];
   const boxes: PlannedLabel[] = [];
-  const place = (column: FlowNode[], x: number) => {
+  const kept: { left: FlowNode[]; right: FlowNode[] } = { left: [], right: [] };
+  const place = (column: FlowNode[], x: number, side: "left" | "right") => {
     const live = column.filter((node) => node.amountMinor > 0);
     const total = live.reduce((sum, node) => sum + node.amountMinor, 0) || 1;
     const small = new Set(
@@ -896,7 +897,7 @@ export function sankeyLabelPlan(
       if (small.has(node.id)) quiet.push(node);
       else keep.push(node);
     }
-    quiet.push(...keep.slice(capacity));
+    kept[side] = keep;
     keep.slice(0, capacity).forEach((node, index) => {
       boxes.push({ id: node.id, x, y: 6 + index * slot });
     });
@@ -904,12 +905,14 @@ export function sankeyLabelPlan(
   place(
     nodes.filter((node) => node.role === "source" || node.role === "pool" || node.role === "hub"),
     4,
+    "left",
   );
   place(
     nodes.filter((node) => node.role === "sink"),
     Math.max(4, frame.width - frame.right + 6),
+    "right",
   );
-  return { boxes, quiet };
+  return { boxes, left: kept.left, right: kept.right, quiet };
 }
 
 /** Place two-line labels in the gutters or above a node, then shift any that still touch. */
@@ -1032,7 +1035,7 @@ export interface SankeyOptionInput {
 }
 
 /** ECharts option. Width is the container. Labels keep a line break between the name and the amount. */
-export function buildSankeyOption(input: SankeyOptionInput): { option: Record<string, unknown>; frame: SankeyFrame; ids: string[]; nodes: FlowNode[]; links: FlowLink[]; quiet: FlowNode[] } {
+export function buildSankeyOption(input: SankeyOptionInput): { option: Record<string, unknown>; frame: SankeyFrame; ids: string[]; nodes: FlowNode[]; links: FlowLink[]; quiet: FlowNode[]; legend: { left: FlowNode[]; right: FlowNode[] } | null } {
   const narrow = (input.height || 0) > input.width && input.width < 520;
   const graph = narrow ? portraitLevels(input.nodes, input.currency, input.spendingLabel || "Spending") : { nodes: input.nodes, links: input.links };
   const present = {
@@ -1047,7 +1050,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
   const compact = frame.compact;
   const labelWidth = Math.max(108, Math.max(frame.left, frame.right) - 8);
   const seen = new Map<number, { x: number; y: number; width: number; height: number }>();
-  const planned = frame.vertical ? sankeyLabelPlan(graph.nodes, frame) : null;
+  const planned = frame.vertical || frame.width < 900 ? sankeyLabelPlan(graph.nodes, frame) : null;
   const plannedAt = new Map((planned?.boxes || []).map((box) => [box.id, box]));
   const data = graph.nodes.map((node) => {
     const depth = depthOf(node);
@@ -1066,7 +1069,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
       kind: node.kind,
       value: node.amountMinor,
       label: {
-        show: input.labels,
+        show: input.labels && !planned,
         color: input.ink,
         position: frame.reference
           ? node.role === "source"
@@ -1105,6 +1108,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
     nodes: graph.nodes,
     links: graph.links,
     quiet: planned?.quiet || [],
+    legend: planned ? { left: planned.left, right: planned.right } : null,
     option: {
       backgroundColor: input.paper,
       series: [
@@ -1122,7 +1126,7 @@ export function buildSankeyOption(input: SankeyOptionInput): { option: Record<st
           bottom: frame.seriesBottom,
           emphasis: { focus: "adjacency" },
           lineStyle: { curveness: 0.5, opacity: frame.linkOpacity },
-          label: { show: input.labels },
+          label: { show: input.labels && !planned },
           labelLayout: (params: { dataType?: string; dataIndex?: number; rect?: { x: number; y: number; width: number; height: number } }) => {
             if (params.dataType !== "node" || params.dataIndex == null || !params.rect) return {};
             const current = params.dataIndex;

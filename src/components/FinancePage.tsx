@@ -891,7 +891,7 @@ function Activity({
       )}
       {filtersOnly || view !== "transactions" || rows.length === 0 ? null : (
         <section className="pb-2">
-          {heading ? <h2 className="fin-kicker mb-2">{heading}</h2> : null}
+          {heading ? <h2 className="fin-kicker activity-heading mb-2">{heading}</h2> : null}
           <TxRows rows={rows} accounts={accounts} onOpen={onTransaction} />
         </section>
       )}
