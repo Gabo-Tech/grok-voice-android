@@ -132,9 +132,9 @@ fn normalize_delivery(value: &str) -> String {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-struct RecentFire {
+pub struct RecentFire {
     id: i32,
     title: String,
     at_ms: i64,
@@ -202,6 +202,17 @@ impl Default for Store {
     fn default() -> Self {
         Self { notes: Vec::new(), items: Vec::new(), events: Vec::new(), next_id: 1, recent: None }
     }
+}
+
+/// On-disk agenda. Field names match `agenda.json` (`next_id` stays snake case).
+#[derive(Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct AgendaDump {
+    pub notes: Vec<Note>,
+    pub items: Vec<Item>,
+    pub events: Vec<CalEvent>,
+    pub next_id: i32,
+    pub recent: Option<RecentFire>,
 }
 
 pub struct Agenda {
@@ -646,6 +657,15 @@ pub fn tool_definitions() -> Value {
             "properties": { "query": { "type": "string" } },
             "required": ["query"]
         })),
+        fn_tool("create_backup", "Save a backup of the saved data on this phone, including pinned facts and API keys, and open the share sheet. Do not include Talk history or voice-time counters. The voice file is not encrypted. Do not ask for or pass a passphrase, password, or key. Tell the person the file contains keys.", json!({
+            "type": "object",
+            "properties": {}
+        })),
+        fn_tool("restore_backup", "Replace everything on this phone with the newest backup saved here. Call first with confirmed false, say what will be replaced, and wait for a clear yes. Then call with confirmed true. Do not pass a passphrase. An encrypted backup is restored in Settings.", json!({
+            "type": "object",
+            "properties": { "confirmed": { "type": "boolean" } },
+            "required": ["confirmed"]
+        })),
         fn_tool("delete_calendar_event", "Delete a calendar event by id from list_calendar_events.", json!({
             "type": "object",
             "properties": { "id": { "type": "string" } },
@@ -667,13 +687,45 @@ fn fn_tool(name: &str, description: &str, parameters: Value) -> Value {
 /// Spoken once per cloud session. It tells the model how to read local stores.
 /// It does not include the stores themselves.
 pub fn lookup_hint() -> &'static str {
-    " play_music uses the default music player immediately, with no confirmation. The default is files on this phone until Settings changes it to Musify, YouTube Music, YouTube, or ask each time. play_local_music is only for files already on this phone. Do not use play_music or play_local_music when they say YouTube or on YouTube. That stays on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not download anything. A search does not start playing by itself. If play_music or play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. media_control pause, play, stop, next, previous, and shuffle act immediately. Shuffle only works when a player session is already open. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. cancel_reminder removes a reminder, alarm, or countdown only after a clear yes. Call it first with confirmed false, say the title, and call again with confirmed true. A repeat can be daily, weekly, monthly, yearly, or every N days, weeks, months, or years with interval. endCount stops it after N times. until is the last date. delivery spoken reads that one out loud. delivery normal stays a notification. Omit delivery to follow Settings. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. Paying more than a card owes is allowed and leaves a credit. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, investment, or custom asset the user described, and can set the amount owed at any time, including zero or a credit as a negative balance. Currency can be euros or a coin such as Bitcoin. That edit is not a payment and does not move another account. list_finance answers how much they spent, cash on hand, a card balance or credit, net worth, utilization, and coming expenses or income for the next 30 days. A card in credit or at zero has nothing due. log_money can edit an amount, charge a card even when it is already in credit, or pay a card from an account, including more than the current debt. save_schedule changes a plan's amount for future unpaid occurrences only. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, exchange rate, or account number. save_account can set a color, an investment type, units and a price, or the default currency used when they do not name one. Do not turn a credit card into a bank because the names overlap. A payment or payday with a date is reminded in this app, two days before and again on the day, unless they name another lead. mark_paid logs that payment and moves a repeating date forward. export_finance_pdf writes a summary PDF on this phone. Call it with confirmed false, then with confirmed true to open the share sheet. Nothing is uploaded. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it. save_schedule programs a course, open-ended rent, a subscription, planned income, or an investment payout. Pass phrase as their sentence. Do not mark it paid until they say it was paid or received. Do not invent an exchange rate or a price for the holding. Keep each currency in its own total."
+    " play_music uses the default music player immediately, with no confirmation. The default is files on this phone until Settings changes it to Musify, YouTube Music, YouTube, or ask each time. play_local_music is only for files already on this phone. Do not use play_music or play_local_music when they say YouTube or on YouTube. That stays on open_youtube: say what will open and wait for a clear yes. open_youtube opens a search or a link and does not download anything. A search does not start playing by itself. If play_music or play_local_music returns use open_youtube, call open_youtube with that query and confirmed false. media_control pause, play, stop, next, previous, and shuffle act immediately. Shuffle only works when a player session is already open. When they ask what is saved on this phone, call the matching list tool once and speak what it returns. list_notes reads notes; pass query to search. list_reminders reads reminders, alarms, and timers. Omit its dates for every saved reminder, or pass from and to, month, or span to cover a range. Repeating reminders expand inside a range. A person's birthday, anniversary, or custom date is included in list_reminders only inside its notify window. list_people and get_person keep those dates all year and do not open an app. list_calendar_events returns every calendar event in one range, including each occurrence of a repeating event. For this month or the rest of the month, pass month as YYYY-MM, or from and to as YYYY-MM-DD. span may be week, month, or upcoming. Pass recurring true with no dates to list each repeating series once. Do not look up one day at a time. create_person adds someone in People, including a birthday or custom date such as a visa renewal. update_person renames them or changes a note, channel, reach-out cadence, or date. delete_person removes them only after a clear yes, then call it again with confirmed true. Do not say you cannot edit People. get_settings reads settings. update_settings changes language, Prefer on device, Listen, the quiet gap in seconds, the daily or monthly voice budget in minutes, and notificationDelivery. notificationDelivery is normal or spoken. Spoken reads alerts out loud and does not need confirmation. Turning Listen off and wiping memory need confirmed true. Never save, read back, or reorder an API key or a backup password. create_backup saves a file of everything kept on this phone, including pinned facts and API keys, and opens the share sheet. It does not include Talk history or voice-time counters. That file is not encrypted. Do not ask for a passphrase. restore_backup replaces everything on this phone from the newest backup here. Call it first with confirmed false, wait for a clear yes, then call with confirmed true. An encrypted backup is restored in Settings, not by voice. Days before a birthday are leadDays on that date, not a separate store. Call the tool instead of saying a person or setting cannot be changed. Reminders, alarms, and countdowns are saved in this app's Time list. Calendar events are saved in this app's Calendar. 'Remind me in N minutes' or 'in N hours' is set_reminder with inMinutes or inHours. A clock time such as 7pm or tomorrow at 9 is set_reminder with at, or set_alarm with hour and minute. A countdown is set_timer with seconds. cancel_reminder removes a reminder, alarm, or countdown only after a clear yes. Call it first with confirmed false, say the title, and call again with confirmed true. A repeat can be daily, weekly, monthly, yearly, or every N days, weeks, months, or years with interval. endCount stops it after N times. until is the last date. delivery spoken reads that one out loud. delivery normal stays a notification. Omit delivery to follow Settings. create_calendar_event saves one-shot and repeating events in this app. list_reminders and list_calendar_events see those items until they fire or are removed. Do not create them in the phone Clock or the phone calendar, and do not say a reminder needs a clock time. Do not say one is set unless the tool result says it was saved in this app. An alarm sound is the phone default, a YouTube video via youtubeUrl, or an audio file already picked in the alarm form via soundFile. sound default clears it. Spoken alerts still speak when a custom sound plays. Do not download the video. Finance is saved on this phone. log_money records an expense, income, or a payment toward a card or loan. Paying more than a card owes is allowed and leaves a credit. save_recurring saves rent, salary, subscriptions, and automated investments. save_account records a bank, cash, credit card, loan, investment, or custom asset the user described, and can set the amount owed at any time, including zero or a credit as a negative balance. Currency can be euros or a coin such as Bitcoin. That edit is not a payment and does not move another account. list_finance answers how much they spent, cash on hand, a card balance or credit, net worth, utilization, and coming expenses or income for the next 30 days. A card in credit or at zero has nothing due. log_money can edit an amount, charge a card even when it is already in credit, or pay a card from an account, including more than the current debt. save_schedule changes a plan's amount for future unpaid occurrences only. delete_finance waits for a clear yes, then call it again with confirmed true. Do not invent a balance, interest rate, due date, exchange rate, or account number. save_account can set a color, an investment type, units and a price, or the default currency used when they do not name one. Do not turn a credit card into a bank because the names overlap. A payment or payday with a date is reminded in this app, two days before and again on the day, unless they name another lead. mark_paid logs that payment and moves a repeating date forward. export_finance_pdf writes a summary PDF on this phone. Call it with confirmed false, then with confirmed true to open the share sheet. Nothing is uploaded. A payment, due date, or income date is also saved on this app's Calendar. Do not use the phone Clock or the phone calendar for it. save_schedule programs a course, open-ended rent, a subscription, planned income, or an investment payout. Pass phrase as their sentence. Do not mark it paid until they say it was paid or received. Do not invent an exchange rate or a price for the holding. Keep each currency in its own total."
 }
 
 impl Agenda {
     pub fn load(path: PathBuf) -> Self {
         let inner = fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         Self { path, inner: Mutex::new(inner) }
+    }
+
+    pub fn dump(&self) -> AgendaDump {
+        let store = self.lock();
+        AgendaDump {
+            notes: store.notes.clone(),
+            items: store.items.clone(),
+            events: store.events.clone(),
+            next_id: store.next_id,
+            recent: store.recent.clone(),
+        }
+    }
+
+    /// Replaces notes, reminders, alarms, countdowns, and in-app events.
+    /// Cancels the previous AlarmManager ids. The caller arms the new set.
+    pub fn replace_dump(&self, app: &AppHandle, dump: AgendaDump) -> Result<(), String> {
+        let mut store = self.lock();
+        let mut cancel: Vec<i32> = store.items.iter().map(|item| item.id).collect();
+        cancel.extend(store.events.iter().filter(|event| event.alarm_id > 0).map(|event| event.alarm_id));
+        store.notes = dump.notes;
+        store.items = dump.items;
+        store.events = dump.events;
+        store.next_id = dump.next_id.max(1);
+        store.recent = dump.recent;
+        Self::persist(&self.path, &store)?;
+        drop(store);
+        if let Some(bridge) = app.try_state::<NativeBridge>() {
+            for id in cancel {
+                let _ = bridge.cancel_item(id);
+            }
+        }
+        Ok(())
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Store> {
@@ -1547,7 +1599,7 @@ fn apply_settings(app: &AppHandle, args: &Value) -> Result<Value, String> {
     Ok(json!({ "ok": true, "changed": true, "needsConfirm": false, "detail": detail }))
 }
 
-fn publish_settings(app: &AppHandle, saved: &crate::settings::Settings, listen: Option<bool>) {
+pub fn publish_settings(app: &AppHandle, saved: &crate::settings::Settings, listen: Option<bool>) {
     if let Some(engine) = app.try_state::<crate::audio::engine::Engine>() {
         engine.send(crate::audio::engine::Ctl::ReloadSettings);
         if let Some(on) = listen {
@@ -1563,6 +1615,15 @@ fn publish_settings(app: &AppHandle, saved: &crate::settings::Settings, listen: 
             hub.emit("voice://wake_enabled", on);
         }
     }
+}
+
+fn backup_secret_arg(args: &Value) -> bool {
+    args.as_object().is_some_and(|map| {
+        map.keys().any(|key| {
+            let folded = key.to_ascii_lowercase();
+            folded.contains("pass") || folded.contains("secret") || folded.contains("token") || folded.contains("key")
+        })
+    })
 }
 
 fn localize_tool_error(app: &AppHandle, err: String) -> String {
@@ -2173,6 +2234,18 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
         }
         "get_settings" => read_settings(app),
         "update_settings" => apply_settings(app, args),
+        "create_backup" => {
+            if backup_secret_arg(args) {
+                return Err(localize_tool_error(app, crate::settings::SECRET_REFUSAL.into()));
+            }
+            crate::backup::voice_export(app)
+        }
+        "restore_backup" => {
+            if backup_secret_arg(args) {
+                return Err(localize_tool_error(app, crate::settings::SECRET_REFUSAL.into()));
+            }
+            crate::backup::voice_restore(app, args["confirmed"] == true)
+        }
         "list_reminders" => {
             agenda.sweep(app);
             let now = Local::now();

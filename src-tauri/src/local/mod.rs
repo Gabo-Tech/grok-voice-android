@@ -23,7 +23,7 @@ pub use mode::public_search_enabled;
 #[allow(unused_imports)]
 pub use packs::{
     PackInfo, PackProgress, apply_fit, delete_pack, download_custom_model, download_pack,
-    import_custom_file, model_dir, pack_status, packs_ready, select_model,
+    import_custom_file, model_dir, pack_label, pack_status, packs_ready, select_model, CUSTOM_LLM,
 };
 
 pub fn active_model_name(root: &std::path::Path) -> String {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, Languages, Music, Users, Wallet, Wand2 } from "lucide-react";
@@ -16,11 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { VoiceState } from "@/hooks/useVoice";
-import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type InboxApp, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type InboxApp, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type RestoreReport, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { applyAppearance, choiceFromSettings, normalizeAppearance, prefersLight, rememberAppearance, rememberCustomTheme } from "@/lib/appearance";
 import { providerLabel } from "@/lib/flow";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
-import { normalizeAppearance, rememberCustomTheme } from "@/lib/appearance";
-import { fill, setAppLocale, useT } from "@/lib/i18n";
+import { activeLocale, fill, setAppLocale, useT } from "@/lib/i18n";
+import { countPhrase, type CountKind } from "@/lib/plurals";
+import { readPersistedWeb, writePersistedWeb } from "@/lib/persistedKeys";
 import { cn } from "@/lib/utils";
 
 export type Section =
@@ -205,7 +207,7 @@ export function MorePage({
 
   if (section === "backup") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="backup-pad flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Back onClick={() => setSection("menu")} />
         <BackupPage />
       </div>
@@ -638,7 +640,7 @@ export function MorePage({
       id: "privacy",
       title: t("Backup"),
       rows: [
-        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("An encrypted file of notes, People, Finance, and memory.") },
+        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("Everything saved on this phone, including keys.") },
         { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), detail: t("Pinned facts Talk can use on this phone.") },
       ],
     },
@@ -1109,34 +1111,141 @@ function accessWord(value: string | undefined, t: (english: string) => string) {
   return t(value);
 }
 
+let shownRestore: RestoreReport | null | undefined;
+
+function takeRestoreSummary(): RestoreReport | null {
+  if (shownRestore !== undefined) return shownRestore;
+  try {
+    const raw = sessionStorage.getItem("grok-restore-summary");
+    shownRestore = raw ? (JSON.parse(raw) as RestoreReport) : null;
+  } catch {
+    shownRestore = null;
+  }
+  sessionStorage.removeItem("grok-restore-summary");
+  return shownRestore;
+}
+
+let restoring = false;
+
+export function applyBackupResult(report: RestoreReport) {
+  if (restoring) return;
+  restoring = true;
+  writePersistedWeb(report.web, Boolean(report.hasWeb));
+  if (report.customTheme) rememberCustomTheme(report.customTheme);
+  const choice = choiceFromSettings(report.appearance || "");
+  if (choice) {
+    rememberAppearance(choice);
+    applyAppearance(choice, prefersLight());
+  }
+  setAppLocale(report.locale || "");
+  shownRestore = report;
+  try {
+    sessionStorage.setItem("grok-restore-summary", JSON.stringify(report));
+  } catch {
+    /* The summary is still on screen. */
+  }
+  window.dispatchEvent(new CustomEvent("grok-restore-summary", { detail: report }));
+}
+
+function previewBackupQuery() {
+  if (typeof window === "undefined" || isTauri()) return { file: "", encrypted: false, summary: false };
+  const params = new URLSearchParams(window.location.search);
+  return { file: params.get("file") || "", encrypted: params.get("encrypted") === "1", summary: params.get("summary") === "1" };
+}
+
+const SAMPLE_RESTORE: RestoreReport = {
+  notes: 2,
+  people: 1,
+  reminders: 1,
+  keys: 4,
+  facts: 1,
+  sessions: 0,
+  hasMemory: true,
+  accounts: 1,
+  transactions: 1,
+  rules: 1,
+  hasFinance: true,
+  version: 2,
+  encrypted: false,
+  events: 1,
+  alarms: 1,
+  countdowns: 1,
+  hasSettings: true,
+  talkTurns: 0,
+  hasTalk: false,
+  hasUsage: false,
+  hasAgenda: true,
+  webKeys: 4,
+  hasWeb: true,
+  hasPacks: true,
+  wakeFiles: 1,
+  alarmFiles: 1,
+  budgets: 0,
+  referenced: [],
+  models: ["Gemma 3 1B Instruct"],
+  restored: ["settings.json", "local-memory.json", "vault"],
+  errors: [],
+  web: {},
+  appearance: "graphite",
+  customTheme: "",
+  locale: "en",
+};
+
 function BackupPage() {
   const t = useT();
+  const previewQuery = previewBackupQuery();
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
-  const [includeKeys, setIncludeKeys] = useState(false);
-  const [fileB64, setFileB64] = useState("");
-  const [fileName, setFileName] = useState("");
+  const [reveal, setReveal] = useState(false);
+  const [openPass, setOpenPass] = useState("");
+  const [revealOpen, setRevealOpen] = useState(false);
+  const [fileB64, setFileB64] = useState(previewQuery.file ? "preview" : "");
+  const [fileName, setFileName] = useState(previewQuery.file);
+  const [fileEncrypted, setFileEncrypted] = useState(previewQuery.encrypted);
   const [preview, setPreview] = useState<BackupPreview | null>(null);
-  const [restoreKeys, setRestoreKeys] = useState(false);
+  const [report, setReport] = useState<RestoreReport | null>(previewQuery.summary ? SAMPLE_RESTORE : takeRestoreSummary);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onSummary = (event: Event) => {
+      const detail = (event as CustomEvent<RestoreReport>).detail;
+      if (detail) setReport(detail);
+    };
+    window.addEventListener("grok-restore-summary", onSummary);
+    return () => window.removeEventListener("grok-restore-summary", onSummary);
+  }, []);
+  useEffect(() => {
+    if (!previewQuery.file) return;
+    const node = document.querySelector(".backup-pad");
+    if (!(node instanceof HTMLElement)) return;
+    const show = () => node.scrollTo({ top: node.scrollHeight });
+    show();
+    const later = window.setTimeout(show, 120);
+    return () => window.clearTimeout(later);
+  }, [previewQuery.file]);
 
   const exportFile = async () => {
-    if (passphrase.length < 8) {
+    const typed = passphrase.trim();
+    if (typed && typed.length < 8) {
       setError("Use a passphrase of at least 8 characters.");
       return;
     }
-    if (passphrase !== again) {
+    if (typed !== again.trim()) {
       setError("Type the passphrase the same way twice.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const file = await api.exportBackup(passphrase, includeKeys);
-      setNotice(file.shared ? "Share sheet opened. The file stays on this phone." : "Backup ready.");
-      if (!file.shared) downloadBase64(file.fileName, file.dataB64);
+      const file = await api.exportBackup(typed, readPersistedWeb());
+      const ready = file.encrypted ? "Backup saved." : "Backup ready.";
+      setNotice(file.shared ? "Share sheet opened. The file stays on this phone." : ready);
+      setWarnings((file.warnings ?? []).filter(Boolean));
+      if (!file.shared && file.dataB64) downloadBase64(file.fileName, file.dataB64);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -1147,12 +1256,16 @@ function BackupPage() {
   const readFile = async (file: File | undefined) => {
     if (!file) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const magic = String.fromCharCode(bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0, bytes[3] ?? 0);
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
     setFileB64(btoa(binary));
     setFileName(file.name);
+    setFileEncrypted(magic === "GVB1");
+    setOpenPass("");
     setPreview(null);
-    setRestoreKeys(false);
+    setConfirming(false);
+    setReport(null);
     setError(null);
     setNotice("");
   };
@@ -1161,9 +1274,8 @@ function BackupPage() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.previewBackup(fileB64, passphrase);
+      const next = await api.previewBackup(fileB64, fileEncrypted ? openPass.trim() : "");
       setPreview(next);
-      setRestoreKeys(false);
       setNotice("");
     } catch (e) {
       setPreview(null);
@@ -1177,9 +1289,11 @@ function BackupPage() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.restoreBackup(fileB64, passphrase, true, restoreKeys);
-      setPreview(next);
-      setNotice(t("Replaced notes, people, and Finance on this phone."));
+      const next = await api.restoreBackup(fileB64, fileEncrypted ? openPass.trim() : "", true);
+      applyBackupResult(next);
+      setReport(next);
+      setConfirming(false);
+      setNotice("");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -1187,85 +1301,202 @@ function BackupPage() {
     }
   };
 
+  const typed = passphrase.trim();
+  const openTyped = openPass.trim();
+  const openReady = !fileEncrypted || openTyped.length >= 8;
+  const canAct = Boolean(fileB64) && !busy && openReady;
+  const onPass = (value: string) => {
+    setPassphrase(value);
+    setConfirming(false);
+  };
+  const onOpen = (value: string) => {
+    setOpenPass(value);
+    setPreview(null);
+    setConfirming(false);
+  };
+
+  if (report) return <RestoreSummary report={report} />;
+
   return (
-    <div className="space-y-4 pb-6">
-      <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
-      <p className="text-sm leading-6 text-muted-foreground">
-        {t("An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.")}{" "}
-        {t("Finance is included. An older backup without Finance leaves the money already on this phone.")}
-      </p>
-      <Field label={t("Passphrase")}>
-        <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
-      </Field>
-      <Field label={t("Passphrase again")}>
-        <Input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
-      </Field>
-      <button
-        type="button"
-        onClick={() => setIncludeKeys((on) => !on)}
-        className={cn(
-          "flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
-          includeKeys ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-        )}
-      >
-        <span>{t("Include voice keys")}</span>
-        <span className="text-xs tracking-[0.12em] uppercase">{includeKeys ? t("On") : t("Off")}</span>
-      </button>
-      <Button disabled={busy} onClick={() => void exportFile()}>
-        {t("Export backup")}
-      </Button>
-      <div className="border-t border-border pt-4">
-        <p className="text-[13px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {t("Replace notes, People, and Finance on this phone. Reminders that are not tied to a person stay. Confirm after you review the file.")}
+    <div className="space-y-6 pb-4 landscape:grid landscape:grid-cols-2 landscape:items-start landscape:gap-8 landscape:space-y-0">
+      <section className="space-y-4">
+        <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {t("A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.")}
         </p>
-        <label className="mt-3 flex h-12 cursor-pointer items-center border border-border px-3 text-sm">
+        <PassphraseFields
+          passphrase={passphrase}
+          again={again}
+          reveal={reveal}
+          onPass={onPass}
+          onAgain={setAgain}
+          onReveal={() => setReveal((on) => !on)}
+        />
+        {!typed && (
+          <p className="text-sm leading-6 text-foreground">{t("Leave this blank only if you accept an unencrypted file. That file contains your API keys.")}</p>
+        )}
+        <Button className="w-full" disabled={busy} onClick={() => void exportFile()}>
+          {t("Export backup")}
+        </Button>
+      </section>
+      <section className="space-y-4 border-t border-border pt-4 landscape:border-t-0 landscape:pt-0">
+        <p className="text-[13px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
+        <p className="text-sm leading-6 text-muted-foreground">{t("This replaces everything saved on this phone, then reloads.")}</p>
+        <button
+          type="button"
+          className="flex min-h-12 w-full items-center rounded-sm bg-[var(--surface-2)] px-3 text-left text-base text-foreground"
+          onClick={() => fileRef.current?.click()}
+        >
           <span className="truncate">{fileName || t("Choose a .gvb file")}</span>
-          <input
-            type="file"
-            accept=".gvb,application/octet-stream"
-            className="sr-only"
-            onChange={(e) => void readFile(e.target.files?.[0])}
-          />
-        </label>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="outline" disabled={busy || !fileB64 || passphrase.length < 8} onClick={() => void review()}>
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".gvb,application/octet-stream"
+          className="sr-only"
+          onChange={(e) => void readFile(e.target.files?.[0])}
+        />
+        {fileEncrypted && (
+          <label className="block">
+            <span className="mb-2 block text-sm leading-5 text-foreground">{t("This file is encrypted.")}</span>
+            <p className="mb-2 text-sm leading-6 text-foreground">{t("Type a passphrase of at least 8 characters to open this file.")}</p>
+            <Input
+              className="w-full border-b-2 border-[var(--text-tertiary)]"
+              type={revealOpen ? "text" : "password"}
+              autoComplete="current-password"
+              value={openPass}
+              onChange={(e) => onOpen(e.target.value)}
+            />
+            <button type="button" className="mt-1 min-h-12 px-1 text-sm text-foreground underline underline-offset-4" aria-pressed={revealOpen} onClick={() => setRevealOpen((on) => !on)}>
+              {revealOpen ? t("Hide passphrase") : t("Show passphrase")}
+            </button>
+          </label>
+        )}
+        <div className="backup-actions flex flex-wrap items-center gap-3">
+          <Button variant="outline" disabled={!canAct} onClick={() => void review()}>
             {t("Review")}
           </Button>
-          <Button disabled={busy || !preview} onClick={() => void restore()}>
-            {t("Replace notes, people, and Finance")}
+          <Button variant="destructive" className="bg-[var(--negative)] text-[var(--surface-0)]" disabled={!canAct} onClick={() => setConfirming(true)}>
+            {t("Replace everything on this phone")}
           </Button>
         </div>
-        {preview && (
-          <div className="mt-3 space-y-2 text-sm text-foreground">
-            <p>
-              {fill("{notes} notes · {people} people · {reminders} dates", {
-                notes: preview.notes,
-                people: preview.people,
-                reminders: preview.reminders,
-              })}
-              {preview.keys ? fill(" · {keys} keys in the file", { keys: preview.keys }) : ""}
-              {preview.hasMemory ? fill(" · {facts} facts", { facts: preview.facts }) : t(" · no memory section")}
-              {preview.hasFinance ? ` · ${t("Includes Finance")}` : ` · ${t("No Finance in this file")}`}
-            </p>
-            {preview.keys > 0 && (
-              <button
-                type="button"
-                onClick={() => setRestoreKeys((on) => !on)}
-                className={cn(
-                  "flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
-                  restoreKeys ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                )}
-              >
-                <span>{t("Also replace voice keys")}</span>
-                <span className="text-xs tracking-[0.12em] uppercase">{restoreKeys ? t("On") : t("Off")}</span>
-              </button>
-            )}
+        {confirming && (
+          <div className="space-y-3">
+            <p className="text-sm leading-6 text-foreground">{t("Replace everything on this phone?")}</p>
+            <div className="backup-actions flex flex-wrap items-center gap-3">
+              <Button variant="destructive" className="bg-[var(--negative)] text-[var(--surface-0)]" disabled={!canAct} onClick={() => void restore()}>
+                {t("Yes, replace everything")}
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => setConfirming(false)}>
+                {t("Cancel")}
+              </Button>
+            </div>
           </div>
         )}
-      </div>
-      {error && <p className="text-sm text-foreground">{t(error)}</p>}
-      {notice && <p className="text-sm text-muted-foreground">{t(notice)}</p>}
+        {preview && <BackupSummary preview={preview} />}
+      </section>
+      {error && <p className="text-sm text-foreground landscape:col-span-2">{t(error)}</p>}
+      {notice && <p className="text-sm text-muted-foreground landscape:col-span-2">{t(notice)}</p>}
+      {warnings.map((line) => (
+        <p key={line} className="text-sm text-foreground landscape:col-span-2">{line}</p>
+      ))}
+    </div>
+  );
+}
+
+function PassphraseFields({
+  passphrase,
+  again,
+  reveal,
+  onPass,
+  onAgain,
+  onReveal,
+}: {
+  passphrase: string;
+  again: string;
+  reveal: boolean;
+  onPass: (value: string) => void;
+  onAgain: (value: string) => void;
+  onReveal: () => void;
+}) {
+  const t = useT();
+  const type = reveal ? "text" : "password";
+  return (
+    <div className="space-y-4">
+      <label className="block">
+        <span className="mb-2 block text-sm leading-5 text-foreground">{t("Optional passphrase")}</span>
+        <Input className="w-full border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={passphrase} onChange={(e) => onPass(e.target.value)} />
+        <button type="button" className="mt-1 min-h-12 px-1 text-sm text-foreground underline underline-offset-4" aria-pressed={reveal} onClick={onReveal}>
+          {reveal ? t("Hide passphrase") : t("Show passphrase")}
+        </button>
+      </label>
+      <label className="block">
+        <span className="mb-2 block text-sm leading-5 text-foreground">{t("Passphrase again")}</span>
+        <Input className="w-full border-b-2 border-[var(--text-tertiary)]" type={type} autoComplete="new-password" value={again} onChange={(e) => onAgain(e.target.value)} />
+      </label>
+    </div>
+  );
+}
+
+function RestoreSummary({ report }: { report: RestoreReport }) {
+  const t = useT();
+  return (
+    <div className="space-y-4 pb-4">
+      <h2 className="text-2xl font-medium tracking-tight">{t("Restored on this phone.")}</h2>
+      <BackupSummary preview={report} />
+      <p className="text-sm leading-6 text-foreground">{t("Talk history and voice time on this phone stay as they are.")}</p>
+      {report.errors.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-sm text-foreground">{t("Could not restore everything.")}</p>
+          {report.errors.map((line) => (
+            <p key={line} className="text-sm leading-6 text-foreground">{line}</p>
+          ))}
+        </div>
+      )}
+      <Button className="w-full" onClick={() => window.location.reload()}>{t("Done")}</Button>
+    </div>
+  );
+}
+
+function BackupSummary({ preview }: { preview: BackupPreview }) {
+  const t = useT();
+  const locale = activeLocale();
+  const phrase = (kind: CountKind, count: number) => countPhrase(locale, kind, count);
+  const models = preview.models ?? [];
+  const files = (preview.referenced ?? []).filter((name) => !name.startsWith("on-device models"));
+  return (
+    <div className="space-y-2 text-sm leading-6 text-foreground">
+      <p>
+        {[
+          phrase("note", preview.notes),
+          phrase("person", preview.people),
+          phrase("event", preview.events ?? 0),
+          phrase("reminder", preview.reminders),
+          phrase("alarm", preview.alarms ?? 0),
+          phrase("countdown", preview.countdowns ?? 0),
+        ].join(", ")}
+        .
+      </p>
+      {preview.hasSettings && <p>{t("Settings, theme and language.")}</p>}
+      {preview.hasFinance && (
+        <p>
+          {fill("Finance: {accounts}, {transactions}, {schedules}.", {
+            accounts: phrase("account", preview.accounts ?? 0),
+            transactions: phrase("transaction", preview.transactions ?? 0),
+            schedules: phrase("schedule", preview.rules ?? 0),
+          })}
+        </p>
+      )}
+      {preview.hasMemory && <p>{phrase("fact", preview.facts)}.</p>}
+      <p>{phrase("key", preview.keys)}.</p>
+      <p>{preview.encrypted ? t("This file is encrypted.") : t("This file is not encrypted and contains API keys.")}</p>
+      {models.length > 0 && (
+        <p>{fill("On-device models not included: {names}.", { names: models.join(", ") })}</p>
+      )}
+      {files.length > 0 && <p>{t("Some files were too large to include. They are named below.")}</p>}
+      {files.map((name) => (
+        <p key={name}>{name}</p>
+      ))}
     </div>
   );
 }
