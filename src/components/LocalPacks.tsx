@@ -3,7 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
+import { Loader } from "@/components/Loader";
 import { api, errorText, type LocalPack, type PackProgress } from "@/lib/api";
 import { classify, fitLabel, recommend, type FitCandidate } from "@/lib/fit";
 import { fill, useT } from "@/lib/i18n";
@@ -470,7 +470,7 @@ function PackRow({
           </button>
         ) : null}
       </div>
-      {ratio !== null && <Progress value={ratio} className="mt-2" />}
+      {ratio !== null && <Loader size="block" value={ratio} label={t("Downloading")} />}
     </li>
   );
 }

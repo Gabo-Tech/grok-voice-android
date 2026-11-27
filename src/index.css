@@ -742,7 +742,10 @@ h1,
   font-weight: 500;
   letter-spacing: -0.035em;
   text-transform: none;
-  line-height: 1.05;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-wrap: wrap;
 }
 
 .masthead-rule {
@@ -1766,4 +1769,229 @@ button.stamp {
     max-width: 100%;
     overflow-wrap: anywhere;
   }
+}
+
+.grok-mark {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  --mark-paper: var(--text-primary);
+  --mark-ink: var(--surface-0);
+}
+
+.grok-mark[data-scheme="light"] {
+  --mark-paper: var(--surface-0);
+  --mark-ink: var(--text-primary);
+}
+
+.grok-mark .paper {
+  fill: var(--mark-paper);
+  stroke: var(--mark-ink);
+  stroke-width: 2.4;
+}
+
+.grok-mark .ink,
+.grok-mark .eye {
+  fill: var(--mark-ink);
+  stroke: none;
+}
+
+.grok-mark .eye {
+  fill: var(--mark-paper);
+}
+
+.grok-mark .smile {
+  fill: none;
+  stroke: var(--mark-paper);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.presence {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-soft);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.presence .grok-mark {
+  width: 40px;
+  height: 48px;
+}
+
+.presence-eyes,
+.mark-ears,
+.presence-bars .bar {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.presence[data-motion="on"][data-state="idle"] .presence-eyes,
+.presence[data-motion="on"][data-state="listening"] .mark-ears,
+.presence[data-motion="on"][data-state="thinking"] .presence-eyes,
+.presence[data-motion="on"][data-state="speaking"][data-level="loop"] .bar,
+.loader:not(.loader-still) .presence-eyes {
+  animation-duration: 1.6s;
+  animation-timing-function: var(--ease-out);
+  animation-iteration-count: infinite;
+}
+
+.presence[data-motion="on"][data-state="idle"] .presence-eyes {
+  animation-name: presence-blink;
+  animation-duration: 4.2s;
+}
+
+.presence[data-motion="on"][data-state="listening"] .mark-ears {
+  animation-name: presence-ears;
+}
+
+.presence[data-motion="on"][data-state="listening"] .presence-eyes {
+  transform: translateY(-1.4px);
+}
+
+.presence[data-motion="on"][data-state="thinking"] .presence-eyes {
+  animation-name: presence-look;
+}
+
+.presence[data-motion="on"][data-state="speaking"][data-level="loop"] .bar {
+  animation-name: presence-bar;
+}
+
+.presence[data-motion="on"][data-state="speaking"][data-level="loop"] .bar:nth-child(2) { animation-delay: 0.12s; }
+.presence[data-motion="on"][data-state="speaking"][data-level="loop"] .bar:nth-child(3) { animation-delay: 0.22s; }
+.presence[data-motion="on"][data-state="speaking"][data-level="loop"] .bar:nth-child(4) { animation-delay: 0.08s; }
+.presence[data-motion="on"][data-state="speaking"][data-level="loop"] .bar:nth-child(5) { animation-delay: 0.18s; }
+
+.presence[data-level="live"] .bar:nth-child(1) { transform: scaleY(var(--b1)); }
+.presence[data-level="live"] .bar:nth-child(2) { transform: scaleY(var(--b2)); }
+.presence[data-level="live"] .bar:nth-child(3) { transform: scaleY(var(--b3)); }
+.presence[data-level="live"] .bar:nth-child(4) { transform: scaleY(var(--b4)); }
+.presence[data-level="live"] .bar:nth-child(5) { transform: scaleY(var(--b5)); }
+
+.presence[data-motion="off"][data-state="listening"] .presence-eyes { transform: translateY(-1.4px); }
+.presence[data-motion="off"][data-state="thinking"] .presence-eyes { transform: translateX(1.6px); }
+.presence[data-motion="off"][data-state="speaking"] .bar:nth-child(odd) { transform: scaleY(1); }
+.presence[data-motion="off"][data-state="speaking"] .bar:nth-child(even) { transform: scaleY(0.55); }
+
+.talk-presence {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  padding: 4px 4px 8px;
+}
+
+.loader {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.loader-mark {
+  width: 48px;
+  height: 58px;
+}
+
+.loader-inline {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-width: 0;
+  gap: 8px;
+  vertical-align: middle;
+}
+
+.loader-inline .loader-mark {
+  width: 20px;
+  height: 24px;
+  flex: none;
+}
+
+.loader-full {
+  min-height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.loader-label {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.loader-track {
+  display: block;
+  width: 8rem;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.loader-fill {
+  display: block;
+  width: var(--progress, 0%);
+  height: 100%;
+  border-radius: var(--radius);
+  background: var(--text-primary);
+}
+
+.loader:not(.loader-still) .presence-eyes {
+  animation-name: presence-blink;
+  animation-duration: 4.2s;
+}
+
+@keyframes presence-blink {
+  0%, 42%, 48%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(0.12); }
+}
+
+@keyframes presence-ears {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes presence-look {
+  0%, 100% { transform: translateX(-1.6px); }
+  50% { transform: translateX(1.6px); }
+}
+
+@keyframes presence-bar {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presence-eyes,
+  .mark-ears,
+  .presence-bars .bar,
+  .loader .presence-eyes {
+    animation: none !important;
+  }
+}
+
+html[data-animator="off"] .presence-eyes,
+html[data-animator="off"] .mark-ears,
+html[data-animator="off"] .presence-bars .bar,
+html[data-animator="off"] .loader .presence-eyes {
+  animation: none !important;
 }

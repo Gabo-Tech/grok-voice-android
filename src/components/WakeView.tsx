@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { CheckCircle2, Circle, Loader2, Mic, RotateCcw, Wand2 } from "lucide-react";
+import { CheckCircle2, Circle, Mic, RotateCcw, Wand2 } from "lucide-react";
+import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { api, errorText, type WakewordStatus } from "@/lib/api";
 import { fill, useT } from "@/lib/i18n";
 
@@ -87,13 +87,13 @@ export function WakeView({
               disabled={recording !== null || busy}
               onClick={() => void record(i)}
             >
-              {recording === i ? <Loader2 className="animate-spin" /> : <Mic />}
+              {recording === i ? <Loader size="inline" quiet label={t("Speak now")} /> : <Mic />}
               {recording === i ? t("Speak now") : done ? t("Redo") : t("Record")}
             </Button>
           </div>
         ))}
 
-        {recording !== null && <Progress value={progress} />}
+        {recording !== null && <Loader size="block" value={progress} label={t("Speak now")} />}
 
         {message && (
           <p className={message.ok ? "text-sm text-primary" : "text-sm text-destructive"}>{t(message.text)}</p>
@@ -101,7 +101,7 @@ export function WakeView({
 
         <div className="flex gap-2 pt-2">
           <Button className="flex-1" disabled={!allRecorded || busy || recording !== null} onClick={() => void train()}>
-            {busy ? <Loader2 className="animate-spin" /> : <Wand2 />}
+            {busy ? <Loader size="inline" quiet label={t("Train wake word")} /> : <Wand2 />}
             {status.trained ? t("Re-train") : t("Train wake word")}
           </Button>
           <Button variant="outline" disabled={busy || recording !== null} onClick={() => void reset()}>

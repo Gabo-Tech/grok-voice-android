@@ -74,6 +74,7 @@
     <!-- Vault files are bound to this device's Keystore key; never back them up. -->
     <application
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@style/Theme.grok_voice"
         android:allowBackup="false"

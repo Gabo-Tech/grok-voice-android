@@ -192,7 +192,7 @@ class VoiceListenerService : Service() {
       val immutable = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
       val open = PendingIntent.getActivity(context, 2, talkIntent(context), immutable)
       val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+        .setSmallIcon(R.drawable.ic_stat_grok)
         .setContentTitle(context.getString(R.string.listener_alert_title))
         .setContentText(context.getString(R.string.listener_alert_text))
         .setContentIntent(open)
@@ -490,7 +490,7 @@ class VoiceListenerService : Service() {
       immutable
     )
     return NotificationCompat.Builder(this, CHANNEL_ID)
-      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(getString(R.string.listener_title))
       .setContentText(getString(R.string.listener_text))
       .setContentIntent(open)
@@ -563,7 +563,7 @@ class VoiceListenerService : Service() {
       immutable
     )
     val notification = NotificationCompat.Builder(this, HEALTH_CHANNEL_ID)
-      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+      .setSmallIcon(R.drawable.ic_stat_grok)
       .setContentTitle(copy.first)
       .setContentText(copy.second)
       .setContentIntent(open)

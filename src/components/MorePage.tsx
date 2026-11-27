@@ -6,6 +6,7 @@ import { DebugPanel } from "@/components/DebugPanel";
 import { VoiceHome } from "@/components/VoiceHome";
 import { Field } from "@/components/Field";
 import { CurrencyEditor } from "@/components/CurrencyEditor";
+import { AppMark } from "@/components/AppMark";
 import { PageChrome, RowButton } from "@/components/PageChrome";
 import { ThemePicker } from "@/components/ThemePicker";
 import { PeoplePage } from "@/components/PeoplePage";
@@ -664,7 +665,7 @@ export function MorePage({
     .filter((group) => group.rows.length > 0 || (group.extra && (!query || `${group.title} ${group.hint ?? ""}`.toLowerCase().includes(query))));
 
   return (
-    <PageChrome title={t("Settings")} subtitle={t("Voice, music, and this phone")} active={active && section === "menu"}>
+    <PageChrome mark title={t("Settings")} subtitle={t("Voice, music, and this phone")} active={active && section === "menu"}>
       <ListenStatus />
       <div className="mb-8">
         <p className="text-base text-foreground">
@@ -862,6 +863,7 @@ function UpdatesSettings({ installed, available }: { installed: string; availabl
   const newer = Boolean(available && installed && available !== installed);
   return (
     <div>
+      <AppMark className="mb-4 w-16" alt="Grok Voice" />
       <h2 className="px-1 text-2xl font-medium tracking-tight">{t("Updates")}</h2>
       <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
         {t("When a newer version is published, a banner at the top of the app offers the download.")}{" "}

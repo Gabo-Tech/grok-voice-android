@@ -5,6 +5,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GlowRing } from "@/components/GlowRing";
+import { Presence, presencePose, previewPhase } from "@/components/Presence";
 import { Notice } from "@/components/PageChrome";
 import { Sheet } from "@/components/Sheet";
 import { Button } from "@/components/ui/button";
@@ -84,12 +85,14 @@ export function AssistantView({
   const [focus, setFocus] = useState(() => sessionStorage.getItem("grok-talk-focus") === "1" || previewQuery("focus"));
   const [micOpen, setMicOpen] = useState(() => localStorage.getItem("grok-mic-open") === "1" || previewQuery("mic"));
   const [aboutListen, setAboutListen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const [listenHint, setListenHint] = useState(false);
   const [focusHint, setFocusHint] = useState(false);
   const [clearAsk, setClearAsk] = useState(() => previewQuery("clear"));
   const lastTap = useRef(0);
   const clock = sessionClock(voice.usage?.openSinceMs);
-  const live = ["connecting", "listening", "thinking", "speaking"].includes(voice.phase);
+  const shownPhase = previewPhase() ?? voice.phase;
+  const live = ["connecting", "listening", "thinking", "speaking"].includes(shownPhase);
   useEffect(() => {
     if (!isTauri()) return;
     void api.getSettings().then((settings) => setPreferLocal(settings.preferLocalOnWake)).catch(() => {});
@@ -174,7 +177,7 @@ export function AssistantView({
       return;
     }
     setMicOpen(true);
-    if (!live) void voice.toggleSession();
+    if (!["connecting", "listening", "thinking", "speaking"].includes(voice.phase)) void voice.toggleSession();
   };
   const recovery = voice.lastError ? recoveryFor(voice.lastError) : null;
   const shownRows = voice.rows.length === 0 && previewQuery("bubbles") ? sampleBubbles() : voice.rows;
@@ -281,11 +284,17 @@ export function AssistantView({
             ))}
           </>
         )}
-        {(voice.sending || voice.busy) && (
+        {(voice.sending || voice.busy || presencePose(shownPhase) === "thinking") && (
           <div className="talk-bubble talk-bubble-grok" aria-label={t("grok")}>
-            <p>{voice.busy ? t(voice.busy) : t("Searching the web…")}</p>
+            <p>
+              {voice.busy ? t(voice.busy) : voice.sending ? t("Searching the web…") : t(shownPhase === "connecting" ? "Connecting" : "Thinking")}
+            </p>
           </div>
         )}
+      </div>
+
+      <div className="talk-presence">
+        <Presence phase={shownPhase} level={voice.level} onOpen={() => setStatusOpen(true)} />
       </div>
 
       {voice.handoff && (
@@ -384,7 +393,7 @@ export function AssistantView({
       </form>
       {live && !micOpen ? (
         <button type="button" className="mt-2 min-h-12 w-full text-left text-sm text-foreground" onClick={() => setMicOpen(true)}>
-          {t(voice.phase === "speaking" ? "Speaking" : voice.phase === "thinking" ? "Thinking" : voice.phase === "connecting" ? "Connecting" : "Listening")}
+          {t(shownPhase === "speaking" ? "Speaking" : shownPhase === "thinking" ? "Thinking" : shownPhase === "connecting" ? "Connecting" : "Listening")}
         </button>
       ) : null}
       {focusHint ? <p className="pt-2 text-center text-sm text-muted-foreground">{t("Double-tap to show header")}</p> : null}
@@ -394,9 +403,17 @@ export function AssistantView({
             <ChevronDown className="size-4" aria-hidden />
             {t("Hide voice")}
           </button>
-          <GlowRing phase={voice.phase} level={voice.level} onPress={() => void voice.toggleSession()} />
+          <GlowRing phase={shownPhase} level={voice.level} onPress={() => void voice.toggleSession()} />
         </div>
       </div>
+      <Sheet open={statusOpen} title={t("Voice status")} onClose={() => setStatusOpen(false)}>
+        <p className="text-base text-foreground">
+          {t(shownPhase === "speaking" ? "Speaking" : shownPhase === "thinking" ? "Thinking" : shownPhase === "connecting" ? "Connecting" : shownPhase === "listening" ? "Listening" : shownPhase === "recording" ? "Recording" : shownPhase === "wake" ? "Waiting for Hey Grok" : "Ready")}
+        </p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {inCall ? `${t("Using")} ${t(provider)}` : accounts.length === 0 ? t("No voice yet") : t(provider)}
+        </p>
+      </Sheet>
     </div>
   );
 }

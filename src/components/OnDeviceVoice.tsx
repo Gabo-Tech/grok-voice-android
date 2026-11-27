@@ -3,7 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
+import { Loader } from "@/components/Loader";
 import { LocalPacks } from "@/components/LocalPacks";
 import { api, errorText, type PackProgress, type Settings, type VoiceSetupStatus } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -357,7 +357,7 @@ export function OnDeviceVoice({
                     {model.ready ? t("On this phone") : t("Not downloaded")}
                   </p>
                 </button>
-                {ratio !== null && progress?.id === model.id ? <Progress value={ratio} className="mt-3" /> : null}
+                {ratio !== null && progress?.id === model.id ? <Loader size="block" value={ratio} label={t("Downloading")} /> : null}
                 <div className="mt-3 flex flex-col gap-2">
                   <Button type="button" className="w-full" disabled={busy !== null} onClick={() => void downloadModel(model.id)}>
                     {busy === model.id ? t("Downloading") : model.ready ? t("Download again") : t("Download")}

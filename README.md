@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.png" alt="Grok Voice" width="128" />
+</p>
+
 # Grok Voice
 
 **Website:** [gabo-tech.github.io/grok-voice-android](https://gabo-tech.github.io/grok-voice-android/)
@@ -5,6 +9,8 @@
 **Guide:** [Install, setup, Talk, and troubleshooting](docs/guide/index.html). The [tool list](docs/guide/commands.html) names every Talk tool with an example in en, es, de, pt, and ca-ES-valencia. Developer notes are [docs/develop.html](docs/develop.html). How to change the app is [CONTRIBUTING.md](CONTRIBUTING.md).
 
 A voice assistant for Android. A new install talks on the phone in English: Moonshine, SmolLM2, and Phonon 31m, with no account and no token. The screen can use another language. Spanish, German, Piper, and gated Phonon models can be added later in Settings. An [xAI](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech), OpenAI, or 1min.ai key is optional and is tried only if you add one. The wake word stays on the device.
+
+The app mark is the robot. On Talk it sits beside the latest reply and shows idle, listening, thinking, or speaking. Tap it for Voice status. Reduced motion keeps it still. The same character is the loader, and a pack download that reports its size fills a bar under it.
 
 The current sideload build is [Grok Voice 0.1.65](https://github.com/Gabo-Tech/grok-voice-android/releases/latest). It is an arm64 APK for Android 8 and newer, signed for sideloading. versionCode is 1065.
 

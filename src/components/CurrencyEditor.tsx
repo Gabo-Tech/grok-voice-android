@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { FinanceState } from "@/hooks/useFinance";
@@ -90,6 +91,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
       >
         {t("Refresh rates")}
       </Button>
+      {finance.refreshing ? <Loader size="inline" label={t("Checking rates")} /> : null}
       {note ? <p className="mt-3 text-sm">{note}</p> : null}
 
       <div className="mt-6 border-t border-border pt-4">

@@ -527,7 +527,7 @@ export function FinancePage({
                 display={finance.snapshot.defaultCurrency}
                 fx={finance.snapshot.fx}
                 prices={finance.snapshot.prices}
-                busy={finance.busy}
+                busy={finance.refreshing}
                 onOpenSettings={onOpenCurrency}
                 onPick={pickChart}
                 categories={finance.snapshot.categories}

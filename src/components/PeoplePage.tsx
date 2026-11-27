@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Trash2 } from "lucide-react";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
+import { Loader } from "@/components/Loader";
 import { hasTag, popTags, pushStep, requestBack } from "@/lib/history";
 import { ShareButton } from "@/components/ShareButton";
 import { Field } from "@/components/Field";
@@ -468,14 +469,17 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
               </Button>
             </div>
           ) : phoneRows.length === 0 ? (
-            <EmptyState
-              title={contactsAllowed === null || busy ? t("Looking up contacts") : phoneQuery ? t("No matches") : t("No phone contacts")}
-              body={
-                contactsAllowed === null || busy
-                  ? t("This stays on the phone.")
-                  : t("Try another name, or add someone without a phone contact.")
-              }
-            />
+            contactsAllowed === null || busy ? (
+              <div>
+                <Loader size="block" label={t("Looking up contacts")} />
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("This stays on the phone.")}</p>
+              </div>
+            ) : (
+              <EmptyState
+                title={phoneQuery ? t("No matches") : t("No phone contacts")}
+                body={t("Try another name, or add someone without a phone contact.")}
+              />
+            )
           ) : (
             <div className="divide-y divide-border border-y border-border">
               {phoneRows.map((contact) => (
