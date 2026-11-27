@@ -496,6 +496,7 @@ impl Session<'_> {
                                     let text = ev["transcript"].as_str().unwrap_or("");
                                     if kind.ends_with("completed") {
                                         crate::consent::note_user_turn(text);
+                                        crate::backup::note_user_turn(text);
                                     }
                                     self.transcript(id, "user", Some(text), None, kind.ends_with("completed"));
                                 }
@@ -647,6 +648,7 @@ impl Session<'_> {
                         let typed = note.trim().strip_prefix("user:").map(str::trim).filter(|text| !text.is_empty());
                         if let Some(text) = pending.or(typed) {
                             crate::consent::note_user_turn(text);
+                            crate::backup::note_user_turn(text);
                         }
                         let body = if let Some(text) = pending {
                             pending_reply = true;

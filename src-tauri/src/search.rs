@@ -244,6 +244,7 @@ pub fn ask(app: &AppHandle, text: &str) -> Result<String, String> {
         return Err("Type a message first.".into());
     }
     crate::consent::note_user_turn(text);
+    crate::backup::note_user_turn(text);
     let hub = app.state::<std::sync::Arc<Hub>>();
     let user_id = format!("text-{}", crate::diagnostics::now_ms());
     let outbound = crate::memory::for_model(text);

@@ -8,12 +8,15 @@
 //! Version 1 files still open. Sections they lack are left as they are.
 //!
 //! A passphrase seals the file with AES-256-GCM. The key is PBKDF2-HMAC-SHA256.
-//! With no passphrase the file is marked plain and the keys sit in the clear.
+//! API keys are sealed into the file only when that passphrase is set.
+//! A plain file is marked GVBU and does not contain keys.
 
 use std::{
     collections::BTreeMap,
     fs,
     path::{Component, Path, PathBuf},
+    sync::{LazyLock, Mutex},
+    time::{Duration, Instant},
 };
 
 use aes_gcm::{
@@ -483,6 +486,7 @@ fn check_passphrase(passphrase: &str) -> Result<(), String> {
 pub fn capture(
     app: &AppHandle,
     web_override: Option<BTreeMap<String, String>>,
+    include_keys: bool,
 ) -> (Payload, Vec<String>) {
     let mut warnings = Vec::new();
     if let Some(web) = web_override {
@@ -495,30 +499,32 @@ pub fn capture(
     let agenda = app.state::<Agenda>().dump();
     let notes = agenda.notes.clone();
     let mut keys = Vec::new();
-    match app
-        .state::<crate::vault::Vault>()
-        .accounts(&app.state::<crate::native::NativeBridge>())
-    {
-        Ok(rows) => {
-            keys.extend(rows.into_iter().map(|account| BackupKey {
-                id: account.id,
-                provider: account.provider,
-                secret: account.secret,
-            }));
+    if include_keys {
+        match app
+            .state::<crate::vault::Vault>()
+            .accounts(&app.state::<crate::native::NativeBridge>())
+        {
+            Ok(rows) => {
+                keys.extend(rows.into_iter().map(|account| BackupKey {
+                    id: account.id,
+                    provider: account.provider,
+                    secret: account.secret,
+                }));
+            }
+            Err(err) => warnings.push(format!("API keys could not be read. {err}")),
         }
-        Err(err) => warnings.push(format!("API keys could not be read. {err}")),
-    }
-    match app
-        .state::<crate::vault::Vault>()
-        .hf_token(&app.state::<crate::native::NativeBridge>())
-    {
-        Ok(Some(token)) => keys.push(BackupKey {
-            id: "hf-token".into(),
-            provider: "huggingface".into(),
-            secret: token.to_string(),
-        }),
-        Ok(None) => {}
-        Err(err) => warnings.push(format!("The Hugging Face token could not be read. {err}")),
+        match app
+            .state::<crate::vault::Vault>()
+            .hf_token(&app.state::<crate::native::NativeBridge>())
+        {
+            Ok(Some(token)) => keys.push(BackupKey {
+                id: "hf-token".into(),
+                provider: "huggingface".into(),
+                secret: token.to_string(),
+            }),
+            Ok(None) => {}
+            Err(err) => warnings.push(format!("The Hugging Face token could not be read. {err}")),
+        }
     }
     let payload = Payload {
         kind: "grok-voice-backup".into(),
@@ -738,8 +744,94 @@ fn restore_keys(app: &AppHandle, payload: &Payload) -> Result<Option<String>, St
     }
 }
 
-pub fn voice_export(app: &AppHandle) -> Result<serde_json::Value, String> {
-    let (payload, mut warnings) = capture(app, None);
+struct VoiceAsk {
+    seq: u64,
+    text: String,
+    turn_at: Instant,
+    staged_seq: u64,
+    staged_at: Option<Instant>,
+}
+
+static VOICE_ASK: LazyLock<Mutex<VoiceAsk>> = LazyLock::new(|| {
+    Mutex::new(VoiceAsk {
+        seq: 0,
+        text: String::new(),
+        turn_at: Instant::now(),
+        staged_seq: 0,
+        staged_at: None,
+    })
+});
+
+fn voice_lock() -> std::sync::MutexGuard<'static, VoiceAsk> {
+    VOICE_ASK.lock().unwrap_or_else(|err| err.into_inner())
+}
+
+/// A typed or heard user turn. The model cannot invent this.
+pub fn note_user_turn(text: &str) {
+    let mut ask = voice_lock();
+    ask.seq = ask.seq.wrapping_add(1);
+    ask.text = text.to_string();
+    ask.turn_at = Instant::now();
+}
+
+fn stage_voice() {
+    let mut ask = voice_lock();
+    let fresh = ask.staged_at.is_some_and(|at| at.elapsed() <= Duration::from_secs(30));
+    if fresh {
+        return;
+    }
+    ask.staged_seq = ask.seq;
+    ask.staged_at = Some(Instant::now());
+}
+
+fn voice_agreed(confirmed: bool) -> bool {
+    if !confirmed {
+        return false;
+    }
+    let mut ask = voice_lock();
+    let ready = ask.staged_at.is_some_and(|at| {
+        at.elapsed() <= Duration::from_secs(30)
+            && ask.seq > ask.staged_seq
+            && ask.turn_at.elapsed() <= Duration::from_secs(30)
+            && backup_yes(&ask.text)
+    });
+    if ready {
+        ask.staged_at = None;
+    }
+    ready
+}
+
+fn backup_yes(text: &str) -> bool {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        if ch.is_alphanumeric() {
+            for lower in ch.to_lowercase() {
+                current.push(lower);
+            }
+        } else if ch != '\'' && ch != '’' && !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    const NO: &[&str] = &["no", "nope", "nein", "não", "nao", "cancela", "cancel", "stop", "wait"];
+    const YES: &[&str] = &["yes", "yeah", "ok", "okay", "si", "sí", "vale", "ja", "klar", "sim", "val", "dacord"];
+    if tokens.is_empty() || tokens.iter().any(|token| NO.contains(&token.as_str())) {
+        return false;
+    }
+    tokens.iter().any(|token| YES.contains(&token.as_str()))
+}
+
+pub fn voice_export(app: &AppHandle, confirmed: bool) -> Result<serde_json::Value, String> {
+    let locale = app.state::<crate::settings::SettingsStore>().get().locale;
+    if !voice_agreed(confirmed) {
+        stage_voice();
+        let detail = crate::i18n::line(&locale, "backup-voice-ask");
+        return Ok(json!({ "ok": true, "needsConfirm": true, "changed": false, "detail": detail }));
+    }
+    let (payload, mut warnings) = capture(app, None, false);
     let bytes = seal(&payload, None)?;
     let path = write_backup_file(app, &bytes)?;
     let shared = path.to_str().is_some_and(|path| {
@@ -748,7 +840,7 @@ pub fn voice_export(app: &AppHandle) -> Result<serde_json::Value, String> {
             .is_ok()
     });
     let locale = app.state::<crate::settings::SettingsStore>().get().locale;
-    let mut detail = crate::i18n::line(&locale, "backup-saved");
+    let mut detail = crate::i18n::line(&locale, "backup-voice-saved");
     if !shared {
         warnings.push("The share sheet did not open. The file is still on this phone.".into());
     }
@@ -963,7 +1055,7 @@ fn write_blobs(root: &Path, blobs: &[Blob]) -> Result<Vec<String>, String> {
             missed.push(blob.name.clone());
             continue;
         }
-        let Some(rel) = safe_rel(&blob.name) else {
+        let Some(rel) = safe_blob(&blob.name) else {
             return Err(format!("{} is not a safe file name.", blob.name));
         };
         let bytes = B64
@@ -976,6 +1068,30 @@ fn write_blobs(root: &Path, blobs: &[Blob]) -> Result<Vec<String>, String> {
         crate::files::write_private(&root.join(rel), &bytes).map_err(|err| err.to_string())?;
     }
     Ok(missed)
+}
+
+/// Wake-word and alarm audio only. A backup cannot replace the vault or any other file.
+fn safe_blob(name: &str) -> Option<PathBuf> {
+    let path = safe_rel(name)?;
+    let mut parts = path.components();
+    let root = match parts.next() {
+        Some(Component::Normal(root)) => root.to_str()?,
+        _ => return None,
+    };
+    if root != "wakeword" && root != crate::alarm_sound::DIR {
+        return None;
+    }
+    let mut files = 0;
+    for part in parts {
+        let Component::Normal(_) = part else {
+            return None;
+        };
+        files += 1;
+    }
+    if files == 0 {
+        return None;
+    }
+    Some(path)
 }
 
 fn safe_rel(name: &str) -> Option<PathBuf> {
@@ -1598,5 +1714,69 @@ mod tests {
             provider: "xai".into(),
             secret: "has space".into()
         }));
+    }
+
+    #[test]
+    fn restore_writes_only_wakeword_and_alarm_files() {
+        assert!(safe_blob("wakeword/hey.ppn").is_some());
+        assert!(safe_blob("alarm-sounds/bell.ogg").is_some());
+        assert!(safe_blob("wakeword/nested/hey.ppn").is_some());
+        assert!(safe_blob("vault/vault.hold").is_none());
+        assert!(safe_blob("vault/vault.key.wrapped").is_none());
+        assert!(safe_blob("wakeword/../vault/vault.hold").is_none());
+        assert!(safe_blob("/etc/passwd").is_none());
+        assert!(safe_blob("wakeword").is_none());
+        assert!(safe_blob("settings.json").is_none());
+    }
+
+    #[test]
+    fn an_old_backup_with_keys_still_opens() {
+        let original = sample_full();
+        assert!(original.version == 2);
+        let plain = seal(&original, None).unwrap();
+        let opened = open(&plain, None).unwrap();
+        assert!(!opened.encrypted);
+        assert!(opened.payload.keys.iter().any(|key| key.secret == "xai-round-trip-secret"));
+        let mut version_one = original.clone();
+        version_one.version = 1;
+        version_one.memory = None;
+        version_one.finance = None;
+        let old = seal(&version_one, Some("correct horse")).unwrap();
+        let opened = open(&old, Some("correct horse")).unwrap();
+        assert_eq!(opened.payload.version, 1);
+        assert!(opened.payload.keys.iter().any(|key| key.provider == "openai"));
+    }
+
+    #[test]
+    fn a_voice_backup_waits_for_a_spoken_yes() {
+        {
+            let mut ask = voice_lock();
+            *ask = VoiceAsk {
+                seq: 0,
+                text: String::new(),
+                turn_at: Instant::now(),
+                staged_seq: 0,
+                staged_at: None,
+            };
+        }
+        assert!(!voice_agreed(true));
+        stage_voice();
+        assert!(!voice_agreed(true), "the model cannot confirm itself");
+        note_user_turn("no");
+        assert!(!voice_agreed(true));
+        note_user_turn("yes");
+        assert!(voice_agreed(true));
+        stage_voice();
+        note_user_turn("sí");
+        assert!(voice_agreed(true));
+        stage_voice();
+        note_user_turn("ja");
+        assert!(voice_agreed(true));
+        stage_voice();
+        note_user_turn("sim");
+        assert!(voice_agreed(true));
+        stage_voice();
+        note_user_turn("val");
+        assert!(voice_agreed(true));
     }
 }

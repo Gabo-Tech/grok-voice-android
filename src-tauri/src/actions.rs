@@ -657,9 +657,10 @@ pub fn tool_definitions() -> Value {
             "properties": { "query": { "type": "string" } },
             "required": ["query"]
         })),
-        fn_tool("create_backup", "Save a backup of the saved data on this phone, including pinned facts and API keys, and open the share sheet. Do not include Talk history or voice-time counters. The voice file is not encrypted. Do not ask for or pass a passphrase, password, or key. Tell the person the file contains keys.", json!({
+        fn_tool("create_backup", "Ask first with confirmed false. After a spoken yes, call again with confirmed true. The file does not include API keys. Do not pass a passphrase.", json!({
             "type": "object",
-            "properties": {}
+            "properties": { "confirmed": { "type": "boolean" } },
+            "required": ["confirmed"]
         })),
         fn_tool("restore_backup", "Replace everything on this phone with the newest backup saved here. Call first with confirmed false, say what will be replaced, and wait for a clear yes. Then call with confirmed true. Do not pass a passphrase. An encrypted backup is restored in Settings.", json!({
             "type": "object",
@@ -2323,7 +2324,7 @@ fn dispatch(app: &AppHandle, name: &str, args: &Value) -> Result<Value, String> 
             if backup_secret_arg(args) {
                 return Err(localize_tool_error(app, crate::settings::SECRET_REFUSAL.into()));
             }
-            crate::backup::voice_export(app)
+            crate::backup::voice_export(app, args["confirmed"] == true)
         }
         "restore_backup" => {
             if backup_secret_arg(args) {
