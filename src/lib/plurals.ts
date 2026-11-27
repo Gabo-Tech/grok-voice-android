@@ -90,7 +90,7 @@ const TABLES: Record<string, Record<CountKind, Forms>> = {
 };
 
 export function pluralTag(locale: string): string {
-  const tag = locale.trim().replaceAll("_", "-").toLowerCase();
+  const tag = locale.trim().split("_").join("-").toLowerCase();
   if (tag.includes("valencia") || tag.startsWith("ca")) return "ca";
   if (tag.startsWith("es")) return "es";
   if (tag.startsWith("de")) return "de";
@@ -104,5 +104,5 @@ export function countPhrase(locale: string, kind: CountKind, count: number): str
   const rules = new Intl.PluralRules(tag);
   const selected: Slot = count === 0 ? "zero" : (rules.select(count) as Slot);
   const template = row[selected] ?? row.other;
-  return template.replaceAll("{n}", String(count));
+  return template.split("{n}").join(String(count));
 }
