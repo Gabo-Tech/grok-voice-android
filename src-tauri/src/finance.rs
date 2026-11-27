@@ -7674,7 +7674,9 @@ fn first_str<'a>(args: &'a Value, keys: &[&str]) -> &'a str {
 }
 
 fn clean_text(value: &str, max: usize) -> Result<String, String> {
-    let text = clamp(value, max);
+    // Names are stored and later interpolated into the chart tooltip. Drop markup
+    // characters before the secret check so a bracket cannot hide a card number.
+    let text: String = clamp(value, max).chars().filter(|c| *c != '<' && *c != '>').collect();
     if sensitive(&text) {
         return Err(SECRET.into());
     }
@@ -9615,6 +9617,12 @@ mod tests {
         assert!(clean_text("PIN 1234", 40).is_err());
         assert_eq!(clean_text("Visa travel", 40).unwrap(), "Visa travel");
         assert_eq!(clean_text("N26", 40).unwrap(), "N26");
+        assert_eq!(
+            clean_text(r#"Rent <img src=x onerror="alert(1)">"#, 80).unwrap(),
+            r#"Rent img src=x onerror="alert(1)""#
+        );
+        assert_eq!(clean_text("AT&T", 40).unwrap(), "AT&T");
+        assert!(clean_text("4111<1111>1111 1111", 40).is_err());
     }
 
     #[test]
