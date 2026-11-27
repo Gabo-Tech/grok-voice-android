@@ -10,6 +10,7 @@ import { ColorSheet } from "@/components/ColorSheet";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { bookFromStatus } from "@/lib/financeMath";
 import { boundsOf, type ChartPeriod } from "@/lib/chartPeriod";
+import { flowTooltipHtml } from "@/lib/flowTooltip";
 import { buildMoneyFlow, buildSankeyOption, fitValueScale, flowSlices, spreadColumn, type FlowLink, type FlowNode, type MoneyFlow, type SankeyFrame } from "@/lib/moneyFlow";
 import { budgetAsFlow, resolveBudget, shiftMonth, type BudgetRecord } from "@/lib/budget";
 import { resolveColor } from "@/lib/entityColor";
@@ -689,10 +690,10 @@ function FlowChart({
         if (params.dataType === "edge") {
           const from = byId.get(params.data?.source || "");
           const to = byId.get(params.data?.target || "");
-          return `${from?.label || ""} → ${to?.label || ""}<br/>${formatMoney(value, currency)}`;
+          return flowTooltipHtml("edge", from?.label || "", to?.label || "", "", formatMoney(value, currency));
         }
         const node = byId.get(params.data?.name || "");
-        return `${node?.label || ""}<br/>${formatMoney(value, currency)} · ${flowPercent(node?.share || 0)}`;
+        return flowTooltipHtml("node", "", "", node?.label || "", `${formatMoney(value, currency)} · ${flowPercent(node?.share || 0)}`);
       },
     };
     try {
