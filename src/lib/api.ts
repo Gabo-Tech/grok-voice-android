@@ -361,6 +361,31 @@ export interface BackupPreview {
   transactions?: number;
   rules?: number;
   hasFinance?: boolean;
+  version?: number;
+  encrypted?: boolean;
+  events?: number;
+  alarms?: number;
+  countdowns?: number;
+  hasSettings?: boolean;
+  talkTurns?: number;
+  hasTalk?: boolean;
+  hasUsage?: boolean;
+  hasAgenda?: boolean;
+  webKeys?: number;
+  hasWeb?: boolean;
+  hasPacks?: boolean;
+  wakeFiles?: number;
+  alarmFiles?: number;
+  referenced?: string[];
+}
+
+export interface RestoreReport extends BackupPreview {
+  restored: string[];
+  errors: string[];
+  web: Record<string, string>;
+  appearance: string;
+  customTheme: string;
+  locale: string;
 }
 
 export interface FinanceAccount {
@@ -723,6 +748,8 @@ export interface ExportedBackup {
   fileName: string;
   dataB64: string;
   shared: boolean;
+  warnings?: string[];
+  encrypted?: boolean;
 }
 
 export interface SpendCue {
@@ -877,12 +904,13 @@ export const api = {
   cancelScheduled: (id: number) => invoke<Agenda>("cancel_scheduled", { id }),
   completeScheduled: (id: number) => invoke<Agenda>("complete_scheduled", { id }),
   usageStatus: () => invoke<UsageStatus>("usage_status"),
-  exportBackup: (passphrase: string, includeKeys = false) =>
-    invoke<ExportedBackup>("export_backup", { passphrase, includeKeys }),
+  saveWebPrefs: (web: Record<string, string>) => invoke<void>("save_web_prefs", { web }),
+  exportBackup: (passphrase: string, web: Record<string, string>) =>
+    invoke<ExportedBackup>("export_backup", { passphrase, web }),
   previewBackup: (dataB64: string, passphrase: string) =>
     invoke<BackupPreview>("preview_backup", { dataB64, passphrase }),
-  restoreBackup: (dataB64: string, passphrase: string, confirm: boolean, restoreKeys = false) =>
-    invoke<BackupPreview>("restore_backup", { dataB64, passphrase, confirm, restoreKeys }),
+  restoreBackup: (dataB64: string, passphrase: string, confirm: boolean) =>
+    invoke<RestoreReport>("restore_backup", { dataB64, passphrase, confirm }),
   saveEvent: (args: {
     title: string;
     startMs: number;

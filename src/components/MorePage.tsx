@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Archive, AudioLines, Bell, Brain, Bug, ChevronDown, ChevronRight, Download, Hourglass, Languages, Music, Users, Wallet, Wand2 } from "lucide-react";
@@ -16,11 +16,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { VoiceState } from "@/hooks/useVoice";
-import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type InboxApp, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AccessStatus, type AuthStatus, type BackupPreview, type InboxApp, type ListenHealth, type LocalMemoryBundle, type MusicPlayerChoice, type RestoreReport, type Settings, type UpdateStatus, type UsageStatus, type WakewordStatus } from "@/lib/api";
+import { applyAppearance, choiceFromSettings, normalizeAppearance, prefersLight, rememberAppearance, rememberCustomTheme } from "@/lib/appearance";
 import { providerLabel } from "@/lib/flow";
 import { isApplyingHistory, popTags, pushStep } from "@/lib/history";
-import { normalizeAppearance, rememberCustomTheme } from "@/lib/appearance";
 import { fill, setAppLocale, useT } from "@/lib/i18n";
+import { readPersistedWeb, writePersistedWeb } from "@/lib/persistedKeys";
 import { cn } from "@/lib/utils";
 
 export type Section =
@@ -638,7 +639,7 @@ export function MorePage({
       id: "privacy",
       title: t("Backup"),
       rows: [
-        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("An encrypted file of notes, People, Finance, and memory.") },
+        { section: "backup", icon: <Archive className="size-4" />, title: t("Backup"), detail: t("Everything saved on this phone, including keys.") },
         { section: "memory", icon: <Brain className="size-4" />, title: t("Memory"), detail: t("Pinned facts Talk can use on this phone.") },
       ],
     },
@@ -1109,34 +1110,73 @@ function accessWord(value: string | undefined, t: (english: string) => string) {
   return t(value);
 }
 
+let shownRestore: RestoreReport | null | undefined;
+
+function takeRestoreSummary(): RestoreReport | null {
+  if (shownRestore !== undefined) return shownRestore;
+  try {
+    const raw = sessionStorage.getItem("grok-restore-summary");
+    shownRestore = raw ? (JSON.parse(raw) as RestoreReport) : null;
+  } catch {
+    shownRestore = null;
+  }
+  sessionStorage.removeItem("grok-restore-summary");
+  return shownRestore;
+}
+
+let restoring = false;
+
+export function applyBackupResult(report: RestoreReport) {
+  if (restoring) return;
+  restoring = true;
+  writePersistedWeb(report.web, Boolean(report.hasWeb));
+  if (report.customTheme) rememberCustomTheme(report.customTheme);
+  const choice = choiceFromSettings(report.appearance || "");
+  if (choice) {
+    rememberAppearance(choice);
+    applyAppearance(choice, prefersLight());
+  }
+  setAppLocale(report.locale || "");
+  try {
+    sessionStorage.setItem("grok-restore-summary", JSON.stringify(report));
+  } catch {
+    /* The summary still shows if reload is slow. */
+  }
+  window.location.reload();
+}
+
 function BackupPage() {
   const t = useT();
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
-  const [includeKeys, setIncludeKeys] = useState(false);
   const [fileB64, setFileB64] = useState("");
   const [fileName, setFileName] = useState("");
   const [preview, setPreview] = useState<BackupPreview | null>(null);
-  const [restoreKeys, setRestoreKeys] = useState(false);
+  const [report, setReport] = useState<RestoreReport | null>(takeRestoreSummary);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const exportFile = async () => {
-    if (passphrase.length < 8) {
+    const typed = passphrase.trim();
+    if (typed && typed.length < 8) {
       setError("Use a passphrase of at least 8 characters.");
       return;
     }
-    if (passphrase !== again) {
+    if (typed !== again.trim()) {
       setError("Type the passphrase the same way twice.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const file = await api.exportBackup(passphrase, includeKeys);
-      setNotice(file.shared ? "Share sheet opened. The file stays on this phone." : "Backup ready.");
-      if (!file.shared) downloadBase64(file.fileName, file.dataB64);
+      const file = await api.exportBackup(typed, readPersistedWeb());
+      const ready = file.encrypted ? "Backup saved." : "Backup ready.";
+      setNotice(file.shared ? "Share sheet opened. The file stays on this phone." : ready);
+      setWarnings((file.warnings ?? []).filter(Boolean));
+      if (!file.shared && file.dataB64) downloadBase64(file.fileName, file.dataB64);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -1152,7 +1192,7 @@ function BackupPage() {
     setFileB64(btoa(binary));
     setFileName(file.name);
     setPreview(null);
-    setRestoreKeys(false);
+    setReport(null);
     setError(null);
     setNotice("");
   };
@@ -1161,9 +1201,8 @@ function BackupPage() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.previewBackup(fileB64, passphrase);
+      const next = await api.previewBackup(fileB64, passphrase.trim());
       setPreview(next);
-      setRestoreKeys(false);
       setNotice("");
     } catch (e) {
       setPreview(null);
@@ -1177,9 +1216,10 @@ function BackupPage() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.restoreBackup(fileB64, passphrase, true, restoreKeys);
-      setPreview(next);
-      setNotice(t("Replaced notes, people, and Finance on this phone."));
+      const next = await api.restoreBackup(fileB64, passphrase.trim(), true);
+      setReport(next);
+      setNotice("Restored on this phone.");
+      applyBackupResult(next);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -1187,85 +1227,95 @@ function BackupPage() {
     }
   };
 
+  const summary = report ?? preview;
+
   return (
-    <div className="space-y-4 pb-6">
-      <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
-      <p className="text-sm leading-6 text-muted-foreground">
-        {t("An encrypted file of notes, People, and the small on-device memory. Older files have no memory section, so restoring one leaves the memory on this phone. Voice keys stay in the vault unless you include them here. Nothing is uploaded.")}{" "}
-        {t("Finance is included. An older backup without Finance leaves the money already on this phone.")}
-      </p>
-      <Field label={t("Passphrase")}>
-        <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
-      </Field>
-      <Field label={t("Passphrase again")}>
-        <Input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
-      </Field>
-      <button
-        type="button"
-        onClick={() => setIncludeKeys((on) => !on)}
-        className={cn(
-          "flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
-          includeKeys ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-        )}
-      >
-        <span>{t("Include voice keys")}</span>
-        <span className="text-xs tracking-[0.12em] uppercase">{includeKeys ? t("On") : t("Off")}</span>
-      </button>
-      <Button disabled={busy} onClick={() => void exportFile()}>
-        {t("Export backup")}
-      </Button>
-      <div className="border-t border-border pt-4">
-        <p className="text-[13px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {t("Replace notes, People, and Finance on this phone. Reminders that are not tied to a person stay. Confirm after you review the file.")}
+    <div className="space-y-6 pb-6 landscape:grid landscape:grid-cols-2 landscape:gap-8 landscape:space-y-0">
+      <section className="space-y-4">
+        <h2 className="text-2xl font-medium tracking-tight">{t("Backup")}</h2>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {t("A file of everything saved on this phone, including API keys. A passphrase encrypts the file. Without one, anyone who opens the file can read the keys.")}
         </p>
-        <label className="mt-3 flex h-12 cursor-pointer items-center border border-border px-3 text-sm">
+        <Field label={t("Optional passphrase")}>
+          <Input type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
+        </Field>
+        <Field label={t("Passphrase again")}>
+          <Input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+        </Field>
+        {!passphrase.trim() && (
+          <p className="text-sm leading-6 text-foreground">{t("Leave this blank only if you accept an unencrypted file. That file contains your API keys.")}</p>
+        )}
+        <Button className="w-full" disabled={busy} onClick={() => void exportFile()}>
+          {t("Export backup")}
+        </Button>
+      </section>
+      <section className="space-y-4 border-t border-border pt-4 landscape:border-t-0 landscape:pt-0">
+        <p className="text-[13px] tracking-[0.16em] text-muted-foreground uppercase">{t("Restore")}</p>
+        <p className="text-sm leading-6 text-muted-foreground">{t("This replaces everything saved on this phone, then reloads.")}</p>
+        <button type="button" className="flex min-h-12 w-full items-center text-left text-sm underline underline-offset-4" onClick={() => fileRef.current?.click()}>
           <span className="truncate">{fileName || t("Choose a .gvb file")}</span>
-          <input
-            type="file"
-            accept=".gvb,application/octet-stream"
-            className="sr-only"
-            onChange={(e) => void readFile(e.target.files?.[0])}
-          />
-        </label>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="outline" disabled={busy || !fileB64 || passphrase.length < 8} onClick={() => void review()}>
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".gvb,application/octet-stream"
+          className="sr-only"
+          onChange={(e) => void readFile(e.target.files?.[0])}
+        />
+        <div className="flex flex-wrap items-center gap-4">
+          <Button variant="outline" disabled={busy || !fileB64 || (passphrase.trim().length > 0 && passphrase.trim().length < 8)} onClick={() => void review()}>
             {t("Review")}
           </Button>
-          <Button disabled={busy || !preview} onClick={() => void restore()}>
-            {t("Replace notes, people, and Finance")}
+          <Button variant="destructive" className="min-h-12" disabled={busy || !preview} onClick={() => void restore()}>
+            {t("Replace everything on this phone")}
           </Button>
         </div>
-        {preview && (
-          <div className="mt-3 space-y-2 text-sm text-foreground">
-            <p>
-              {fill("{notes} notes · {people} people · {reminders} dates", {
-                notes: preview.notes,
-                people: preview.people,
-                reminders: preview.reminders,
-              })}
-              {preview.keys ? fill(" · {keys} keys in the file", { keys: preview.keys }) : ""}
-              {preview.hasMemory ? fill(" · {facts} facts", { facts: preview.facts }) : t(" · no memory section")}
-              {preview.hasFinance ? ` · ${t("Includes Finance")}` : ` · ${t("No Finance in this file")}`}
-            </p>
-            {preview.keys > 0 && (
-              <button
-                type="button"
-                onClick={() => setRestoreKeys((on) => !on)}
-                className={cn(
-                  "flex h-12 w-full items-center justify-between border px-3 text-left text-sm",
-                  restoreKeys ? "border-foreground text-foreground" : "border-border text-muted-foreground",
-                )}
-              >
-                <span>{t("Also replace voice keys")}</span>
-                <span className="text-xs tracking-[0.12em] uppercase">{restoreKeys ? t("On") : t("Off")}</span>
-              </button>
-            )}
+        {summary && <BackupSummary preview={summary} />}
+        {report && report.errors.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-sm text-foreground">{t("Could not restore everything.")}</p>
+            {report.errors.map((line) => (
+              <p key={line} className="text-sm leading-6 text-foreground">{line}</p>
+            ))}
           </div>
         )}
-      </div>
-      {error && <p className="text-sm text-foreground">{t(error)}</p>}
-      {notice && <p className="text-sm text-muted-foreground">{t(notice)}</p>}
+        {report && report.errors.length === 0 && <p className="text-sm text-foreground">{t("Restored on this phone.")}</p>}
+      </section>
+      {error && <p className="text-sm text-foreground landscape:col-span-2">{t(error)}</p>}
+      {notice && <p className="text-sm text-muted-foreground landscape:col-span-2">{t(notice)}</p>}
+      {warnings.map((line) => (
+        <p key={line} className="text-sm text-foreground landscape:col-span-2">{line}</p>
+      ))}
+    </div>
+  );
+}
+
+function BackupSummary({ preview }: { preview: BackupPreview }) {
+  const t = useT();
+  return (
+    <div className="space-y-2 text-sm leading-6 text-foreground">
+      <p>
+        {fill("{notes} notes, {people} people, {events} events, {reminders} reminders, {alarms} alarms, {countdowns} countdowns, {accounts} accounts, {keys} keys.", {
+          notes: preview.notes,
+          people: preview.people,
+          events: preview.events ?? 0,
+          reminders: preview.reminders,
+          alarms: preview.alarms ?? 0,
+          countdowns: preview.countdowns ?? 0,
+          accounts: preview.accounts ?? 0,
+          keys: preview.keys,
+        })}
+      </p>
+      <p>{preview.encrypted ? t("This file is encrypted.") : t("This file is not encrypted and contains API keys.")}</p>
+      {(preview.referenced ?? []).some((name) => name.startsWith("on-device models")) && (
+        <p>{t("On-device model files stay on the phone that downloaded them. This backup names them and does not include the files.")}</p>
+      )}
+      {(preview.referenced ?? []).some((name) => !name.startsWith("on-device models")) && (
+        <p>{t("Some files were too large to include. They are named below.")}</p>
+      )}
+      {preview.referenced?.map((name) => (
+        <p key={name}>{name}</p>
+      ))}
     </div>
   );
 }

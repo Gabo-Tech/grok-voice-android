@@ -21,7 +21,7 @@ The spoken examples are [docs/voice](docs/voice/en.html). The tool catalog is [d
 Translations and setup copy:
 
 ```bash
-node --experimental-strip-types --test src/lib/setupGuide.test.ts src/lib/i18nCoverage.test.ts
+node --experimental-strip-types --test src/lib/setupGuide.test.ts src/lib/i18nCoverage.test.ts src/lib/backupRoundTrip.test.ts
 ```
 
 The other `src/lib/*.test.ts` files cover finance math, colors, appearance, budgets, and time tabs. Rust tests:

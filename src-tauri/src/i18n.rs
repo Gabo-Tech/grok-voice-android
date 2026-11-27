@@ -209,6 +209,12 @@ const EN: &[(&str, &str, &str)] = &[
     ("time-cancel-alarm", "", "Cancel the alarm {title}? Say yes to remove it."),
     ("time-cancel-countdown", "", "Cancel the countdown {title}? Say yes to remove it."),
     ("time-cancelled", "", "Cancelled {title}."),
+    ("backup-saved", "", "Backup saved on this phone. It includes your data and API keys, and it is not encrypted."),
+    ("backup-none", "", "There is no backup on this phone yet."),
+    ("backup-ask", "", "Restore the backup from {when}? This replaces notes, people, money, events, reminders, settings, and keys on this phone. Say yes."),
+    ("backup-encrypted", "", "That backup is encrypted. Open Settings and type the passphrase there."),
+    ("backup-restored", "", "Restored. {summary}"),
+    ("backup-failed", "", "Could not restore the backup. {error}"),
 ];
 
 const ES: &[(&str, &str, &str)] = &[
@@ -358,6 +364,12 @@ const ES: &[(&str, &str, &str)] = &[
     ("time-cancel-alarm", "", "¿Cancelo la alarma {title}? Di que sí para quitarla."),
     ("time-cancel-countdown", "", "¿Cancelo la cuenta atrás {title}? Di que sí para quitarla."),
     ("time-cancelled", "", "Cancelado: {title}."),
+    ("backup-saved", "", "Copia guardada en este teléfono. Incluye tus datos y las claves de API, y no está cifrada."),
+    ("backup-none", "", "Aún no hay una copia en este teléfono."),
+    ("backup-ask", "", "¿Restauro la copia del {when}? Esto sustituye notas, personas, dinero, eventos, recordatorios, ajustes y claves de este teléfono. Di que sí."),
+    ("backup-encrypted", "", "Esa copia está cifrada. Ábrela en Ajustes y escribe allí la contraseña."),
+    ("backup-restored", "", "Restaurado. {summary}"),
+    ("backup-failed", "", "No se ha podido restaurar la copia. {error}"),
 ];
 
 const DE: &[(&str, &str, &str)] = &[
@@ -507,6 +519,12 @@ const DE: &[(&str, &str, &str)] = &[
     ("time-cancel-alarm", "", "Den Wecker {title} abbrechen? Sag ja, um ihn zu entfernen."),
     ("time-cancel-countdown", "", "Den Timer {title} abbrechen? Sag ja, um ihn zu entfernen."),
     ("time-cancelled", "", "{title} ist abgebrochen."),
+    ("backup-saved", "", "Sicherung auf diesem Telefon gespeichert. Sie enthält deine Daten und API-Schlüssel und ist nicht verschlüsselt."),
+    ("backup-none", "", "Auf diesem Telefon liegt noch keine Sicherung."),
+    ("backup-ask", "", "Sicherung vom {when} wiederherstellen? Das ersetzt Notizen, Personen, Geld, Termine, Erinnerungen, Einstellungen und Schlüssel auf diesem Telefon. Sag ja."),
+    ("backup-encrypted", "", "Diese Sicherung ist verschlüsselt. Öffne die Einstellungen und gib dort das Passwort ein."),
+    ("backup-restored", "", "Wiederhergestellt. {summary}"),
+    ("backup-failed", "", "Die Sicherung konnte nicht wiederhergestellt werden. {error}"),
 ];
 
 const PT: &[(&str, &str, &str)] = &[
@@ -656,6 +674,12 @@ const PT: &[(&str, &str, &str)] = &[
     ("time-cancel-alarm", "", "Cancelar o alarme {title}? Diga sim para o remover."),
     ("time-cancel-countdown", "", "Cancelar a contagem {title}? Diga sim para a remover."),
     ("time-cancelled", "", "Cancelado: {title}."),
+    ("backup-saved", "", "Cópia guardada neste telefone. Inclui os seus dados e as chaves de API, e não está cifrada."),
+    ("backup-none", "", "Ainda não há uma cópia neste telefone."),
+    ("backup-ask", "", "Restaurar a cópia de {when}? Isto substitui notas, pessoas, dinheiro, eventos, lembretes, ajustes e chaves neste telefone. Diga sim."),
+    ("backup-encrypted", "", "Essa cópia está cifrada. Abra Ajustes e digite a senha lá."),
+    ("backup-restored", "", "Restaurado. {summary}"),
+    ("backup-failed", "", "Não foi possível restaurar a cópia. {error}"),
 ];
 
 const CA: &[(&str, &str, &str)] = &[
@@ -805,6 +829,12 @@ const CA: &[(&str, &str, &str)] = &[
     ("time-cancel-alarm", "", "Cancel·le l'alarma {title}? Digues que sí per llevar-la."),
     ("time-cancel-countdown", "", "Cancel·le el compte enrere {title}? Digues que sí per llevar-lo."),
     ("time-cancelled", "", "Cancel·lat: {title}."),
+    ("backup-saved", "", "Còpia guardada en este telèfon. Inclou les teues dades i les claus d'API, i no està xifrada."),
+    ("backup-none", "", "Encara no hi ha una còpia en este telèfon."),
+    ("backup-ask", "", "Restaure la còpia del {when}? Açò substituïx notes, persones, diners, esdeveniments, recordatoris, ajustos i claus d'este telèfon. Digues que sí."),
+    ("backup-encrypted", "", "Eixa còpia està xifrada. Obri Ajusts i escriu allí la contrasenya."),
+    ("backup-restored", "", "Restaurat. {summary}"),
+    ("backup-failed", "", "No s'ha pogut restaurar la còpia. {error}"),
 ];
 
 include!("finance_phrases.rs");

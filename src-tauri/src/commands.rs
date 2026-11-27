@@ -935,64 +935,34 @@ pub struct ExportedBackup {
     pub file_name: String,
     pub data_b64: String,
     pub shared: bool,
+    pub warnings: Vec<String>,
+    pub encrypted: bool,
+}
+
+#[tauri::command]
+pub fn save_web_prefs(
+    app: AppHandle,
+    web: std::collections::BTreeMap<String, String>,
+) -> Result<()> {
+    app.state::<crate::persist::WebPrefs>().replace(web);
+    Ok(())
 }
 
 #[tauri::command]
 pub fn export_backup(
     app: AppHandle,
-    passphrase: String,
-    include_keys: Option<bool>,
+    passphrase: Option<String>,
+    web: Option<std::collections::BTreeMap<String, String>>,
 ) -> Result<ExportedBackup> {
-    let include_keys = include_keys.unwrap_or(false);
-    let mut payload = crate::backup::Payload::notes_and_people(
-        app.state::<Agenda>().notes(),
-        app.state::<People>().list(),
-    );
-    payload.memory = Some(app.state::<crate::local_memory::LocalMemory>().snapshot());
-    payload.finance = Some(app.state::<crate::finance::Finance>().bundle());
-    if include_keys {
-        let secrets = app
-            .state::<Vault>()
-            .accounts(&app.state::<NativeBridge>())
-            .map_err(|e| msg(e.to_string()))?;
-        payload.keys = secrets
-            .into_iter()
-            .map(|account| crate::backup::BackupKey {
-                id: account.id,
-                provider: account.provider,
-                secret: account.secret,
-            })
-            .collect();
-        if let Ok(Some(token)) = app.state::<Vault>().hf_token(&app.state::<NativeBridge>()) {
-            payload.keys.push(crate::backup::BackupKey {
-                id: "hf-token".into(),
-                provider: "huggingface".into(),
-                secret: token.to_string(),
-            });
-        }
-    }
-    let bytes = crate::backup::seal(&payload, &passphrase).map_err(msg)?;
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| msg(e.to_string()))?
-        .join("backups");
-    std::fs::create_dir_all(&dir).map_err(|e| msg(e.to_string()))?;
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.starts_with("grok-voice-backup-") && name.ends_with(".gvb") {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
-    let file_name = format!(
-        "grok-voice-backup-{}.gvb",
-        chrono::Local::now().format("%Y-%m-%d")
-    );
-    let path = dir.join(&file_name);
-    crate::files::write_private(&path, &bytes).map_err(|e| msg(e.to_string()))?;
+    let (payload, warnings) = crate::backup::capture(&app, web);
+    let pass = passphrase.as_deref().map(str::trim).filter(|pass| !pass.is_empty());
+    let bytes = crate::backup::seal(&payload, pass).map_err(msg)?;
+    let path = crate::backup::write_backup_file(&app, &bytes).map_err(msg)?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("grok-voice-backup.gvb")
+        .to_string();
     let shared = path.to_str().is_some_and(|path| {
         app.state::<NativeBridge>()
             .share_file(path, "application/octet-stream", "Grok Voice backup")
@@ -1006,75 +976,36 @@ pub fn export_backup(
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
         },
         shared,
+        warnings,
+        encrypted: pass.is_some(),
     })
 }
 
 #[tauri::command]
-pub fn preview_backup(data_b64: String, passphrase: String) -> Result<crate::backup::Preview> {
-    crate::backup::open_b64(&data_b64, &passphrase)
-        .map(|payload| payload.preview())
-        .map_err(msg)
+pub fn preview_backup(
+    data_b64: String,
+    passphrase: Option<String>,
+) -> Result<crate::backup::Preview> {
+    let opened = crate::backup::open_b64(&data_b64, passphrase.as_deref()).map_err(msg)?;
+    let mut preview = opened.payload.preview();
+    preview.encrypted = opened.encrypted;
+    Ok(preview)
 }
 
 #[tauri::command]
 pub fn restore_backup(
     app: AppHandle,
     data_b64: String,
-    passphrase: String,
+    passphrase: Option<String>,
     confirm: bool,
-    restore_keys: Option<bool>,
-) -> Result<crate::backup::Preview> {
+) -> Result<crate::backup::RestoreReport> {
     if !confirm {
-        return Err(msg(
-            "Confirm before replacing notes and people on this phone.",
-        ));
+        return Err(msg("Confirm before replacing everything on this phone."));
     }
-    let payload = crate::backup::open_b64(&data_b64, &passphrase).map_err(msg)?;
-    let preview = payload.preview();
-    app.state::<People>()
-        .replace_all(payload.people)
-        .map_err(msg)?;
-    actions::replace_notes(&app, payload.notes).map_err(msg)?;
-    if let Some(memory) = payload.memory {
-        app.state::<crate::local_memory::LocalMemory>()
-            .replace(memory);
-    }
-    if let Some(finance) = payload.finance {
-        app.state::<crate::finance::Finance>()
-            .replace(&app, finance)
-            .map_err(msg)?;
-    }
-    actions::sync_person_reminders(&app).map_err(msg)?;
-    if restore_keys.unwrap_or(false) && !payload.keys.is_empty() {
-        let mut hf_token = None;
-        let rows: Vec<(String, String, String)> = payload
-            .keys
-            .into_iter()
-            .filter(|key| crate::backup::acceptable_key(key))
-            .filter_map(|key| {
-                if key.provider == "huggingface" {
-                    hf_token = Some(key.secret);
-                    None
-                } else {
-                    Some((key.id, key.provider, key.secret))
-                }
-            })
-            .collect();
-        if rows.is_empty() && hf_token.is_none() {
-            return Err(msg("That backup's voice keys could not be restored."));
-        }
-        if !rows.is_empty() {
-            app.state::<Vault>()
-                .replace_secrets(&app.state::<NativeBridge>(), &rows)
-                .map_err(|e| msg(e.to_string()))?;
-        }
-        if let Some(token) = hf_token {
-            app.state::<Vault>()
-                .set_hf_token(&app.state::<NativeBridge>(), &token)
-                .map_err(|e| msg(e.to_string()))?;
-        }
-    }
-    Ok(preview)
+    let opened = crate::backup::open_b64(&data_b64, passphrase.as_deref()).map_err(msg)?;
+    let mut report = crate::backup::restore_app(&app, &opened.payload);
+    report.preview.encrypted = opened.encrypted;
+    Ok(report)
 }
 
 #[tauri::command]

@@ -9,15 +9,16 @@ import { FinancePage } from "@/components/FinancePage";
 import { FlowShot } from "@/components/FlowShot";
 import { Loader } from "@/components/Loader";
 import { LoaderShot } from "@/components/LoaderShot";
-import { MorePage, type Section } from "@/components/MorePage";
+import { applyBackupResult, MorePage, type Section } from "@/components/MorePage";
 import { NotesPage } from "@/components/NotesPage";
 import { Onboarding } from "@/components/Onboarding";
 import { RemindersPage } from "@/components/RemindersPage";
 import { useAgenda } from "@/hooks/useAgenda";
 import { useFinance } from "@/hooks/useFinance";
 import { useVoice } from "@/hooks/useVoice";
-import { api, errorText, type AuthStatus, type Settings, type WakewordStatus } from "@/lib/api";
+import { api, errorText, type AuthStatus, type RestoreReport, type Settings, type WakewordStatus } from "@/lib/api";
 import { applyAppearance, choiceFromSettings, normalizeAppearance, prefersLight, readStoredAppearance, rememberAppearance, rememberCustomTheme, type AppearanceChoice } from "@/lib/appearance";
+import { isPersistedWebKey, readPersistedWeb } from "@/lib/persistedKeys";
 import { popUntil, pushStep } from "@/lib/history";
 import { setAppLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -41,7 +42,7 @@ function previewRoute(inApp: boolean): { app: boolean; tab: AppTab; section: Sec
   const tabs: AppTab[] = ["talk", "notes", "calendar", "reminders", "finance", "more"];
   const asked = params.get("tab");
   const tab = tabs.includes(asked as AppTab) ? (asked as AppTab) : "talk";
-  const sections: Section[] = ["menu", "voice", "model", "wake", "people", "spend", "language", "keys", "packs", "music", "updates", "finance"];
+  const sections: Section[] = ["menu", "voice", "model", "wake", "people", "spend", "language", "keys", "packs", "music", "updates", "finance", "backup"];
   const sectionAsked = params.get("section");
   const section = sections.includes(sectionAsked as Section) ? (sectionAsked as Section) : "menu";
   return { app: true, tab, section };
@@ -70,15 +71,16 @@ export default function App() {
   const [bootLocale, setBootLocale] = useState("");
   const [bootError, setBootError] = useState<string | null>(null);
   const [wake, setWake] = useState<WakewordStatus>(EMPTY_WAKE);
-  const [tab, setTab] = useState<AppTab>(preview.tab);
-  const [moreFocus, setMoreFocus] = useState<Section>(preview.section);
+  const restorePending = typeof window !== "undefined" && sessionStorage.getItem("grok-restore-summary") != null;
+  const [tab, setTab] = useState<AppTab>(restorePending ? "more" : preview.tab);
+  const [moreFocus, setMoreFocus] = useState<Section>(restorePending ? "backup" : preview.section);
   const [seen, setSeen] = useState({
     talk: true,
     notes: preview.tab === "notes",
     calendar: preview.tab === "calendar",
     reminders: preview.tab === "reminders",
     finance: preview.tab === "finance",
-    more: preview.tab === "more",
+    more: restorePending || preview.tab === "more",
   });
   const goTab = useRef<(next: AppTab) => void>(() => {});
   const show = (id: AppTab) => {
@@ -168,6 +170,44 @@ export default function App() {
         setAppearance(choice);
         applyAppearance(choice, prefersLight());
       }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [inApp]);
+
+  useEffect(() => {
+    if (!inApp) return;
+    let pending = 0;
+    const flush = () => {
+      window.clearTimeout(pending);
+      pending = window.setTimeout(() => {
+        void api.saveWebPrefs(readPersistedWeb()).catch(() => {});
+      }, 40);
+    };
+    flush();
+    const write = localStorage.setItem.bind(localStorage);
+    const remove = localStorage.removeItem.bind(localStorage);
+    localStorage.setItem = (key, value) => {
+      write(key, value);
+      if (isPersistedWebKey(key)) flush();
+    };
+    localStorage.removeItem = (key) => {
+      remove(key);
+      if (isPersistedWebKey(key)) flush();
+    };
+    return () => {
+      window.clearTimeout(pending);
+      localStorage.setItem = write;
+      localStorage.removeItem = remove;
+    };
+  }, [inApp]);
+
+  useEffect(() => {
+    if (!inApp) return;
+    let unlisten: (() => void) | undefined;
+    void listen<RestoreReport>("voice://restored", (event) => {
+      applyBackupResult(event.payload);
     }).then((fn) => {
       unlisten = fn;
     });

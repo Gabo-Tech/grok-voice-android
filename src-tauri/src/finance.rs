@@ -431,6 +431,9 @@ pub struct Bundle {
     price_cache_version: u32,
     #[serde(default)]
     pub budgets: Vec<Budget>,
+    /// Next id the phone will hand out. 0 on a backup written before this field.
+    #[serde(default)]
+    pub next_id: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -793,6 +796,7 @@ impl Finance {
             provider_pins: store.provider_pins.clone(),
             price_cache_version: store.price_cache_version,
             budgets: store.budgets.clone(),
+            next_id: store.next_id,
         }
     }
 
@@ -813,6 +817,8 @@ impl Finance {
         store.provider_pins = bundle.provider_pins;
         store.price_cache_version = bundle.price_cache_version;
         store.budgets = bundle.budgets;
+        store.categories_ready = true;
+        store.next_id = bundle.next_id.max(inferred_next_id(&store));
         self.commit(app, store).map(|_| ())
     }
 
@@ -4982,6 +4988,24 @@ fn empty_account(id: String) -> Account {
         valuations: Vec::new(),
         isin: String::new(),
     }
+}
+
+fn inferred_next_id(store: &Store) -> u64 {
+    let mut max = 0u64;
+    let ids = store
+        .accounts
+        .iter()
+        .map(|row| row.id.as_str())
+        .chain(store.transactions.iter().map(|row| row.id.as_str()))
+        .chain(store.rules.iter().map(|row| row.id.as_str()))
+        .chain(store.budgets.iter().map(|row| row.id.as_str()));
+    for id in ids {
+        let digits: String = id.chars().rev().take_while(|ch| ch.is_ascii_digit()).collect::<String>().chars().rev().collect();
+        if let Ok(n) = digits.parse::<u64>() {
+            max = max.max(n);
+        }
+    }
+    max
 }
 
 fn alloc(store: &mut Store, prefix: &str) -> String {

@@ -29,6 +29,7 @@ mod music;
 mod native;
 mod notices;
 mod people;
+mod persist;
 mod realtime;
 mod recurrence;
 mod search;
@@ -111,6 +112,7 @@ pub fn run() {
             ));
             app.manage(actions::Handoffs::default());
             app.manage(usage::UsageStore::load(dir.join("usage.json")));
+            app.manage(persist::WebPrefs::load(dir.join("web-prefs.json")));
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let _ = actions::sync_person_reminders(&handle);
@@ -192,6 +194,7 @@ pub fn run() {
             commands::export_backup,
             commands::preview_backup,
             commands::restore_backup,
+            commands::save_web_prefs,
             commands::recent_memory,
             commands::clear_memory,
             commands::local_memory,
