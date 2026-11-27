@@ -595,7 +595,7 @@ function FlowChart({
     const measure = () => {
       const stage = node.closest(".flow-full-stage") as HTMLElement | null;
       const parent = node.parentElement;
-      const width = Math.floor((stage || parent)?.clientWidth || node.clientWidth || window.innerWidth);
+      const width = Math.floor(stage?.clientWidth || node.clientWidth || parent?.clientWidth || window.innerWidth);
       const stageHeight = stage && stage.clientHeight > 160 ? stage.clientHeight : 0;
       let below = 8;
       if (!stage) {

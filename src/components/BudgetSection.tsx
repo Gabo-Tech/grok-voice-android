@@ -52,7 +52,7 @@ function BudgetLineRow({
   return (
     <div className="budget-line">
       <button type="button" className="flex min-h-11 w-full items-baseline justify-between gap-3 text-left" onClick={onOpen}>
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2 text-[15px]">
             {color ? <span className="fin-swatch shrink-0" style={{ background: color }} aria-hidden="true" /> : null}
             <span className="min-w-0">{name}</span>

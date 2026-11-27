@@ -1113,14 +1113,28 @@ html.keyboard-open .sheet-panel {
     margin-top: 2px;
   }
 
+  .budget-line .fin-num {
+    white-space: normal;
+    text-align: right;
+    max-width: 58%;
+  }
+
   .flow-stage {
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(200px, 0.9fr);
+    grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.9fr);
     gap: 8px 12px;
     align-items: start;
   }
 
+  .flow-stage > [data-shot="money-flow"] {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+  }
+
   .flow-legend {
+    position: relative;
+    z-index: 1;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0 10px;
