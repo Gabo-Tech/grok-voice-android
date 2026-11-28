@@ -84,8 +84,38 @@ export function Sheet({
           </Button>
         </header>
         <div className="sheet-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
-        {footer && <footer className="thumb-actions shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
+        {footer && <footer className="sheet-foot thumb-actions shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
       </div>
+    </div>
+  );
+}
+
+/** Save is the only solid action. Delete is quiet text at the end of the secondary row. */
+export function SheetFooter({
+  primaryLabel,
+  onPrimary,
+  primaryDisabled,
+  secondary,
+  destructive,
+}: {
+  primaryLabel: string;
+  onPrimary: () => void;
+  primaryDisabled?: boolean;
+  secondary?: React.ReactNode;
+  destructive?: React.ReactNode;
+}) {
+  const tools = secondary || destructive;
+  return (
+    <div className="sheet-actions">
+      {tools ? (
+        <div className="sheet-actions-row">
+          {secondary}
+          {destructive ? <div className="sheet-delete">{destructive}</div> : null}
+        </div>
+      ) : null}
+      <Button type="button" className="sheet-save" disabled={primaryDisabled} onClick={onPrimary}>
+        {primaryLabel}
+      </Button>
     </div>
   );
 }

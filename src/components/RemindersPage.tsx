@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { EmptyState, Notice, PageChrome } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
-import { Sheet } from "@/components/Sheet";
+import { Sheet, SheetFooter } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,6 @@ type Delivery = "" | "spoken" | "normal";
 
 export function RemindersPage({
   agenda,
-  active = true,
   chrome = true,
   showTabs = true,
   forcedTab,
@@ -252,7 +251,7 @@ export function RemindersPage({
 
   return (
     <>
-      <PageChrome title={t("Time")} bare={!chrome} onAdd={() => openNew(kindForTab(tab))} addLabel={t(addLabel(tab))} active={active}>
+      <PageChrome title={t("Time")} bare={!chrome}>
         {showTabs ? (
         <div role="tablist" aria-label={t("Time")} className="m3-tabs mb-4">
           {TIME_TABS.map((item) => (
@@ -265,7 +264,7 @@ export function RemindersPage({
               aria-controls={`time-panel-${item}`}
               onClick={() => setTab(item)}
             >
-              {t(tabLabel(item))}
+              <span className="tab-label">{t(tabLabel(item))}</span>
             </button>
           ))}
         </div>
@@ -361,26 +360,27 @@ export function RemindersPage({
         title={editing ? t(editKindLabel(kind)) : t(newKindLabel(kind))}
         onClose={close}
         footer={
-          <div className="flex flex-wrap items-center gap-2">
-            <ShareButton
-              title={title}
-              text={[kindName(kind, t), repeating ? `${clock} ${date}`.trim() : kind === "timer" ? fill("{n} min", { n: minutes }) : at, note]
-                .filter(Boolean)
-                .join("\n")}
-            />
-            {editing && (
-              <Button variant="ghost" disabled={agenda.busy} onClick={() => remove(editing.id)}>
-                <Trash2 /> {confirmDelete ? t("Delete") : t("Delete")}
+          <SheetFooter
+            primaryLabel={t("Save")}
+            onPrimary={save}
+            primaryDisabled={agenda.busy || !title.trim()}
+            secondary={
+              <>
+                <ShareButton
+                  title={title}
+                  text={[kindName(kind, t), repeating ? `${clock} ${date}`.trim() : kind === "timer" ? fill("{n} min", { n: minutes }) : at, note]
+                    .filter(Boolean)
+                    .join("\n")}
+                />
+                <Button type="button" variant="outline" onClick={close}>{t("Cancel")}</Button>
+              </>
+            }
+            destructive={editing ? (
+              <Button type="button" variant="destructive" disabled={agenda.busy} onClick={() => remove(editing.id)}>
+                <Trash2 /> {t("Delete")}
               </Button>
-            )}
-            <div className="flex-1" />
-            <Button variant="ghost" onClick={close}>
-              {t("Cancel")}
-            </Button>
-            <Button disabled={agenda.busy || !title.trim()} onClick={save}>
-              {t("Save")}
-            </Button>
-          </div>
+            ) : null}
+          />
         }
       >
         <div className="space-y-5">

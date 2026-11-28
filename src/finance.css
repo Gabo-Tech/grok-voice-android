@@ -94,21 +94,24 @@
   overflow-wrap: anywhere;
 }
 
-.finance {
-  flex: none;
+.finance:not(.sheet-root) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .finance .fin-tabs {
   display: flex;
+  justify-content: space-between;
+  align-items: stretch;
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   background: var(--surface-0, var(--fin-canvas));
   border-bottom: 1px solid var(--line-soft, var(--fin-line));
   position: sticky;
@@ -120,15 +123,17 @@
   position: absolute;
   left: 0;
   bottom: 0;
+  grid-column: 1 / -1;
+  grid-row: 1;
   width: 20%;
   height: 2px;
+  margin: 0;
   background: var(--brand, var(--fin-gold));
   pointer-events: none;
 }
 
 .finance .fin-swipe {
-  overflow-x: clip;
-  overflow-y: visible;
+  overflow: hidden;
   width: 100%;
   max-width: 100%;
   touch-action: pan-y;
@@ -242,23 +247,27 @@
 }
 
 .finance .fin-tab {
-  flex: 1 1 0;
-  min-width: 0;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
   min-height: 48px;
-  padding: 0.4rem 0.1rem 0.45rem;
+  padding: 0 11px 2px;
   border: 0;
   border-bottom: 1px solid transparent;
   background: transparent;
   color: var(--text-tertiary, var(--fin-muted));
   font-family: inherit;
-  font-size: var(--text-min, 13px);
+  font-size: var(--type-caption);
   font-weight: 500;
   letter-spacing: 0;
-  line-height: 1.15;
+  line-height: 1.2;
   text-align: center;
   text-transform: none;
-  white-space: normal;
-  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 .finance .fin-tab[aria-selected="true"] {
@@ -693,12 +702,13 @@
 }
 
 .finance .fin-tabs {
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   scrollbar-width: none;
   position: sticky;
   top: 0;
   z-index: 6;
+  display: flex;
+  justify-content: space-between;
   background: var(--surface-0, var(--fin-canvas));
 }
 
@@ -707,18 +717,22 @@
 }
 
 .finance .fin-tab {
-  flex: 1 1 0;
-  min-width: max-content;
-  max-width: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
   white-space: nowrap;
-  overflow: visible;
-  text-overflow: clip;
-  overflow-wrap: normal;
+  text-align: center;
 }
 
 .app-stage > div:has(> .finance) {
-  overflow-x: hidden;
-  overflow-y: auto;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .finance .fin-actions {
@@ -750,17 +764,44 @@
 }
 
 .finance .fin-tab {
-  min-height: var(--touch);
+  display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 0 8px;
+  min-height: var(--touch);
+  padding: 0 11px 2px;
   color: var(--text-secondary);
-  font-size: var(--type-label);
+  font-size: var(--type-caption);
   font-weight: 500;
   text-align: center;
-  scroll-snap-align: start;
-  flex: 1 1 0;
-  min-width: max-content;
-  max-width: none;
+  scroll-snap-align: center;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
+  white-space: nowrap;
+}
+
+.holding-line.row-item {
+  flex-wrap: nowrap;
+  align-items: baseline;
+}
+
+.holding-line.row-item > .min-w-0 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.holding-value {
+  max-width: 54%;
+  text-align: right;
+}
+
+.holding-value .holding-amount,
+.holding-line .holding-name {
+  line-height: 1.5rem;
+}
+
+.holding-value .fin-muted {
+  white-space: normal;
 }
 
 .finance .filter-row {

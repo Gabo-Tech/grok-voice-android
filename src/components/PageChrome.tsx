@@ -1,8 +1,6 @@
-import { useEffect, useRef } from "react";
 import { ChevronLeft } from "lucide-react";
 import { AppMark } from "@/components/AppMark";
 import { Button } from "@/components/ui/button";
-import { setBarAction } from "@/lib/history";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -11,10 +9,7 @@ export function PageChrome({
   subtitle,
   info,
   bare = false,
-  onAdd,
-  addLabel,
   mark = false,
-  active = true,
   children,
   className,
 }: {
@@ -23,22 +18,10 @@ export function PageChrome({
   info?: React.ReactNode;
   /** Hide the title when a parent screen already named the page. */
   bare?: boolean;
-  onAdd?: () => void;
-  addLabel?: string;
   mark?: boolean;
-  /** Only the visible screen owns the bottom add action. */
-  active?: boolean;
   children: React.ReactNode;
   className?: string;
 }) {
-  const addRef = useRef(onAdd);
-  addRef.current = onAdd;
-  const hasAdd = Boolean(onAdd);
-  useEffect(() => {
-    if (!active || !hasAdd) return;
-    return setBarAction({ label: addLabel ?? "Add", run: () => addRef.current?.() });
-  }, [active, addLabel, hasAdd]);
-
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       {bare ? null : (
@@ -79,14 +62,16 @@ export function EmptyState({
   body,
   actionLabel,
   onAction,
+  center = false,
 }: {
   title: string;
   body: string;
   actionLabel?: string;
   onAction?: () => void;
+  center?: boolean;
 }) {
   return (
-    <div className="mag-panel">
+    <div className={center ? "empty-center" : "mag-panel"}>
       <p className="masthead text-xl text-foreground">{title}</p>
       <p className="mt-2 text-base leading-6 text-muted-foreground">{body}</p>
       {actionLabel && onAction ? (

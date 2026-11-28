@@ -168,7 +168,8 @@ function channelLabel(channel: string) {
   return CHANNELS.find((item) => item.id === channel)?.label ?? "";
 }
 
-export function PeoplePage({ active = true }: { onBack?: () => void; active?: boolean }) {
+export function PeoplePage({ onBack: _onBack }: { onBack?: () => void; active?: boolean } = {}) {
+  void _onBack;
   const t = useT();
   const [people, setPeople] = useState<Person[]>([]);
   const [query, setQuery] = useState("");
@@ -450,7 +451,7 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
   if (screen === "pick") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageChrome title={t("Phone contacts")} info={<InfoTip label={t("Phone contacts")} text={t("Pick someone. Their number stays in Contacts.")} />} active={false}>
+        <PageChrome title={t("Phone contacts")} info={<InfoTip label={t("Phone contacts")} text={t("Pick someone. Their number stays in Contacts.")} />}>
           <div className="mb-6">
             <Field label={t("Search")}>
               <Input
@@ -669,23 +670,26 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
             </div>
           </div>
         </div>
-        <div className="thumb-actions flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-background py-3">
-          <ShareButton
-            title={draft.displayName}
-            text={[draft.nickname, draft.preferredChannel ? t(channelLabel(draft.preferredChannel)) : "", draft.phone, draft.email, draft.note].filter(Boolean).join("\n")}
-          />
-          {draft.id && (
-            <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
-              <Trash2 /> {t("Delete")}
+        <div className="thumb-actions shrink-0 border-t border-border bg-background py-3">
+          <div className="sheet-actions">
+            <div className="sheet-actions-row">
+              <ShareButton
+                title={draft.displayName}
+                text={[draft.nickname, draft.preferredChannel ? t(channelLabel(draft.preferredChannel)) : "", draft.phone, draft.email, draft.note].filter(Boolean).join("\n")}
+              />
+              <Button type="button" variant="outline" onClick={backPeople}>{t("Cancel")}</Button>
+            </div>
+            {draft.id ? (
+              <div className="sheet-actions-apart">
+                <Button type="button" variant="destructive" disabled={busy} onClick={() => void remove()}>
+                  <Trash2 /> {t("Delete")}
+                </Button>
+              </div>
+            ) : null}
+            <Button type="button" className="w-full" disabled={busy || !draft.displayName.trim()} onClick={() => void save()}>
+              {t("Save")}
             </Button>
-          )}
-          <div className="flex-1" />
-          <Button variant="ghost" onClick={backPeople}>
-            {t("Cancel")}
-          </Button>
-          <Button disabled={busy || !draft.displayName.trim()} onClick={() => void save()}>
-            {t("Save")}
-          </Button>
+          </div>
         </div>
       </div>
     );
@@ -693,7 +697,7 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageChrome mark title={t("People")} info={<InfoTip label={t("People")} text={t("Nicknames and how you reach someone. Phone numbers and email still come from Contacts.")} />} onAdd={openCreate} addLabel={t("Add person")} active={active && screen === "list"}>
+      <PageChrome mark title={t("People")} info={<InfoTip label={t("People")} text={t("Nicknames and how you reach someone. Phone numbers and email still come from Contacts.")} />}>
         {(people.length > 0 || query) && (
         <div className="mb-6">
           <Field label={t("Search")}>
@@ -722,12 +726,13 @@ export function PeoplePage({ active = true }: { onBack?: () => void; active?: bo
         {visible.favorites.length === 0 && visible.rest.length === 0 ? (
           <EmptyState
             title={query ? t("No matches") : t("No people yet")}
-            body={query ? t("Try another name.") : t("Tap + to pick a phone contact, or add someone with only a nickname.")}
+            body={query ? t("Try another name.") : t("Pick a phone contact, or add someone with only a nickname.")}
             actionLabel={query ? t("Clear search") : t("Add person")}
             onAction={query ? () => setQuery("") : openCreate}
           />
         ) : (
           <div className="space-y-6">
+            <button type="button" className="add-row" onClick={openCreate}>{t("Add person")}</button>
             {visible.favorites.length > 0 && <PersonGroup title={t("Favorites")} people={visible.favorites} onOpen={openEdit} />}
             {visible.rest.length > 0 && <PersonGroup title={t("A–Z")} people={visible.rest} onOpen={openEdit} />}
           </div>

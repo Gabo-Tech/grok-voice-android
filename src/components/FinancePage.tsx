@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 import { InfoTip } from "@/components/ds/InfoTip";
 import { PeriodMenu } from "@/components/ds/PeriodMenu";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
-import { Sheet } from "@/components/Sheet";
-import { Minus, Plus, Repeat, SlidersHorizontal } from "lucide-react";
+import { Sheet, SheetFooter } from "@/components/Sheet";
+import { Minus, Plus, RefreshCw, Repeat, SlidersHorizontal } from "lucide-react";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceAccount, FinanceRule, FinanceTransaction } from "@/lib/api";
 import { formatQuantity, isHoldingAccount, originalHolding, positionOf } from "@/lib/financeLedger";
 import { formatMoney, kindLabel, majorString, typeLabel } from "@/lib/money";
-import { entryTitle, filterRules, filterTransactions, groupOf, isDebt, periodBounds, ruleAmount, type PeriodId } from "@/lib/financeView";
+import { entryTitle, filterRules, filterTransactions, groupOf, isDebt, periodBounds, priceSourceLabel, ruleAmount, type PeriodId } from "@/lib/financeView";
 import { resolveColor, shownColor } from "@/lib/entityColor";
 import { ColorEditor, ColorSheet } from "@/components/ColorSheet";
 import { appliedFilters, clearedFilters, withoutFilter, type FilterId, type LedgerFilters } from "@/lib/financeFilters";
@@ -81,7 +81,6 @@ export function FinancePage({
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [colorAccount, setColorAccount] = useState<FinanceAccount | null>(null);
   const [priceAccount, setPriceAccount] = useState<FinanceAccount | null>(null);
-  const [priceFlash, setPriceFlash] = useState<Record<string, string>>({});
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
@@ -205,18 +204,33 @@ export function FinancePage({
     const toward = buttons[tabIndex + (frac >= 0 ? 1 : -1)] || from;
     const mix = Math.abs(frac);
     void tabMeasure;
+    const mark = (button: HTMLElement) => {
+      const label = button.querySelector<HTMLElement>(".tab-label") || button;
+      return { left: button.offsetLeft + label.offsetLeft, width: label.offsetWidth };
+    };
+    const start = mark(from);
+    const end = mark(toward);
     return {
-      left: from.offsetLeft + (toward.offsetLeft - from.offsetLeft) * mix,
-      width: from.offsetWidth + (toward.offsetWidth - from.offsetWidth) * mix,
+      left: start.left + (end.left - start.left) * mix,
+      width: start.width + (end.width - start.width) * mix,
       unit: "px" as const,
     };
   })();
   useEffect(() => {
     const current = pageRefs.current[tabIndex];
     if (!current) return;
+    const contentHeight = (node: HTMLElement | null) => {
+      if (!node) return 0;
+      let bottom = 0;
+      for (const child of node.children) {
+        if (!(child instanceof HTMLElement)) continue;
+        bottom = Math.max(bottom, child.offsetTop + child.offsetHeight);
+      }
+      return bottom;
+    };
     const measure = () => {
       const neighbor = dragX < -8 ? pageRefs.current[tabIndex + 1] : dragX > 8 ? pageRefs.current[tabIndex - 1] : null;
-      setPageHeight(Math.max(current.offsetHeight, neighbor?.offsetHeight || 0));
+      setPageHeight(Math.max(contentHeight(current), contentHeight(neighbor)));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -338,7 +352,6 @@ export function FinancePage({
     setSheet("rule");
   };
 
-  const addLabel = tab === "overview" || tab === "plan" ? "Program" : tab === "accounts" ? (groupFocus === "invested" ? "Add investment" : "Add account") : tab === "holdings" ? "Add investment" : "Add expense";
   const searched = query.trim()
     ? activity.filter((tx) => `${tx.category} ${tx.notes} ${tx.currency} ${tx.direction}`.toLowerCase().includes(query.trim().toLowerCase()))
     : activity;
@@ -400,9 +413,6 @@ export function FinancePage({
         mark
         title={t("Finance")}
         info={<InfoTip label={t("Finance")} text={t("On this phone. No bank login.")} />}
-        onAdd={openAdd}
-        addLabel={t(addLabel)}
-        active={active}
       >
         {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
         <div ref={tabListRef} role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10">
@@ -417,7 +427,7 @@ export function FinancePage({
               className="fin-tab"
               onClick={() => chooseTab(id)}
             >
-              {t(tabLabel(id))}
+              <span className="tab-label">{t(tabLabel(id))}</span>
             </button>
           ))}
           <span
@@ -591,20 +601,26 @@ export function FinancePage({
             />
           </div>
           <div ref={(node) => { pageRefs.current[3] = node; }} role="tabpanel" id="finance-panel-holdings" aria-labelledby="finance-tab-holdings" data-finance-tabpanel="holdings" className="fin-swipe-page" inert={tab === "holdings" ? undefined : true}>
+            <HoldingsTotal
+              accounts={accounts.filter((account) => isHoldingAccount(account))}
+              display={finance.snapshot.defaultCurrency}
+              fx={finance.snapshot.fx}
+              quotes={finance.snapshot.prices?.quotes || []}
+              onRefresh={() => {
+                void finance.refreshPrices();
+              }}
+            />
             <AccountList
               rows={accounts.filter((account) => isHoldingAccount(account))}
               transactions={finance.snapshot.transactions}
               rules={finance.snapshot.rules}
               onPaid={finance.markPaid}
-              emptyTitle={t("Add investment")}
+              emptyTitle={t("No holdings yet")}
               emptyBody={t("A coin, a metal, a fund, or something you value yourself.")}
+              centerEmpty
               action={t("Add investment")}
               onAdd={openInvestment}
               onOpen={openAccount}
-              onRefreshPrice={(account) => {
-                void finance.refreshHolding(account.id).then((reason) => setPriceFlash((current) => ({ ...current, [account.id]: reason })));
-              }}
-              priceFlash={priceFlash}
               attempts={finance.snapshot.prices?.attempts || []}
               onDiagnose={setPriceAccount}
               priceNote={finance.snapshot.prices?.lastError || ""}
@@ -894,8 +910,8 @@ function Activity({
         : null}
       {filtersOnly ? null : (
         <div className="m3-tabs mb-3" role="tablist" aria-label={t("Activity")}>
-          <button type="button" role="tab" aria-selected={view === "transactions"} onClick={() => setView("transactions")}>{t("Transactions")}</button>
-          <button type="button" role="tab" aria-selected={view === "recurring"} onClick={() => setView("recurring")}>{t("Recurring")}</button>
+          <button type="button" role="tab" aria-selected={view === "transactions"} onClick={() => setView("transactions")}><span className="tab-label">{t("Transactions")}</span></button>
+          <button type="button" role="tab" aria-selected={view === "recurring"} onClick={() => setView("recurring")}><span className="tab-label">{t("Recurring")}</span></button>
         </div>
       )}
       {filtersOnly || view !== "recurring" ? null : rules.length === 0 ? (
@@ -970,12 +986,11 @@ function AccountList({
   emptyBody,
   action,
   onAdd,
+  centerEmpty = false,
   onOpen,
   onPay,
-  onRefreshPrice,
   onDiagnose,
   priceNote = "",
-  priceFlash = {},
   attempts = [],
   display = "",
   fx,
@@ -991,12 +1006,11 @@ function AccountList({
   emptyBody: string;
   action: string;
   onAdd: () => void;
+  centerEmpty?: boolean;
   onOpen: (account: FinanceAccount) => void;
   onPay?: (account: FinanceAccount) => void;
-  onRefreshPrice?: (account: FinanceAccount) => void;
   onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
-  priceFlash?: Record<string, string>;
   attempts?: NonNullable<FinanceState["snapshot"]["prices"]>["attempts"];
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
@@ -1004,8 +1018,58 @@ function AccountList({
   onColor?: (account: FinanceAccount) => void;
   entityColors?: { kind: string; id: string; color: string }[];
 }) {
-  if (rows.length === 0) return <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} />;
-  return <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} onDiagnose={onDiagnose} priceNote={priceNote} priceFlash={priceFlash} attempts={attempts} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />;
+  return (
+    <div className="space-y-1">
+      {rows.length === 0 ? (
+        <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} center={centerEmpty} />
+      ) : (
+        <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onDiagnose={onDiagnose} priceNote={priceNote} attempts={attempts} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />
+      )}
+      {rows.length > 0 ? (
+        <button type="button" className="add-row" onClick={onAdd}>
+          <Plus className="size-5 shrink-0" strokeWidth={1.5} aria-hidden />
+          {action}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function HoldingsTotal({
+  accounts,
+  display,
+  fx,
+  quotes,
+  onRefresh,
+}: {
+  accounts: FinanceAccount[];
+  display: string;
+  fx?: FinanceState["snapshot"]["fx"];
+  quotes: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
+  onRefresh: () => void;
+}) {
+  const t = useT();
+  if (accounts.length === 0) return null;
+  const book = bookFromStatus(fx);
+  const now = Date.now();
+  let sum = 0;
+  let priced = 0;
+  for (const account of accounts) {
+    const position = positionOf(account, display, book, quotes, now);
+    if (position.unpriced || position.amountMinor == null) continue;
+    if ((position.currency || "").toUpperCase() !== (display || "").toUpperCase()) continue;
+    sum += position.amountMinor;
+    priced += 1;
+  }
+  return (
+    <div className="holdings-bar">
+      {priced > 0 ? <span className="text-base">{t("Total")}</span> : null}
+      {priced > 0 ? <span className="fin-num">{formatMoney(sum, display || accounts[0]?.currency || "")}</span> : null}
+      <button type="button" className="icon-hit" aria-label={t("Refresh price now")} onClick={onRefresh}>
+        <RefreshCw className="size-5" strokeWidth={1.5} aria-hidden />
+      </button>
+    </div>
+  );
 }
 
 function AccountRows({
@@ -1015,10 +1079,8 @@ function AccountRows({
   rules,
   onPaid,
   onPay,
-  onRefreshPrice,
   onDiagnose,
   priceNote = "",
-  priceFlash = {},
   attempts = [],
   display = "",
   fx,
@@ -1032,10 +1094,8 @@ function AccountRows({
   rules: FinanceState["snapshot"]["rules"];
   onPaid: (id: string) => void;
   onPay?: (account: FinanceAccount) => void;
-  onRefreshPrice?: (account: FinanceAccount) => void;
   onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
-  priceFlash?: Record<string, string>;
   attempts?: NonNullable<FinanceState["snapshot"]["prices"]>["attempts"];
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
@@ -1081,10 +1141,10 @@ function AccountRows({
             <button type="button" className="fin-icon shrink-0" aria-label={fill("Color for {name}", { name: account.name })} onClick={() => onColor?.(account)}>
               <span className="fin-swatch" style={{ background: resolveColor(entityColors, "account", account.id, account.color) }} />
             </button>
-            <RowButton onClick={() => onOpen(account)} className="min-w-0 flex-1 px-0 py-0">
+            <RowButton onClick={() => onOpen(account)} className={cn("min-w-0 flex-1 px-0 py-0", holding && "holding-line")}>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base">{account.name}</p>
-                <p className="text-sm text-muted-foreground">
+                <p className="holding-name truncate text-base">{account.name}</p>
+                <p className="truncate text-sm text-muted-foreground">
                   {t(kindLabel(account.kind))}
                   {posture === "credit" ? ` · ${t("Credit")}` : ""}
                   {owed && posture !== "credit" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 ? ` · ${t("Remaining")}` : ""}
@@ -1093,8 +1153,8 @@ function AccountRows({
                   {account.calendarEventId ? ` · ${t("On Calendar")}` : ""}
                 </p>
               </div>
-              <span className="shrink-0 text-right">
-                <span className={cn("block text-xl leading-6 font-medium tabular-nums", (account.marketWorthMinor ?? displayMinor) == null && position.unpriced && "text-base font-normal text-muted-foreground")}>{money}</span>
+              <span className={cn("shrink-0 text-right", holding && "holding-value")}>
+                <span className={cn("holding-amount block text-xl font-medium tabular-nums", (account.marketWorthMinor ?? displayMinor) == null && position.unpriced && "text-base font-normal text-muted-foreground")}>{money}</span>
                 {nativeLine ? <span className="fin-muted block text-[13px] leading-4">{nativeLine}</span> : null}
               </span>
             </RowButton>
@@ -1103,9 +1163,9 @@ function AccountRows({
               <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
                 {account.marketEstimated
                   ? `${t("AI estimate")} · ${aiSource(attempts || [], account.marketSymbol || "")} · ${t("Updated just now")}`
-                  : account.marketSource === "manual"
+                    : account.marketSource === "manual"
                     ? t("Your price")
-                    : account.marketSource || ""}
+                    : priceSourceLabel(account.marketSource || "")}
                 {!account.marketEstimated && account.marketStale ? ` · ${t("Rates are stale")}` : ""}
                 {!account.marketEstimated && account.marketFetchedMs ? ` · ${fill("Updated {ago}", { ago: priceAgo(account.marketFetchedMs) })}` : ""}
               </p>
@@ -1115,10 +1175,7 @@ function AccountRows({
                 {t("No price")}
               </button>
             ) : null}
-            {position.unpriced && (priceFlash[account.id] || priceNote) ? <p className="mt-1 text-[13px] leading-5 text-[var(--negative)]">{priceFlash[account.id] || priceNote}</p> : null}
-            {onRefreshPrice ? (
-              <button type="button" className="fin-chip mt-3 min-h-12 w-full" onClick={() => onRefreshPrice(account)}>{t("Refresh price now")}</button>
-            ) : null}
+            {position.unpriced && priceNote ? <p className="mt-1 text-[13px] leading-5 text-[var(--negative)]">{priceNote}</p> : null}
             {owed && payoff && payoff.paid > 0 ? (
               <div className="mt-2">
                 <span className="fin-track">
@@ -1365,10 +1422,15 @@ function TransactionSheet({
       onClose={onClose}
       className="finance"
       footer={
-        <div className="flex items-center gap-2">
-          {editing && (
+        <SheetFooter
+          primaryLabel={t("Save")}
+          onPrimary={save}
+          primaryDisabled={finance.busy || !amount.trim()}
+          secondary={<Button type="button" variant="outline" onClick={onClose}>{t("Cancel")}</Button>}
+          destructive={editing ? (
             <Button
-              variant="ghost"
+              type="button"
+              variant="destructive"
               onClick={() => {
                 if (!confirming) {
                   setConfirming(true);
@@ -1380,11 +1442,8 @@ function TransactionSheet({
             >
               {confirming ? t("Delete this") : t("Delete")}
             </Button>
-          )}
-          <div className="flex-1" />
-          <Button variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
-          <Button disabled={finance.busy || !amount.trim()} onClick={save}>{t("Save")}</Button>
-        </div>
+          ) : null}
+        />
       }
     >
       <div className="space-y-4">
@@ -1409,7 +1468,7 @@ function TransactionSheet({
         <Field label={t("Amount")}>
           <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-16 text-3xl tabular-nums" autoFocus />
         </Field>
-        <Field label={t("Currency")} hint={t("EUR, USD, BTC, or another code.")}>
+        <Field label={t("Currency")}>
           <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={12} autoCapitalize="characters" />
         </Field>
         <Field label={t("Direction")}>
@@ -1579,10 +1638,15 @@ function AccountSheet({
       onClose={onClose}
       className="finance"
       footer={
-        <div className="flex items-center gap-2">
-          {editing && (
+        <SheetFooter
+          primaryLabel={t("Save")}
+          onPrimary={save}
+          primaryDisabled={finance.busy || !name.trim()}
+          secondary={<Button type="button" variant="outline" onClick={onClose}>{t("Cancel")}</Button>}
+          destructive={editing ? (
             <Button
-              variant="ghost"
+              type="button"
+              variant="destructive"
               onClick={() => {
                 if (!confirming) {
                   setConfirming(true);
@@ -1594,11 +1658,8 @@ function AccountSheet({
             >
               {confirming ? t("Delete this") : t("Delete")}
             </Button>
-          )}
-          <div className="flex-1" />
-          <Button variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
-          <Button disabled={finance.busy || !name.trim()} onClick={save}>{t("Save")}</Button>
-        </div>
+          ) : null}
+        />
       }
     >
       <div className="space-y-4">
@@ -1615,16 +1676,7 @@ function AccountSheet({
             </div>
           </Field>
         )}
-        <Field
-          label={investment ? t("Worth") : kind === "credit_card" ? t("Balance owed") : t("Balance")}
-          hint={
-            kind === "credit_card"
-              ? editing
-                ? t("Update the amount owed anytime. A negative amount is a credit.")
-                : t("Leave blank until you have checked it. A negative amount is a credit.")
-              : t("Leave blank until you have checked it.")
-          }
-        >
+        <Field label={investment ? t("Worth") : kind === "credit_card" ? t("Balance owed") : t("Balance")}>
           <Input inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="h-16 text-3xl tabular-nums" />
         </Field>
         {kind === "credit_card" ? (
@@ -1643,10 +1695,10 @@ function AccountSheet({
             </Chip>
           </div>
         ) : null}
-        <Field label={t("Currency")} hint={t("EUR, USD, BTC, or another code.")}>
+        <Field label={t("Currency")}>
           <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={12} autoCapitalize="characters" />
         </Field>
-        <Field label={t("Institution")} hint={t("A bank name or label. Not an account number.")}>
+        <Field label={t("Institution")}>
           <Input value={institution} onChange={(e) => setInstitution(e.target.value)} />
         </Field>
         {investment && (
@@ -1654,7 +1706,7 @@ function AccountSheet({
             <Field label={t("Ticker")}>
               <Input value={ticker} onChange={(e) => setTicker(e.target.value)} />
             </Field>
-            <Field label={t("Contribution")} hint={t("Amount added on a schedule. Leave blank if you do not know it.")}>
+            <Field label={t("Contribution")}>
               <Input inputMode="decimal" value={contribution} onChange={(e) => setContribution(e.target.value)} />
             </Field>
             <CadenceChips value={contributionCadence} onChange={setContributionCadence} />
@@ -1665,23 +1717,23 @@ function AccountSheet({
         )}
         {kind === "credit_card" && (
           <>
-            <Field label={t("Credit limit")} hint={t("Optional.")}>
+            <Field label={t("Credit limit")}>
               <Input inputMode="decimal" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
             </Field>
-            <Field label={t("Due day")} hint={t("Day of the month, 1 to 31.")}>
+            <Field label={t("Due day")}>
               <Input inputMode="numeric" value={dueDay} onChange={(e) => setDueDay(e.target.value)} />
             </Field>
-            <Field label={t("Statement day")} hint={t("Day of the month, 1 to 31.")}>
+            <Field label={t("Statement day")}>
               <Input inputMode="numeric" value={statementDay} onChange={(e) => setStatementDay(e.target.value)} />
             </Field>
-            <Field label={t("Last four")} hint={t("Optional. Four digits only.")}>
+            <Field label={t("Last four")}>
               <Input inputMode="numeric" maxLength={4} value={lastFour} onChange={(e) => setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))} />
             </Field>
           </>
         )}
         {cardOrLoan && (
           <>
-            <Field label={t("Payment amount")} hint={t("A typical or minimum payment. Leave blank if you do not know it.")}>
+            <Field label={t("Payment amount")}>
               <Input inputMode="decimal" value={payment} onChange={(e) => setPayment(e.target.value)} />
             </Field>
             <CadenceChips value={cadence} onChange={setCadence} />
@@ -1893,7 +1945,7 @@ function AccountsBoard({
   const block = (title: string, rows: FinanceAccount[], emptyTitle: string, emptyBody: string, action: string, onAdd: () => void, pay = false) => (
     <section key={title}>
       <h2 className="fin-kicker mb-2">{title}</h2>
-      <AccountList rows={rows} transactions={transactions} rules={rules} onPaid={onPaid} emptyTitle={emptyTitle} emptyBody={emptyBody} action={action} onAdd={onAdd} onOpen={onOpen} onPay={pay ? onPay : undefined} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />
+      <AccountList rows={rows} transactions={transactions} rules={rules} onPaid={onPaid} emptyTitle={emptyTitle} emptyBody={emptyBody} action={action} onAdd={onAdd} centerEmpty onOpen={onOpen} onPay={pay ? onPay : undefined} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />
     </section>
   );
   return (
@@ -1901,14 +1953,14 @@ function AccountsBoard({
       {show("accounts")
         ? block(t("Accounts"), bank, t("No accounts yet"), t("Banks, cash, cards, and loans. Investments are in Holdings."), t("Add account"), onAddAccount)
         : null}
-      {show("cash") && (cash.length > 0 || focus === "cash")
-        ? block(t("Cash & savings"), cash, t("No accounts yet"), t("Banks, cash, cards, and loans. Investments are in Holdings."), t("Add account"), onAddCash)
+      {show("cash")
+        ? block(t("Cash & savings"), cash, t("No accounts yet"), t("Banks, cash, cards, and loans. Investments are in Holdings."), t("Add cash"), onAddCash)
         : null}
       {show("debt")
         ? block(t("Credit cards"), cards, t("No credit card is saved."), t("A card you pay with. Charges increase what you owe."), t("Add a card"), onAddDebt, true)
         : null}
       {show("debt")
-        ? block(t("Loans and other debts"), loans, t("No debts saved"), t("A loan. Payments reduce what you owe."), t("Add account"), onAddLoan)
+        ? block(t("Loans and other debts"), loans, t("No debts saved"), t("A loan. Payments reduce what you owe."), t("Add loan or debt"), onAddLoan)
         : null}
     </div>
   );
