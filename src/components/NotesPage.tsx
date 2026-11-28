@@ -5,7 +5,7 @@ import { Trash2 } from "lucide-react";
 import { InfoTip } from "@/components/ds/InfoTip";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
-import { Sheet } from "@/components/Sheet";
+import { Sheet, SheetFooter } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import { formatWhen } from "@/hooks/useAgenda";
 import { api, type Note } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
-export function NotesPage({ agenda, active = true }: { agenda: AgendaState; active?: boolean }) {
+export function NotesPage({ agenda }: { agenda: AgendaState; active?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
@@ -75,7 +75,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
 
   return (
     <>
-      <PageChrome mark title={t("Notes")} info={<InfoTip label={t("Notes")} text={t("Tap + or ask Grok to remember something.")} />} onAdd={openNew} addLabel={t("New note")} active={active}>
+      <PageChrome mark title={t("Notes")} info={<InfoTip label={t("Notes")} text={t("Add a note here, or ask Grok to remember something.")} />}>
         {(agenda.agenda.notes.length > 0 || query) && (
         <div className="mb-6">
           <Field label={t("Search")}>
@@ -104,12 +104,14 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
         {notes.length === 0 ? (
           <EmptyState
             title={query ? t("No matches") : t("No notes yet")}
-            body={query ? t("Try another word.") : t("Tap + or ask Grok to remember something.")}
+            body={query ? t("Try another word.") : t("Add a note here, or ask Grok to remember something.")}
             actionLabel={query ? t("Clear search") : t("New note")}
             onAction={query ? () => setQuery("") : openNew}
           />
         ) : (
-          <div className="divide-y divide-border border-y border-border">
+          <div>
+            <button type="button" className="add-row" onClick={openNew}>{t("New note")}</button>
+            <div className="divide-y divide-border border-y border-border">
             {notes.map((note) => {
               const name = note.title || headingFrom(note.text) || t("Untitled");
               const previewLine = note.text.replace(/\s+/g, " ").trim();
@@ -125,6 +127,7 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
                 </RowButton>
               );
             })}
+            </div>
           </div>
         )}
       </PageChrome>
@@ -134,21 +137,22 @@ export function NotesPage({ agenda, active = true }: { agenda: AgendaState; acti
         title={editing ? t("Edit note") : t("New note")}
         onClose={close}
         footer={
-          <div className="flex flex-wrap items-center gap-2">
-            <ShareButton title={title} text={text} />
-            {editing && (
-              <Button variant="ghost" disabled={agenda.busy} onClick={remove}>
+          <SheetFooter
+            primaryLabel={t("Save")}
+            onPrimary={save}
+            primaryDisabled={agenda.busy || (!title.trim() && !text.trim())}
+            secondary={
+              <>
+                <ShareButton title={title} text={text} />
+                <Button type="button" variant="outline" onClick={close}>{t("Cancel")}</Button>
+              </>
+            }
+            destructive={editing ? (
+              <Button type="button" variant="destructive" disabled={agenda.busy} onClick={remove}>
                 <Trash2 /> {t("Delete")}
               </Button>
-            )}
-            <div className="flex-1" />
-            <Button variant="ghost" onClick={close}>
-              {t("Cancel")}
-            </Button>
-            <Button disabled={agenda.busy || (!title.trim() && !text.trim())} onClick={save}>
-              {t("Save")}
-            </Button>
-          </div>
+            ) : null}
+          />
         }
       >
         <div className="border border-border">

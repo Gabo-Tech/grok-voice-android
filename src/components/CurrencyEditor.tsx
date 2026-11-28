@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { FinanceState } from "@/hooks/useFinance";
 import { bookFromStatus, bookIsStale, formatFetched, formatRate, quoteRate } from "@/lib/financeMath";
+import { priceSourceLabel } from "@/lib/financeView";
 import { fill, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -145,7 +146,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
           {(finance.snapshot.prices?.quotes || []).map((row) => (
             <li key={`${row.symbol}-${row.source}`} className="text-sm leading-5 break-words">
               {row.symbol} · {row.price} {row.currency}
-              {row.estimated ? ` · ${t("AI estimate")}` : ` · ${row.source}`}
+              {row.estimated ? ` · ${t("AI estimate")}` : ` · ${priceSourceLabel(row.source)}`}
             </li>
           ))}
         </ul>
@@ -160,7 +161,7 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
                 className={cn("stamp", !off && "stamp-on")}
                 onClick={() => finance.setPriceProvider(id, off)}
               >
-                {id}
+                {priceSourceLabel(id)}
               </button>
             );
           })}

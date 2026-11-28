@@ -23,31 +23,32 @@ export function ColorEditor({
   const t = useT();
   const current = tokenToHex(color);
   return (
-    <div className="mt-2" data-swipe-ignore="">
-      <div className="flex gap-1 overflow-x-auto pb-2">
+    <div className="color-field" data-swipe-ignore="">
+      <p className="text-sm leading-5 text-muted-foreground">{t("Color")}</p>
+      <div className="color-swatches" role="group" aria-label={t("Color")}>
         {SERIES_TOKEN.map((swatch, index) => (
           <button
             key={swatch}
             type="button"
-            className="h-11 w-11 shrink-0"
-            style={{ background: swatch, borderRadius: "var(--radius)", boxShadow: current === SERIES_HEX[index] ? "inset 0 0 0 2px var(--surface-0), 0 0 0 1px var(--brand)" : undefined }}
+            className="size-12 shrink-0"
+            style={{ background: swatch, borderRadius: "var(--radius-xs)", boxShadow: current === SERIES_HEX[index] ? "inset 0 0 0 2px var(--surface-0), 0 0 0 1px var(--brand)" : undefined }}
             aria-label={fill("Preset {n} for {name}", { n: String(index + 1), name })}
             aria-pressed={current === SERIES_HEX[index]}
             onClick={() => onChange(SERIES_HEX[index])}
           />
         ))}
-        <label className="relative grid h-11 w-11 shrink-0 place-items-center" style={{ borderRadius: "var(--radius)" }}>
-          <span className="h-6 w-6" style={{ background: color || current, borderRadius: "var(--radius)" }} aria-hidden="true" />
+        <label className="relative grid size-12 shrink-0 place-items-center" style={{ borderRadius: "var(--radius-xs)" }}>
+          <span className="size-6" style={{ background: color || current, borderRadius: "var(--radius-xs)" }} aria-hidden="true" />
           <input
             type="color"
             aria-label={fill("{name} color", { name })}
             value={current}
             onChange={(event) => onChange(event.target.value)}
-            className="absolute inset-0 h-11 w-11 cursor-pointer opacity-0"
+            className="absolute inset-0 size-12 cursor-pointer opacity-0"
           />
         </label>
       </div>
-      <button type="button" className="fin-chip min-h-11" onClick={() => onChange("")}>{t("Reset")}</button>
+      <button type="button" className="add-row" onClick={() => onChange("")}>{t("Reset color")}</button>
     </div>
   );
 }
@@ -127,25 +128,33 @@ export function ChartColorMenu({
   onPaint,
   startOpen = false,
   extra,
+  leading,
+  tools,
 }: {
   series: ColorSeries[];
   currency: string;
   onPaint: (id: string, color: string) => void;
   startOpen?: boolean;
   extra?: ReactNode;
+  leading?: ReactNode;
+  tools?: ReactNode;
 }) {
   const t = useT();
   const [panel, setPanel] = useState(false);
   const [open, setOpen] = useState(startOpen);
   return (
-    <div data-swipe-ignore="">
-      <div className="flex items-center justify-end">
-        <button type="button" className="grid h-11 w-11 place-items-center" aria-expanded={panel} aria-label={t("Options")} onClick={() => setPanel((value) => !value)}>
-          <OptionsIcon />
-        </button>
+    <div className="chart-color-host" data-swipe-ignore="">
+      <div className="filter-row">
+        {leading ?? <span className="min-w-0 flex-1" />}
+        <div className="filter-tools">
+          {tools}
+          <button type="button" className="icon-hit" aria-expanded={panel} aria-label={t("Options")} onClick={() => setPanel((value) => !value)}>
+            <OptionsIcon />
+          </button>
+        </div>
       </div>
       {panel ? (
-        <div className="flow-panel open">
+        <div className="mt-1 flex flex-wrap gap-2">
           <button type="button" className="fin-chip min-h-11" onClick={() => { setOpen(true); setPanel(false); }}>{t("Chart colors")}</button>
           {extra}
         </div>

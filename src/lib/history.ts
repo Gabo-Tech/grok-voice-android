@@ -22,8 +22,9 @@ type NavWindow = Window & {
 function publish() {
   const top = steps[steps.length - 1];
   const canBack = overlays.length > 0 || steps.length > 0;
-  // Tab switches stay in the gesture history. The button is only for a sub page.
-  const showBack = overlays.length > 0 || (top != null && top.tag !== "tab");
+  // Tab switches stay in the gesture history. The button is only for a drill-in, such as a Settings subsection.
+  // Sheets dismiss themselves and do not add a Back row above the tab bar.
+  const showBack = overlays.length === 0 && top != null && top.tag !== "tab";
   const label = overlays.length > 0 ? "Back" : (top?.label ?? "Back");
   snap = { canBack, showBack, label };
   listeners.forEach((fn) => fn());

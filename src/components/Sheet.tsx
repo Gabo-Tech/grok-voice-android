@@ -84,8 +84,33 @@ export function Sheet({
           </Button>
         </header>
         <div className="sheet-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
-        {footer && <footer className="thumb-actions shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
+        {footer && <footer className="sheet-foot thumb-actions shrink-0 border-t border-border px-4 py-3">{footer}</footer>}
       </div>
+    </div>
+  );
+}
+
+/** Save stays the one solid action. Secondary controls sit above it. Delete sits on its own row. */
+export function SheetFooter({
+  primaryLabel,
+  onPrimary,
+  primaryDisabled,
+  secondary,
+  destructive,
+}: {
+  primaryLabel: string;
+  onPrimary: () => void;
+  primaryDisabled?: boolean;
+  secondary?: React.ReactNode;
+  destructive?: React.ReactNode;
+}) {
+  return (
+    <div className="sheet-actions">
+      {secondary ? <div className="sheet-actions-row">{secondary}</div> : null}
+      {destructive ? <div className="sheet-actions-row sheet-actions-apart">{destructive}</div> : null}
+      <Button type="button" className="w-full" disabled={primaryDisabled} onClick={onPrimary}>
+        {primaryLabel}
+      </Button>
     </div>
   );
 }

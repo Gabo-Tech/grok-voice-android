@@ -666,7 +666,7 @@ export function MorePage({
     .filter((group) => group.rows.length > 0 || (group.extra && (!query || `${group.title} ${group.hint ?? ""}`.toLowerCase().includes(query))));
 
   return (
-    <PageChrome mark title={t("Settings")} info={<InfoTip label={t("Settings")} text={t("Voice, music, and this phone")} />} active={active && section === "menu"}>
+    <PageChrome mark title={t("Settings")} info={<InfoTip label={t("Settings")} text={t("Voice, music, and this phone")} />}>
       <ListenStatus />
       <div className="settings-row">
         <span className="truncate text-base text-foreground">{t("Provider")}</span>

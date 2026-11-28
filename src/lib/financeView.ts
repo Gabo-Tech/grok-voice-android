@@ -9,6 +9,20 @@ export function displayColor(color: string, index: number): string {
   return shownColor(`slot-${index}`, color);
 }
 
+const PRICE_SOURCES: Record<string, string> = {
+  coingecko: "CoinGecko",
+  coinpaprika: "CoinPaprika",
+  kraken: "Kraken",
+  "gold-api": "Gold API",
+  atlantis: "Atlantis",
+};
+
+/** Brand spelling for a price provider id. Unknown ids stay as stored. */
+export function priceSourceLabel(source: string): string {
+  const key = source.trim().toLowerCase();
+  return PRICE_SOURCES[key] || source;
+}
+
 export function isDebt(kind: string): boolean {
   return kind === "credit_card" || kind === "loan" || kind === "other_debt";
 }

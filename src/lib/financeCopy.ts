@@ -233,6 +233,10 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "Use both": "Usar ambos",
     "Start blank": "Empezar en blanco",
     "Nothing to copy yet. Add a line yourself.": "Nada que copiar todavía. Añade una línea tú.",
+    "Reset color": "Restablecer color",
+    "Add loan or debt": "Añadir préstamo o deuda",
+    "Add cash": "Añadir efectivo",
+    "No holdings yet": "Aún no hay posiciones",
   },
   de: {
     Debt: "Schulden",
@@ -465,6 +469,10 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "Use both": "Beides verwenden",
     "Start blank": "Leer beginnen",
     "Nothing to copy yet. Add a line yourself.": "Noch nichts zum Übernehmen. Füg selbst eine Zeile hinzu.",
+    "Reset color": "Farbe zurücksetzen",
+    "Add loan or debt": "Kredit oder Schuld hinzufügen",
+    "Add cash": "Bargeld hinzufügen",
+    "No holdings yet": "Noch keine Bestände",
   },
   pt: {
     Debt: "Dívida",
@@ -697,6 +705,10 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "Use both": "Usar os dois",
     "Start blank": "Começar em branco",
     "Nothing to copy yet. Add a line yourself.": "Ainda não há nada para copiar. Adiciona uma linha.",
+    "Reset color": "Repor a cor",
+    "Add loan or debt": "Adicionar empréstimo ou dívida",
+    "Add cash": "Adicionar dinheiro",
+    "No holdings yet": "Ainda não há posições",
   },
   "ca-ES-valencia": {
     Debt: "Deute",
@@ -929,5 +941,9 @@ export const financeCopy: Record<Exclude<LocaleId, "en">, Record<string, string>
     "Use both": "Usar els dos",
     "Start blank": "Començar en blanc",
     "Nothing to copy yet. Add a line yourself.": "Encara no hi ha res per copiar. Afig una línia.",
+    "Reset color": "Restablir el color",
+    "Add loan or debt": "Afegir préstec o deute",
+    "Add cash": "Afegir efectiu",
+    "No holdings yet": "Encara no hi ha posicions",
   },
 };

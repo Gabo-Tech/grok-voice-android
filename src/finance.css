@@ -94,16 +94,20 @@
   overflow-wrap: anywhere;
 }
 
-.finance {
-  flex: none;
+.finance:not(.sheet-root) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .finance .fin-tabs {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
@@ -127,8 +131,7 @@
 }
 
 .finance .fin-swipe {
-  overflow-x: clip;
-  overflow-y: visible;
+  overflow: hidden;
   width: 100%;
   max-width: 100%;
   touch-action: pan-y;
@@ -242,19 +245,23 @@
 }
 
 .finance .fin-tab {
+  display: flex;
   flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
   min-width: 0;
   min-height: 48px;
-  padding: 0.4rem 0.1rem 0.45rem;
+  padding: 0.4rem 0.35rem 0.55rem;
   border: 0;
   border-bottom: 1px solid transparent;
   background: transparent;
   color: var(--text-tertiary, var(--fin-muted));
   font-family: inherit;
-  font-size: var(--text-min, 13px);
+  font-size: var(--type-label, 0.875rem);
   font-weight: 500;
   letter-spacing: 0;
-  line-height: 1.15;
+  line-height: 1.2;
   text-align: center;
   text-transform: none;
   white-space: normal;
@@ -699,6 +706,9 @@
   position: sticky;
   top: 0;
   z-index: 6;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   background: var(--surface-0, var(--fin-canvas));
 }
 
@@ -707,18 +717,25 @@
 }
 
 .finance .fin-tab {
-  flex: 1 1 0;
-  min-width: max-content;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   max-width: none;
-  white-space: nowrap;
+  white-space: normal;
   overflow: visible;
   text-overflow: clip;
   overflow-wrap: normal;
+  text-align: center;
 }
 
 .app-stage > div:has(> .finance) {
-  overflow-x: hidden;
-  overflow-y: auto;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .finance .fin-actions {
@@ -750,16 +767,18 @@
 }
 
 .finance .fin-tab {
-  min-height: var(--touch);
+  display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 0 8px;
+  min-height: var(--touch);
+  padding: 8px 6px 10px;
   color: var(--text-secondary);
   font-size: var(--type-label);
   font-weight: 500;
   text-align: center;
-  scroll-snap-align: start;
-  flex: 1 1 0;
-  min-width: max-content;
+  scroll-snap-align: center;
+  width: 100%;
+  min-width: 0;
   max-width: none;
 }
 

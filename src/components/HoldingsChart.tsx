@@ -18,6 +18,7 @@ import { TuneSheet } from "@/components/ds/TuneSheet";
 import { ChartPeriodBar, useChartPeriod } from "@/components/ChartPeriodBar";
 import { inBounds } from "@/lib/chartPeriod";
 import { changeOf, completeSeries, seriesFor, type ValuePoint } from "@/lib/portfolio";
+import { priceSourceLabel } from "@/lib/financeView";
 import { fill, useT } from "@/lib/i18n";
 
 const PREF_KEY = "grok-finance-allocation";
@@ -167,7 +168,7 @@ export function HoldingsChart({
         amountMinor: last?.valueMinor ?? null,
         currency: code,
         className: item.className,
-        original: history.find((point) => point.accountId === item.id && point.source)?.source || "",
+        original: priceSourceLabel(history.find((point) => point.accountId === item.id && point.source)?.source || ""),
       };
     }),
   ];
@@ -195,16 +196,22 @@ export function HoldingsChart({
         title={t("Holdings chart")}
         action={<InfoTip label={t("Holdings chart")} text={`${fill("By value in {code}.", { code: code || "—" })} ${t("Latest balances. This period does not rewrite them.")}`} />}
       >
-        <div className="filter-row">
-          <ChartPeriodBar period={holdingsPeriod.period} onChange={holdingsPeriod.setPeriod} />
-          <TuneSheet label={t("Options")}>
-            <div className="tune-sheet" role="group" aria-label={t("Holdings chart")}>
-              <button type="button" className="tune-row" aria-pressed={pref.group === "item"} onClick={() => save({ ...pref, group: "item" })}>{t("By item")}</button>
-              <button type="button" className="tune-row" aria-pressed={pref.group === "class"} onClick={() => save({ ...pref, group: "class" })}>{t("By class")}</button>
-              <button type="button" className="tune-row" aria-pressed={pref.cash} onClick={() => save({ ...pref, cash: !pref.cash })}>{t("Include cash")}</button>
-            </div>
-          </TuneSheet>
-        </div>
+        <ChartColorMenu
+          leading={<ChartPeriodBar period={holdingsPeriod.period} onChange={holdingsPeriod.setPeriod} />}
+          tools={
+            <TuneSheet label={t("Options")}>
+              <div className="tune-sheet" role="group" aria-label={t("Holdings chart")}>
+                <button type="button" className="tune-row" aria-pressed={pref.group === "item"} onClick={() => save({ ...pref, group: "item" })}>{t("By item")}</button>
+                <button type="button" className="tune-row" aria-pressed={pref.group === "class"} onClick={() => save({ ...pref, group: "class" })}>{t("By class")}</button>
+                <button type="button" className="tune-row" aria-pressed={pref.cash} onClick={() => save({ ...pref, cash: !pref.cash })}>{t("Include cash")}</button>
+              </div>
+            </TuneSheet>
+          }
+          series={donutSeries}
+          currency={code}
+          startOpen={openSheet === "donut"}
+          onPaint={(id, color) => paint(pref.group === "class" ? "class" : "account", id, color)}
+        />
         {pie.slices.length === 0 ? (
           <p className="mt-3 text-[15px] leading-5">{t("Nothing priced yet")}</p>
         ) : (
@@ -228,12 +235,6 @@ export function HoldingsChart({
             if (account && onUnpriced) onUnpriced(account);
           }}
         />
-        <ChartColorMenu
-          series={donutSeries}
-          currency={code}
-          startOpen={openSheet === "donut"}
-          onPaint={(id, color) => paint(pref.group === "class" ? "class" : "account", id, color)}
-        />
         {sheet === "holding" && painting ? (
           <ColorSheet
             series={donutSeries.filter((row) => row.id === painting)}
@@ -248,7 +249,13 @@ export function HoldingsChart({
       <div data-shot="portfolio">
       <ChartCard title={t("Portfolio value")}>
         <p className="fin-muted text-[13px] leading-4">{fill("In {code}. History starts when a real price is saved.", { code: code || "—" })}</p>
-        <ChartPeriodBar period={portfolioPeriod.period} onChange={portfolioPeriod.setPeriod} />
+        <ChartColorMenu
+          leading={<ChartPeriodBar period={portfolioPeriod.period} onChange={portfolioPeriod.setPeriod} />}
+          series={lineSeriesRows}
+          currency={code}
+          startOpen={openSheet === "line"}
+          onPaint={(id, color) => paint(id === "total" ? "series" : "account", id === "total" ? "portfolio:total" : id, color)}
+        />
         {totalSeries.length === 0 ? (
           <p className="mt-3 text-[15px] leading-5">{t("History starts when a real price is saved.")}</p>
         ) : (
@@ -279,12 +286,6 @@ export function HoldingsChart({
             if (id) setSheet("line");
           }}
           painting={painting}
-        />
-        <ChartColorMenu
-          series={lineSeriesRows}
-          currency={code}
-          startOpen={openSheet === "line"}
-          onPaint={(id, color) => paint(id === "total" ? "series" : "account", id === "total" ? "portfolio:total" : id, color)}
         />
         {sheet === "line" && painting ? (
           <ColorSheet

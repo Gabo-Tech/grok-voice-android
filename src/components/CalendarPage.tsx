@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import { Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { ShareButton } from "@/components/ShareButton";
-import { Sheet } from "@/components/Sheet";
+import { Sheet, SheetFooter } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { RepeatFields, endOfDay, untilInput, type RepeatChoice } from "@/compone
 import { api, type CalEvent } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
-export function CalendarPage({ agenda, active = true, chrome = true }: { agenda: AgendaState; active?: boolean; chrome?: boolean }) {
+export function CalendarPage({ agenda, chrome = true }: { agenda: AgendaState; active?: boolean; chrome?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
@@ -123,7 +123,7 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
 
   return (
     <>
-      <PageChrome title={t("Calendar")} bare={!chrome} onAdd={openNew} addLabel={t("New event")} active={active}>
+      <PageChrome title={t("Calendar")} bare={!chrome}>
         {monthCalendar !== "granted" && calendarNote ? (
           <div className="banner-slim gap-2">
             <p className="min-w-0 flex-1 text-sm text-foreground">
@@ -143,6 +143,7 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
         {agenda.error && <Notice title={t(agenda.error)} />}
 
         <div>
+          <button type="button" className="add-row" onClick={openNew}>{t("New event")}</button>
           <div className="month-bar mb-3 px-1">
             <p className="min-w-0 text-lg leading-6 font-medium text-foreground">
               {cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
@@ -219,21 +220,22 @@ export function CalendarPage({ agenda, active = true, chrome = true }: { agenda:
         title={editing ? t("Edit event") : t("New event")}
         onClose={close}
         footer={
-          <div className="flex flex-wrap items-center gap-2">
-            <ShareButton title={title} text={[start, end, location].filter(Boolean).join("\n")} />
-            {editing?.id && (
-              <Button variant="destructive" disabled={agenda.busy} onClick={remove}>
+          <SheetFooter
+            primaryLabel={t("Save")}
+            onPrimary={save}
+            primaryDisabled={agenda.busy || !title.trim()}
+            secondary={
+              <>
+                <ShareButton title={title} text={[start, end, location].filter(Boolean).join("\n")} />
+                <Button type="button" variant="outline" onClick={close}>{t("Cancel")}</Button>
+              </>
+            }
+            destructive={editing?.id ? (
+              <Button type="button" variant="destructive" disabled={agenda.busy} onClick={remove}>
                 <Trash2 /> {t("Delete")}
               </Button>
-            )}
-            <div className="flex-1" />
-            <Button variant="ghost" onClick={close}>
-              {t("Cancel")}
-            </Button>
-            <Button disabled={agenda.busy || !title.trim()} onClick={save}>
-              {t("Save")}
-            </Button>
-          </div>
+            ) : null}
+          />
         }
       >
         <div className="space-y-4">

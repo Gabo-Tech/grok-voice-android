@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CalendarDays, ChevronLeft, Mic, NotebookPen, Plus, Settings, Wallet } from "lucide-react";
-import { getAction, getNav, requestBack, subscribeAction, subscribeNav } from "@/lib/history";
+import { CalendarDays, ChevronLeft, Mic, NotebookPen, Settings, Wallet } from "lucide-react";
+import { getNav, requestBack, subscribeNav } from "@/lib/history";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +17,6 @@ const ITEMS: Array<{ id: AppTab; label: string; icon: typeof Mic }> = [
 export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab) => void }) {
   const t = useT();
   const nav = useSyncExternalStore(subscribeNav, getNav, getNav);
-  const action = useSyncExternalStore(subscribeAction, getAction, getAction);
   const listRef = useRef<HTMLUListElement>(null);
   const [compact, setCompact] = useState(false);
   const [rail, setRail] = useState(false);
@@ -69,31 +68,22 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
   const activeLabel = ITEMS.find((item) => item.id === tab)?.label ?? "Talk";
   return (
     <nav className="bottom-nav" data-compact={compact ? "1" : "0"} data-rail={rail ? "1" : "0"}>
-      {(nav.showBack || action) && (
-        <div className="flex items-center gap-1 border-b border-border px-1">
-          {nav.showBack ? (
-            <button
-              type="button"
-              onClick={() => requestBack()}
-              aria-label={t(nav.label)}
-              className={cn(
-                "flex min-h-12 items-center justify-center gap-1 text-left text-base text-foreground",
-                rail ? "size-12 shrink-0 px-0" : "min-w-0 flex-1 px-2",
-              )}
-            >
-              <ChevronLeft className="size-5 shrink-0" aria-hidden />
-              {rail ? null : <span className="truncate">{t(nav.label)}</span>}
-            </button>
-          ) : (
-            <span className="flex-1" />
-          )}
-          {action ? (
-            <button type="button" onClick={action.run} aria-label={t(action.label)} className="grid size-12 shrink-0 place-items-center text-foreground">
-              <Plus className="size-5" aria-hidden />
-            </button>
-          ) : null}
+      {nav.showBack ? (
+        <div className="nav-back">
+          <button
+            type="button"
+            onClick={() => requestBack()}
+            aria-label={t(nav.label)}
+            className={cn(
+              "flex min-h-12 items-center gap-1 text-left text-base text-foreground",
+              rail ? "size-12 shrink-0 justify-center px-0" : "min-w-0 flex-1 justify-start px-2",
+            )}
+          >
+            <ChevronLeft className="size-5 shrink-0" aria-hidden />
+            {rail ? null : <span className="truncate">{t(nav.label)}</span>}
+          </button>
         </div>
-      )}
+      ) : null}
       <ul ref={listRef} className="grid grid-cols-5">
         {ITEMS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
@@ -126,6 +116,5 @@ export function BottomNav({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab
 
 export function useThumbBar(): boolean {
   const nav = useSyncExternalStore(subscribeNav, getNav, getNav);
-  const action = useSyncExternalStore(subscribeAction, getAction, getAction);
-  return nav.showBack || action != null;
+  return nav.showBack;
 }

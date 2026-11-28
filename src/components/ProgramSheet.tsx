@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { InfoTip } from "@/components/ds/InfoTip";
-import { Sheet } from "@/components/Sheet";
+import { Sheet, SheetFooter } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -173,21 +173,44 @@ export function ProgramSheet({
       onClose={onClose}
       className="finance"
       footer={
-        <div className="flex flex-wrap items-center gap-2">
-          {editing ? (
-            <Button className="min-h-12" onClick={() => { finance.markPaid(editing.id, editing.nextDate); onClose(); }}>
-              {direction === "income" ? t("Mark received") : t("Mark paid")}
-            </Button>
-          ) : null}
-          {editing ? (
-            <Button variant="ghost" className="min-h-12" onClick={() => { finance.scheduleAction(editing.id, "skip", editing.nextDate); onClose(); }}>
-              {t("Skip")}
-            </Button>
-          ) : null}
-          {editing ? (
+        step === 0 ? undefined : (
+        <SheetFooter
+          primaryLabel={t("Save")}
+          onPrimary={save}
+          primaryDisabled={finance.busy || !name.trim() || !amount.trim()}
+          secondary={
+            <>
+              {editing ? (
+                <Button type="button" variant="outline" onClick={() => { finance.markPaid(editing.id, editing.nextDate); onClose(); }}>
+                  {direction === "income" ? t("Mark received") : t("Mark paid")}
+                </Button>
+              ) : null}
+              {editing ? (
+                <Button type="button" variant="outline" onClick={() => { finance.scheduleAction(editing.id, "skip", editing.nextDate); onClose(); }}>
+                  {t("Skip")}
+                </Button>
+              ) : null}
+              {editing && editing.status !== "stopped" ? (
+                <Button type="button" variant="outline" onClick={() => { finance.scheduleAction(editing.id, editing.status === "paused" ? "resume" : "pause"); onClose(); }}>
+                  {editing.status === "paused" ? t("Resume") : t("Pause")}
+                </Button>
+              ) : null}
+              {editing && editing.status !== "stopped" ? (
+                <Button type="button" variant="outline" onClick={() => { finance.scheduleAction(editing.id, "stop"); onClose(); }}>
+                  {t("Stop")}
+                </Button>
+              ) : null}
+              {step > 0 && !editing ? (
+                <Button type="button" variant="outline" onClick={() => setStep(0)}>
+                  {t("Back")}
+                </Button>
+              ) : null}
+            </>
+          }
+          destructive={editing ? (
             <Button
-              variant="ghost"
-              className="min-h-12"
+              type="button"
+              variant="destructive"
               onClick={() => {
                 if (!confirming) {
                   setConfirming(true);
@@ -200,26 +223,8 @@ export function ProgramSheet({
               {confirming ? t("Delete this") : t("Delete")}
             </Button>
           ) : null}
-          {step > 0 && !editing ? (
-            <Button variant="ghost" className="min-h-12" onClick={() => setStep(0)}>
-              {t("Back")}
-            </Button>
-          ) : null}
-          <div className="flex-1" />
-          {editing && editing.status !== "stopped" ? (
-            <Button variant="ghost" className="min-h-12" onClick={() => { finance.scheduleAction(editing.id, editing.status === "paused" ? "resume" : "pause"); onClose(); }}>
-              {editing.status === "paused" ? t("Resume") : t("Pause")}
-            </Button>
-          ) : null}
-          {editing && editing.status !== "stopped" ? (
-            <Button variant="ghost" className="min-h-12" onClick={() => { finance.scheduleAction(editing.id, "stop"); onClose(); }}>
-              {t("Stop")}
-            </Button>
-          ) : null}
-          <Button className="min-h-12" disabled={finance.busy || !name.trim() || !amount.trim()} onClick={save}>
-            {t("Save")}
-          </Button>
-        </div>
+        />
+        )
       }
     >
       {step === 0 ? (

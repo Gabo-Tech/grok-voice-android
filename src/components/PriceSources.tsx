@@ -3,6 +3,7 @@ import { Sheet } from "@/components/Sheet";
 import { Field } from "@/components/Field";
 import { Input } from "@/components/ui/input";
 import type { FinanceAccount, PriceAttempt } from "@/lib/api";
+import { priceSourceLabel } from "@/lib/financeView";
 import { useT } from "@/lib/i18n";
 
 export function PriceSources({
@@ -64,7 +65,7 @@ export function PriceSources({
         {rows.length === 0 ? <li className="border-t border-border py-3 text-sm leading-5">{t("No source has been tried yet.")}</li> : null}
         {rows.map((row, index) => (
           <li key={`${row.source}-${row.id}-${index}`} className="border-t border-border py-3">
-            <p className="text-sm leading-5">{row.source}</p>
+            <p className="text-sm leading-5">{priceSourceLabel(row.source)}</p>
             <p className="text-[13px] leading-5 text-muted-foreground">
               {row.id || t("none")} · {t(row.detail || row.status)}
             </p>

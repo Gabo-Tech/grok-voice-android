@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Sheet } from "@/components/Sheet";
+import { Sheet, SheetFooter } from "@/components/Sheet";
+import { InfoTip } from "@/components/ds/InfoTip";
 import { api } from "@/lib/api";
 import type { FinanceState } from "@/hooks/useFinance";
 import type { FinanceBudget, FinanceBudgetLine } from "@/lib/api";
@@ -84,7 +85,6 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
   const [month, setMonth] = useState(() => clampMonth(finance.snapshot.period || todayMonth, minMonth, maxMonth));
   const [open, setOpen] = useState(false);
   const [setup, setSetup] = useState(false);
-  const [about, setAbout] = useState(false);
   const [role, setRole] = useState<BudgetRole>("expense");
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
@@ -238,26 +238,20 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
         <button type="button" className="plan-chevron" aria-label={t("Previous month")} disabled={month <= minMonth} onClick={() => goMonth(-1)}>
           <ChevronLeft size={18} strokeWidth={1.5} aria-hidden="true" />
         </button>
-        <p className="min-w-0 flex-1 text-center text-[16px]">{monthLabel}</p>
+        <p className="flex min-w-0 flex-1 items-center justify-center gap-1 text-center text-[16px]">
+          <span className="min-w-0">{monthLabel}</span>
+          <InfoTip label={t("What a budget is")} text={t("Plan is a budget for one month. Expected income is what you think will come in. Each expense row is a limit next to what you already spent. Left to spend is expected income, minus spending so far, minus the savings target. Recurring bills and paydays are in Activity, under Recurring.")} />
+        </p>
         <button type="button" className="plan-chevron" aria-label={t("Next month")} disabled={month >= maxMonth} onClick={() => goMonth(1)}>
           <ChevronRight size={18} strokeWidth={1.5} aria-hidden="true" />
         </button>
       </div>
       <div className="plan-body">
       <div className="plan-summary">
-      <p className="mt-3 text-[15px] leading-6">{t("A budget for one month. Recurring bills stay in Activity.")}</p>
-      <button type="button" className="mt-1 min-h-11 text-[15px] underline" aria-expanded={about} onClick={() => setAbout((value) => !value)}>
-        {t("What a budget is")}
-      </button>
-      {about ? (
-        <p className="mt-1 text-[15px] leading-6 text-[var(--text-secondary)]">
-          {t("Plan is a budget for one month. Expected income is what you think will come in. Each expense row is a limit next to what you already spent. Left to spend is expected income, minus spending so far, minus the savings target. Recurring bills and paydays are in Activity, under Recurring.")}
-        </p>
-      ) : null}
       {!ready ? (
-        <div className="mt-4">
+        <div className="empty-center">
           <p className="text-[16px] leading-6">{t("No budget for this month yet.")}</p>
-          <button type="button" className="mt-4 min-h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => { setSetupNote(""); setSetup(true); }}>
+          <button type="button" className="mt-4 min-h-12 bg-[var(--text-primary)] px-4 text-[15px] text-[var(--surface-0)]" onClick={() => { setSetupNote(""); setSetup(true); }}>
             {t("Set up this month")}
           </button>
         </div>
@@ -273,17 +267,12 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
             <span className="fin-hero-unit">{leftParts.unit}</span>
             {leftParts.figure}
           </p>
-          <p className="mt-2 text-[13px] leading-5 text-[var(--text-secondary)]">{t("Expected income, minus spending so far, minus the savings target.")}</p>
           {overBudget(summary) ? <p className="mt-1 text-[13px] text-[var(--negative)]">{t("Over the plan")}</p> : null}
         </>
       )}
       </div>
       <div className="plan-cats">
-      {!ready ? (
-        <p className="mt-3 text-[15px] leading-6 text-[var(--text-secondary)]">
-          {t("Set the income you expect, a limit for each expense, and a savings target. Start from recurring bills, from recent months, or from both.")}
-        </p>
-      ) : (
+      {!ready ? null : (
         <>
           <h3 className="mt-3 text-[16px]">{t("Expenses")}</h3>
           <div className="mt-1">
@@ -356,6 +345,7 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
             <button type="button" className="min-h-11 text-left text-[15px] underline" aria-pressed={Boolean(resolved.budget?.notify)} onClick={() => saveLines(resolved.budget?.lines || [], { notify: !resolved.budget?.notify })}>{t("Notify at 80% and 100%")}</button>
           </div>
           <ChartColorMenu
+            leading={<span className="text-sm text-[var(--text-secondary)]">{t("Chart colors")}</span>}
             series={summary.rows.map((row) => {
               const categoryRow = finance.snapshot.categories.find((item) => item.name === row.name);
               return { id: row.name, label: row.name, color: resolveColor(finance.snapshot.entityColors, categoryRow?.kind === "income" || row.role === "income" ? "income" : "category", row.name, categoryRow?.color || "") };
@@ -379,7 +369,27 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
           {setupNote ? <p className="mt-2 text-[15px] leading-6">{setupNote}</p> : null}
         </div>
       </Sheet>
-      <Sheet open={open} title={editing ? t("Edit line") : t("Add a line")} onClose={() => { setOpen(false); setPendingDelete(""); setEditing(""); }} className="finance">
+      <Sheet
+        open={open}
+        title={editing ? t("Edit line") : t("Add a line")}
+        onClose={() => { setOpen(false); setPendingDelete(""); setEditing(""); }}
+        className="finance"
+        footer={
+          <SheetFooter
+            primaryLabel={t("Save")}
+            onPrimary={addLine}
+            primaryDisabled={!category.trim()}
+            secondary={pendingDelete && editing ? (
+              <button type="button" className="add-row" onClick={() => setPendingDelete("")}>{t("Cancel")}</button>
+            ) : null}
+            destructive={editing ? (
+              <button type="button" className="min-h-12 bg-[var(--negative)] px-4 text-[15px] text-[var(--surface-0)]" onClick={() => (pendingDelete === editing ? removeLine(editing) : setPendingDelete(editing))}>
+                {pendingDelete === editing ? t("Yes, delete") : t("Delete")}
+              </button>
+            ) : null}
+          />
+        }
+      >
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -410,26 +420,7 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
             {t("Amount")}
             <input className="mt-1 block h-11 w-full border-0 border-b border-[var(--line)] bg-transparent text-[16px]" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
           </label>
-          <button type="submit" className="min-h-11 bg-[var(--text-primary)] px-3 text-[15px] text-[var(--surface-0)]">
-            {t("Save")}
-          </button>
-          {editing ? (
-            pendingDelete === editing ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="text-[13px]">{t("Delete this line?")}</p>
-                <button type="button" className="min-h-11 bg-[var(--negative)] px-3 text-[15px] text-[var(--surface-0)]" onClick={() => removeLine(editing)}>
-                  {t("Yes, delete")}
-                </button>
-                <button type="button" className="min-h-11 px-3 text-[15px] underline" onClick={() => setPendingDelete("")}>
-                  {t("Cancel")}
-                </button>
-              </div>
-            ) : (
-              <button type="button" className="min-h-11 px-3 text-[15px] text-[var(--negative)]" onClick={() => setPendingDelete(editing)}>
-                {t("Delete")}
-              </button>
-            )
-          ) : null}
+          {pendingDelete && editing ? <p className="text-[13px]">{t("Delete this line?")}</p> : null}
         </form>
       </Sheet>
     </section>
