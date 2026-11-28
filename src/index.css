@@ -2348,47 +2348,43 @@ button.settings-row {
   font-weight: 600;
 }
 
-.m3-tabs {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  width: 100%;
-  min-height: var(--touch);
-  overflow: hidden;
-  scrollbar-width: none;
-  border-bottom: 1px solid var(--line-soft);
-}
-
+.m3-tabs,
+.finance .fin-tabs,
 .m3-tabs.tabs-equal:not([data-overflow]),
 .finance .fin-tabs.tabs-equal:not([data-overflow]),
 .m3-tabs:not([data-overflow]),
-.finance .fin-tabs:not([data-overflow]) {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  justify-content: stretch;
+.finance .fin-tabs:not([data-overflow]),
+.m3-tabs[data-overflow],
+.finance .fin-tabs[data-overflow] {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  width: 100%;
+  min-height: var(--touch);
+  gap: 0;
+  overflow: hidden;
   scroll-snap-type: none;
   padding-inline: 0;
+  mask-image: none;
+}
+
+.m3-tabs {
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .m3-tabs.tabs-equal:not([data-overflow]) button,
 .finance .fin-tabs.tabs-equal:not([data-overflow]) .fin-tab,
 .m3-tabs:not([data-overflow]) button,
-.finance .fin-tabs:not([data-overflow]) .fin-tab {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
+.finance .fin-tabs:not([data-overflow]) .fin-tab,
+.m3-tabs[data-overflow] button,
+.finance .fin-tabs[data-overflow] .fin-tab {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
   justify-content: center;
   text-align: center;
-}
-
-.m3-tabs[data-overflow],
-.finance .fin-tabs[data-overflow] {
-  display: grid;
-  overflow: hidden;
-  scroll-snap-type: none;
-  padding-inline-end: 0;
-  mask-image: none;
 }
 
 .m3-tabs::-webkit-scrollbar {
@@ -2405,18 +2401,20 @@ button.settings-row {
 }
 
 .m3-tabs button {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
   min-height: var(--touch);
   justify-content: center;
-  padding: 0 8px;
+  padding: 0 11px;
   scroll-snap-align: start;
   border: 0;
   background: transparent;
   color: var(--text-secondary);
-  font-size: var(--type-label);
+  font-size: var(--type-caption);
   font-weight: 500;
-  white-space: normal;
+  white-space: nowrap;
   text-align: center;
   text-decoration: none;
 }

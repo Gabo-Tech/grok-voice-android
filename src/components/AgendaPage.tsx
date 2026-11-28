@@ -48,7 +48,7 @@ export function AgendaPage({ agenda, active = true }: { agenda: AgendaState; act
         </div>
         <div className="masthead-rule" />
       </header>
-      <div role="tablist" aria-label={t("Agenda")} className="m3-tabs mb-3 shrink-0" style={{ gridTemplateColumns: `repeat(${PANES.length}, minmax(0, 1fr))` }}>
+      <div role="tablist" aria-label={t("Agenda")} className="m3-tabs mb-3 shrink-0">
         {PANES.map((item) => (
           <button key={item} type="button" role="tab" id={`agenda-tab-${item}`} aria-selected={pane === item} aria-controls={`agenda-panel-${item}`} onClick={() => setPane(item)}>
             <span className="tab-label">{t(paneLabel(item))}</span>

@@ -105,9 +105,9 @@
 }
 
 .finance .fin-tabs {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
@@ -248,26 +248,26 @@
 
 .finance .fin-tab {
   display: flex;
-  flex: 1 1 0;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
   min-height: 48px;
-  padding: 0.4rem 0.35rem 0.55rem;
+  padding: 0 11px 2px;
   border: 0;
   border-bottom: 1px solid transparent;
   background: transparent;
   color: var(--text-tertiary, var(--fin-muted));
   font-family: inherit;
-  font-size: var(--type-label, 0.875rem);
+  font-size: var(--type-caption);
   font-weight: 500;
   letter-spacing: 0;
   line-height: 1.2;
   text-align: center;
   text-transform: none;
-  white-space: normal;
-  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 .finance .fin-tab[aria-selected="true"] {
@@ -702,15 +702,13 @@
 }
 
 .finance .fin-tabs {
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   scrollbar-width: none;
   position: sticky;
   top: 0;
   z-index: 6;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  display: flex;
+  justify-content: space-between;
   background: var(--surface-0, var(--fin-canvas));
 }
 
@@ -722,14 +720,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  overflow-wrap: normal;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
+  white-space: nowrap;
   text-align: center;
 }
 
@@ -773,15 +768,40 @@
   align-items: center;
   justify-content: center;
   min-height: var(--touch);
-  padding: 8px 6px 10px;
+  padding: 0 11px 2px;
   color: var(--text-secondary);
-  font-size: var(--type-label);
+  font-size: var(--type-caption);
   font-weight: 500;
   text-align: center;
   scroll-snap-align: center;
-  width: 100%;
+  width: auto;
+  min-width: var(--touch);
+  max-width: max-content;
+  white-space: nowrap;
+}
+
+.holding-line.row-item {
+  flex-wrap: nowrap;
+  align-items: baseline;
+}
+
+.holding-line.row-item > .min-w-0 {
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: none;
+}
+
+.holding-value {
+  max-width: 54%;
+  text-align: right;
+}
+
+.holding-value .holding-amount,
+.holding-line .holding-name {
+  line-height: 1.5rem;
+}
+
+.holding-value .fin-muted {
+  white-space: normal;
 }
 
 .finance .filter-row {

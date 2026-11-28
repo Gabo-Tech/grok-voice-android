@@ -415,7 +415,7 @@ export function FinancePage({
         info={<InfoTip label={t("Finance")} text={t("On this phone. No bank login.")} />}
       >
         {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
-        <div ref={tabListRef} role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10" style={{ gridTemplateColumns: `repeat(${FINANCE_TABS.length}, minmax(0, 1fr))` }}>
+        <div ref={tabListRef} role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10">
           {FINANCE_TABS.map((id) => (
             <button
               key={id}
@@ -909,7 +909,7 @@ function Activity({
           )
         : null}
       {filtersOnly ? null : (
-        <div className="m3-tabs mb-3" role="tablist" aria-label={t("Activity")} style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+        <div className="m3-tabs mb-3" role="tablist" aria-label={t("Activity")}>
           <button type="button" role="tab" aria-selected={view === "transactions"} onClick={() => setView("transactions")}><span className="tab-label">{t("Transactions")}</span></button>
           <button type="button" role="tab" aria-selected={view === "recurring"} onClick={() => setView("recurring")}><span className="tab-label">{t("Recurring")}</span></button>
         </div>
@@ -1141,10 +1141,10 @@ function AccountRows({
             <button type="button" className="fin-icon shrink-0" aria-label={fill("Color for {name}", { name: account.name })} onClick={() => onColor?.(account)}>
               <span className="fin-swatch" style={{ background: resolveColor(entityColors, "account", account.id, account.color) }} />
             </button>
-            <RowButton onClick={() => onOpen(account)} className="min-w-0 flex-1 px-0 py-0">
+            <RowButton onClick={() => onOpen(account)} className={cn("min-w-0 flex-1 px-0 py-0", holding && "holding-line")}>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base">{account.name}</p>
-                <p className="text-sm text-muted-foreground">
+                <p className="holding-name truncate text-base">{account.name}</p>
+                <p className="truncate text-sm text-muted-foreground">
                   {t(kindLabel(account.kind))}
                   {posture === "credit" ? ` · ${t("Credit")}` : ""}
                   {owed && posture !== "credit" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 ? ` · ${t("Remaining")}` : ""}
@@ -1153,8 +1153,8 @@ function AccountRows({
                   {account.calendarEventId ? ` · ${t("On Calendar")}` : ""}
                 </p>
               </div>
-              <span className="shrink-0 text-right">
-                <span className={cn("block text-xl leading-6 font-medium tabular-nums", (account.marketWorthMinor ?? displayMinor) == null && position.unpriced && "text-base font-normal text-muted-foreground")}>{money}</span>
+              <span className={cn("shrink-0 text-right", holding && "holding-value")}>
+                <span className={cn("holding-amount block text-xl font-medium tabular-nums", (account.marketWorthMinor ?? displayMinor) == null && position.unpriced && "text-base font-normal text-muted-foreground")}>{money}</span>
                 {nativeLine ? <span className="fin-muted block text-[13px] leading-4">{nativeLine}</span> : null}
               </span>
             </RowButton>
