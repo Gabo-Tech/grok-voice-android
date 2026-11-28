@@ -33,8 +33,8 @@
           <p>The same material as continuous speech, one language per page: <a href="../voice/en.html">English</a>, <a href="../voice/es.html">Español</a>, <a href="../voice/de.html">Deutsch</a>, <a href="../voice/pt.html">Português</a>, <a href="../voice/ca.html">Valencià</a>.</p>
           <ul class="toc">
             <li><a href="#notes">Notes</a></li>
-            <li><a href="#time">Time</a></li>
-            <li><a href="#calendar">Calendar</a></li>
+            <li><a href="#time">Agenda, alarms</a></li>
+            <li><a href="#calendar">Agenda, calendar</a></li>
             <li><a href="#people">People</a></li>
             <li><a href="#messages-and-calls">Messages and calls</a></li>
             <li><a href="#music">Music</a></li>
@@ -91,11 +91,12 @@
             </ul>
           </article>
         </div>
-        <h2 id="time">Time</h2>
+        <h2 id="time">Agenda, alarms</h2>
+        <p>Alarms, reminders, and countdowns are tabs on Agenda, next to Calendar. The bottom bar no longer has a Time destination.</p>
         <div>
           <article class="cmd" id="set_alarm-time">
             <h3><code>set_alarm</code></h3>
-            <p>Save an alarm on this app’s Time list for the next time that hour and minute occurs. A delay such as in 5 minutes is a reminder or a countdown, not an alarm. A YouTube link or a sound file already picked in the form can be the sound. The app does not download the video. Recurrence can be daily, weekly, monthly, yearly, or every N days, weeks, months, or years. endCount or until can stop it. delivery is spoken or normal. Omit delivery to follow Settings.</p>
+            <p>Save an alarm on Agenda, under Alarms, for the next time that hour and minute occurs. A delay such as in 5 minutes is a reminder or a countdown, not an alarm. A YouTube link or a sound file already picked in the form can be the sound. The app does not download the video. Recurrence can be daily, weekly, monthly, yearly, or every N days, weeks, months, or years. endCount or until can stop it. delivery is spoken or normal. Omit delivery to follow Settings.</p>
             <ul class="phrases">
               <li><span>en</span> Set an alarm for 7:30.</li>
               <li><span>es</span> Pon una alarma a las 7:30.</li>
@@ -106,7 +107,7 @@
           </article>
           <article class="cmd" id="set_timer-time">
             <h3><code>set_timer</code></h3>
-            <p>Start a countdown on Time. seconds, inMinutes, or inHours is the length. A label is what it is for. A request to remind you uses set_reminder instead.</p>
+            <p>Start a countdown on Agenda, under Countdowns. seconds, inMinutes, or inHours is the length. A label is what it is for. A request to remind you uses set_reminder instead.</p>
             <ul class="phrases">
               <li><span>en</span> Set a timer for 10 minutes.</li>
               <li><span>es</span> Pon un temporizador de 10 minutos.</li>
@@ -117,7 +118,7 @@
           </article>
           <article class="cmd" id="set_reminder-time">
             <h3><code>set_reminder</code></h3>
-            <p>Save a reminder on Time. inMinutes or inHours is a delay, and the app computes the fire time. A clock time uses at. Repeats use the same recurrence fields as an alarm.</p>
+            <p>Save a reminder on Agenda, under Reminders. inMinutes or inHours is a delay, and the app computes the fire time. A clock time uses at. Repeats use the same recurrence fields as an alarm.</p>
             <ul class="phrases">
               <li><span>en</span> Remind me in 5 minutes to check the oven.</li>
               <li><span>es</span> Recuérdame en 5 minutos que mire el horno.</li>
@@ -171,7 +172,8 @@
             </ul>
           </article>
         </div>
-        <h2 id="calendar">Calendar</h2>
+        <h2 id="calendar">Agenda, calendar</h2>
+        <p>Calendar is the first tab on Agenda.</p>
         <div>
           <article class="cmd" id="list_calendar_events-calendar">
             <h3><code>list_calendar_events</code></h3>
@@ -186,7 +188,7 @@
           </article>
           <article class="cmd" id="create_calendar_event-calendar">
             <h3><code>create_calendar_event</code></h3>
-            <p>Save an event on this app’s Calendar. start and end are local. If end is omitted, it lasts one hour. Recurrence is daily, weekly, monthly, or yearly.</p>
+            <p>Save an event on Agenda, under Calendar. start and end are local. If end is omitted, it lasts one hour. Recurrence is daily, weekly, monthly, or yearly.</p>
             <ul class="phrases">
               <li><span>en</span> Add lunch with Ana tomorrow at 1.</li>
               <li><span>es</span> Añade una comida con Ana mañana a la 1.</li>
@@ -219,6 +221,7 @@
           </article>
         </div>
         <h2 id="people">People</h2>
+        <p>People is a row under Settings, in You, next to Language.</p>
         <div>
           <article class="cmd" id="find_contact-people">
             <h3><code>find_contact</code></h3>
@@ -302,7 +305,7 @@
         <div>
           <article class="cmd" id="read_notifications-messages-and-calls">
             <h3><code>read_notifications</code></h3>
-            <p>Read relevant messages. People you saved come first, then direct messages. Promos and system notices are skipped. Message reading stays off until Settings, Phone access, is on.</p>
+            <p>Read relevant messages. People you saved come first, then direct messages. Promos and system notices are skipped. Message reading stays off until Settings, Spoken alerts, Phone access, is on.</p>
             <ul class="phrases">
               <li><span>en</span> Read my notifications.</li>
               <li><span>es</span> Lee mis notificaciones.</li>
@@ -666,7 +669,7 @@
           </article>
           <article class="cmd" id="create_backup-settings">
             <h3><code>create_backup</code></h3>
-            <p>Save a backup of the data kept on this phone, including pinned facts, and open the share sheet. Ask first, then wait for a spoken yes. Talk history, voice-time counters, and API keys are not in the voice file. A passphrase in Settings is what includes keys.</p>
+            <p>Save a backup of the data kept on this phone, including pinned facts, and open the share sheet. Ask first, then wait for a spoken yes. Talk history, voice-time counters, and API keys are not in the voice file. A passphrase on Backup, under Settings, On this phone, is what includes keys. Memory, the pinned facts, is the row beside it.</p>
             <ul class="phrases">
               <li><span>en</span> Back up this phone.</li>
               <li><span>es</span> Haz una copia de este teléfono.</li>
@@ -677,7 +680,7 @@
           </article>
           <article class="cmd" id="restore_backup-settings">
             <h3><code>restore_backup</code></h3>
-            <p>Replace everything on this phone with the newest backup saved here. The first call uses confirmed false and does not restore. Say what will be replaced, wait for yes, then call again with confirmed true. An encrypted file is restored in Settings, where you type the passphrase. Waits for a clear yes.</p>
+            <p>Replace everything on this phone with the newest backup saved here. The first call uses confirmed false and does not restore. Say what will be replaced, wait for yes, then call again with confirmed true. An encrypted file is restored on Backup, under Settings, On this phone, where you type the passphrase. Waits for a clear yes.</p>
             <ul class="phrases">
               <li><span>en</span> Restore my backup.</li>
               <li><span>es</span> Restaura mi copia.</li>
