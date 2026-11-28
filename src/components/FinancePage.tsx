@@ -4,7 +4,7 @@ import { InfoTip } from "@/components/ds/InfoTip";
 import { PeriodMenu } from "@/components/ds/PeriodMenu";
 import { EmptyState, Notice, PageChrome, RowButton } from "@/components/PageChrome";
 import { Sheet, SheetFooter } from "@/components/Sheet";
-import { Minus, Plus, Repeat, SlidersHorizontal } from "lucide-react";
+import { Minus, Plus, RefreshCw, Repeat, SlidersHorizontal } from "lucide-react";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,7 +81,6 @@ export function FinancePage({
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [colorAccount, setColorAccount] = useState<FinanceAccount | null>(null);
   const [priceAccount, setPriceAccount] = useState<FinanceAccount | null>(null);
-  const [priceFlash, setPriceFlash] = useState<Record<string, string>>({});
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [editingRule, setEditingRule] = useState<FinanceRule | null>(null);
@@ -416,7 +415,7 @@ export function FinancePage({
         info={<InfoTip label={t("Finance")} text={t("On this phone. No bank login.")} />}
       >
         {finance.error && <Notice title={t(finance.error)} onDismiss={() => finance.setError(null)} />}
-        <div ref={tabListRef} role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10">
+        <div ref={tabListRef} role="tablist" aria-label={t("Finance")} className="fin-tabs sticky top-0 z-10" style={{ gridTemplateColumns: `repeat(${FINANCE_TABS.length}, minmax(0, 1fr))` }}>
           {FINANCE_TABS.map((id) => (
             <button
               key={id}
@@ -607,6 +606,9 @@ export function FinancePage({
               display={finance.snapshot.defaultCurrency}
               fx={finance.snapshot.fx}
               quotes={finance.snapshot.prices?.quotes || []}
+              onRefresh={() => {
+                void finance.refreshPrices();
+              }}
             />
             <AccountList
               rows={accounts.filter((account) => isHoldingAccount(account))}
@@ -619,10 +621,6 @@ export function FinancePage({
               action={t("Add investment")}
               onAdd={openInvestment}
               onOpen={openAccount}
-              onRefreshPrice={(account) => {
-                void finance.refreshHolding(account.id).then((reason) => setPriceFlash((current) => ({ ...current, [account.id]: reason })));
-              }}
-              priceFlash={priceFlash}
               attempts={finance.snapshot.prices?.attempts || []}
               onDiagnose={setPriceAccount}
               priceNote={finance.snapshot.prices?.lastError || ""}
@@ -911,7 +909,7 @@ function Activity({
           )
         : null}
       {filtersOnly ? null : (
-        <div className="m3-tabs mb-3" role="tablist" aria-label={t("Activity")}>
+        <div className="m3-tabs mb-3" role="tablist" aria-label={t("Activity")} style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
           <button type="button" role="tab" aria-selected={view === "transactions"} onClick={() => setView("transactions")}><span className="tab-label">{t("Transactions")}</span></button>
           <button type="button" role="tab" aria-selected={view === "recurring"} onClick={() => setView("recurring")}><span className="tab-label">{t("Recurring")}</span></button>
         </div>
@@ -991,10 +989,8 @@ function AccountList({
   centerEmpty = false,
   onOpen,
   onPay,
-  onRefreshPrice,
   onDiagnose,
   priceNote = "",
-  priceFlash = {},
   attempts = [],
   display = "",
   fx,
@@ -1013,10 +1009,8 @@ function AccountList({
   centerEmpty?: boolean;
   onOpen: (account: FinanceAccount) => void;
   onPay?: (account: FinanceAccount) => void;
-  onRefreshPrice?: (account: FinanceAccount) => void;
   onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
-  priceFlash?: Record<string, string>;
   attempts?: NonNullable<FinanceState["snapshot"]["prices"]>["attempts"];
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
@@ -1029,7 +1023,7 @@ function AccountList({
       {rows.length === 0 ? (
         <EmptyState title={emptyTitle} body={emptyBody} actionLabel={action} onAction={onAdd} center={centerEmpty} />
       ) : (
-        <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onRefreshPrice={onRefreshPrice} onDiagnose={onDiagnose} priceNote={priceNote} priceFlash={priceFlash} attempts={attempts} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />
+        <AccountRows rows={rows} onOpen={onOpen} transactions={transactions} rules={rules} onPaid={onPaid} onPay={onPay} onDiagnose={onDiagnose} priceNote={priceNote} attempts={attempts} display={display} fx={fx} quotes={quotes} onColor={onColor} entityColors={entityColors} />
       )}
       {rows.length > 0 ? (
         <button type="button" className="add-row" onClick={onAdd}>
@@ -1046,11 +1040,13 @@ function HoldingsTotal({
   display,
   fx,
   quotes,
+  onRefresh,
 }: {
   accounts: FinanceAccount[];
   display: string;
   fx?: FinanceState["snapshot"]["fx"];
   quotes: NonNullable<FinanceState["snapshot"]["prices"]>["quotes"];
+  onRefresh: () => void;
 }) {
   const t = useT();
   if (accounts.length === 0) return null;
@@ -1065,11 +1061,13 @@ function HoldingsTotal({
     sum += position.amountMinor;
     priced += 1;
   }
-  if (priced === 0) return null;
   return (
-    <div className="holdings-total">
-      <span className="text-base">{t("Total")}</span>
-      <span className="fin-num">{formatMoney(sum, display || accounts[0]?.currency || "")}</span>
+    <div className="holdings-bar">
+      {priced > 0 ? <span className="text-base">{t("Total")}</span> : null}
+      {priced > 0 ? <span className="fin-num">{formatMoney(sum, display || accounts[0]?.currency || "")}</span> : null}
+      <button type="button" className="icon-hit" aria-label={t("Refresh price now")} onClick={onRefresh}>
+        <RefreshCw className="size-5" strokeWidth={1.5} aria-hidden />
+      </button>
     </div>
   );
 }
@@ -1081,10 +1079,8 @@ function AccountRows({
   rules,
   onPaid,
   onPay,
-  onRefreshPrice,
   onDiagnose,
   priceNote = "",
-  priceFlash = {},
   attempts = [],
   display = "",
   fx,
@@ -1098,10 +1094,8 @@ function AccountRows({
   rules: FinanceState["snapshot"]["rules"];
   onPaid: (id: string) => void;
   onPay?: (account: FinanceAccount) => void;
-  onRefreshPrice?: (account: FinanceAccount) => void;
   onDiagnose?: (account: FinanceAccount) => void;
   priceNote?: string;
-  priceFlash?: Record<string, string>;
   attempts?: NonNullable<FinanceState["snapshot"]["prices"]>["attempts"];
   display?: string;
   fx?: FinanceState["snapshot"]["fx"];
@@ -1181,10 +1175,7 @@ function AccountRows({
                 {t("No price")}
               </button>
             ) : null}
-            {position.unpriced && (priceFlash[account.id] || priceNote) ? <p className="mt-1 text-[13px] leading-5 text-[var(--negative)]">{priceFlash[account.id] || priceNote}</p> : null}
-            {onRefreshPrice ? (
-              <button type="button" className="fin-chip mt-3 min-h-12 w-full" onClick={() => onRefreshPrice(account)}>{t("Refresh price now")}</button>
-            ) : null}
+            {position.unpriced && priceNote ? <p className="mt-1 text-[13px] leading-5 text-[var(--negative)]">{priceNote}</p> : null}
             {owed && payoff && payoff.paid > 0 ? (
               <div className="mt-2">
                 <span className="fin-track">

@@ -111,8 +111,7 @@
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   background: var(--surface-0, var(--fin-canvas));
   border-bottom: 1px solid var(--line-soft, var(--fin-line));
   position: sticky;
@@ -124,8 +123,11 @@
   position: absolute;
   left: 0;
   bottom: 0;
+  grid-column: 1 / -1;
+  grid-row: 1;
   width: 20%;
   height: 2px;
+  margin: 0;
   background: var(--brand, var(--fin-gold));
   pointer-events: none;
 }

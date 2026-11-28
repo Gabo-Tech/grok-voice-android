@@ -90,7 +90,7 @@ export function Sheet({
   );
 }
 
-/** Save stays the one solid action. Secondary controls sit above it. Delete sits on its own row. */
+/** Save is the only solid action. Delete is quiet text at the end of the secondary row. */
 export function SheetFooter({
   primaryLabel,
   onPrimary,
@@ -104,11 +104,16 @@ export function SheetFooter({
   secondary?: React.ReactNode;
   destructive?: React.ReactNode;
 }) {
+  const tools = secondary || destructive;
   return (
     <div className="sheet-actions">
-      {secondary ? <div className="sheet-actions-row">{secondary}</div> : null}
-      {destructive ? <div className="sheet-actions-row sheet-actions-apart">{destructive}</div> : null}
-      <Button type="button" className="w-full" disabled={primaryDisabled} onClick={onPrimary}>
+      {tools ? (
+        <div className="sheet-actions-row">
+          {secondary}
+          {destructive ? <div className="sheet-delete">{destructive}</div> : null}
+        </div>
+      ) : null}
+      <Button type="button" className="sheet-save" disabled={primaryDisabled} onClick={onPrimary}>
         {primaryLabel}
       </Button>
     </div>

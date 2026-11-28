@@ -383,7 +383,7 @@ export function BudgetSection({ finance }: { finance: FinanceState }) {
               <button type="button" className="add-row" onClick={() => setPendingDelete("")}>{t("Cancel")}</button>
             ) : null}
             destructive={editing ? (
-              <button type="button" className="min-h-12 bg-[var(--negative)] px-4 text-[15px] text-[var(--surface-0)]" onClick={() => (pendingDelete === editing ? removeLine(editing) : setPendingDelete(editing))}>
+              <button type="button" onClick={() => (pendingDelete === editing ? removeLine(editing) : setPendingDelete(editing))}>
                 {pendingDelete === editing ? t("Yes, delete") : t("Delete")}
               </button>
             ) : null}

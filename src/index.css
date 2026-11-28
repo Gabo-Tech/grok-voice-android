@@ -2354,7 +2354,7 @@ button.settings-row {
   grid-auto-columns: minmax(0, 1fr);
   width: 100%;
   min-height: var(--touch);
-  overflow-x: auto;
+  overflow: hidden;
   scrollbar-width: none;
   border-bottom: 1px solid var(--line-soft);
 }
@@ -2384,14 +2384,11 @@ button.settings-row {
 
 .m3-tabs[data-overflow],
 .finance .fin-tabs[data-overflow] {
-  display: flex;
-  justify-content: flex-start;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-inline: 16px;
-  padding-inline-end: 36px;
-  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 48px), transparent 100%);
-  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 48px), transparent 100%);
+  display: grid;
+  overflow: hidden;
+  scroll-snap-type: none;
+  padding-inline-end: 0;
+  mask-image: none;
 }
 
 .m3-tabs::-webkit-scrollbar {
@@ -2777,25 +2774,40 @@ button.settings-row {
 
 .sheet-actions-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.sheet-actions-row button,
+.sheet-actions-row [data-slot="button"] {
+  padding-inline: 8px;
+}
+
+.sheet-delete {
+  margin-left: auto;
+}
+
+.sheet-delete button,
+.sheet-delete [data-slot="button"] {
+  width: auto;
+  min-width: var(--touch);
+  background: transparent;
+  color: var(--negative);
+  box-shadow: none;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.sheet-save {
+  width: 100%;
 }
 
 .sheet-actions-apart {
-  justify-content: stretch;
-  padding-top: 4px;
-  border-top: 1px solid var(--line-soft);
-}
-
-.sheet-actions-apart > button,
-.sheet-actions-apart > [data-slot="button"] {
-  width: 100%;
-}
-
-.sheet-actions > button,
-.sheet-actions > [data-slot="button"] {
-  width: 100%;
+  justify-content: flex-end;
+  padding-top: 0;
+  border-top: 0;
 }
 
 button.add-row {
@@ -2833,6 +2845,63 @@ button.add-row {
 
 .plan-summary .empty-center {
   min-height: min(420px, 52vh);
+  width: 100%;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .plan-body:has(.empty-center) {
+    display: flex;
+    grid-template-columns: none;
+    justify-content: center;
+  }
+
+  .plan-summary:has(.empty-center) {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .sheet-handle {
+    display: none;
+  }
+
+  .sheet-head {
+    min-height: 0;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .sheet-title {
+    font-size: 1rem;
+  }
+
+  .sheet-scroll {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .sheet-foot {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .sheet-actions {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sheet-actions-row {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .sheet-save {
+    width: auto;
+    flex: none;
+    margin-left: auto;
+  }
 }
 
 .color-field {
@@ -2850,18 +2919,28 @@ button.add-row {
   gap: 8px;
 }
 
+.holdings-bar,
 .holdings-total {
   display: flex;
   min-height: var(--touch);
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 12px;
   margin-bottom: 8px;
 }
 
+.holdings-bar .fin-num,
 .holdings-total .fin-num {
+  margin-left: auto;
   font-size: var(--type-title);
   font-weight: 500;
+}
+
+.holdings-bar .icon-hit {
+  margin-left: auto;
+}
+
+.holdings-bar .fin-num + .icon-hit {
+  margin-left: 0;
 }
 
 .nav-back {
