@@ -118,10 +118,10 @@ export function CurrencyEditor({ finance }: { finance: FinanceState }) {
           />
           <span className="text-sm font-extrabold">{current || t("Default currency")}</span>
         </div>
-        <label className="mt-3 flex items-start gap-2 text-sm leading-5">
+        <label className="mt-3 flex min-h-12 items-center gap-3 text-sm leading-5">
           <input
             type="checkbox"
-            className="mt-1 size-4"
+            className="size-6 shrink-0"
             checked={overrideLive}
             onChange={(event) => setOverrideLive(event.target.checked)}
           />

@@ -158,7 +158,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Check setup translations
-        run: node --experimental-strip-types --test src/lib/setupGuide.test.ts src/lib/i18nCoverage.test.ts src/lib/backupRoundTrip.test.ts src/lib/csp.test.ts
+        run: node --experimental-strip-types --test src/lib/setupGuide.test.ts src/lib/stagePage.test.ts src/lib/i18nCoverage.test.ts src/lib/backupRoundTrip.test.ts src/lib/csp.test.ts
 
       - name: Build arm64 release APK
         run: |

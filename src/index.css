@@ -751,6 +751,55 @@ input[type="time"] {
   animation: page-in var(--motion-normal) var(--ease-spring) both;
 }
 
+/* Inactive tabs must not paint. A later layout rule must not bring display back.
+   The active pane does not animate: an opacity animation is a stacking context,
+   and a sheet inside it then paints under the bottom bar. */
+.app-stage > .stage-page:not(.is-active) {
+  display: none !important;
+  pointer-events: none;
+}
+
+.app-stage > .stage-page.is-active {
+  animation: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+button[data-slot="button"][data-variant="ghost"]:not([data-size^="icon"]) {
+  background: transparent;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+button[class*="h-10"],
+button[class*="h-11"],
+a[class*="h-11"],
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])[class*="h-11"],
+select[class*="h-11"],
+textarea[class*="h-11"] {
+  min-height: var(--touch);
+  height: auto;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  accent-color: var(--text-primary);
+}
+
+label:has(> input[type="checkbox"]),
+label:has(> input[type="radio"]) {
+  min-height: var(--touch);
+  align-items: center;
+}
+
 .animate-row-in {
   animation: row-in var(--motion-normal) var(--ease-spring) both;
 }
@@ -1291,7 +1340,8 @@ html.keyboard-open .sheet-panel {
   .animate-spin,
   .mark,
   .mark-fill,
-  .sheet-scrim {
+  .sheet-scrim,
+  .app-stage > .stage-page.is-active {
     animation: none !important;
     transition: none !important;
   }
@@ -2156,7 +2206,8 @@ button.stamp {
 html[data-animator="off"] .presence-eyes,
 html[data-animator="off"] .mark-ears,
 html[data-animator="off"] .presence-bars .bar,
-html[data-animator="off"] .loader .presence-eyes {
+html[data-animator="off"] .loader .presence-eyes,
+html[data-animator="off"] .app-stage > .stage-page.is-active {
   animation: none !important;
 }
 
@@ -2751,7 +2802,7 @@ button.settings-row {
   width: 100%;
   min-width: 0;
   height: auto;
-  min-height: 0;
+  min-height: var(--touch);
   aspect-ratio: 1;
   max-height: 3.25rem;
   padding: 2px 0;
