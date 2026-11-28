@@ -167,7 +167,7 @@ export function MorePage({
 
   if (section === "wake") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
         <ListenStatus />
         <WakeView status={wake} onStatus={onWake} />
@@ -177,7 +177,7 @@ export function MorePage({
 
   if (section === "debug") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
         <DebugPanel voice={voice} onSignedOut={onSignedOut} onReplayTour={onReplayTour} />
       </div>
@@ -190,7 +190,7 @@ export function MorePage({
 
   if (section === "memory") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
         <MemorySection />
       </div>
@@ -199,7 +199,7 @@ export function MorePage({
 
   if (section === "access") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
         <AccessSection />
       </div>
@@ -217,7 +217,7 @@ export function MorePage({
 
   if (section === "keys" || section === "packs" || section === "model" || section === "voice") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
         {settings ? (
           <VoiceHome
@@ -244,7 +244,7 @@ export function MorePage({
 
   if (section === "quiet") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <Back onClick={() => setSection("menu")} />
         <h2 className="screen-title">{t("Quiet gap")}</h2>
         <p className="mt-1 mb-4 px-1 text-sm leading-6 text-muted-foreground">
@@ -919,7 +919,7 @@ function MemorySection() {
             <span className="min-w-0 flex-1">{fact.text}</span>
             <button
               type="button"
-              className="h-10 px-2 text-xs uppercase"
+              className="min-h-12 px-3 text-sm underline underline-offset-4"
               onClick={() => void api.forgetLocalFact(fact.id).then(setBundle).catch((e) => setError(errorText(e)))}
             >
               {t("Forget")}

@@ -7,6 +7,7 @@ import {
   adviceFor,
   guideKeys,
   localModelCandidates,
+  PROGRESS,
   progressIndex,
   screenFor,
 } from "./setupGuide.ts";
@@ -64,6 +65,7 @@ assert.equal(screenFor("xai"), "xai");
 assert.equal(screenFor("onemin"), "onemin");
 assert.equal(screenFor("mixed"), "mixed");
 assert.equal(screenFor(undefined), "language");
+assert.equal(PROGRESS.length, 4);
 assert.equal(progressIndex("language"), 0);
 assert.equal(progressIndex("path"), 1);
 assert.equal(progressIndex("openai"), 2);

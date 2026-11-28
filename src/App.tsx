@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AssistantView } from "@/components/AssistantView";
@@ -24,6 +24,20 @@ import { cn } from "@/lib/utils";
 
 function cnShell(thumb: boolean) {
   return cn("app-safe flex h-full flex-col bg-background", thumb && "app-safe-bar");
+}
+
+/** One tab fills the stage. The others stay mounted but are not shown, focused, or clickable. */
+function StagePane({ active, children }: { active: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={active ? "stage-page is-active flex min-h-0 flex-1 flex-col" : "stage-page"}
+      hidden={!active}
+      aria-hidden={active ? undefined : true}
+      inert={active ? undefined : true}
+    >
+      {children}
+    </div>
+  );
 }
 
 function previewGuide(inApp: boolean, appPreview: boolean): string {
@@ -367,31 +381,31 @@ export default function App() {
       )}
 
       <section className="app-stage flex min-h-0 flex-1 flex-col overflow-hidden px-5 pt-6">
-        <div className={tab === "talk" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+        <StagePane active={tab === "talk"}>
           <AssistantView
             voice={voice}
             wakeTrained={wake.trained}
             accounts={auth.accounts ?? []}
             onOpenSettings={openSettings}
           />
-        </div>
+        </StagePane>
         {seen.notes ? (
-        <div className={tab === "notes" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+        <StagePane active={tab === "notes"}>
           <NotesPage agenda={agenda} active={tab === "notes"} />
-        </div>
+        </StagePane>
         ) : null}
         {seen.agenda ? (
-        <div className={tab === "agenda" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+        <StagePane active={tab === "agenda"}>
           <AgendaPage agenda={agenda} active={tab === "agenda"} />
-        </div>
+        </StagePane>
         ) : null}
         {seen.finance ? (
-        <div className={tab === "finance" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+        <StagePane active={tab === "finance"}>
           <FinancePage finance={finance} active={tab === "finance"} onOpenCurrency={() => openSettings("finance")} />
-        </div>
+        </StagePane>
         ) : null}
         {seen.more ? (
-        <div className={tab === "more" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+        <StagePane active={tab === "more"}>
           <MorePage
             voice={voice}
             wake={wake}
@@ -413,7 +427,7 @@ export default function App() {
             finance={finance}
             onAppearance={setAppearance}
           />
-        </div>
+        </StagePane>
         ) : null}
       </section>
 

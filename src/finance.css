@@ -728,8 +728,7 @@
   text-align: center;
 }
 
-.app-stage > div:has(> .finance) {
-  display: flex;
+.app-stage > .stage-page.is-active:has(> .finance) {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;

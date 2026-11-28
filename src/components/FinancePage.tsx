@@ -1143,8 +1143,8 @@ function AccountRows({
             </button>
             <RowButton onClick={() => onOpen(account)} className={cn("min-w-0 flex-1 px-0 py-0", holding && "holding-line")}>
               <div className="min-w-0 flex-1">
-                <p className="holding-name truncate text-base">{account.name}</p>
-                <p className="truncate text-sm text-muted-foreground">
+                <p className="holding-name text-base break-words">{account.name}</p>
+                <p className="text-sm break-words text-muted-foreground">
                   {t(kindLabel(account.kind))}
                   {posture === "credit" ? ` · ${t("Credit")}` : ""}
                   {owed && posture !== "credit" && account.shownBalanceMinor != null && account.shownBalanceMinor > 0 ? ` · ${t("Remaining")}` : ""}
